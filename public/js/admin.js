@@ -201,12 +201,47 @@ function renderAnalytics(exams, sessions, students) {
     sparkSvg = `<div class="text-muted" style="font-size:12px;padding:12px 0;">Not enough data for trend. Complete at least 2 exams.</div>`;
   }
 
+  // Dark sparkline
+  let darkSparkSvg = sparkSvg;
+  if (examScores.length >= 2) {
+    const W = 200, H = 60;
+    const vals = examScores.map(e => e.avg);
+    const minV = Math.min(...vals) - 5, maxV = Math.max(...vals) + 5;
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const areaPath = `M0,${H} L` + vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' L') + ` L${W},${H} Z`;
+    const lastPt = pts.split(' ').pop().split(',');
+    darkSparkSvg = `
+      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="dsg1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4ade80" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaPath}" fill="url(#dsg1)"/>
+        <polyline points="${pts}" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="#4ade80" opacity="0.9"/>
+        <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="7" fill="#4ade80" opacity="0.2"/>
+      </svg>`;
+  } else {
+    darkSparkSvg = `<div style="font-size:11px;color:rgba(255,255,255,0.35);padding:10px 0;">Complete at least 2 exams to see trend.</div>`;
+  }
+
   const card1 = `
-    <div class="analytics-card ac-green">
-      <div class="analytics-card-title">Score Trend</div>
-      <div class="analytics-card-value">${avgPct !== null ? avgPct + '%' : '—'}</div>
-      <div class="analytics-card-sub">Average across all exams &nbsp;<span class="trend-chip ${trendClass}">${trendArrow} ${trendLabel}</span></div>
-      <div class="sparkline-wrap">${sparkSvg}</div>
+    <div class="analytics-card ac-dark">
+      <div class="ac-dark-label">SCORE TREND</div>
+      <div class="ac-dark-value">${avgPct !== null ? avgPct + '%' : '—'}</div>
+      <div class="ac-dark-sub">Avg Completion Rate</div>
+      <span class="ac-trend-badge ac-trend-${trendClass}">${trendArrow} ${Math.abs(examScores.length >= 2 ? examScores[examScores.length-1].avg - examScores[0].avg : 0)}%</span>
+      <div class="sparkline-wrap" style="margin-top:12px;">${darkSparkSvg}</div>
     </div>`;
 
   // --- Card 2: At-Risk Students ---
@@ -224,20 +259,25 @@ function renderAnalytics(exams, sessions, students) {
     .sort((a, b) => (a.risk === 'high' ? -1 : 1) - (b.risk === 'high' ? -1 : 1))
     .slice(0, 5);
 
+  const riskColors = ['#f87171','#60a5fa','#c084fc','#fb923c','#34d399'];
   const atRiskHtml = atRiskList.length
-    ? atRiskList.map(s => `
-        <div class="risk-item">
-          <span class="risk-item-name">${escHtml(s.name)}</span>
-          <span class="risk-badge risk-badge-${s.risk}">${s.risk === 'high' ? 'High Risk' : 'Watch'}</span>
-        </div>`).join('')
-    : `<div class="empty-state" style="padding:16px;"><p>No at-risk students detected.</p></div>`;
+    ? atRiskList.map((s, i) => {
+        const init = (s.name || '?').charAt(0).toUpperCase();
+        return `<div class="risk-item-dark">
+          <div class="risk-avatar-dark" style="background:${riskColors[i % riskColors.length]}22;color:${riskColors[i % riskColors.length]};border:1px solid ${riskColors[i % riskColors.length]}44;">${init}</div>
+          <span class="risk-name-dark">${escHtml(s.name)}</span>
+          ${s.avgScore !== null ? `<span class="risk-score-dark">${Math.round(s.avgScore)}%</span>` : ''}
+          <span class="risk-badge-dark risk-badge-${s.risk}">${s.risk === 'high' ? 'High Risk' : 'Watch'}</span>
+        </div>`;
+      }).join('')
+    : `<div style="color:rgba(255,255,255,0.3);font-size:12px;padding:12px 0;text-align:center;">No at-risk students detected</div>`;
 
   const card2 = `
-    <div class="analytics-card ac-red">
-      <div class="analytics-card-title">At-Risk Students</div>
-      <div class="analytics-card-value">${atRiskList.filter(s => s.risk === 'high').length}</div>
-      <div class="analytics-card-sub">${atRiskList.length} flagged total &nbsp;• High risk = avg &lt;50% or 3+ warnings</div>
-      <div class="risk-list">${atRiskHtml}</div>
+    <div class="analytics-card ac-dark ac-dark-red">
+      <div class="ac-dark-label">AT-RISK STUDENTS</div>
+      <div class="ac-dark-value">${atRiskList.filter(s => s.risk === 'high').length}</div>
+      <div class="ac-dark-sub">High risk flagged</div>
+      <div class="risk-list-dark">${atRiskHtml}</div>
     </div>`;
 
   // --- Card 3: Score Distribution ---
@@ -252,22 +292,27 @@ function renderAnalytics(exams, sessions, students) {
   const maxCount = Math.max(1, ...ranges.map(r =>
     submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length
   ));
-  const distBars = ranges.map(r => {
+  // Dot grid distribution — max 8 dots per column
+  const dotAccent = '#34d399';
+  const dotGrid = ranges.map(r => {
     const count = submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length;
-    const h = Math.max(3, Math.round((count / maxCount) * 52));
-    return `<div class="dist-col">
-      <div class="dist-count">${count || ''}</div>
-      <div class="dist-bar" style="height:${h}px;"></div>
-      <div class="dist-label">${r.label}</div>
+    const filled = Math.min(8, count);
+    const dots = Array.from({length: 8}, (_, i) => {
+      const on = i < filled;
+      return `<div class="dist-dot" style="background:${on ? dotAccent : 'rgba(255,255,255,0.08)'};box-shadow:${on ? `0 0 6px ${dotAccent}55` : 'none'};"></div>`;
+    }).reverse().join('');
+    return `<div class="dist-dot-col">
+      <div class="dist-dot-dots">${dots}</div>
+      <div class="dist-dot-label">${r.label.replace('–','-')}</div>
     </div>`;
   }).join('');
 
   const card3 = `
-    <div class="analytics-card ac-blue">
-      <div class="analytics-card-title">Score Distribution</div>
-      <div class="analytics-card-value">${submitted.length}</div>
-      <div class="analytics-card-sub">Total scored submissions</div>
-      <div class="dist-chart">${distBars}</div>
+    <div class="analytics-card ac-dark ac-dark-teal">
+      <div class="ac-dark-label">SCORE DISTRIBUTION</div>
+      <div class="ac-dark-value">${submitted.length}</div>
+      <div class="ac-dark-sub">Total scored submissions</div>
+      <div class="dist-dot-grid">${dotGrid}</div>
     </div>`;
 
   // --- Card 4: Performance Forecast ---
@@ -282,16 +327,29 @@ function renderAnalytics(exams, sessions, students) {
       })()
     : null;
 
+  const passRate = submitted.length ? Math.round(submitted.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length / submitted.length * 100) : null;
   const card4 = `
-    <div class="analytics-card ac-amber">
-      <div class="analytics-card-title">Forecast</div>
-      <div class="analytics-card-value">${predictedAvg !== null ? predictedAvg + '%' : '—'}</div>
-      <div class="analytics-card-sub">Predicted next exam avg (linear)</div>
-      <div class="forecast-rows">
-        <div class="forecast-row"><span class="forecast-row-label">Exam Completion Rate</span><span class="forecast-row-value">${completionRate}%</span></div>
-        <div class="forecast-row"><span class="forecast-row-label">At-Risk Students</span><span class="forecast-row-value ${highRisk > 0 ? 'fc-down' : 'fc-up'}">${highRisk}</span></div>
-        <div class="forecast-row"><span class="forecast-row-label">Exams Analyzed</span><span class="forecast-row-value">${examScores.length}</span></div>
-        <div class="forecast-row"><span class="forecast-row-label">Pass Rate (≥75%)</span><span class="forecast-row-value ${submitted.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length / Math.max(1,submitted.length) >= 0.7 ? 'fc-up' : 'fc-down'}">${submitted.length ? Math.round(submitted.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length / submitted.length * 100) + '%' : '—'}</span></div>
+    <div class="analytics-card ac-dark ac-dark-amber">
+      <div class="ac-dark-label">FORECAST</div>
+      <div class="ac-dark-value">${predictedAvg !== null ? predictedAvg + '%' : '—'}</div>
+      <div class="ac-dark-sub">Predicted next exam avg</div>
+      <div class="forecast-rows-dark">
+        <div class="forecast-row-dark">
+          <span class="frd-label">Completion Rate</span>
+          <span class="frd-value">${completionRate}%</span>
+        </div>
+        <div class="forecast-row-dark">
+          <span class="frd-label">At-Risk Students</span>
+          <span class="frd-value ${highRisk > 0 ? 'frd-bad' : 'frd-good'}">${highRisk}</span>
+        </div>
+        <div class="forecast-row-dark">
+          <span class="frd-label">Exams Analyzed</span>
+          <span class="frd-value">${examScores.length}</span>
+        </div>
+        <div class="forecast-row-dark">
+          <span class="frd-label">Pass Rate ≥75%</span>
+          <span class="frd-value ${passRate !== null && passRate >= 70 ? 'frd-good' : 'frd-bad'}">${passRate !== null ? passRate + '%' : '—'}</span>
+        </div>
       </div>
     </div>`;
 
@@ -459,7 +517,7 @@ function renderSubjects() {
   const subjects = DB.getSubjects().filter(s => !s.archived);
   const grid = document.getElementById('course-cards-grid');
   if (!subjects.length) {
-    grid.innerHTML = `<div class="course-empty"><div class="course-empty-icon">📚</div><div class="course-empty-title">No Courses Yet</div><div class="course-empty-sub">Click "+ Add Course" to create your first course.</div></div>`;
+    grid.innerHTML = `<div class="course-empty"><div class="course-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div class="course-empty-title">No Courses Yet</div><div class="course-empty-sub">Click "+ Add Course" to create your first course.</div></div>`;
     return;
   }
   const allExams = DB.getExams();
@@ -474,13 +532,8 @@ function renderSubjects() {
     const examCount    = allExams.filter(e => e.subjectId === s.id && e.status !== 'archived').length;
     const studentCount = allStudents.filter(st => (st.enrolledSubjects || []).includes(s.id)).length;
 
-    const yearPills = years.length
-      ? years.map(y => `<span class="course-meta-pill year">${escHtml(y)}</span>`).join('')
-      : `<span class="course-meta-pill all">All Year Levels</span>`;
-
-    const sectionPills = sections.length
-      ? sections.map(sc => `<span class="course-meta-pill section">${escHtml(sc.replace('Section ','§'))}</span>`).join('')
-      : `<span class="course-meta-pill all">All Sections</span>`;
+    const yearPills = years.map(y => `<span class="course-meta-pill year">${escHtml(y)}</span>`).join('');
+    const sectionPills = sections.map(sc => `<span class="course-meta-pill section">${escHtml(sc.replace('Section ','§'))}</span>`).join('');
 
     const enrollHtml = s.enrollmentCode
       ? `<span class="enroll-code-tag" title="Click to copy enrollment code" onclick="copyEnrollCode('${s.enrollmentCode}','${escHtml(s.name)}')" style="cursor:pointer;">
@@ -678,19 +731,33 @@ function renderStudents(filter) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
     return;
   }
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
   tbody.innerHTML = students.map(s => {
     const yl = computeYearLevel(s.studentId);
+    const initials = (s.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const ylClass = ylColors[yl] || 'yl-1';
     return `
     <tr>
-      <td data-label="Student ID"><span class="code-tag">${escHtml(s.studentId)}</span></td>
-      <td data-label="Name"><strong>${escHtml(s.name)}</strong></td>
-      <td data-label="Year Level" style="text-align:center;">${escHtml(yl)}</td>
-      <td data-label="Section" style="text-align:center;">${escHtml(s.section || '—')}</td>
-      <td data-label="Email" style="text-align:center;" class="text-muted">${escHtml(s.email || '—')}</td>
+      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
+      <td data-label="Name">
+        <div class="student-name-cell">
+          <div class="student-avatar">${initials}</div>
+          <span class="student-name-text">${escHtml(s.name)}</span>
+        </div>
+      </td>
+      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(yl)}</span></td>
+      <td data-label="Section"><span class="section-text">${escHtml(s.section || '—')}</span></td>
+      <td data-label="Email" class="email-cell">${escHtml(s.email || '—')}</td>
       <td data-label="">
-        <div class="table-actions" style="justify-content:center;">
-          <button class="btn btn-secondary btn-sm" onclick="openStudentModal('${s.id}')">Edit</button>
-          <button class="btn btn-warning btn-sm" onclick="archiveStudent('${s.id}')">Archive</button>
+        <div class="table-actions">
+          <button class="tbl-btn tbl-btn-edit" onclick="openStudentModal('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+          </button>
+          <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Archive
+          </button>
         </div>
       </td>
     </tr>`;
@@ -795,31 +862,47 @@ async function archiveStudent(id) {
 function renderExams() {
   const exams = DB.getExams();
   const subjects = DB.getSubjects();
-  const tbody = document.getElementById('exams-tbody');
-  if (!exams.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No exams yet. Click "Create Exam" to get started.</p></div></td></tr>`;
+  const container = document.getElementById('exams-grid');
+  if (!container) return;
+  const active = exams.filter(e => e.status !== 'archived');
+  if (!active.length) {
+    container.innerHTML = `<div class="empty-state"><p>No exams yet. Click "+ Create Exam" to get started.</p></div>`;
     return;
   }
-  const active = DB.getExams().filter(e => e.status !== 'archived');
-  tbody.innerHTML = active.map(e => {
+  const statusBorderColor = { draft:'#9ca3af', ready:'#2563eb', active:'#16a34a', closed:'#dc2626' };
+  container.innerHTML = active.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
-    const actions = buildExamActions(e);
+    const subjectName = subject ? escHtml(subject.name) : '<span class="text-muted">No subject</span>';
+    const borderColor = statusBorderColor[e.status] || '#9ca3af';
+    const qCount = (e.questions || []).length;
     const audienceTags = buildAudienceTag(e);
+    const actions = buildExamActions(e);
     return `
-      <tr>
-        <td data-label="Title">
-          <strong>${escHtml(e.title)}</strong>
-          ${audienceTags ? `<div style="margin-top:3px;">${audienceTags}</div>` : ''}
-          <div class="text-muted" style="font-size:11px;">${formatDate(e.createdAt)}</div>
-        </td>
-        <td data-label="Subject">${subject ? escHtml(subject.name) : '<span class="text-muted">N/A</span>'}</td>
-        <td data-label="Code" style="text-align:center;">${e.code ? `<span class="code-tag">${e.code}</span>` : '—'}</td>
-        <td data-label="Questions" style="text-align:center;">${e.questions.length}</td>
-        <td data-label="Time" style="text-align:center;">${e.timeLimit} min</td>
-        <td data-label="Status" style="text-align:center;">${statusBadge(e.status)}</td>
-        <td data-label=""><div class="table-actions" style="justify-content:center;">${actions}</div></td>
-      </tr>
-    `;
+    <div class="exam-card" style="--exam-status-color:${borderColor}" onclick="openExamModal('${e.id}')">
+      <div class="exam-card-body">
+        <div class="exam-card-top-row">
+          ${statusBadge(e.status)}
+          ${e.code ? `<span class="exam-code-pill">${escHtml(e.code)}</span>` : ''}
+        </div>
+        <div class="exam-card-title">${escHtml(e.title)}</div>
+        <div class="exam-card-subject">${subjectName}</div>
+        ${audienceTags ? `<div class="exam-card-audience">${audienceTags}</div>` : ''}
+        <div class="exam-card-stats">
+          <span class="exam-stat">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            ${qCount} question${qCount !== 1 ? 's' : ''}
+          </span>
+          <span class="exam-stat">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${e.timeLimit} min
+          </span>
+        </div>
+        <div class="exam-card-date">${formatDate(e.createdAt)}</div>
+      </div>
+      <div class="exam-card-footer" onclick="event.stopPropagation()">
+        ${actions}
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -1082,11 +1165,20 @@ async function permanentDeleteStudent(id) {
   showToast('Student permanently deleted.', 'success');
 }
 
-function openExamModal(id, startTab) {
+// ── Inline exam editor (Google Forms style) ──────────────
+
+function openExamEditor(id) {
   const subjects = DB.getSubjects();
   const sel = document.getElementById('exam-subject-field');
   sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(s.name)}</option>`).join('');
 
+  // Wire subject change → repopulate audience
+  if (!sel._audienceWired) {
+    sel._audienceWired = true;
+    sel.addEventListener('change', function() { populateAudienceSelectors(this.value, [], []); });
+  }
+
+  // Reset form
   document.getElementById('exam-id').value = '';
   document.getElementById('exam-title-field').value = '';
   document.getElementById('exam-desc-field').value = '';
@@ -1097,23 +1189,15 @@ function openExamModal(id, startTab) {
   document.getElementById('exam-require-camera').checked = false;
   document.getElementById('exam-ai-detect').checked = false;
   document.getElementById('exam-allow-review').checked = false;
-  document.getElementById('modal-exam-title').textContent = 'Create Exam';
-  // Wire subject change → repopulate audience
-  const subjSel = document.getElementById('exam-subject-field');
-  if (!subjSel._audienceWired) {
-    subjSel._audienceWired = true;
-    subjSel.addEventListener('change', function() {
-      populateAudienceSelectors(this.value, [], []);
-    });
-  }
-  populateAudienceSelectors();
 
-  const tabs = document.getElementById('exam-modal-tabs');
+  const titleDisplay = document.getElementById('exam-editor-title-display');
+  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
+  const statusBtn = document.getElementById('exam-editor-status-btn');
+  const qCard = document.getElementById('exam-editor-questions-card');
 
   if (id) {
     const e = DB.getExam(id);
     if (!e) return;
-    document.getElementById('modal-exam-title').textContent = 'Edit Exam';
     document.getElementById('exam-id').value = e.id;
     document.getElementById('exam-title-field').value = e.title;
     document.getElementById('exam-desc-field').value = e.description || '';
@@ -1126,17 +1210,106 @@ function openExamModal(id, startTab) {
     document.getElementById('exam-allow-review').checked = e.allowReview || false;
     sel.value = e.subjectId;
     populateAudienceSelectors(e.subjectId, e.targetYearLevels || [], e.targetSections || []);
+    if (titleDisplay) titleDisplay.textContent = e.title;
+    if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge(e.status);
     currentQBuilderExamId = id;
     renderQuestionsList(id);
     updateQBadge(id);
-    tabs.classList.remove('hidden');
-    switchExamTab(startTab || 'details');
+    if (qCard) qCard.style.display = '';
+    // Status action button
+    const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
+    if (statusBtn && statusActions[e.status]) {
+      statusBtn.textContent = statusActions[e.status];
+      statusBtn.style.display = '';
+      statusBtn._examId = id;
+      statusBtn._examStatus = e.status;
+    } else if (statusBtn) { statusBtn.style.display = 'none'; }
   } else {
-    tabs.classList.add('hidden');
-    switchExamTab('details');
+    populateAudienceSelectors();
+    if (titleDisplay) titleDisplay.textContent = 'New Exam';
+    if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
+    if (qCard) qCard.style.display = 'none';
+    if (statusBtn) statusBtn.style.display = 'none';
   }
-  openModal('modal-exam');
+
+  // Switch views
+  document.getElementById('exams-list-view').classList.add('hidden');
+  document.getElementById('exam-editor-view').classList.remove('hidden');
+  // Init drag after DOM update
+  requestAnimationFrame(() => initExamEditorDrag());
 }
+
+function closeExamEditor() {
+  document.getElementById('exam-editor-view').classList.add('hidden');
+  document.getElementById('exams-list-view').classList.remove('hidden');
+  renderExams();
+}
+
+function saveExamFromEditor() {
+  const id = document.getElementById('exam-id').value;
+  const title = document.getElementById('exam-title-field').value.trim();
+  const subjectId = document.getElementById('exam-subject-field').value;
+  const description = document.getElementById('exam-desc-field').value.trim();
+  const timeLimit = parseInt(document.getElementById('exam-timelimit-field').value);
+  const code = document.getElementById('exam-code-field').value.trim().toUpperCase();
+  const shuffleQuestions = document.getElementById('exam-shuffle-q').checked;
+  const shuffleAnswers = document.getElementById('exam-shuffle-a').checked;
+  const requireCamera = document.getElementById('exam-require-camera').checked;
+  const requireAIDetection = document.getElementById('exam-ai-detect').checked;
+  const allowReview = document.getElementById('exam-allow-review').checked;
+  const targetYearLevels = [...document.querySelectorAll('.exam-year-cb:checked')].map(cb => cb.value);
+  const targetSections   = [...document.querySelectorAll('.exam-section-cb:checked')].map(cb => cb.value);
+
+  if (!title) { showToast('Exam title is required.', 'error'); return; }
+  if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
+  if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
+
+  const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, targetYearLevels, targetSections };
+
+  let examId = id;
+  if (id) {
+    DB.updateExam(id, data);
+    showToast('Exam saved.', 'success');
+  } else {
+    const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, questions: [] });
+    examId = exam.id;
+    document.getElementById('exam-id').value = examId;
+    showToast('Exam created.', 'success');
+  }
+  currentQBuilderExamId = examId;
+  const qCard = document.getElementById('exam-editor-questions-card');
+  if (qCard) qCard.style.display = '';
+  renderQuestionsList(examId);
+  updateQBadge(examId);
+  const titleDisplay = document.getElementById('exam-editor-title-display');
+  if (titleDisplay) titleDisplay.textContent = title;
+  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
+  const e2 = DB.getExam(examId);
+  if (statusBadgeEl && e2) statusBadgeEl.innerHTML = statusBadge(e2.status);
+}
+
+function handleExamEditorStatusAction() {
+  const btn = document.getElementById('exam-editor-status-btn');
+  if (!btn) return;
+  const examId = btn._examId;
+  const status = btn._examStatus;
+  const nextStatus = { draft:'ready', ready:'active', active:'closed', closed:'ready' };
+  if (examId && nextStatus[status]) {
+    setExamStatus(examId, nextStatus[status]);
+    // refresh editor topbar
+    const e = DB.getExam(examId);
+    if (e) {
+      const statusBadgeEl = document.getElementById('exam-editor-status-badge');
+      if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge(e.status);
+      const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
+      btn.textContent = statusActions[e.status] || '';
+      btn._examStatus = e.status;
+    }
+  }
+}
+
+// Keep openExamModal as alias for compatibility (More modal, archive, etc.)
+function openExamModal(id, startTab) { openExamEditor(id); }
 
 function switchExamTab(tab) {
   document.getElementById('exam-tab-details').classList.toggle('hidden', tab !== 'details');
@@ -1400,6 +1573,13 @@ function renderQuestionsList(examId) {
     container.innerHTML = `<div class="empty-state" style="padding:20px;"><p>No questions yet. Use the buttons below to add questions.</p></div>`;
   } else {
     container.innerHTML = exam.questions.map((q, idx) => buildQuestionBlock(q, idx)).join('');
+    // Auto-size all textareas after render
+    requestAnimationFrame(() => {
+      container.querySelectorAll('.q-textarea').forEach(ta => {
+        ta.style.height = 'auto';
+        ta.style.height = ta.scrollHeight + 'px';
+      });
+    });
   }
   updateQBadge(examId);
 }
@@ -1530,10 +1710,10 @@ function buildQuestionBlock(q, idx) {
   } else if (q.type === 'mcq') {
     optionsHtml = `<div id="opts-${idx}" class="mb-8">` +
       q.options.map((opt, oi) => `
-        <div class="option-row">
-          <input type="text" class="form-control" value="${escHtml(opt)}" placeholder="Option ${oi+1}" onchange="updateOption(${idx},${oi},this.value)" />
+        <div class="option-row${q.correctAnswer === opt ? ' option-row-correct' : ''}">
+          <input type="text" class="form-control option-input${q.correctAnswer === opt ? ' option-input-correct' : ''}" value="${escHtml(opt)}" placeholder="Option ${oi+1}" onchange="updateOption(${idx},${oi},this.value)" />
           <button class="option-correct ${q.correctAnswer === opt ? 'selected' : ''}" title="Mark as correct" onclick="setCorrectOption(${idx},${oi})">&#10003;</button>
-          <button class="btn btn-danger btn-sm" onclick="removeOption(${idx},${oi})">&#10005;</button>
+          <button class="option-remove-btn" onclick="removeOption(${idx},${oi})" title="Remove option"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>`).join('') +
       `</div>
       <button class="add-option-btn" onclick="addOption(${idx})">+ Add Option</button>`;
@@ -1558,44 +1738,106 @@ function buildQuestionBlock(q, idx) {
     ? `<img src="${escHtml(q.imageUrl)}" alt="Question image" class="q-img-preview" onerror="this.style.display='none'" />`
     : '';
 
+  const typeAccent = typeColors[q.type] || '#6b7280';
   return `
-    <div class="question-block" id="qblock-${idx}">
+    <div class="question-block" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeAccent}">
       <div class="question-block-header">
-        <span class="question-block-title">
-          <span style="display:inline-flex;align-items:center;gap:6px;">
-            <span style="width:10px;height:10px;border-radius:50%;background:${typeColor};flex-shrink:0;"></span>
-            Q${idx+1} <span style="font-weight:500;color:#9ca3af;font-size:11px;">${typeLabel}</span>
+        <div class="q-header-left">
+          <span class="q-drag-handle" title="Drag to reorder">
+            <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+              <circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/>
+              <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+              <circle cx="3" cy="13.5" r="1.3"/><circle cx="7" cy="13.5" r="1.3"/>
+            </svg>
           </span>
-        </span>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <label class="q-required-toggle" title="Students must answer this question before submitting">
+          <span class="q-number-badge">Q${idx+1}</span>
+          <span class="q-type-chip" style="background:${typeAccent}18;color:${typeAccent};border:1px solid ${typeAccent}38">${typeLabel}</span>
+        </div>
+        <div class="q-header-right">
+          <label class="q-required-toggle" title="Students must answer this">
             <input type="checkbox" ${q.required !== false ? 'checked' : ''} onchange="updateQField(${idx},'required',this.checked)" />
             <span>Required</span>
           </label>
-          <span style="font-size:12px;color:var(--text-muted);">Points:</span>
-          <input type="number" class="form-control" style="width:60px;padding:4px 6px;" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
-          <button class="btn btn-danger btn-sm" onclick="removeQuestion(${idx})">Remove</button>
+          <div class="q-points-wrap">
+            <span class="q-points-label">Pts</span>
+            <input type="number" class="q-points-input" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
+          </div>
+          <button class="q-remove-btn" onclick="removeQuestion(${idx})" title="Remove question">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
       </div>
-      <div class="form-group">
-        <label>Question Text *</label>
-        <textarea class="form-control" rows="2" onchange="updateQField(${idx},'content',this.value)">${escHtml(q.content)}</textarea>
-      </div>
-      <div class="form-group q-image-group">
-        <label>Image (optional)</label>
+      <div class="q-block-body">
+        <textarea class="form-control q-textarea" rows="1" placeholder="Type your question here…" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onchange="updateQField(${idx},'content',this.value)">${escHtml(q.content)}</textarea>
+        ${imgPreview ? `<div class="q-img-preview-wrap" id="qimg-preview-${idx}">${imgPreview}</div>` : `<div class="q-img-preview-wrap" id="qimg-preview-${idx}" style="display:none;"></div>`}
         <div class="q-image-row">
-          <label class="btn btn-secondary btn-sm q-upload-btn" for="qimg-input-${idx}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Upload Image
+          <label class="q-upload-btn" for="qimg-input-${idx}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Image
           </label>
           <input type="file" id="qimg-input-${idx}" accept="image/*" style="display:none;" onchange="handleQImageUpload(${idx}, this)" />
-          ${q.imageUrl ? `<button class="btn btn-danger btn-sm" onclick="clearQImage(${idx})">Remove Image</button>` : ''}
+          ${q.imageUrl ? `<button class="q-remove-img-btn" onclick="clearQImage(${idx})">Remove</button>` : ''}
         </div>
-        <div class="q-img-preview-wrap" id="qimg-preview-${idx}">${imgPreview}</div>
+        ${optionsHtml}
       </div>
-      ${optionsHtml}
     </div>
   `;
+}
+
+// ── Drag-and-drop question reordering ────────────────────
+let _dragQIdx = null;
+
+function initExamEditorDrag() {
+  const container = document.getElementById('questions-list');
+  if (!container || container._dragInited) return;
+  container._dragInited = true;
+
+  container.addEventListener('dragstart', e => {
+    const block = e.target.closest('.question-block');
+    if (!block) return;
+    _dragQIdx = parseInt(block.dataset.qidx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(_dragQIdx));
+    setTimeout(() => block.classList.add('q-dragging'), 0);
+  });
+
+  container.addEventListener('dragend', () => {
+    container.querySelectorAll('.question-block').forEach(b =>
+      b.classList.remove('q-dragging', 'q-drag-over'));
+    _dragQIdx = null;
+  });
+
+  container.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const block = e.target.closest('.question-block');
+    if (!block) return;
+    const overIdx = parseInt(block.dataset.qidx);
+    if (overIdx === _dragQIdx) return;
+    container.querySelectorAll('.question-block').forEach(b => b.classList.remove('q-drag-over'));
+    block.classList.add('q-drag-over');
+  });
+
+  container.addEventListener('dragleave', e => {
+    if (!container.contains(e.relatedTarget)) {
+      container.querySelectorAll('.question-block').forEach(b => b.classList.remove('q-drag-over'));
+    }
+  });
+
+  container.addEventListener('drop', e => {
+    e.preventDefault();
+    const block = e.target.closest('.question-block');
+    if (!block || _dragQIdx === null) return;
+    const dropIdx = parseInt(block.dataset.qidx);
+    if (dropIdx === _dragQIdx) return;
+    const exam = DB.getExam(currentQBuilderExamId);
+    if (!exam) return;
+    const questions = [...exam.questions];
+    const [moved] = questions.splice(_dragQIdx, 1);
+    questions.splice(dropIdx, 0, moved);
+    DB.updateExam(currentQBuilderExamId, { questions });
+    renderQuestionsList(currentQBuilderExamId);
+  });
 }
 
 function addQuestion(type) {
@@ -1932,11 +2174,11 @@ function renderMonitoringTable(examId) {
       ? `<span class="badge badge-danger">${s.warnings} ⚠</span>`
       : `<span style="color:#9ca3af;font-size:12px;">—</span>`;
 
-    const latestSnap = s.cameraSnapshots && s.cameraSnapshots.length
-      ? s.cameraSnapshots[s.cameraSnapshots.length - 1] : null;
-    const cameraHtml = latestSnap
-      ? `<img src="${latestSnap.imageData}" class="cam-snap-thumb" alt="Camera" onclick="viewCameraSnapshot('${s.id}')" title="Click to view" />`
-      : `<span class="cam-no-snap">No feed</span>`;
+    const activityCount = (s.activities || []).length;
+    const logsHtml = `<button class="tbl-btn tbl-btn-edit" onclick="showStudentLog('${s.id}')">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Logs${activityCount > 0 ? ` <span style="background:#fee2e2;color:#dc2626;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;">${activityCount}</span>` : ''}
+    </button>`;
 
     return `<tr>
       <td>
@@ -1948,19 +2190,18 @@ function renderMonitoringTable(examId) {
           </div>
         </div>
       </td>
-      <td>
+      <td style="text-align:center;">
         <div class="monitor-progress-wrap">
           <div class="monitor-progress-bar"><div class="monitor-progress-fill" style="width:${pct}%;"></div></div>
           <div class="monitor-progress-label">${answered}/${totalQs} answered (${pct}%)</div>
         </div>
       </td>
-      <td>${warnHtml}</td>
-      <td>${statusBadgeHtml}</td>
-      <td>${cameraHtml}</td>
-      <td>
-        <div class="table-actions">
-          <button class="btn btn-secondary btn-sm" onclick="showStudentLog('${s.id}')">Log</button>
-          ${!s.submitted ? `<button class="btn btn-danger btn-sm" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : ''}
+      <td style="text-align:center;">${warnHtml}</td>
+      <td style="text-align:center;">${statusBadgeHtml}</td>
+      <td style="text-align:center;">${logsHtml}</td>
+      <td style="text-align:center;">
+        <div class="table-actions" style="justify-content:center;">
+          ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span style="font-size:12px;color:#9ca3af;">Submitted</span>'}
         </div>
       </td>
     </tr>`;
@@ -2022,7 +2263,7 @@ function renderExamStats() {
   const examId = document.getElementById('stats-exam-select').value;
   const content = document.getElementById('stats-content');
   if (!examId) {
-    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-title">Select an Exam</div></div>`;
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">Select an Exam</div><div class="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>`;
     return;
   }
 
@@ -2031,7 +2272,7 @@ function renderExamStats() {
   const subject = DB.getSubject(exam.subjectId);
 
   if (!sessions.length) {
-    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📋</div><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
     return;
   }
 
@@ -2871,7 +3112,7 @@ ${rawText}`;
       },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
-        max_tokens: 4096,
+        max_tokens: 8000,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -2884,9 +3125,23 @@ ${rawText}`;
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || '';
     // Extract JSON array from response
-    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    const jsonMatch = raw.match(/\[[\s\S]*/);
     if (!jsonMatch) throw new Error('AI did not return a valid JSON array.');
-    questions = JSON.parse(jsonMatch[0]);
+
+    let jsonStr = jsonMatch[0];
+    // If response was truncated, repair by closing at the last complete object
+    try {
+      questions = JSON.parse(jsonStr);
+    } catch (_) {
+      // Find last complete question object and close the array
+      const lastBrace = jsonStr.lastIndexOf('}');
+      if (lastBrace !== -1) {
+        jsonStr = jsonStr.slice(0, lastBrace + 1) + ']';
+        questions = JSON.parse(jsonStr);
+      } else {
+        throw new Error('AI response could not be parsed. Try fewer questions.');
+      }
+    }
     if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated.');
   } catch (err) {
     document.getElementById('ai-status').style.display = 'none';
