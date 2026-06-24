@@ -221,7 +221,7 @@ export default function AdminPage() {
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Email</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th>Email</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                       <tbody id="students-tbody" />
                     </table>
                   </div>
@@ -229,23 +229,101 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* EXAMS */}
-            <section id="section-exams" className="admin-section hidden">
-              <div className="section-header">
-                <div>
-                  <div className="section-title">Exams</div>
-                  <div className="section-subtitle">Create and manage examinations</div>
-                </div>
-                <button className="btn btn-primary" onClick={() => window.openExamModal()}>+ Create Exam</button>
-              </div>
-              <div className="card">
-                <div className="card-body" style={{ padding: 0 }}>
-                  <div className="table-wrapper">
-                    <table>
-                      <thead><tr><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Status</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
-                      <tbody id="exams-tbody" />
-                    </table>
+            {/* EXAMS — two views: grid and inline editor */}
+            <section id="section-exams" className="admin-section hidden" style={{ padding: 0 }}>
+
+              {/* VIEW 1: Cards grid */}
+              <div id="exams-list-view" style={{ padding: '28px' }}>
+                <div className="section-header">
+                  <div>
+                    <div className="section-title">Exams</div>
+                    <div className="section-subtitle">Create and manage examinations</div>
                   </div>
+                  <button className="btn btn-primary" onClick={() => window.openExamEditor()}>+ Create Exam</button>
+                </div>
+                <div id="exams-grid" className="exam-cards-grid" />
+              </div>
+
+              {/* VIEW 2: Inline exam editor (Google Forms style) */}
+              <div id="exam-editor-view" className="hidden">
+                {/* Top bar */}
+                <div className="exam-editor-topbar">
+                  <button className="exam-editor-back" onClick={() => window.closeExamEditor()}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    Exams
+                  </button>
+                  <div className="exam-editor-topbar-center">
+                    <span id="exam-editor-title-display" className="exam-editor-name">New Exam</span>
+                    <span id="exam-editor-status-badge" />
+                  </div>
+                  <div className="exam-editor-topbar-actions">
+                    <button className="btn btn-secondary btn-sm" id="exam-editor-status-btn" onClick={() => window.handleExamEditorStatusAction()} style={{ display: 'none' }} />
+                    <button className="btn btn-primary btn-sm" onClick={() => window.saveExamFromEditor()}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {/* Editor body — scrollable */}
+                <div className="exam-editor-body">
+
+                  {/* Details card */}
+                  <div className="exam-editor-section-card">
+                    <div className="exam-editor-section-label">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      Exam Details
+                    </div>
+                    <input type="hidden" id="exam-id" />
+                    <div className="form-row cols-2">
+                      <div className="form-group"><label>Exam Title *</label><input type="text" className="form-control" id="exam-title-field" placeholder="e.g. Midterm Examination" onInput={() => { const v = document.getElementById('exam-title-field').value; const el = document.getElementById('exam-editor-title-display'); if(el) el.textContent = v || 'New Exam'; }} /></div>
+                      <div className="form-group"><label>Subject *</label><select className="form-control" id="exam-subject-field" /></div>
+                    </div>
+                    <div className="form-group"><label>Description</label><textarea className="form-control" id="exam-desc-field" rows="2" placeholder="Optional exam description" /></div>
+                    <div className="form-row cols-2">
+                      <div className="form-group"><label>Time Limit (minutes) *</label><input type="number" className="form-control" id="exam-timelimit-field" defaultValue="60" min="1" max="300" /></div>
+                      <div className="form-group">
+                        <label>Exam Code</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input type="text" className="form-control" id="exam-code-field" placeholder="Auto-generated on Ready" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
+                          <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-q" /> Shuffle Questions</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-a" /> Shuffle Answers</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-require-camera" /><span>Motion Detection <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>REMOTE</span></span></label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-ai-detect" /><span>AI Detection <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>ESSAYS</span></span></label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-allow-review" /><span>Allow Review <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>STUDENTS</span></span></label>
+                    </div>
+                    {/* Hidden audience inputs kept for saveExamFromEditor compatibility */}
+                    <div style={{ display: 'none' }}>
+                      <div id="exam-year-checks" />
+                      <div id="exam-section-checks" />
+                    </div>
+                  </div>
+
+                  {/* Questions area */}
+                  <div className="exam-editor-section-card" id="exam-editor-questions-card" style={{ display: 'none' }}>
+                    <div className="exam-editor-section-label">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      Questions <span id="exam-q-count" className="exam-q-badge" style={{ marginLeft: '6px' }} />
+                    </div>
+                    <div id="questions-list" />
+                    <div className="exam-add-q-bar">
+                      {[['mcq','#3b82f6','Multiple Choice'],['tf','#8b5cf6','True / False'],['identification','#f59e0b','Identification'],['enumeration','#0d9488','Enumeration'],['matching','#dc2626','Matching Type'],['essay','#0f2d1a','Essay']].map(([type,color,label]) => (
+                        <button key={type} className="btn-qtype" onClick={() => window.addQuestion(type)}>
+                          <span className="qtype-dot" style={{ background: color }} />{label}
+                        </button>
+                      ))}
+                      <span style={{ width: '1px', height: '22px', background: 'var(--border)', margin: '0 4px' }} />
+                      <button className="btn btn-primary btn-sm" onClick={() => window.openAIGen()}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>AI Generate
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </section>
@@ -273,7 +351,7 @@ export default function AdminPage() {
                   <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper">
                       <table>
-                        <thead><tr><th>Student</th><th>ID</th><th>Progress</th><th>Warnings</th><th>Status</th><th>Camera</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Student</th><th style={{textAlign:'center'}}>Progress</th><th style={{textAlign:'center'}}>Warnings</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Logs</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
                         <tbody id="monitor-tbody" />
                       </table>
                     </div>
@@ -339,7 +417,7 @@ export default function AdminPage() {
                 </select>
               </div>
               <div id="stats-content">
-                <div className="dash-empty"><div className="dash-empty-icon">📊</div><div className="dash-empty-title">Select an Exam</div><div className="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>
+                <div className="dash-empty"><div className="dash-empty-title">Select an Exam</div><div className="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>
               </div>
             </section>
 
@@ -528,80 +606,8 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="modal-backdrop hidden" id="modal-exam">
-        <div className="modal-dialog modal-xl">
-          <div className="modal-header"><span className="modal-title" id="modal-exam-title">Create Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-exam')}>&#10005;</button></div>
-          <div className="exam-modal-tabs hidden" id="exam-modal-tabs">
-            <button className="exam-tab-btn active" id="exam-tab-btn-details" onClick={() => window.switchExamTab('details')}>Details</button>
-            <button className="exam-tab-btn" id="exam-tab-btn-questions" onClick={() => window.switchExamTab('questions')}>Questions <span id="exam-q-count" className="exam-q-badge" /></button>
-          </div>
-          <div className="modal-body">
-            <div id="exam-tab-details">
-              <input type="hidden" id="exam-id" />
-              <div className="form-row cols-2">
-                <div className="form-group"><label>Exam Title *</label><input type="text" className="form-control" id="exam-title-field" placeholder="e.g. Midterm Examination" /></div>
-                <div className="form-group"><label>Subject *</label><select className="form-control" id="exam-subject-field" /></div>
-              </div>
-              <div className="form-group"><label>Description</label><textarea className="form-control" id="exam-desc-field" rows="2" placeholder="Optional exam description" /></div>
-              <div className="form-row cols-2" style={{ marginBottom: 0 }}>
-                <div className="form-group"><label>Time Limit (minutes) *</label><input type="number" className="form-control" id="exam-timelimit-field" defaultValue="60" min="1" max="300" /></div>
-                <div className="form-group">
-                  <label>Exam Code</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input type="text" className="form-control" id="exam-code-field" placeholder="Auto-generated on Ready" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
-                    <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate</button>
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-q" /> Shuffle Questions</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-a" /> Shuffle Answers</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-require-camera" /><span>Motion Detection <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>REMOTE</span></span></label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-ai-detect" /><span>AI Detection <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>ESSAYS</span></span></label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-allow-review" /><span>Allow Answer Review <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>STUDENTS</span></span></label>
-              </div>
-              <div style={{ marginTop: '16px', padding: '16px 18px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                  Target Audience <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: '11px' }}>— select course first; leave all unchecked = everyone</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                  <div>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Year Level</div>
-                    <div id="exam-year-checks" style={{ border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '10px 12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '52px', maxHeight: '160px', overflowY: 'auto' }}>
-                      <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Loading…</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Section</div>
-                    <div id="exam-section-checks" style={{ border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '10px 12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '52px', maxHeight: '160px', overflowY: 'auto' }}>
-                      <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Loading…</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div id="exam-tab-questions" className="hidden">
-              <div id="questions-list" />
-              <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {[['mcq','#3b82f6','MCQ'],['tf','#8b5cf6','True/False'],['identification','#f59e0b','Identification'],['enumeration','#0d9488','Enumeration'],['matching','#dc2626','Matching'],['essay','#0f2d1a','Essay']].map(([type,color,label]) => (
-                  <button key={type} className="btn-qtype" onClick={() => window.addQuestion(type)}>
-                    <span className="qtype-dot" style={{ background: color }} />{label}
-                  </button>
-                ))}
-                <span style={{ width: '1px', height: '22px', background: 'var(--border-color)', margin: '0 4px' }} />
-                <button className="btn btn-primary btn-sm" onClick={() => window.openAIGen()}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Generate with AI
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="modal-footer" id="exam-modal-footer">
-            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam')}>Cancel</button>
-            <button className="btn btn-primary" id="exam-save-btn" onClick={() => window.saveExam()}>Save &amp; Continue to Questions</button>
-          </div>
-        </div>
-      </div>
+      {/* modal-exam kept as empty shell so closeModal calls don't error */}
+      <div className="modal-backdrop hidden" id="modal-exam" />
 
       <div className="modal-backdrop hidden" id="modal-exam-results">
         <div className="modal-dialog modal-xl">
