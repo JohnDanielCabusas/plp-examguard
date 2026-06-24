@@ -378,7 +378,7 @@ const ExamApp = {
     const allExams = DB.getExams().filter(e => e.subjectId === subjId && e.status !== 'draft');
     if (!allExams.length) {
       listEl.innerHTML = `<div class="dash-empty">
-        <div class="dash-empty-icon">📋</div>
+        <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
         <div class="dash-empty-title">No Exams Yet</div>
         <div class="dash-empty-sub">Your instructor hasn't posted any exams yet.<br><span style="font-size:12px;color:#c0c7d0;">Active, upcoming, and previous/inactive exams will appear here.</span></div>
       </div>`;
@@ -580,7 +580,7 @@ const ExamApp = {
 
     if (!enrolledSubjects.length) {
       html += `<div class="dash-empty">
-        <div class="dash-empty-icon">📚</div>
+        <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
         <div class="dash-empty-title">No Enrolled Courses Yet</div>
         <div class="dash-empty-sub">Use the "Enroll in a Course" field above, or enter an exam code directly.</div>
       </div>`;

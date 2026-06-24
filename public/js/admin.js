@@ -292,27 +292,46 @@ function renderAnalytics(exams, sessions, students) {
   const maxCount = Math.max(1, ...ranges.map(r =>
     submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length
   ));
-  // Dot grid distribution — max 8 dots per column
-  const dotAccent = '#34d399';
-  const dotGrid = ranges.map(r => {
-    const count = submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length;
-    const filled = Math.min(8, count);
-    const dots = Array.from({length: 8}, (_, i) => {
-      const on = i < filled;
-      return `<div class="dist-dot" style="background:${on ? dotAccent : 'rgba(255,255,255,0.08)'};box-shadow:${on ? `0 0 6px ${dotAccent}55` : 'none'};"></div>`;
-    }).reverse().join('');
-    return `<div class="dist-dot-col">
-      <div class="dist-dot-dots">${dots}</div>
-      <div class="dist-dot-label">${r.label.replace('–','-')}</div>
-    </div>`;
+  // Glowing gradient bar chart
+  const barAccent = '#4ade80';
+  const barW = 32, barGap = 9, chartH = 72, labelH = 20;
+  const totalW = ranges.length * barW + (ranges.length - 1) * barGap;
+  const counts = ranges.map(r => submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length);
+  const peak = Math.max(1, ...counts);
+
+  const barsSvg = `<defs>
+    <filter id="bglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>` + ranges.map((r, i) => {
+    const count = counts[i];
+    const h = Math.max(4, Math.round((count / peak) * chartH));
+    const x = i * (barW + barGap);
+    const y = chartH - h;
+    const hasData = count > 0;
+    const gradId = `dg${i}`;
+    return `
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${barAccent}" stop-opacity="${hasData ? 0.9 : 0.1}"/>
+          <stop offset="100%" stop-color="${barAccent}" stop-opacity="${hasData ? 0.06 : 0.03}"/>
+        </linearGradient>
+      </defs>
+      <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="url(#${gradId})" ${hasData ? 'filter="url(#bglow)"' : ''}/>
+      ${hasData ? `<rect x="${x+7}" y="${y}" width="${barW-14}" height="3" rx="2" fill="${barAccent}" opacity="1"/>` : ''}
+      ${count > 0 ? `<text x="${x+barW/2}" y="${y-6}" text-anchor="middle" fill="${barAccent}" font-size="10" font-weight="800" font-family="'Plus Jakarta Sans',sans-serif">${count}</text>` : ''}
+      <text x="${x+barW/2}" y="${chartH+labelH-2}" text-anchor="middle" fill="rgba(255,255,255,0.25)" font-size="8" font-family="sans-serif">${escHtml(r.label)}</text>`;
   }).join('');
+
+  const distSvg = `<svg viewBox="0 0 ${totalW} ${chartH+labelH}" class="dist-bar-svg" preserveAspectRatio="xMidYMid meet" style="width:100%;overflow:visible;">${barsSvg}</svg>`;
 
   const card3 = `
     <div class="analytics-card ac-dark ac-dark-teal">
       <div class="ac-dark-label">SCORE DISTRIBUTION</div>
       <div class="ac-dark-value">${submitted.length}</div>
       <div class="ac-dark-sub">Total scored submissions</div>
-      <div class="dist-dot-grid">${dotGrid}</div>
+      <div style="margin-top:12px;padding:0 4px;">${distSvg}</div>
     </div>`;
 
   // --- Card 4: Performance Forecast ---
