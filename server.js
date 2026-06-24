@@ -2,7 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const rootDir = __dirname;
+// Serve from the Vite build output in production
+const rootDir = path.join(__dirname, 'dist');
 const port = Number(process.env.PORT) || 3000;
 
 const contentTypes = {
@@ -22,8 +23,11 @@ const contentTypes = {
 const routeMap = {
   '/': 'index.html',
   '/index': 'index.html',
+  '/index.html': 'index.html',
   '/admin': 'admin.html',
+  '/admin.html': 'admin.html',
   '/exam': 'exam.html',
+  '/exam.html': 'exam.html',
 };
 
 function sendFile(res, filePath) {
@@ -35,7 +39,6 @@ function sendFile(res, filePath) {
       res.end(err.code === 'ENOENT' ? 'Not found' : 'Internal server error');
       return;
     }
-
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       'Content-Type': contentTypes[ext] || 'application/octet-stream',
@@ -70,4 +73,6 @@ const server = http.createServer((req, res) => {
 
 server.listen(port, () => {
   console.log(`PLP ExamGuard running at http://localhost:${port}`);
+  console.log(`Serving from: ${rootDir}`);
+  console.log(`Run "npm run build" first to generate the dist/ folder.`);
 });

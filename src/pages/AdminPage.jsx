@@ -1,0 +1,750 @@
+import React, { useEffect, useRef } from 'react';
+
+export default function AdminPage() {
+  const booted = useRef(false);
+
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+
+    const fbEl = document.getElementById('fb-loading');
+    const onReady = () => {
+      if (fbEl) fbEl.style.display = 'none';
+      requestAnimationFrame(() => {
+        const name = document.getElementById('sb-user-name')?.textContent;
+        const avatar = document.getElementById('sb-avatar')?.textContent;
+        const chip = document.getElementById('topbar-admin-name');
+        const avEl = document.getElementById('topbar-avatar');
+        if (chip && name) chip.textContent = name;
+        if (avEl && avatar) avEl.textContent = avatar;
+      });
+    };
+    document.addEventListener('firebaseReady', onReady);
+    setTimeout(() => {
+      if (fbEl && fbEl.style.display !== 'none') {
+        fbEl.style.display = 'none';
+        document.dispatchEvent(new Event('firebaseReady'));
+      }
+    }, 1200);
+
+    // Desktop sidebar toggle handler
+    window._adminToggleSidebar = () => {
+      const isMobile = window.innerWidth <= 768;
+      if (isMobile) {
+        window.toggleSidebar();
+      } else {
+        const sidebar = document.getElementById('sidebar');
+        const main = document.querySelector('.main-content');
+        sidebar.classList.toggle('collapsed');
+        main.classList.toggle('sidebar-collapsed');
+      }
+    };
+
+    window.FirebaseSync.init();
+  }, []);
+
+  return (
+    <>
+      {/* Firebase loading overlay */}
+      <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
+        <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
+        <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Connecting to server&hellip;</p>
+        <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+
+      {/* Toast Container */}
+      <div id="toast-container" />
+
+      {/* Sidebar Overlay (mobile) */}
+      <div className="sidebar-overlay" id="sidebar-overlay" onClick={() => window.closeSidebar()} />
+
+      <div className="admin-layout">
+        {/* SIDEBAR */}
+        <aside className="sidebar" id="sidebar">
+          <div className="sidebar-brand">
+            <div className="sidebar-brand-icon" id="sb-logo-wrap">
+              <img src="/plp-logo.png" alt="PLP" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+            </div>
+            <div className="sidebar-brand-text">
+              <h2 id="sb-school-name">PLP ExamGuard</h2>
+              <p>Admin Panel</p>
+            </div>
+          </div>
+
+          <nav className="sidebar-nav">
+            <div className="nav-section-label">Main</div>
+            <div className="nav-item active" id="nav-dashboard" data-label="Dashboard" onClick={() => window.showSection('dashboard')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+              <span className="nav-item-label">Dashboard</span>
+            </div>
+            <div className="nav-item" id="nav-subjects" data-label="Courses" onClick={() => window.showSection('subjects')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+              <span className="nav-item-label">Courses</span>
+            </div>
+            <div className="nav-item" id="nav-students" data-label="Students" onClick={() => window.showSection('students')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+              <span className="nav-item-label">Students</span>
+            </div>
+            <div className="nav-item" id="nav-exams" data-label="Exams" onClick={() => window.showSection('exams')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+              <span className="nav-item-label">Exams</span>
+            </div>
+            <div className="nav-section-label">Live</div>
+            <div className="nav-item" id="nav-monitoring" data-label="Monitoring" onClick={() => window.showSection('monitoring')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
+              <span className="nav-item-label">Monitoring</span>
+            </div>
+            <div className="nav-section-label">Analysis</div>
+            <div className="nav-item" id="nav-reports" data-label="Reports" onClick={() => window.showSection('reports')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+              <span className="nav-item-label">Reports</span>
+            </div>
+            <div className="nav-item" id="nav-statistics" data-label="Statistics" onClick={() => window.showSection('statistics')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+              <span className="nav-item-label">Statistics</span>
+            </div>
+            <div className="nav-section-label">System</div>
+            <div className="nav-item" id="nav-settings" data-label="Settings" onClick={() => window.showSection('settings')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+              <span className="nav-item-label">Settings</span>
+            </div>
+            <div className="nav-item" id="nav-archive" data-label="Archive" onClick={() => window.showSection('archive')}>
+              <span className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
+              <span className="nav-item-label">Archive</span>
+            </div>
+          </nav>
+
+          <div className="sidebar-footer">
+            {/* Hidden targets kept for admin.js — user info lives in topbar chip */}
+            <span id="sb-user-name" style={{ display: 'none' }} />
+            <span id="sb-avatar" style={{ display: 'none' }} />
+
+            <button className="sidebar-signout-btn" data-label="Sign Out" onClick={() => window.doLogout()}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              <span className="nav-item-label">Sign Out</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* MAIN CONTENT */}
+        <div className="main-content">
+          <header className="topbar">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button className="hamburger-btn" onClick={() => window._adminToggleSidebar?.()}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              <span className="topbar-title" id="topbar-title">Dashboard</span>
+            </div>
+            <div className="topbar-actions">
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="topbar-date" />
+              {/* User chip — text filled by admin.js via sb-user-name / sb-avatar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f3f4f6', borderRadius: '100px', padding: '4px 12px 4px 4px', cursor: 'default' }}>
+                <div id="topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>A</div>
+                <span id="topbar-admin-name" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', whiteSpace: 'nowrap' }}>Administrator</span>
+              </div>
+            </div>
+          </header>
+
+          <div className="content-area">
+
+            {/* DASHBOARD */}
+            <section id="section-dashboard" className="admin-section">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Dashboard</div>
+                  <div className="section-subtitle">Overview and predictive analytics</div>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="dash-refresh-time" />
+              </div>
+              <div className="stats-grid" id="dash-stats" />
+              <div className="analytics-section">
+                <div className="analytics-section-heading">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  Predictive Analytics
+                </div>
+                <div className="analytics-grid" id="dash-analytics" />
+              </div>
+              <div className="dashboard-panels-grid">
+                <div className="card">
+                  <div className="card-header"><span className="card-title">Recent Exams</span></div>
+                  <div className="card-body" id="dash-recent-exams" style={{ padding: 0 }} />
+                </div>
+                <div className="card">
+                  <div className="card-header"><span className="card-title">Active Sessions</span></div>
+                  <div className="card-body" id="dash-active-sessions" style={{ padding: 0 }} />
+                </div>
+              </div>
+            </section>
+
+            {/* SUBJECTS (Courses) */}
+            <section id="section-subjects" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Courses</div>
+                  <div className="section-subtitle">Manage courses and their target year levels &amp; sections</div>
+                </div>
+                <button className="btn btn-primary" onClick={() => window.openSubjectModal()}>+ Add Course</button>
+              </div>
+              <div id="course-cards-grid" className="course-cards-grid" />
+            </section>
+
+            {/* STUDENTS */}
+            <section id="section-students" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Students</div>
+                  <div className="section-subtitle">Manage enrolled students</div>
+                </div>
+                <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
+              </div>
+              <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
+                <div className="search-input" style={{ flex: 1, minWidth: '200px' }}>
+                  <span className="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                  <input type="text" id="student-search" placeholder="Search students..." onInput={() => window.filterStudents()} />
+                </div>
+                <select id="filter-year-level" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
+                  <option value="">All Year Levels</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </select>
+                <select id="filter-section" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
+                  <option value="">All Sections</option>
+                </select>
+              </div>
+              <div className="card">
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Email</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <tbody id="students-tbody" />
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* EXAMS */}
+            <section id="section-exams" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Exams</div>
+                  <div className="section-subtitle">Create and manage examinations</div>
+                </div>
+                <button className="btn btn-primary" onClick={() => window.openExamModal()}>+ Create Exam</button>
+              </div>
+              <div className="card">
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Status</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <tbody id="exams-tbody" />
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* MONITORING */}
+            <section id="section-monitoring" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Live Monitoring</div>
+                  <div className="section-subtitle">Real-time student exam activity</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <span id="monitor-live-badge" className="hidden" style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600 }}><span className="live-dot" />LIVE</span>
+                  <select className="form-control" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()} style={{ width: '240px' }}>
+                    <option value="">-- Select Active Exam --</option>
+                  </select>
+                </div>
+              </div>
+              <div className="monitoring-grid" id="monitoring-grid">
+                <div className="card">
+                  <div className="card-header">
+                    <span className="card-title">Student Sessions</span>
+                    <span id="monitor-count" className="badge badge-info">0 students</span>
+                  </div>
+                  <div className="card-body" style={{ padding: 0 }}>
+                    <div className="table-wrapper">
+                      <table>
+                        <thead><tr><th>Student</th><th>ID</th><th>Progress</th><th>Warnings</th><th>Status</th><th>Camera</th><th>Actions</th></tr></thead>
+                        <tbody id="monitor-tbody" />
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div className="activity-log" id="activity-log-panel">
+                  <div className="activity-log-header">Activity Log <span id="log-student-name" style={{ opacity: 0.75, fontWeight: 400, fontSize: '12px' }} /></div>
+                  <div className="activity-log-body" id="log-body">
+                    <div className="empty-state"><p>Select a student to view activity</p></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* REPORTS */}
+            <section id="section-reports" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Reports</div>
+                  <div className="section-subtitle">Exam results and analytics</div>
+                </div>
+              </div>
+              <div className="toolbar reports-toolbar" style={{ marginBottom: '20px' }}>
+                <select className="form-control" id="report-exam-select" onChange={() => window.renderReportTable()} style={{ width: '280px' }}>
+                  <option value="">-- Select Exam --</option>
+                </select>
+                <div className="reports-toolbar-actions">
+                  <button className="btn btn-secondary" onClick={() => window.generatePDF()} id="btn-generate-pdf" disabled>Export PDF</button>
+                  <button className="btn btn-success" onClick={() => window.releaseScores()} id="btn-release-scores" disabled>Release Scores to Students</button>
+                </div>
+              </div>
+              <div className="card" id="report-card">
+                <div className="card-header">
+                  <span className="card-title" id="report-exam-title">Select an exam to view results</span>
+                  <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
+                    <span className="badge badge-info" id="report-submitted-count" />
+                    <span className="badge badge-success" id="report-avg-score" />
+                  </div>
+                </div>
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Year / Section</th><th>Score</th><th>Percentage</th><th>Submitted</th><th>Actions</th></tr></thead>
+                      <tbody id="report-tbody" />
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* STATISTICS */}
+            <section id="section-statistics" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Statistics</div>
+                  <div className="section-subtitle">Detailed per-exam analytics and performance insights</div>
+                </div>
+              </div>
+              <div style={{ background: '#fff', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Select Exam</label>
+                <select className="form-control" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
+                  <option value="">— Choose an exam to view statistics —</option>
+                </select>
+              </div>
+              <div id="stats-content">
+                <div className="dash-empty"><div className="dash-empty-icon">📊</div><div className="dash-empty-title">Select an Exam</div><div className="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>
+              </div>
+            </section>
+
+            {/* SETTINGS */}
+            <section id="section-settings" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Settings</div>
+                  <div className="section-subtitle">System configuration</div>
+                </div>
+              </div>
+              <div className="settings-intro-panel">
+                <div className="card">
+                  <div className="card-header"><span className="card-title">Groq AI Integration</span></div>
+                  <div className="card-body">
+                    <p className="text-muted" style={{ fontSize: '13px', marginBottom: '12px' }}>Required for AI-powered exam generation from uploaded files (PDF, DOCX, PPTX, TXT). Get your key at <strong>console.groq.com</strong>.</p>
+                    <div className="form-group">
+                      <label>Groq API Key</label>
+                      <div style={{ position: 'relative' }}>
+                        <input type="password" className="form-control" id="set-claude-api-key" placeholder="gsk_..." style={{ paddingRight: '42px', fontFamily: 'monospace' }} />
+                        <button type="button" onClick={(e) => window.togglePassword('set-claude-api-key', e.currentTarget)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#666' }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button className="btn btn-primary" onClick={() => window.saveClaudeApiKey()}>Save API Key</button>
+                      <button className="btn btn-secondary" onClick={() => window.testGroqKey()}>Test Connection</button>
+                      <span id="groq-test-result" style={{ fontSize: '13px' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="settings-main-grid">
+                <div className="card">
+                  <div className="card-header"><span className="card-title">School / System</span></div>
+                  <div className="card-body">
+                    <div className="form-group"><label>School / System Name</label><input type="text" className="form-control" id="set-school-name" /></div>
+                    <div className="form-group"><label>Admin Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
+                    <div className="form-group"><label>Admin Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
+                    <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="card-header"><span className="card-title">Logo</span></div>
+                  <div className="card-body">
+                    <div id="logo-preview-wrap" className="mb-12 hidden"><img id="logo-preview-img" className="logo-preview" src="" alt="Logo" /></div>
+                    <div className="logo-upload-area" onClick={() => document.getElementById('logo-file-input').click()}>
+                      <div style={{ marginBottom: '6px', color: 'var(--text-muted)' }}><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+                      <div>Click to upload logo</div>
+                      <div style={{ fontSize: '11px', marginTop: '4px' }}>PNG, JPG, SVG (max 2MB)</div>
+                    </div>
+                    <input type="file" id="logo-file-input" accept="image/*" style={{ display: 'none' }} onChange={(e) => window.handleLogoUpload(e.target.files[0])} />
+                    <button className="btn btn-danger btn-sm mt-8" onClick={() => window.removeLogo()} id="btn-remove-logo" style={{ display: 'none' }}>Remove Logo</button>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="card-header"><span className="card-title">Change Admin Password</span></div>
+                  <div className="card-body">
+                    <div className="form-group"><label>Current Password</label><input type="password" className="form-control" id="set-cur-pass" /></div>
+                    <div className="form-group"><label>New Password</label><input type="password" className="form-control" id="set-new-pass" /></div>
+                    <div className="form-group"><label>Confirm New Password</label><input type="password" className="form-control" id="set-confirm-pass" /></div>
+                    <button className="btn btn-warning" onClick={() => window.changePassword()}>Change Password</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ARCHIVE */}
+            <section id="section-archive" className="admin-section hidden">
+              <div className="section-header">
+                <div>
+                  <div className="section-title">Archive</div>
+                  <div className="section-subtitle">Archived items — restore or permanently delete</div>
+                </div>
+              </div>
+              <input type="hidden" id="archive-active-tab" defaultValue="exams" />
+              <div className="tab-switcher" style={{ marginBottom: '16px' }}>
+                <button className="tab-btn active" id="archive-tab-exams" onClick={() => window.renderArchive('exams')}>Exams</button>
+                <button className="tab-btn" id="archive-tab-students" onClick={() => window.renderArchive('students')}>Students</button>
+                <button className="tab-btn" id="archive-tab-courses" onClick={() => window.renderArchive('courses')}>Courses</button>
+              </div>
+              <div id="archive-exams-table" className="card">
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table><thead><tr><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-tbody" /></table>
+                  </div>
+                </div>
+              </div>
+              <div id="archive-courses-table" className="card hidden">
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table><thead><tr><th>Code</th><th>Course Name</th><th>Year Level</th><th>Sections</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
+                  </div>
+                </div>
+              </div>
+              <div id="archive-students-table" className="card hidden">
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-wrapper">
+                    <table><thead><tr><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-students-tbody" /></table>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </div>{/* /content-area */}
+        </div>{/* /main-content */}
+      </div>{/* /admin-layout */}
+
+      {/* ===== MODALS ===== */}
+
+      <div className="modal-backdrop hidden" id="modal-more-actions">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-header"><span className="modal-title" id="modal-more-title">More Actions</span><button className="modal-close" onClick={() => window.closeModal('modal-more-actions')}>&#10005;</button></div>
+          <div className="modal-body" id="modal-more-body" style={{ padding: '8px 0' }} />
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-subject">
+        <div className="modal-dialog">
+          <div className="modal-header"><span className="modal-title" id="modal-subject-title">Add Course</span><button className="modal-close" onClick={() => window.closeModal('modal-subject')}>&#10005;</button></div>
+          <div className="modal-body">
+            <input type="hidden" id="subj-id" />
+            <div className="form-row cols-2">
+              <div className="form-group"><label>Course Code *</label><input type="text" className="form-control" id="subj-code" placeholder="e.g. CS101" /></div>
+              <div className="form-group"><label>Course Name *</label><input type="text" className="form-control" id="subj-name" placeholder="e.g. Introduction to Computing" /></div>
+            </div>
+            <div className="form-group"><label>Description</label><textarea className="form-control" id="subj-desc" rows="2" placeholder="Brief description..." /></div>
+            <div className="form-row cols-2" style={{ marginBottom: 0 }}>
+              <div className="form-group">
+                <label>Year Level</label>
+                <select className="form-control" id="subj-year-level">
+                  <option value="">— All Year Levels —</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Section</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: '10px', background: '#f9fafb' }}>
+                  {['A','B','C','D','E'].map(s => (
+                    <label key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, minWidth: '48px' }}>
+                      <input type="checkbox" className="subj-section-cb" value={`Section ${s}`} style={{ accentColor: '#0f2d1a', width: '15px', height: '15px' }} /> {s}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginTop: '14px' }}>
+              <label>Student Enrollment Code</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input type="text" className="form-control" id="subj-enroll-code" placeholder="Auto-generated" maxLength={8} style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 600, letterSpacing: '2px', flex: 1 }} readOnly />
+                <button type="button" className="btn btn-secondary" onClick={() => window.regenerateEnrollCode()}>Regenerate</button>
+              </div>
+              <p className="text-muted" style={{ fontSize: '12px', marginTop: '4px' }}>Share this code so students can self-enroll.</p>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-subject')}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => window.saveSubject()}>Save Course</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-student">
+        <div className="modal-dialog">
+          <div className="modal-header"><span className="modal-title" id="modal-student-title">Add Student</span><button className="modal-close" onClick={() => window.closeModal('modal-student')}>&#10005;</button></div>
+          <div className="modal-body">
+            <input type="hidden" id="stu-id" />
+            <div className="form-row cols-2">
+              <div className="form-group"><label>Student ID *</label><input type="text" className="form-control" id="stu-student-id" placeholder="e.g. 23-00218" inputMode="numeric" maxLength={8} /></div>
+              <div className="form-group"><label>Full Name *</label><input type="text" className="form-control" id="stu-name" placeholder="Last, First Middle" /></div>
+            </div>
+            <div className="form-row cols-2">
+              <div className="form-group"><label>Year Level</label><select className="form-control" id="stu-year"><option value="">— Select Year Level —</option></select></div>
+              <div className="form-group"><label>Section</label><select className="form-control" id="stu-section"><option value="">— Select Section —</option></select></div>
+            </div>
+            <div className="form-group"><label>Email</label><input type="email" className="form-control" id="stu-email" placeholder="student@school.edu" /></div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-student')}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => window.saveStudent()}>Save Student</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-exam">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header"><span className="modal-title" id="modal-exam-title">Create Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-exam')}>&#10005;</button></div>
+          <div className="exam-modal-tabs hidden" id="exam-modal-tabs">
+            <button className="exam-tab-btn active" id="exam-tab-btn-details" onClick={() => window.switchExamTab('details')}>Details</button>
+            <button className="exam-tab-btn" id="exam-tab-btn-questions" onClick={() => window.switchExamTab('questions')}>Questions <span id="exam-q-count" className="exam-q-badge" /></button>
+          </div>
+          <div className="modal-body">
+            <div id="exam-tab-details">
+              <input type="hidden" id="exam-id" />
+              <div className="form-row cols-2">
+                <div className="form-group"><label>Exam Title *</label><input type="text" className="form-control" id="exam-title-field" placeholder="e.g. Midterm Examination" /></div>
+                <div className="form-group"><label>Subject *</label><select className="form-control" id="exam-subject-field" /></div>
+              </div>
+              <div className="form-group"><label>Description</label><textarea className="form-control" id="exam-desc-field" rows="2" placeholder="Optional exam description" /></div>
+              <div className="form-row cols-2" style={{ marginBottom: 0 }}>
+                <div className="form-group"><label>Time Limit (minutes) *</label><input type="number" className="form-control" id="exam-timelimit-field" defaultValue="60" min="1" max="300" /></div>
+                <div className="form-group">
+                  <label>Exam Code</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input type="text" className="form-control" id="exam-code-field" placeholder="Auto-generated on Ready" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
+                    <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate</button>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-q" /> Shuffle Questions</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-a" /> Shuffle Answers</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-require-camera" /><span>Motion Detection <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>REMOTE</span></span></label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-ai-detect" /><span>AI Detection <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>ESSAYS</span></span></label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-allow-review" /><span>Allow Answer Review <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '2px' }}>STUDENTS</span></span></label>
+              </div>
+              <div style={{ marginTop: '16px', padding: '16px 18px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  Target Audience <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: '11px' }}>— select course first; leave all unchecked = everyone</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Year Level</div>
+                    <div id="exam-year-checks" style={{ border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '10px 12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '52px', maxHeight: '160px', overflowY: 'auto' }}>
+                      <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Loading…</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Section</div>
+                    <div id="exam-section-checks" style={{ border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '10px 12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '52px', maxHeight: '160px', overflowY: 'auto' }}>
+                      <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Loading…</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="exam-tab-questions" className="hidden">
+              <div id="questions-list" />
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[['mcq','#3b82f6','MCQ'],['tf','#8b5cf6','True/False'],['identification','#f59e0b','Identification'],['enumeration','#0d9488','Enumeration'],['matching','#dc2626','Matching'],['essay','#0f2d1a','Essay']].map(([type,color,label]) => (
+                  <button key={type} className="btn-qtype" onClick={() => window.addQuestion(type)}>
+                    <span className="qtype-dot" style={{ background: color }} />{label}
+                  </button>
+                ))}
+                <span style={{ width: '1px', height: '22px', background: 'var(--border-color)', margin: '0 4px' }} />
+                <button className="btn btn-primary btn-sm" onClick={() => window.openAIGen()}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Generate with AI
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="modal-footer" id="exam-modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam')}>Cancel</button>
+            <button className="btn btn-primary" id="exam-save-btn" onClick={() => window.saveExam()}>Save &amp; Continue to Questions</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-exam-results">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header"><span className="modal-title" id="modal-results-title">Exam Results</span><button className="modal-close" onClick={() => window.closeModal('modal-exam-results')}>&#10005;</button></div>
+          <div className="modal-body" id="modal-results-body" />
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-results')}>Close</button></div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-student-answers">
+        <div className="modal-dialog modal-lg">
+          <div className="modal-header"><span className="modal-title" id="modal-answers-title">Student Answers</span><button className="modal-close" onClick={() => window.closeModal('modal-student-answers')}>&#10005;</button></div>
+          <div className="modal-body" id="modal-answers-body" />
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-student-answers')}>Close</button></div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-confirm">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog" id="confirm-body" />
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-enrolled-students">
+        <div className="modal-dialog modal-lg">
+          <div className="modal-header">
+            <div><span className="modal-title" id="modal-enrolled-title">Enrolled Students</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-enrolled-sub" /></div>
+            <button className="modal-close" onClick={() => window.closeModal('modal-enrolled-students')}>&#10005;</button>
+          </div>
+          <div className="modal-body" id="modal-enrolled-body" style={{ padding: 0 }} />
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-enrolled-students')}>Close</button></div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-camera-snap">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-header"><span className="modal-title" id="modal-cam-title">Student Camera</span><button className="modal-close" onClick={() => window.closeModal('modal-camera-snap')}>&#10005;</button></div>
+          <div className="modal-body" style={{ textAlign: 'center' }}>
+            <img id="modal-cam-img" src="" alt="Camera snapshot" style={{ maxWidth: '100%', borderRadius: '10px', border: '1px solid var(--border)' }} />
+            <p id="modal-cam-time" className="text-muted" style={{ fontSize: '12px', marginTop: '8px' }} />
+            <div id="modal-cam-empty" className="text-muted" style={{ padding: '24px', fontSize: '14px' }}>No camera snapshot available for this student.</div>
+          </div>
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-camera-snap')}>Close</button></div>
+        </div>
+      </div>
+
+      {/* AI Exam Generator Modal */}
+      <div className="modal-backdrop hidden" id="modal-ai-gen">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header">
+            <span className="modal-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px', verticalAlign: 'middle' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              Generate Exam Questions with AI
+            </span>
+            <button className="modal-close" onClick={() => window.closeAIGen()}>&#10005;</button>
+          </div>
+          <div className="modal-body">
+            <div id="ai-upload-section">
+              <div id="ai-drop-zone"
+                onClick={() => document.getElementById('ai-file-input').click()}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                onDragLeave={(e) => e.currentTarget.classList.remove('drag-over')}
+                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
+                style={{ border: '2px dashed #a3c4a8', borderRadius: '12px', padding: '36px 24px', textAlign: 'center', cursor: 'pointer', background: '#f0f7f2', transition: 'background 0.2s' }}>
+                <div style={{ color: '#1a4d2a', marginBottom: '10px' }}>
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <p style={{ fontWeight: 600, color: '#0f2d1a', margin: '0 0 4px' }}>Click or drag &amp; drop a file</p>
+                <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>Supports PDF, DOCX, PPTX, TXT (max 10MB)</p>
+              </div>
+              <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display: 'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
+              <div id="ai-file-info" style={{ display: 'none', marginTop: '10px', padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '13px', alignItems: 'center', gap: '10px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                <span id="ai-file-name" style={{ color: '#15803d', fontWeight: 500 }} />
+                <button onClick={() => window.clearAIFile()} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '18px', lineHeight: 1 }}>&#10005;</button>
+              </div>
+            </div>
+            <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Number of Questions (1–100)</label>
+                <input type="number" className="form-control" id="ai-count" defaultValue="10" min="1" max="100" style={{ fontSize: '15px', fontWeight: 700 }} />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Difficulty</label>
+                <select className="form-control" id="ai-difficulty">
+                  <option value="mixed">Mixed</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginTop: '14px' }}>
+              <label>Question Types <span style={{ fontWeight: 400, color: '#9ca3af' }}>(select one or more — none = mix all)</span></label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '12px 14px', background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '10px' }}>
+                {[['mcq','#3b82f6','Multiple Choice',true],['tf','#8b5cf6','True/False',true],['identification','#f59e0b','Identification',true],['enumeration','#0d9488','Enumeration',false],['matching','#dc2626','Matching Type',false],['essay','#0f2d1a','Essay',false]].map(([val,color,label,checked]) => (
+                  <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
+                    <input type="checkbox" className="ai-type-cb" value={val} style={{ accentColor: color, width: '15px', height: '15px' }} defaultChecked={checked} />
+                    <span style={{ color }}>●</span> {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div id="ai-status" style={{ display: 'none', marginTop: '20px', textAlign: 'center', padding: '24px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', color: '#0f2d1a' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                <span id="ai-status-text" style={{ fontSize: '14px', fontWeight: 500, color: '#0f2d1a' }}>Extracting file content...</span>
+              </div>
+            </div>
+            <div id="ai-preview" style={{ display: 'none', marginTop: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ fontWeight: 600, fontSize: '14px' }} id="ai-preview-title">Generated Questions</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
+                </label>
+              </div>
+              <div id="ai-questions-preview" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }} />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeAIGen()}>Cancel</button>
+            <button className="btn btn-primary" id="ai-gen-btn" onClick={() => window.runAIGenerate()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '5px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Generate Questions
+            </button>
+            <button className="btn btn-primary" id="ai-import-btn" style={{ display: 'none' }} onClick={() => window.importAIQuestions()}>Import Selected</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Color Picker Popup */}
+      <div id="color-picker-popup" className="hidden" style={{ position: 'fixed', zIndex: 10001, background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: '10px', fontWeight: 800, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Card Color</div>
+        <div id="color-swatches" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px' }} />
+      </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #ai-drop-zone.drag-over { background:#e6f2eb; border-color:#1a4d2a; }
+        #ai-questions-preview .ai-q-card { background:#fafafa; border:1px solid #e5e7eb; border-radius:8px; padding:12px 14px; }
+        #ai-questions-preview .ai-q-card:hover { border-color:#a3c4a8; }
+        #ai-questions-preview .ai-q-card label { display:flex; gap:10px; cursor:pointer; }
+        #ai-questions-preview .ai-q-card .ai-q-correct { font-size:11px; color:#16a34a; margin-top:4px; }
+      `}</style>
+    </>
+  );
+}
