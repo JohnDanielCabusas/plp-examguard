@@ -2022,7 +2022,7 @@ function renderExamStats() {
   const examId = document.getElementById('stats-exam-select').value;
   const content = document.getElementById('stats-content');
   if (!examId) {
-    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-title">Select an Exam</div></div>`;
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">Select an Exam</div><div class="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>`;
     return;
   }
 
@@ -2031,7 +2031,7 @@ function renderExamStats() {
   const subject = DB.getSubject(exam.subjectId);
 
   if (!sessions.length) {
-    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📋</div><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
     return;
   }
 
