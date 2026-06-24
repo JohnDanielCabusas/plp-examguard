@@ -1,0 +1,73 @@
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const rootDir = __dirname;
+const port = Number(process.env.PORT) || 3000;
+
+const contentTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+};
+
+const routeMap = {
+  '/': 'index.html',
+  '/index': 'index.html',
+  '/admin': 'admin.html',
+  '/exam': 'exam.html',
+};
+
+function sendFile(res, filePath) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(err.code === 'ENOENT' ? 404 : 500, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
+      res.end(err.code === 'ENOENT' ? 'Not found' : 'Internal server error');
+      return;
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': contentTypes[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
+    res.end(data);
+  });
+}
+
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  let pathname = decodeURIComponent(url.pathname);
+
+  if (routeMap[pathname]) {
+    pathname = `/${routeMap[pathname]}`;
+  }
+
+  const safePath = path.normalize(path.join(rootDir, pathname));
+  if (!safePath.startsWith(rootDir)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Forbidden');
+    return;
+  }
+
+  let filePath = safePath;
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    filePath = path.join(filePath, 'index.html');
+  }
+
+  sendFile(res, filePath);
+});
+
+server.listen(port, () => {
+  console.log(`PLP ExamGuard running at http://localhost:${port}`);
+});
