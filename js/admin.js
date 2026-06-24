@@ -1716,51 +1716,105 @@ function stopMonitoring() {
 }
 
 function renderMonitoringTable(examId) {
-  const tbody = document.getElementById('monitor-tbody');
   const countEl = document.getElementById('monitor-count');
+  const grid = document.getElementById('monitoring-grid');
 
   if (!examId) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>Select an active exam to monitor.</p></div></td></tr>`;
     countEl.textContent = '0 students';
+    document.getElementById('monitor-tbody').innerHTML =
+      `<tr><td colspan="6"><div class="empty-state"><p>Select an active exam above to start monitoring.</p></div></td></tr>`;
+    // Clear stats strip if exists
+    const strip = document.getElementById('monitor-stats-strip');
+    if (strip) strip.remove();
     return;
   }
 
   const exam = DB.getExam(examId);
   const sessions = DB.getSessionsByExam(examId);
+  const totalQs = exam ? exam.questions.length : 1;
 
   countEl.textContent = sessions.length + ' student' + (sessions.length !== 1 ? 's' : '');
 
+  // ── Stats strip ──────────────────────────────────────────
+  const inProgress = sessions.filter(s => !s.submitted).length;
+  const submitted  = sessions.filter(s => s.submitted).length;
+  const flagged    = sessions.filter(s => s.warnings >= 2).length;
+
+  const statColors = [
+    { bg: '#eff6ff', color: '#1d4ed8', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, value: sessions.length, label: 'Total' },
+    { bg: '#dcfce7', color: '#15803d', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`, value: inProgress, label: 'In Progress' },
+    { bg: '#e0e7ff', color: '#4338ca', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`, value: submitted, label: 'Submitted' },
+    { bg: '#fee2e2', color: '#dc2626', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`, value: flagged, label: 'Flagged' },
+  ];
+
+  // Inject stats strip above the monitoring-grid if not already there
+  let strip = document.getElementById('monitor-stats-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.id = 'monitor-stats-strip';
+    strip.className = 'monitor-stats-strip';
+    grid.parentNode.insertBefore(strip, grid);
+  }
+  strip.innerHTML = statColors.map(c => `
+    <div class="monitor-stat-card">
+      <div class="monitor-stat-icon" style="background:${c.bg};color:${c.color};">${c.icon}</div>
+      <div>
+        <div class="monitor-stat-num">${c.value}</div>
+        <div class="monitor-stat-label">${c.label}</div>
+      </div>
+    </div>`).join('');
+
   if (!sessions.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No students have joined this exam yet.</p></div></td></tr>`;
+    document.getElementById('monitor-tbody').innerHTML =
+      `<tr><td colspan="6"><div class="empty-state"><p>No students have joined this exam yet.</p></div></td></tr>`;
     return;
   }
 
-  const totalQs = exam ? exam.questions.length : 1;
+  // ── Student rows ─────────────────────────────────────────
+  const chipColors = ['#0f2d1a','#1d4ed8','#7c3aed','#b45309','#0d9488','#be185d','#dc2626','#065f46'];
+  const chipColor = (str) => {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
+    return chipColors[Math.abs(h) % chipColors.length];
+  };
 
-  tbody.innerHTML = sessions.map(s => {
+  document.getElementById('monitor-tbody').innerHTML = sessions.map(s => {
     const answered = Object.keys(s.answers || {}).length;
     const pct = totalQs > 0 ? Math.round((answered / totalQs) * 100) : 0;
+    const initial = (s.studentName || s.studentId).charAt(0).toUpperCase();
+    const color   = chipColor(s.studentId);
+
     const statusBadgeHtml = s.submitted
       ? (s.autoSubmitted ? '<span class="badge badge-warning">Auto-Submitted</span>' : '<span class="badge badge-success">Submitted</span>')
       : '<span class="badge badge-info">In Progress</span>';
 
+    const warnHtml = s.warnings > 0
+      ? `<span class="badge badge-danger">${s.warnings} ⚠</span>`
+      : `<span style="color:#9ca3af;font-size:12px;">—</span>`;
+
     const latestSnap = s.cameraSnapshots && s.cameraSnapshots.length
-      ? s.cameraSnapshots[s.cameraSnapshots.length - 1]
-      : null;
+      ? s.cameraSnapshots[s.cameraSnapshots.length - 1] : null;
     const cameraHtml = latestSnap
-      ? `<img src="${latestSnap.imageData}" class="cam-snap-thumb" alt="Camera" onclick="viewCameraSnapshot('${s.id}')" title="Click to enlarge" />`
+      ? `<img src="${latestSnap.imageData}" class="cam-snap-thumb" alt="Camera" onclick="viewCameraSnapshot('${s.id}')" title="Click to view" />`
       : `<span class="cam-no-snap">No feed</span>`;
 
     return `<tr>
-      <td><strong>${escHtml(s.studentName)}</strong><br/><span class="text-muted" style="font-size:11px;">${escHtml(s.yearLevel || '')} ${escHtml(s.section || '')}</span></td>
-      <td><span class="code-tag">${escHtml(s.studentId)}</span></td>
       <td>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div class="score-bar-wrap" style="width:80px;"><div class="score-bar-fill" style="width:${pct}%;"></div></div>
-          <span style="font-size:12px;">${answered}/${totalQs}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="monitor-avatar" style="background:${color};">${initial}</div>
+          <div>
+            <div style="font-weight:700;font-size:13px;">${escHtml(s.studentName)}</div>
+            <div style="font-size:11px;color:#9ca3af;">${escHtml(s.studentId)} · ${escHtml(s.yearLevel || '')} ${escHtml(s.section || '')}</div>
+          </div>
         </div>
       </td>
-      <td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings} warning${s.warnings !== 1 ? 's' : ''}</span>` : '<span style="color:var(--text-muted);font-size:12px;">None</span>'}</td>
+      <td>
+        <div class="monitor-progress-wrap">
+          <div class="monitor-progress-bar"><div class="monitor-progress-fill" style="width:${pct}%;"></div></div>
+          <div class="monitor-progress-label">${answered}/${totalQs} answered (${pct}%)</div>
+        </div>
+      </td>
+      <td>${warnHtml}</td>
       <td>${statusBadgeHtml}</td>
       <td>${cameraHtml}</td>
       <td>

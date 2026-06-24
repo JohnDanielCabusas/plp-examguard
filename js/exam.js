@@ -331,14 +331,18 @@ const ExamApp = {
 
     const allExams = DB.getExams().filter(e => e.subjectId === subjId && e.status !== 'draft');
     if (!allExams.length) {
-      listEl.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📋</div><div class="dash-empty-title">No Exams Yet</div><div class="dash-empty-sub">Your instructor hasn't posted any exams yet.</div></div>`;
+      listEl.innerHTML = `<div class="dash-empty">
+        <div class="dash-empty-icon">📋</div>
+        <div class="dash-empty-title">No Exams Yet</div>
+        <div class="dash-empty-sub">Your instructor hasn't posted any exams yet.<br><span style="font-size:12px;color:#c0c7d0;">Active, upcoming, and previous/inactive exams will appear here.</span></div>
+      </div>`;
       return;
     }
 
     const groups = [
-      { label: 'Active Now', statuses: ['active'],            iconClass: 'icon-active',  cardClass: 'status-active' },
-      { label: 'Upcoming',   statuses: ['ready'],             iconClass: 'icon-waiting', cardClass: 'status-waiting' },
-      { label: 'Past',       statuses: ['closed','archived'], iconClass: '',             cardClass: 'status-closed' },
+      { label: 'Active Now',              statuses: ['active'],            iconClass: 'icon-active',  cardClass: 'status-active' },
+      { label: 'Upcoming',                statuses: ['ready'],             iconClass: 'icon-waiting', cardClass: 'status-waiting' },
+      { label: 'Previous / Inactive Exams', statuses: ['closed','archived'], iconClass: '',           cardClass: 'status-closed' },
     ];
 
     let html = '';

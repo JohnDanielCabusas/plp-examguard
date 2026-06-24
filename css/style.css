@@ -756,9 +756,7 @@ textarea.form-control {
 }
 
 .section-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text);
+  display: none !important; /* topbar already shows the page name */
 }
 
 .section-subtitle {
@@ -3663,14 +3661,77 @@ body.exam-page {
   color: #0f2d1a !important;
 }
 
-/* ── Section headers ───────────────────────────────────── */
-.section-title {
-  font-size: 24px !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.4px;
-  color: #111827 !important;
+/* ── Monitoring redesign ──────────────────────────────── */
+.monitor-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
 }
-.section-subtitle { font-size: 13px !important; color: #9ca3af !important; }
+.monitor-stat-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.monitor-stat-icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.monitor-stat-num {
+  font-size: 26px; font-weight: 800; color: #111827; line-height: 1;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.monitor-stat-label {
+  font-size: 11px; font-weight: 700; color: #9ca3af;
+  text-transform: uppercase; letter-spacing: 0.7px; margin-top: 2px;
+}
+
+/* Better student row in monitoring */
+.monitor-student-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #f9fafb;
+  transition: background 0.12s;
+}
+.monitor-student-row:last-child { border-bottom: none; }
+.monitor-student-row:hover { background: #fafbfc; }
+
+.monitor-avatar {
+  width: 38px; height: 38px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 15px; color: #fff; flex-shrink: 0;
+}
+
+.monitor-progress-wrap {
+  flex: 1; min-width: 80px; max-width: 120px;
+}
+.monitor-progress-bar {
+  height: 5px; background: #f3f4f6; border-radius: 99px; overflow: hidden; margin-bottom: 3px;
+}
+.monitor-progress-fill { height: 100%; border-radius: 99px; background: #0f2d1a; }
+.monitor-progress-label { font-size: 10px; color: #9ca3af; font-weight: 600; }
+
+/* Activity log improved */
+.log-item { border-radius: 10px !important; }
+.log-type.window_blur,
+.log-type.tab_switch,
+.log-type.fullscreen_exit { color: #dc2626 !important; }
+.log-type.copy_attempt { color: #d97706 !important; }
+.log-type.camera_denied { color: #7c3aed !important; }
+.log-type.force_submit,
+.log-type.auto_submit { color: #0f2d1a !important; }
+
+/* ── Section headers ───────────────────────────────────── */
+.section-title { display: none !important; } /* already shown in topbar */
+.section-subtitle { font-size: 13px !important; color: #9ca3af !important; font-weight: 500 !important; }
 
 /* ── Stat cards — top-border style + bigger numbers ─────── */
 .stat-card {
