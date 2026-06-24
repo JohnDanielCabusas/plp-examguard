@@ -1828,7 +1828,7 @@ function loadMonitoringExams() {
   const exams = DB.getExams().filter(e => e.status === 'active' || e.status === 'closed');
   const sel = document.getElementById('monitor-exam-select');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">-- Select Exam --</option>' +
+  sel.innerHTML = '<option value="">Select an exam to monitor</option>' +
     exams.map(e => `<option value="${e.id}" ${e.id === cur ? 'selected' : ''}>${escHtml(e.title)} [${e.status.toUpperCase()}]</option>`).join('');
   if (cur) sel.value = cur;
 }
@@ -2014,7 +2014,7 @@ function loadStatsExams() {
   const exams = DB.getExams().filter(e => ['active','closed','archived'].includes(e.status));
   const sel = document.getElementById('stats-exam-select');
   if (!sel) return;
-  sel.innerHTML = '<option value="">— Choose an exam to view statistics —</option>' +
+  sel.innerHTML = '<option value="">Select an exam to explore analytics</option>' +
     exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
 }
 
@@ -2022,7 +2022,7 @@ function renderExamStats() {
   const examId = document.getElementById('stats-exam-select').value;
   const content = document.getElementById('stats-content');
   if (!examId) {
-    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">Select an Exam</div><div class="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>`;
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">No exam selected</div><div class="dash-empty-sub">Pick an exam above to view performance trends, scores, and question insights.</div></div>`;
     return;
   }
 
@@ -2146,7 +2146,7 @@ function renderExamStats() {
 function loadReportExams() {
   const exams = DB.getExams().filter(e => e.status === 'closed' || e.status === 'archived' || e.status === 'active');
   const sel = document.getElementById('report-exam-select');
-  sel.innerHTML = '<option value="">-- Select Exam --</option>' +
+  sel.innerHTML = '<option value="">Select an exam to review results</option>' +
     exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
 }
 
@@ -2158,7 +2158,7 @@ function renderReportTable() {
   releaseBtn.disabled = !examId;
 
   if (!examId) {
-    document.getElementById('report-exam-title').textContent = 'Select an exam to view results';
+    document.getElementById('report-exam-title').textContent = 'Choose an exam to load results and rankings';
     document.getElementById('report-summary').classList.add('hidden');
     document.getElementById('report-tbody').innerHTML = '';
     releaseBtn.textContent = 'Release Scores';

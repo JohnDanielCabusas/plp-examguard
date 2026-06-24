@@ -338,7 +338,7 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <span id="monitor-live-badge" className="hidden" style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600 }}><span className="live-dot" />LIVE</span>
                   <select className="form-control" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()} style={{ width: '240px' }}>
-                    <option value="">-- Select Active Exam --</option>
+                    <option value="">Select an exam to monitor</option>
                   </select>
                 </div>
               </div>
@@ -376,7 +376,7 @@ export default function AdminPage() {
               </div>
               <div className="toolbar reports-toolbar" style={{ marginBottom: '20px' }}>
                 <select className="form-control" id="report-exam-select" onChange={() => window.renderReportTable()} style={{ width: '280px' }}>
-                  <option value="">-- Select Exam --</option>
+                  <option value="">Select an exam to review results</option>
                 </select>
                 <div className="reports-toolbar-actions">
                   <button className="btn btn-secondary" onClick={() => window.generatePDF()} id="btn-generate-pdf" disabled>Export PDF</button>
@@ -385,7 +385,7 @@ export default function AdminPage() {
               </div>
               <div className="card" id="report-card">
                 <div className="card-header">
-                  <span className="card-title" id="report-exam-title">Select an exam to view results</span>
+                  <span className="card-title" id="report-exam-title">Choose an exam to load results and rankings</span>
                   <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
                     <span className="badge badge-info" id="report-submitted-count" />
                     <span className="badge badge-success" id="report-avg-score" />
@@ -411,13 +411,13 @@ export default function AdminPage() {
                 </div>
               </div>
               <div style={{ background: '#fff', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Select Exam</label>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Exam Analytics</label>
                 <select className="form-control" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
-                  <option value="">— Choose an exam to view statistics —</option>
+                  <option value="">Select an exam to explore analytics</option>
                 </select>
               </div>
               <div id="stats-content">
-                <div className="dash-empty"><div className="dash-empty-title">Select an Exam</div><div className="dash-empty-sub">Choose an exam above to view detailed statistics.</div></div>
+                <div className="dash-empty"><div className="dash-empty-title">No exam selected</div><div className="dash-empty-sub">Pick an exam above to view performance trends, scores, and question insights.</div></div>
               </div>
             </section>
 
