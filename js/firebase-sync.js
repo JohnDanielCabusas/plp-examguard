@@ -31,10 +31,19 @@ const FIREBASE_CONFIG = {
 const FirebaseSync = {
   db: null,
   _unsubscribers: [],
+  _readyEmitted: false,
 
   // ---- Public: call once per page load ----
   async init() {
+    // DB.init() has already seeded localStorage, so the UI can render immediately.
+    this._emitReady();
+
     try {
+      if (this._hasPlaceholderConfig()) {
+        console.warn('[FirebaseSync] Firebase config is incomplete. Running in localStorage-only mode.');
+        return;
+      }
+
       if (!firebase.apps.length) {
         firebase.initializeApp(FIREBASE_CONFIG);
       }
@@ -54,8 +63,6 @@ const FirebaseSync = {
       console.warn('[FirebaseSync] Running in localStorage-only mode:', e.message);
     }
 
-    // Signal to the page that data is ready (or that we gave up and will run offline)
-    document.dispatchEvent(new Event('firebaseReady'));
   },
 
   // ---- Seed Firestore from current localStorage (first run on any device) ----
@@ -143,5 +150,13 @@ const FirebaseSync = {
   },
   _localArray(key) {
     try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
+  },
+  _hasPlaceholderConfig() {
+    return Object.values(FIREBASE_CONFIG).some(value => String(value || '').includes('YOUR_'));
+  },
+  _emitReady() {
+    if (this._readyEmitted) return;
+    this._readyEmitted = true;
+    document.dispatchEvent(new Event('firebaseReady'));
   },
 };

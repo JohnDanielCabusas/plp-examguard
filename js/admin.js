@@ -482,7 +482,7 @@ function renderSubjects() {
       : `<span class="course-meta-pill all">All Sections</span>`;
 
     const enrollHtml = s.enrollmentCode
-      ? `<span class="enroll-code-tag" title="Click to copy enrollment link" onclick="copyEnrollCode('${s.enrollmentCode}','${escHtml(s.name)}')" style="cursor:pointer;">
+      ? `<span class="enroll-code-tag" title="Click to copy enrollment code" onclick="copyEnrollCode('${s.enrollmentCode}','${escHtml(s.name)}')" style="cursor:pointer;">
           ${s.enrollmentCode}
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </span>`
@@ -537,19 +537,37 @@ function renderSubjects() {
 }
 
 function copyEnrollCode(code, subjectName) {
-  const origin = window.location.origin;
-  const path = window.location.pathname.replace('admin.html', 'index.html');
-  const url = `${origin}${path}?tab=enroll&code=${code}`;
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => showToast(`Enrollment link for "${subjectName}" copied!`, 'success'));
-  } else {
+  const cleanCode = String(code || '').trim().toUpperCase();
+  if (!cleanCode) {
+    showToast('No enrollment code available.', 'error');
+    return;
+  }
+
+  const fallbackCopy = () => {
     const tmp = document.createElement('textarea');
-    tmp.value = url;
+    tmp.value = cleanCode;
+    tmp.setAttribute('readonly', '');
+    tmp.style.position = 'fixed';
+    tmp.style.opacity = '0';
+    tmp.style.pointerEvents = 'none';
     document.body.appendChild(tmp);
+    tmp.focus();
     tmp.select();
+    tmp.setSelectionRange(0, cleanCode.length);
     document.execCommand('copy');
     tmp.remove();
-    showToast(`Enrollment link copied!`, 'success');
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(cleanCode)
+      .then(() => showToast(`Enrollment code copied: ${cleanCode}`, 'success'))
+      .catch(() => {
+        fallbackCopy();
+        showToast(`Enrollment code copied: ${cleanCode}`, 'success');
+      });
+  } else {
+    fallbackCopy();
+    showToast(`Enrollment code copied: ${cleanCode}`, 'success');
   }
 }
 
