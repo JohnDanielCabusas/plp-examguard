@@ -21,10 +21,15 @@ const ExamApp = {
   _snapInterval: null,      // periodic snapshot interval
   _cameraPrompting: false,  // true while camera permission dialog is open
   _motionInterval: null,    // motion detection interval
-  _prevFrameData: null,     // previous frame pixel data for diff
-  _noMotionSec: 0,          // seconds without detected motion
-  _MOTION_THRESHOLD: 12,    // avg pixel diff threshold (lower = more sensitive)
-  _NO_MOTION_WARN: 8,       // seconds before warning
+  _prevFrameData: null,
+  _slowFrameData: null,
+  _slowFrameCount: 0,
+  _noMotionSec: 0,
+  _MOTION_THRESHOLD: 10,
+  _PRESENCE_THRESHOLD: 5,
+  _NO_MOTION_WARN: 20,
+  _faceModel: null,
+  _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _dashInterval: null,      // dashboard poll interval
 
@@ -263,7 +268,7 @@ const ExamApp = {
     setTimeout(() => { msgEl.textContent = ''; }, 3000);
   },
 
-  _chipColors: ['#0f2d1a','#1d4ed8','#7c3aed','#d97706','#dc2626','#0d9488','#be185d','#065f46'],
+  _chipColors: ['#1d4ed8','#7c3aed','#d97706','#dc2626','#0d9488','#be185d','#ea580c','#0284c7'],
   _chipColor(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
@@ -276,7 +281,7 @@ const ExamApp = {
     container.innerHTML = enrolledSubjects.map(s => {
       const letter = (s.name || s.code || '?').charAt(0).toUpperCase();
       const color  = this._chipColor(s.id);
-      return `<div class="portal-subject-item" id="psi-${s.id}" onclick="ExamApp.scrollToCourse('${s.id}')">
+      return `<div class="portal-subject-item" id="psi-${s.id}" data-label="${_esc(s.name)}" onclick="ExamApp.scrollToCourse('${s.id}')">
         <div class="portal-subject-chip" style="background:${color};">${letter}</div>
         <span class="portal-subject-label">${_esc(s.name)}</span>
       </div>`;
@@ -939,6 +944,70 @@ const ExamApp = {
     } catch (e) { /* silently fail */ }
   },
 
+  _showFullscreenLock() {
+    let overlay = document.getElementById('fs-lock-overlay');
+
+    const doReturn = () => {
+      if (overlay._cdTimer) clearInterval(overlay._cdTimer);
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) req.call(el).then(() => { overlay.style.display = 'none'; }).catch(() => {});
+    };
+
+    const startCountdown = () => {
+      let secs = 3;
+      const cdEl = document.getElementById('fs-countdown');
+      if (cdEl) cdEl.textContent = secs;
+      if (overlay._cdTimer) clearInterval(overlay._cdTimer);
+      overlay._cdTimer = setInterval(() => {
+        secs--;
+        const el = document.getElementById('fs-countdown');
+        if (el) el.textContent = secs;
+        if (secs <= 0) { clearInterval(overlay._cdTimer); doReturn(); }
+      }, 1000);
+    };
+
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'fs-lock-overlay';
+      overlay.innerHTML = `
+        <div style="text-align:center;padding:40px 32px;max-width:400px;">
+          <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h2 style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px;">Fullscreen Required</h2>
+          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:12px;line-height:1.6;">
+            This exam must be taken in fullscreen mode.<br>
+            Exiting fullscreen has been recorded as a violation.
+          </p>
+          <p style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:24px;">
+            Returning automatically in <span id="fs-countdown" style="font-weight:800;color:#fff;">3</span>s&hellip;
+          </p>
+          <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 32px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;">
+            Return to Fullscreen
+          </button>
+        </div>`;
+      overlay.style.cssText = 'position:fixed;inset:0;background:#060e08;z-index:999999;display:flex;align-items:center;justify-content:center;';
+      document.body.appendChild(overlay);
+      document.getElementById('fs-return-btn').addEventListener('click', doReturn);
+    } else {
+      overlay.style.display = 'flex';
+      const btn = document.getElementById('fs-return-btn');
+      if (btn) { btn.onclick = null; btn.addEventListener('click', doReturn); }
+    }
+
+    startCountdown();
+  },
+
+  _hideFullscreenLock() {
+    const overlay = document.getElementById('fs-lock-overlay');
+    if (overlay) overlay.style.display = 'none';
+  },
+
+  _reenterFullscreen() {
+    this.requestFullscreen();
+  },
+
   // ============================================================
   // ANTI-CHEAT
   // ============================================================
@@ -1015,14 +1084,18 @@ const ExamApp = {
     // ── Fullscreen change ────────────────────────────────────────
     const fsHandler = () => {
       if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        // Log the violation
         if (this._inReadCountdown) {
           this._cancelReadCountdown();
           this.startCountdown(10);
         } else {
           this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
         }
+        // Show lock screen — student must click the button (requires user gesture)
+        this._showFullscreenLock();
       } else {
-        this.cancelCountdown(); // fullscreen restored — cancel auto-submit
+        this._hideFullscreenLock();
+        this.cancelCountdown();
       }
     };
     document.addEventListener('fullscreenchange', fsHandler);
@@ -1031,6 +1104,13 @@ const ExamApp = {
     // ── Keyboard shortcuts blocked ───────────────────────────────
     const keyHandler = e => {
       if (e.key === 'PrintScreen') e.preventDefault();
+      if (e.key === 'F11') { e.preventDefault(); } // block fullscreen toggle
+      if (e.key === 'Escape') {
+        // If exam is running and fullscreen is active, prevent escape from exiting
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          e.preventDefault();
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(e.key.toLowerCase())) {
         if (!e.target.matches('input, textarea')) e.preventDefault();
       }
@@ -1075,7 +1155,21 @@ const ExamApp = {
 
       // Wait for video to be ready then check for presence before starting
       video.onloadeddata = () => {
-        setTimeout(() => this._checkInitialPresence(video), 1500);
+        if (statusText) statusText.textContent = '⏳ Loading face detection…';
+        // Load BlazeFace model if available, then start detection
+        if (window.blazeface) {
+          window.blazeface.load().then(model => {
+            this._faceModel = model;
+            this._faceModelReady = true;
+            if (statusText) statusText.textContent = '● Face detection ready';
+          }).catch(() => {
+            this._faceModelReady = false;
+          }).finally(() => {
+            setTimeout(() => this._checkInitialPresence(video), 500);
+          });
+        } else {
+          setTimeout(() => this._checkInitialPresence(video), 1500);
+        }
       };
     } catch (err) {
       this._cameraPrompting = false;
@@ -1095,44 +1189,79 @@ const ExamApp = {
     // Capture initial frame — if no motion baseline, just start monitoring
     const canvas = document.getElementById('camera-canvas');
     if (!canvas || video.readyState < 2) { this._startMotionDetection(video); return; }
-    canvas.width = 80; canvas.height = 60;
+    canvas.width = 160; canvas.height = 120;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, 80, 60);
-    this._prevFrameData = ctx.getImageData(0, 0, 80, 60).data;
+    ctx.drawImage(video, 0, 0, 160, 120);
+    const initData = new Uint8ClampedArray(ctx.getImageData(0, 0, 160, 120).data);
+    this._prevFrameData = initData;
+    this._slowFrameData = initData;
+    this._slowFrameCount = 0;
     this._startMotionDetection(video);
   },
 
   _startMotionDetection(video) {
     if (this._motionInterval) clearInterval(this._motionInterval);
     this._noMotionSec = 0;
-    this._motionInterval = setInterval(() => this._detectMotion(video), 500);
+    this._motionInterval = setInterval(() => {
+      if (this._faceModelReady && this._faceModel) {
+        this._detectFace(video);
+      } else {
+        this._detectMotion(video);
+      }
+    }, 600);
   },
 
   _detectMotion(video) {
     const canvas = document.getElementById('camera-canvas');
     if (!canvas || !video || video.readyState < 2 || !this._cameraStream) return;
 
-    canvas.width = 80; canvas.height = 60;
+    canvas.width = 160; canvas.height = 120;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, 80, 60);
-    const frame = ctx.getImageData(0, 0, 80, 60).data;
+    ctx.drawImage(video, 0, 0, 160, 120);
+    const frame = ctx.getImageData(0, 0, 160, 120).data;
 
     if (!this._prevFrameData || this._prevFrameData.length !== frame.length) {
       this._prevFrameData = new Uint8ClampedArray(frame);
+      this._slowFrameData = new Uint8ClampedArray(frame);
+      this._slowFrameCount = 0;
       return;
     }
 
-    // Calculate average pixel difference (grayscale channel)
-    let diff = 0;
+    const pixelCount = frame.length / 4;
+
+    // Fast diff vs previous frame — detects movement (threshold above sensor noise)
+    let fastDiff = 0;
     for (let i = 0; i < frame.length; i += 4) {
-      diff += Math.abs(frame[i] - this._prevFrameData[i]);
+      fastDiff += (Math.abs(frame[i]   - this._prevFrameData[i])   +
+                   Math.abs(frame[i+1] - this._prevFrameData[i+1]) +
+                   Math.abs(frame[i+2] - this._prevFrameData[i+2])) / 3;
     }
-    const avgDiff = diff / (frame.length / 4);
-    this._prevFrameData = new Uint8ClampedArray(frame);
+    const fastAvg = fastDiff / pixelCount;
+
+    // Slow diff vs frame from ~10s ago — detects still presence (breathing, micro-movements)
+    let slowDiff = 0;
+    for (let i = 0; i < frame.length; i += 4) {
+      slowDiff += (Math.abs(frame[i]   - this._slowFrameData[i])   +
+                   Math.abs(frame[i+1] - this._slowFrameData[i+1]) +
+                   Math.abs(frame[i+2] - this._slowFrameData[i+2])) / 3;
+    }
+    const slowAvg = slowDiff / pixelCount;
+
+    // Update references
+    this._prevFrameData = new Uint8ClampedArray(frame);  // fast: every frame
+    this._slowFrameCount = (this._slowFrameCount || 0) + 1;
+    if (this._slowFrameCount >= 20) {  // slow: every ~10s (20 ticks × 0.5s)
+      this._slowFrameData = new Uint8ClampedArray(frame);
+      this._slowFrameCount = 0;
+    }
+
+    // Person detected if EITHER clear movement OR subtle change vs 10s-ago frame
+    const avgDiff = Math.max(fastAvg, slowAvg);
 
     const statusText = document.getElementById('camera-status-text');
 
-    if (avgDiff >= this._MOTION_THRESHOLD) {
+    const detected = fastAvg >= this._MOTION_THRESHOLD || slowAvg >= this._PRESENCE_THRESHOLD;
+    if (detected) {
       // Motion/presence detected — reset timer
       this._noMotionSec = 0;
       this._motionBlocked = false;
@@ -1147,6 +1276,53 @@ const ExamApp = {
       if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
         this._handleNoMotion();
       }
+    }
+  },
+
+  async _detectFace(video) {
+    if (!this._faceModel || !video || video.readyState < 2 || !this._cameraStream) return;
+    const statusText = document.getElementById('camera-status-text');
+    const canvas = document.getElementById('camera-canvas');
+    try {
+      const predictions = await this._faceModel.estimateFaces(video, false);
+
+      // Draw video + face boxes on canvas
+      if (canvas) {
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 240;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        predictions.forEach(pred => {
+          const [x1, y1] = pred.topLeft;
+          const [x2, y2] = pred.bottomRight;
+          ctx.strokeStyle = '#00e676';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(x1, y1, x2-x1, y2-y1, 4) : ctx.rect(x1, y1, x2-x1, y2-y1);
+          ctx.stroke();
+          // Label
+          ctx.fillStyle = '#00e676';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillText('Person', x1, y1 > 14 ? y1 - 4 : y1 + 14);
+        });
+      }
+
+      if (predictions.length > 0) {
+        this._noMotionSec = 0;
+        this._motionBlocked = false;
+        if (statusText) statusText.textContent = `● Person detected`;
+        this._clearMotionWarning();
+      } else {
+        this._noMotionSec += 0.6;
+        const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
+        if (statusText) statusText.textContent = `⚠ No person (${Math.ceil(remaining)}s)`;
+        if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
+          this._handleNoMotion();
+        }
+      }
+    } catch(e) {
+      // Model error — fall back to motion detection silently
+      this._detectMotion(video);
     }
   },
 
