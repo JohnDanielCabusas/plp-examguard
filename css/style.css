@@ -567,28 +567,9 @@ textarea.form-control {
 }
 
 .sidebar-footer {
-  padding: 12px 14px;
+  padding: 16px;
   border-top: 1px solid rgba(255,255,255,0.15);
-  flex-shrink: 0;
 }
-
-.sidebar-signout-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: #f3f4f6;
-  border: 1px solid var(--border);
-  color: #374151;
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: background 0.15s, transform 0.15s;
-}
-.sidebar-signout-btn:hover { background: #e5e7eb; transform: translateY(-1px); }
 
 .sidebar-user {
   display: flex;
