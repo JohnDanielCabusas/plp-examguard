@@ -955,7 +955,8 @@ const ExamApp = {
     };
 
     const startCountdown = () => {
-      let secs = 3;
+      // Don't auto-return if exam is about to be submitted (3 warnings)
+      if (this.warnings >= 3) return;
       const cdEl = document.getElementById('fs-countdown');
       if (cdEl) cdEl.textContent = secs;
       if (overlay._cdTimer) clearInterval(overlay._cdTimer);
@@ -1082,16 +1083,11 @@ const ExamApp = {
     document.addEventListener('contextmenu', rcHandler);
 
     // ── Fullscreen change ────────────────────────────────────────
+    // ── Fullscreen change ────────────────────────────────────────
     const fsHandler = () => {
       if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-        // Log the violation
-        if (this._inReadCountdown) {
-          this._cancelReadCountdown();
-          this.startCountdown(10);
-        } else {
-          this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
-        }
-        // Show lock screen — student must click the button (requires user gesture)
+        // Always issue a violation — issueWarning handles _cancelReadCountdown internally
+        this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
         this._showFullscreenLock();
       } else {
         this._hideFullscreenLock();
