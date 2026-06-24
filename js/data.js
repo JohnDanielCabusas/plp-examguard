@@ -202,6 +202,31 @@ const DB = {
     const updated = students.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('students', updated);
   },
+  syncStudentReferences(previousStudentId, nextStudent) {
+    if (!previousStudentId || !nextStudent) return;
+
+    const sessions = this.getSessions().map(session => {
+      if (session.studentId !== previousStudentId) return session;
+      const updatedSession = {
+        ...session,
+        studentId: nextStudent.studentId,
+        studentName: nextStudent.name,
+        yearLevel: nextStudent.yearLevel || '',
+        section: nextStudent.section || '',
+      };
+      FirebaseSync.syncDoc('sessions', updatedSession);
+      return updatedSession;
+    });
+    localStorage.setItem(this.KEYS.sessions, JSON.stringify(sessions));
+
+    const logs = this.getLogs().map(log => {
+      if (log.studentId !== previousStudentId) return log;
+      const updatedLog = { ...log, studentId: nextStudent.studentId };
+      FirebaseSync.syncDoc('logs', updatedLog);
+      return updatedLog;
+    });
+    localStorage.setItem(this.KEYS.logs, JSON.stringify(logs));
+  },
   archiveStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: true, archivedAt: new Date().toISOString() } : s);
     localStorage.setItem(this.KEYS.students, JSON.stringify(students));

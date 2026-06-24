@@ -126,18 +126,6 @@ const ExamApp = {
   // STUDENT DASHBOARD
   // ============================================================
   // ── Portal UI helpers ──────────────────────────────────
-  toggleSidebar() {
-    const portal = document.getElementById('student-portal');
-    const sidebar = document.getElementById('portal-sidebar');
-    if (!portal || !sidebar) return;
-    if (window.innerWidth <= 768) {
-      sidebar.classList.toggle('mobile-open');
-    } else {
-      portal.classList.toggle('collapsed');
-      sidebar.classList.toggle('collapsed');
-    }
-  },
-
   showPortalTab(tab) {
     ['home','settings'].forEach(t => {
       const el = document.getElementById('portal-tab-' + t);
@@ -168,11 +156,11 @@ const ExamApp = {
     const emailEl = document.getElementById('stg-email');
     if (emailEl) emailEl.textContent = sess.email || '—';
     const sidEl = document.getElementById('stg-studentid');
-    if (sidEl) sidEl.textContent = sess.studentId || '—';
+    if (sidEl) sidEl.value = sess.studentId || '';
     const yrEl = document.getElementById('stg-year');
-    if (yrEl) yrEl.textContent = sess.yearLevel || '—';
+    if (yrEl) yrEl.value = sess.yearLevel || (student ? (student.yearLevel || '') : '');
     const secEl = document.getElementById('stg-section');
-    if (secEl) secEl.textContent = sess.section || '—';
+    if (secEl) secEl.value = sess.section || (student ? (student.section || '') : '');
     // clear messages
     ['stg-profile-msg','stg-pass-msg'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -182,21 +170,68 @@ const ExamApp = {
     const sess = Auth.getStudentSession();
     if (!sess) return;
     const name = (document.getElementById('stg-name').value || '').trim();
+    const studentId = (document.getElementById('stg-studentid').value || '').trim().toUpperCase();
+    const yearLevel = (document.getElementById('stg-year').value || '').trim();
+    const section = (document.getElementById('stg-section').value || '').trim();
     const msgEl = document.getElementById('stg-profile-msg');
     if (!name) { msgEl.textContent = 'Name cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
+    if (!studentId) { msgEl.textContent = 'Student ID cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
+    if (!/^(\d{2})-\d{5}$/.test(studentId)) {
+      msgEl.textContent = 'Student ID must be in YY-NNNNN format.';
+      msgEl.style.color = '#dc2626';
+      return;
+    }
 
     const student = DB.getStudent(sess.studentId);
-    if (student) DB.updateStudent(student.id, { name });
+    if (!student) {
+      msgEl.textContent = 'Student record not found.';
+      msgEl.style.color = '#dc2626';
+      return;
+    }
 
-    // Update session name
-    const updated = { ...sess, studentName: name };
+    const duplicate = DB.getStudent(studentId);
+    if (duplicate && duplicate.id !== student.id) {
+      msgEl.textContent = 'That Student ID is already assigned to another account.';
+      msgEl.style.color = '#dc2626';
+      return;
+    }
+
+    const updates = { name, studentId, yearLevel, section };
+    DB.updateStudent(student.id, updates);
+    const updatedStudent = { ...student, ...updates };
+    DB.syncStudentReferences(sess.studentId, updatedStudent);
+
+    // Update session details
+    const updated = {
+      ...sess,
+      studentId,
+      studentName: name,
+      yearLevel,
+      section,
+    };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
     document.getElementById('portal-footer-name').textContent = name;
     document.getElementById('portal-avatar').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('portal-footer-id').textContent = this._formatFooterMeta(updated);
+
+    if (this.session && this.session.studentId === sess.studentId) {
+      this.session = {
+        ...this.session,
+        studentId,
+        studentName: name,
+        yearLevel,
+        section,
+      };
+    }
 
     msgEl.textContent = 'Profile saved!';
     msgEl.style.color = '#15803d';
     setTimeout(() => { msgEl.textContent = ''; }, 3000);
+  },
+
+  _formatFooterMeta(sess) {
+    if (!sess) return '';
+    return [sess.studentId, sess.yearLevel, sess.section].filter(Boolean).join(' · ');
   },
 
   saveStudentPassword() {
@@ -486,7 +521,7 @@ const ExamApp = {
     const fnEl = document.getElementById('portal-footer-name');
     if (fnEl) fnEl.textContent = name;
     const fidEl = document.getElementById('portal-footer-id');
-    if (fidEl) fidEl.textContent = [sess.studentId, sess.yearLevel].filter(Boolean).join(' · ');
+    if (fidEl) fidEl.textContent = this._formatFooterMeta(sess);
 
     // Greeting
     const greetEl = document.getElementById('dash-greeting');
@@ -1871,3 +1906,4 @@ function formatDateTime(iso) {
 // BOOT
 // ============================================================
 document.addEventListener('firebaseReady', () => ExamApp.init());
+

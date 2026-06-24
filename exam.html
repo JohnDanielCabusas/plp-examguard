@@ -57,16 +57,17 @@
       <!-- ===== SIDEBAR ===== -->
       <div class="portal-sidebar" id="portal-sidebar">
         <div class="portal-sidebar-top">
-          <button class="portal-hamburger" onclick="ExamApp.toggleSidebar()" title="Toggle menu">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
           <div class="portal-brand">
             <img id="portal-logo" src="https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png" alt="PLP" class="portal-logo-img" />
-            <span class="portal-logo-text">ExamGuard</span>
+            <div class="portal-brand-text">
+              <span class="portal-logo-text">PLP ExamGuard</span>
+              <span class="portal-logo-subtext">Student Portal</span>
+            </div>
           </div>
         </div>
 
         <nav class="portal-nav">
+          <div class="portal-nav-section-label">Main</div>
           <div class="portal-nav-item active" id="pnav-home" onclick="ExamApp.showPortalTab('home')">
             <span class="portal-nav-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -179,16 +180,22 @@
                 </div>
                 <div class="settings-field">
                   <div class="settings-field-label">Student ID</div>
-                  <div class="settings-field-readonly"><span id="stg-studentid" style="font-size:14px;font-family:monospace;font-weight:700;color:#374151;"></span><span class="settings-readonly-badge">Professor only</span></div>
+                  <input type="text" class="form-control settings-mono-input" id="stg-studentid" placeholder="e.g. 26-00001" maxlength="8" inputmode="numeric" autocomplete="off" />
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
                   <div class="settings-field" style="margin:0;">
                     <div class="settings-field-label">Year Level</div>
-                    <div class="settings-field-readonly"><span id="stg-year" style="font-size:14px;color:#374151;"></span><span class="settings-readonly-badge">Professor only</span></div>
+                    <select class="form-control" id="stg-year">
+                      <option value="">Select year level</option>
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
                   </div>
                   <div class="settings-field" style="margin:0;">
                     <div class="settings-field-label">Section</div>
-                    <div class="settings-field-readonly"><span id="stg-section" style="font-size:14px;color:#374151;"></span><span class="settings-readonly-badge">Professor only</span></div>
+                    <input type="text" class="form-control" id="stg-section" placeholder="e.g. Section A" autocomplete="off" />
                   </div>
                 </div>
                 <div id="stg-profile-msg" style="font-size:12px;margin-bottom:10px;min-height:16px;"></div>
