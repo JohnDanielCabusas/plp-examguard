@@ -63,7 +63,7 @@ function showSection(name) {
   const nav = document.getElementById('nav-' + name);
   if (nav) nav.classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', subjects: 'Courses', students: 'Students', exams: 'Exams', monitoring: 'Live Monitoring', reports: 'Reports', settings: 'Settings', archive: 'Archive' };
+  const titles = { dashboard: 'Dashboard', subjects: 'Courses', students: 'Students', exams: 'Exams', monitoring: 'Live Monitoring', reports: 'Reports', statistics: 'Statistics', settings: 'Settings', archive: 'Archive' };
   document.getElementById('topbar-title').textContent = titles[name] || name;
 
   currentSection = name;
@@ -75,6 +75,7 @@ function showSection(name) {
     case 'exams': renderExams(); break;
     case 'monitoring': loadMonitoringExams(); startMonitoring(); break;
     case 'reports': loadReportExams(); break;
+    case 'statistics': loadStatsExams(); break;
     case 'settings': loadSettings(); break;
     case 'archive': renderArchive(); break;
   }
@@ -1095,6 +1096,7 @@ function openExamModal(id, startTab) {
   document.getElementById('exam-shuffle-a').checked = false;
   document.getElementById('exam-require-camera').checked = false;
   document.getElementById('exam-ai-detect').checked = false;
+  document.getElementById('exam-allow-review').checked = false;
   document.getElementById('modal-exam-title').textContent = 'Create Exam';
   // Wire subject change → repopulate audience
   const subjSel = document.getElementById('exam-subject-field');
@@ -1121,6 +1123,7 @@ function openExamModal(id, startTab) {
     document.getElementById('exam-shuffle-a').checked = e.shuffleAnswers || false;
     document.getElementById('exam-require-camera').checked = e.requireCamera || false;
     document.getElementById('exam-ai-detect').checked = e.requireAIDetection || false;
+    document.getElementById('exam-allow-review').checked = e.allowReview || false;
     sel.value = e.subjectId;
     populateAudienceSelectors(e.subjectId, e.targetYearLevels || [], e.targetSections || []);
     currentQBuilderExamId = id;
@@ -1174,14 +1177,15 @@ function saveExam() {
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
 
+  const allowReview  = document.getElementById('exam-allow-review').checked;
   const audienceData = { targetYearLevels, targetSections };
 
   let examId = id;
   if (id) {
-    DB.updateExam(id, { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, ...audienceData });
+    DB.updateExam(id, { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData });
     showToast('Exam updated.', 'success');
   } else {
-    const exam = DB.addExam({ title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
+    const exam = DB.addExam({ title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');
@@ -1400,11 +1404,117 @@ function renderQuestionsList(examId) {
   updateQBadge(examId);
 }
 
-function buildQuestionBlock(q, idx) {
-  const typeLabel = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification', essay: 'Essay (Open-ended)' }[q.type] || q.type;
-  let optionsHtml = '';
+// ── Enumeration helpers ──────────────────────────────────
+function updateEnumAnswer(qIdx, aIdx, val) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== qIdx) return q;
+    const answers = [...(q.answers || [])];
+    answers[aIdx] = val;
+    return { ...q, answers };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+}
+function addEnumAnswer(qIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => i !== qIdx ? q : { ...q, answers: [...(q.answers||[]), ''] });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+function removeEnumAnswer(qIdx, aIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== qIdx) return q;
+    const answers = (q.answers || []).filter((_, ai) => ai !== aIdx);
+    return { ...q, answers };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
 
-  if (q.type === 'essay') {
+// ── Matching Type helpers ─────────────────────────────────
+function updateMatchPair(qIdx, pIdx, field, val) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== qIdx) return q;
+    const pairs = (q.pairs || []).map((p, pi) => pi !== pIdx ? p : { ...p, [field]: val });
+    return { ...q, pairs };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+}
+function addMatchPair(qIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => i !== qIdx ? q : { ...q, pairs: [...(q.pairs||[]), {term:'',match:''}] });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+function removeMatchPair(qIdx, pIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== qIdx) return q;
+    const pairs = (q.pairs || []).filter((_, pi) => pi !== pIdx);
+    return { ...q, pairs };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+function buildQuestionBlock(q, idx) {
+  const typeColors = { mcq:'#3b82f6', tf:'#8b5cf6', identification:'#f59e0b', enumeration:'#0d9488', matching:'#dc2626', essay:'#0f2d1a' };
+  const typeLabel  = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', enumeration:'Enumeration', matching:'Matching Type', essay:'Essay' }[q.type] || q.type;
+  const typeColor  = typeColors[q.type] || '#6b7280';
+  let optionsHtml  = '';
+
+  if (q.type === 'enumeration') {
+    const answers = Array.isArray(q.answers) ? q.answers : [''];
+    optionsHtml = `
+      <div class="form-group">
+        <label>Expected Answers <span class="text-muted" style="font-weight:400;">(each item students must list)</span></label>
+        <div id="enum-list-${idx}" style="display:flex;flex-direction:column;gap:6px;">
+          ${answers.map((a, ai) => `
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${ai+1}.</span>
+              <input type="text" class="form-control" value="${escHtml(a)}" placeholder="Expected answer ${ai+1}" onchange="updateEnumAnswer(${idx},${ai},this.value)" style="flex:1;" />
+              <button class="btn btn-danger btn-sm" onclick="removeEnumAnswer(${idx},${ai})" ${answers.length<=1?'disabled':''}>✕</button>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addEnumAnswer(${idx})">+ Add Answer</button>
+      </div>
+      <div class="form-group">
+        <label>Scoring</label>
+        <select class="form-control" style="width:260px;" onchange="updateQField(${idx},'partialScoring',this.value==='true')">
+          <option value="true" ${q.partialScoring!==false?'selected':''}>Partial (each correct item = partial pts)</option>
+          <option value="false" ${q.partialScoring===false?'selected':''}>All-or-nothing</option>
+        </select>
+      </div>`;
+  } else if (q.type === 'matching') {
+    const pairs = Array.isArray(q.pairs) ? q.pairs : [{term:'',match:''}];
+    optionsHtml = `
+      <div class="form-group">
+        <label>Matching Pairs <span class="text-muted" style="font-weight:400;">(term → correct match)</span></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px 12px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f3f4f6;">
+          <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Term / Question</div>
+          <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Correct Match</div>
+          <div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${pairs.map((p, pi) => `
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;">
+              <input type="text" class="form-control" value="${escHtml(p.term||'')}" placeholder="Term ${pi+1}" onchange="updateMatchPair(${idx},${pi},'term',this.value)" />
+              <input type="text" class="form-control" value="${escHtml(p.match||'')}" placeholder="Match ${pi+1}" onchange="updateMatchPair(${idx},${pi},'match',this.value)" />
+              <button class="btn btn-danger btn-sm" onclick="removeMatchPair(${idx},${pi})" ${pairs.length<=2?'disabled':''}>✕</button>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="addMatchPair(${idx})">+ Add Pair</button>
+        <p class="text-muted" style="font-size:11px;margin-top:6px;">Partial scoring: each correct pair = ${q.points} ÷ ${pairs.length} pts</p>
+      </div>`;
+  } else if (q.type === 'essay') {
     optionsHtml = `
       <div class="form-group">
         <label>Grading Rubric / Notes <span class="text-muted" style="font-weight:400;">(optional — shown to admin when grading)</span></label>
@@ -1451,7 +1561,12 @@ function buildQuestionBlock(q, idx) {
   return `
     <div class="question-block" id="qblock-${idx}">
       <div class="question-block-header">
-        <span class="question-block-title">Q${idx+1} - ${typeLabel}</span>
+        <span class="question-block-title">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <span style="width:10px;height:10px;border-radius:50%;background:${typeColor};flex-shrink:0;"></span>
+            Q${idx+1} <span style="font-weight:500;color:#9ca3af;font-size:11px;">${typeLabel}</span>
+          </span>
+        </span>
         <div style="display:flex;gap:10px;align-items:center;">
           <label class="q-required-toggle" title="Students must answer this question before submitting">
             <input type="checkbox" ${q.required !== false ? 'checked' : ''} onchange="updateQField(${idx},'required',this.checked)" />
@@ -1486,16 +1601,21 @@ function buildQuestionBlock(q, idx) {
 function addQuestion(type) {
   const exam = DB.getExam(currentQBuilderExamId);
   if (!exam) return;
+  const defaults = {
+    mcq:           { options: ['','','',''], correctAnswer: '', points: 1 },
+    tf:            { options: ['True','False'], correctAnswer: 'True', points: 1 },
+    identification:{ options: [], correctAnswer: '', points: 1 },
+    essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
+    enumeration:   { options: [], correctAnswer: '', points: 5, answers: ['','',''], partialScoring: true },
+    matching:      { options: [], correctAnswer: '', points: 5, pairs: [{term:'',match:''},{term:'',match:''}], partialScoring: true },
+  };
   const newQ = {
     id: DB.generateId(),
     type,
     content: '',
-    options: type === 'mcq' ? ['', '', '', ''] : type === 'tf' ? ['True', 'False'] : [],
-    correctAnswer: type === 'tf' ? 'True' : '',
-    points: type === 'essay' ? 10 : 1,
     imageUrl: '',
     required: true,
-    ...(type === 'essay' ? { rubric: '', minWords: 0 } : {}),
+    ...(defaults[type] || { options: [], correctAnswer: '', points: 1 }),
   };
   const questions = [...exam.questions, newQ];
   DB.updateExam(currentQBuilderExamId, { questions });
@@ -1652,23 +1772,25 @@ function viewStudentAnswers(sessionId) {
 
     if (q.type === 'essay') {
       const aiId = `ai-badge-${session.id}-${q.id}`;
-      const aiBtn = requireAI
-        ? `<button class="ai-badge-btn" onclick="detectAIContent(document.getElementById('essay-text-${session.id}-${q.id}').textContent, this, '${aiId}')">Detect AI</button>`
-        : '';
+      const wordCount = studentAns ? studentAns.split(/\s+/).filter(Boolean).length : 0;
       html += `
         <div class="answer-row" style="border-color:#e2e8f0;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-            <strong>Q${idx+1} (Essay): ${escHtml(q.content)}</strong>
-            <div style="display:flex;gap:6px;align-items:center;">
-              ${requireAI ? `<span class="ai-badge ai-badge-pending" id="${aiId}">AI: —</span>` : ''}
-              ${aiBtn}
-            </div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+            <strong style="font-size:14px;">Q${idx+1} (Essay): ${escHtml(q.content)}</strong>
           </div>
-          ${q.rubric ? `<div style="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:6px;padding:6px 10px;margin-bottom:8px;">Rubric: ${escHtml(q.rubric)}</div>` : ''}
-          <div style="font-size:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;white-space:pre-wrap;line-height:1.6;min-height:60px;" id="essay-text-${session.id}-${q.id}">${escHtml(studentAns || '(no answer)')}</div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:12px;font-size:12px;">
-            <span class="text-muted">${studentAns ? studentAns.split(/\s+/).filter(Boolean).length + ' words' : ''}</span>
-            <span>${studentAns ? `Manual grading required — max ${q.points} pts` : '— (no answer)'}</span>
+          ${q.rubric ? `<div style="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:6px;padding:6px 10px;margin-bottom:8px;"><strong>Rubric:</strong> ${escHtml(q.rubric)}</div>` : ''}
+          <div style="font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;white-space:pre-wrap;line-height:1.6;min-height:60px;margin-bottom:10px;" id="essay-text-${session.id}-${q.id}">${escHtml(studentAns || '(no answer)')}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <span style="font-size:12px;color:#9ca3af;">${wordCount} words &nbsp;·&nbsp; max ${q.points} pts</span>
+            ${requireAI && studentAns ? `
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div id="${aiId}-bar-wrap" style="width:120px;height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
+                  <div id="${aiId}-bar" style="height:100%;width:0%;border-radius:99px;background:#9ca3af;transition:width 0.4s;"></div>
+                </div>
+                <span id="${aiId}" class="ai-badge ai-badge-pending" style="cursor:pointer;" onclick="detectAIContentDetailed(document.getElementById('essay-text-${session.id}-${q.id}').textContent,'${aiId}')">
+                  Scan for AI
+                </span>
+              </div>` : requireAI ? '<span style="font-size:12px;color:#9ca3af;">No answer to scan</span>' : ''}
           </div>
         </div>`;
     } else {
@@ -1882,6 +2004,140 @@ async function forceSubmitStudent(sessionId) {
   DB.addLog({ sessionId, studentId: session.studentId, examId: session.examId, type: 'force_submit', details: 'Force submitted by admin' });
   showToast('Student force-submitted.', 'success');
   renderMonitoringTable(monitorExamId);
+}
+
+// ============================================================
+// ============================================================
+// STATISTICS (full page per exam)
+// ============================================================
+function loadStatsExams() {
+  const exams = DB.getExams().filter(e => ['active','closed','archived'].includes(e.status));
+  const sel = document.getElementById('stats-exam-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Choose an exam to view statistics —</option>' +
+    exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
+}
+
+function renderExamStats() {
+  const examId = document.getElementById('stats-exam-select').value;
+  const content = document.getElementById('stats-content');
+  if (!examId) {
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📊</div><div class="dash-empty-title">Select an Exam</div></div>`;
+    return;
+  }
+
+  const exam = DB.getExam(examId);
+  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const subject = DB.getSubject(exam.subjectId);
+
+  if (!sessions.length) {
+    content.innerHTML = `<div class="dash-empty"><div class="dash-empty-icon">📋</div><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
+    return;
+  }
+
+  const scores = sessions.map(s => s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0);
+  const avg    = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  const max    = Math.max(...scores);
+  const min    = Math.min(...scores);
+  const sorted = [...scores].sort((a,b)=>a-b);
+  const median = sorted.length%2 ? sorted[Math.floor(sorted.length/2)] : Math.round((sorted[sorted.length/2-1]+sorted[sorted.length/2])/2);
+  const passing = sessions.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length;
+  const autoSub = sessions.filter(s => s.autoSubmitted).length;
+  const flagged = sessions.filter(s => s.warnings >= 2).length;
+
+  // Score distribution
+  const ranges = [{l:'0–49',mn:0,mx:49},{l:'50–59',mn:50,mx:59},{l:'60–74',mn:60,mx:74},{l:'75–84',mn:75,mx:84},{l:'85–94',mn:85,mx:94},{l:'95–100',mn:95,mx:100}];
+  const maxCount = Math.max(1, ...ranges.map(r => scores.filter(s => s>=r.mn && s<=r.mx).length));
+  const distBars = ranges.map(r => {
+    const cnt = scores.filter(s => s>=r.mn && s<=r.mx).length;
+    const h = Math.max(4, Math.round(cnt/maxCount*80));
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+      <div style="font-size:11px;font-weight:700;color:#0f2d1a;">${cnt||''}</div>
+      <div style="width:100%;height:${h}px;background:#0f2d1a;opacity:0.8;border-radius:4px 4px 0 0;min-height:4px;"></div>
+      <div style="font-size:9px;color:#9ca3af;">${r.l}</div>
+    </div>`;
+  }).join('');
+
+  // Per-question analysis
+  const qStats = exam.questions.map((q, qi) => {
+    if (q.type === 'essay') return null;
+    let correct = 0;
+    sessions.forEach(s => {
+      const ans = (s.answers||{})[q.id];
+      if (ans && ans.toString().trim().toUpperCase() === (q.correctAnswer||'').toString().trim().toUpperCase()) correct++;
+    });
+    const pct = sessions.length ? Math.round(correct/sessions.length*100) : 0;
+    return { qi, q, correct, pct };
+  }).filter(Boolean);
+
+  // Top & bottom performers
+  const ranked = [...sessions].sort((a,b)=>(b.score||0)-(a.score||0));
+
+  content.innerHTML = `
+    <!-- Overview Strip -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:24px;">
+      ${[
+        {label:'Average',value:avg+'%',color:'#0f2d1a'},
+        {label:'Median',value:median+'%',color:'#1d4ed8'},
+        {label:'Highest',value:max+'%',color:'#15803d'},
+        {label:'Lowest',value:min+'%',color:'#dc2626'},
+        {label:'Pass Rate (≥75%)',value:Math.round(passing/sessions.length*100)+'%',color:'#0d9488'},
+        {label:'Auto-Submitted',value:autoSub,color:'#d97706'},
+        {label:'Flagged (≥2 warn)',value:flagged,color:'#dc2626'},
+        {label:'Total Submitted',value:sessions.length,color:'#374151'},
+      ].map(c=>`<div style="background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+        <div style="font-size:28px;font-weight:900;color:${c.color};font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-1px;">${c.value}</div>
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.7px;margin-top:4px;">${c.label}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Two column: Distribution + Question Analysis -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <!-- Score Distribution -->
+      <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+        <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Score Distribution</div>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:100px;">${distBars}</div>
+      </div>
+
+      <!-- Question Difficulty -->
+      <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:220px;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Question Difficulty</div>
+        ${qStats.length ? qStats.map(({qi,q,correct,pct})=>`
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">Q${qi+1}: ${escHtml(q.content.substring(0,40))}${q.content.length>40?'…':''}</span>
+              <span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span>
+            </div>
+            <div style="height:5px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
+              <div style="width:${pct}%;height:100%;background:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};border-radius:99px;"></div>
+            </div>
+          </div>`).join('') : '<div style="color:#9ca3af;font-size:13px;">No auto-graded questions.</div>'}
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Student Results</div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Rank</th><th>Student</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${ranked.map((s,i)=>{
+              const pct = s.maxScore?Math.round(s.score/s.maxScore*100):0;
+              return `<tr>
+                <td><div class="rank-badge rank-${i<3?i+1:'other'}">${i+1}</div></td>
+                <td><strong>${escHtml(s.studentName)}</strong><br/><span class="text-muted" style="font-size:11px;">${escHtml(s.studentId)}</span></td>
+                <td>${s.score}/${s.maxScore}</td>
+                <td><span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span></td>
+                <td>${s.warnings>0?`<span class="badge badge-danger">${s.warnings}</span>`:'0'}</td>
+                <td>${s.autoSubmitted?'<span class="badge badge-warning">Auto</span>':'<span class="badge badge-success">Manual</span>'}</td>
+                <td><button class="btn btn-secondary btn-sm" onclick="viewStudentAnswers('${s.id}')">Review</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 // ============================================================
@@ -2348,8 +2604,59 @@ function viewCameraSnapshot(sessionId) {
 }
 
 // ============================================================
-// AI CONTENT DETECTION
+// AI CONTENT DETECTION (with visual gauge)
 // ============================================================
+async function detectAIContentDetailed(text, badgeId) {
+  const apiKey = DB.getSettings().claudeApiKey;
+  if (!apiKey) { showToast('Groq API key not set. Go to Settings.', 'error'); return; }
+  if (!text || text.trim().length < 20) { showToast('Text is too short to analyze.', 'warning'); return; }
+
+  const badgeEl = document.getElementById(badgeId);
+  const barEl   = document.getElementById(badgeId + '-bar');
+  if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-scanning'; badgeEl.textContent = 'Scanning…'; }
+
+  const prompt = `You are an AI-generated content detector. Analyze the following student essay response and determine the likelihood that it was generated by an AI (such as ChatGPT, Claude, etc.) rather than written by a human student.
+
+Consider: vocabulary complexity, sentence structure variety, generic phrasing, lack of personal voice, overly perfect grammar, and typical AI writing patterns.
+
+Respond ONLY with a JSON object: {"score": <0-100>, "label": "<low|medium|high>", "reason": "<one brief sentence>"}
+- score 0-30 = likely human (label: "low")
+- score 31-69 = uncertain (label: "medium")
+- score 70-100 = likely AI (label: "high")
+
+Essay text:
+"""
+${text.slice(0, 2000)}
+"""`;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 150, messages: [{ role:'user', content:prompt }] }),
+    });
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Invalid response');
+    const result = JSON.parse(match[0]);
+    const score = Math.min(100, Math.max(0, result.score || 0));
+    const label = result.label || 'medium';
+    const barColor = label === 'high' ? '#dc2626' : label === 'medium' ? '#d97706' : '#15803d';
+
+    if (barEl) { barEl.style.width = score + '%'; barEl.style.background = barColor; }
+    if (badgeEl) {
+      badgeEl.className = `ai-badge ai-badge-${label}`;
+      badgeEl.innerHTML = `AI: <strong>${score}%</strong> <span style="font-weight:400;">(${label})</span>`;
+      badgeEl.title = result.reason || '';
+      badgeEl.style.cursor = 'default';
+    }
+  } catch(e) {
+    if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-medium'; badgeEl.textContent = 'Scan failed'; }
+    showToast('AI detection failed: ' + e.message, 'error');
+  }
+}
+
 async function detectAIContent(text, btnEl, badgeId) {
   const apiKey = DB.getSettings().claudeApiKey;
   if (!apiKey) { showToast('Groq API key not set. Go to Settings.', 'error'); return; }
@@ -2507,8 +2814,8 @@ async function runAIGenerate() {
   if (!aiSelectedFile) { showToast('Please select a file first.', 'error'); return; }
 
   const apiKey = DB.getSettings().claudeApiKey;
-  const count = parseInt(document.getElementById('ai-count').value);
-  const types = document.getElementById('ai-types').value;
+  const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count').value) || 10));
+  const selectedTypes = [...document.querySelectorAll('.ai-type-cb:checked')].map(cb => cb.value);
   const difficulty = document.getElementById('ai-difficulty').value;
 
   document.getElementById('ai-gen-btn').style.display = 'none';
@@ -2529,24 +2836,25 @@ async function runAIGenerate() {
   // Trim to ~12000 chars to fit context
   if (rawText.length > 12000) rawText = rawText.slice(0, 12000) + '\n[content truncated]';
 
-  const typeInstructions = {
-    mix: 'Use a mix of "mcq", "tf" (True/False), and "identification" types.',
-    mcq: 'Use only "mcq" (Multiple Choice) type.',
-    tf: 'Use only "tf" (True/False) type.',
-    identification: 'Use only "identification" type.',
-  };
+  const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq','tf','identification'];
+  const typeInstruction = typeList.length === 1
+    ? `Use only "${typeList[0]}" type.`
+    : `Use a mix of these types: ${typeList.join(', ')}.`;
 
   const prompt = `You are an exam question generator. Based on the course material below, generate exactly ${count} exam questions.
 
 Rules:
-- ${typeInstructions[types]}
+- ${typeInstruction}
 - Difficulty: ${difficulty}
 - Return ONLY a valid JSON array with no other text, explanation, or markdown.
-- Each question object must follow this exact schema:
-  { "type": "mcq"|"tf"|"identification", "content": "...", "options": [...], "correctAnswer": "...", "points": 1 }
-- For "mcq": options must be an array of 4 strings; correctAnswer must match one option exactly.
-- For "tf": options must be ["True","False"]; correctAnswer must be "True" or "False".
-- For "identification": options must be []; correctAnswer is the expected answer string (concise, 1–4 words).
+- Each question object schema:
+  { "type": "mcq"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
+- For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
+- For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
+- For "identification": options = []; correctAnswer = expected answer string (1-4 words).
+- For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; points = 5.
+- For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; points = 5.
+- For "essay": options = []; correctAnswer = ""; points = 10. Include a "rubric" field with grading guidance.
 
 Course material:
 ${rawText}`;

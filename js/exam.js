@@ -20,6 +20,12 @@ const ExamApp = {
   _cameraStream: null,      // MediaStream from camera
   _snapInterval: null,      // periodic snapshot interval
   _cameraPrompting: false,  // true while camera permission dialog is open
+  _motionInterval: null,    // motion detection interval
+  _prevFrameData: null,     // previous frame pixel data for diff
+  _noMotionSec: 0,          // seconds without detected motion
+  _MOTION_THRESHOLD: 12,    // avg pixel diff threshold (lower = more sensitive)
+  _NO_MOTION_WARN: 8,       // seconds before warning
+  _motionBlocked: false,    // true if exam is blocked due to no person detected
   _dashInterval: null,      // dashboard poll interval
 
   // ============================================================
@@ -754,7 +760,7 @@ const ExamApp = {
   // STATE MACHINE
   // ============================================================
   showState(name) {
-    ['dashboard', 'entry', 'waiting', 'exam', 'submitted'].forEach(s => {
+    ['dashboard', 'entry', 'waiting', 'exam', 'submitted', 'review'].forEach(s => {
       const el = document.getElementById('state-' + s);
       if (el) el.classList.add('hidden');
     });
@@ -1057,66 +1063,149 @@ const ExamApp = {
     if (!container || !video) return;
 
     container.style.display = '';
-
-    // Suppress anti-cheat warnings while the browser permission dialog is open.
-    // The dialog causes blur/fullscreen-exit events that must not count as violations.
     this._cameraPrompting = true;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
       this._cameraPrompting = false;
       this._cameraStream = stream;
       video.srcObject = stream;
-      if (statusText) statusText.textContent = 'Camera active';
+      if (statusText) statusText.textContent = '● Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
 
-      // Take snapshot immediately, then every 60 seconds
-      setTimeout(() => this.captureSnapshot(), 3000);
-      this._snapInterval = setInterval(() => this.captureSnapshot(), 60000);
+      // Wait for video to be ready then check for presence before starting
+      video.onloadeddata = () => {
+        setTimeout(() => this._checkInitialPresence(video), 1500);
+      };
     } catch (err) {
       this._cameraPrompting = false;
-      if (statusText) statusText.textContent = 'Camera blocked';
-      if (blockedMsg) { blockedMsg.style.display = 'flex'; }
-      // Log camera denial as an activity
+      if (statusText) statusText.textContent = 'Camera denied';
+      if (blockedMsg) blockedMsg.style.display = 'flex';
       if (this.session) {
         const session = DB.getSession(this.session.id);
         if (session) {
-          const activities = [...(session.activities || []), { type: 'camera_denied', detail: 'Camera permission denied: ' + err.message, timestamp: new Date().toISOString() }];
+          const activities = [...(session.activities||[]), { type:'camera_denied', detail:'Camera permission denied: '+err.message, timestamp:new Date().toISOString() }];
           DB.updateSession(this.session.id, { activities });
         }
       }
     }
   },
 
+  _checkInitialPresence(video) {
+    // Capture initial frame — if no motion baseline, just start monitoring
+    const canvas = document.getElementById('camera-canvas');
+    if (!canvas || video.readyState < 2) { this._startMotionDetection(video); return; }
+    canvas.width = 80; canvas.height = 60;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, 80, 60);
+    this._prevFrameData = ctx.getImageData(0, 0, 80, 60).data;
+    this._startMotionDetection(video);
+  },
+
+  _startMotionDetection(video) {
+    if (this._motionInterval) clearInterval(this._motionInterval);
+    this._noMotionSec = 0;
+    this._motionInterval = setInterval(() => this._detectMotion(video), 500);
+  },
+
+  _detectMotion(video) {
+    const canvas = document.getElementById('camera-canvas');
+    if (!canvas || !video || video.readyState < 2 || !this._cameraStream) return;
+
+    canvas.width = 80; canvas.height = 60;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, 80, 60);
+    const frame = ctx.getImageData(0, 0, 80, 60).data;
+
+    if (!this._prevFrameData || this._prevFrameData.length !== frame.length) {
+      this._prevFrameData = new Uint8ClampedArray(frame);
+      return;
+    }
+
+    // Calculate average pixel difference (grayscale channel)
+    let diff = 0;
+    for (let i = 0; i < frame.length; i += 4) {
+      diff += Math.abs(frame[i] - this._prevFrameData[i]);
+    }
+    const avgDiff = diff / (frame.length / 4);
+    this._prevFrameData = new Uint8ClampedArray(frame);
+
+    const statusText = document.getElementById('camera-status-text');
+
+    if (avgDiff >= this._MOTION_THRESHOLD) {
+      // Motion/presence detected — reset timer
+      this._noMotionSec = 0;
+      this._motionBlocked = false;
+      if (statusText) statusText.textContent = `● Person detected`;
+      this._clearMotionWarning();
+    } else {
+      // No significant motion
+      this._noMotionSec += 0.5;
+      const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
+      if (statusText) statusText.textContent = `⚠ No person (${Math.ceil(remaining)}s)`;
+
+      if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
+        this._handleNoMotion();
+      }
+    }
+  },
+
+  _handleNoMotion() {
+    if (this._motionBlocked) return;
+    this._motionBlocked = true;
+
+    // Log the event
+    if (this.session) {
+      const session = DB.getSession(this.session.id);
+      if (session) {
+        const activities = [...(session.activities||[]), { type:'no_person', detail:'No person detected in camera frame', timestamp:new Date().toISOString() }];
+        DB.updateSession(this.session.id, { activities });
+      }
+    }
+
+    // Show the motion warning overlay
+    const overlay = document.getElementById('motion-warning-overlay');
+    if (overlay) overlay.style.display = '';
+
+    // Issue a warning as violation
+    this.issueWarning('no_person', 'No person detected in camera frame');
+  },
+
+  _clearMotionWarning() {
+    const overlay = document.getElementById('motion-warning-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._motionBlocked = false;
+  },
+
+  // Keep captureSnapshot for admin monitoring thumbnails (less frequent)
   captureSnapshot() {
     const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('camera-canvas');
     if (!video || !canvas || !this._cameraStream || !this.session) return;
-    if (video.readyState < 2) return; // not ready
-
+    if (video.readyState < 2) return;
     try {
-      canvas.width = 160;
-      canvas.height = 120;
+      canvas.width = 160; canvas.height = 120;
       const ctx = canvas.getContext('2d');
-      ctx.save();
-      ctx.scale(-1, 1); // mirror
+      ctx.save(); ctx.scale(-1,1);
       ctx.drawImage(video, -160, 0, 160, 120);
       ctx.restore();
       const imageData = canvas.toDataURL('image/jpeg', 0.5);
-      const timestamp = new Date().toISOString();
-
       const session = DB.getSession(this.session.id);
       if (!session) return;
       const snaps = session.cameraSnapshots || [];
-      snaps.push({ timestamp, imageData });
-      // Keep only last 5 snapshots to limit Firestore doc size
-      if (snaps.length > 5) snaps.splice(0, snaps.length - 5);
+      snaps.push({ timestamp: new Date().toISOString(), imageData });
+      if (snaps.length > 5) snaps.splice(0, snaps.length-5);
       DB.updateSession(this.session.id, { cameraSnapshots: snaps });
-    } catch (e) { /* silently fail */ }
+    } catch(e) {}
   },
 
   stopCamera() {
     this._cameraPrompting = false;
-    if (this._snapInterval) { clearInterval(this._snapInterval); this._snapInterval = null; }
+    if (this._motionInterval) { clearInterval(this._motionInterval); this._motionInterval = null; }
+    if (this._snapInterval)   { clearInterval(this._snapInterval);   this._snapInterval = null; }
+    this._prevFrameData = null;
+    this._noMotionSec = 0;
+    this._motionBlocked = false;
     if (this._cameraStream) {
       this._cameraStream.getTracks().forEach(t => t.stop());
       this._cameraStream = null;
@@ -1452,9 +1541,13 @@ const ExamApp = {
       answerHtml = this._renderIdentification(q, idx);
     } else if (q.type === 'essay') {
       answerHtml = this._renderEssay(q, idx);
+    } else if (q.type === 'enumeration') {
+      answerHtml = this._renderEnumeration(q, idx);
+    } else if (q.type === 'matching') {
+      answerHtml = this._renderMatching(q, idx);
     }
 
-    const typeLabels = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification', essay: 'Essay' };
+    const typeLabels = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', essay:'Essay', enumeration:'Enumeration', matching:'Matching Type' };
 
     const imgHtml = q.imageUrl
       ? `<div class="question-img-wrap"><img src="${_escAttr(q.imageUrl)}" alt="Question image" class="question-img" onerror="this.parentElement.style.display='none'" /></div>`
@@ -1513,6 +1606,38 @@ const ExamApp = {
     return `<input type="text" class="id-input" id="id-input-${q.id}" placeholder="Type your answer here..."
       autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
       oninput="ExamApp.handleIdentificationInput(event, '${q.id}')" />`;
+  },
+
+  _renderEnumeration(q, idx) {
+    const count = (q.answers||[]).length || 3;
+    const rows = Array.from({length: count}, (_, i) => `
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;color:#9ca3af;font-weight:700;min-width:22px;">${i+1}.</span>
+        <input type="text" class="form-control" id="enum-${q.id}-${i}" placeholder="Item ${i+1}"
+          autocomplete="off" spellcheck="true"
+          oninput="ExamApp.handleEnumInput(event,'${q.id}',${count})" style="flex:1;" />
+      </div>`).join('');
+    return `<div style="display:flex;flex-direction:column;gap:8px;">${rows}</div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:6px;">List all ${count} items. Each correct item earns partial points.</div>`;
+  },
+
+  _renderMatching(q, idx) {
+    const pairs = q.pairs || [];
+    // Show shuffled matches on the right
+    const matches = [...pairs.map(p=>p.match)].sort(()=>Math.random()-0.5);
+    return `<div style="display:flex;flex-direction:column;gap:8px;">
+      ${pairs.map((p,pi)=>`
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;">
+          <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;">${_esc(p.term)}</div>
+          <div style="color:#9ca3af;font-size:16px;">→</div>
+          <select class="form-control" id="match-${q.id}-${pi}"
+            onchange="ExamApp.handleMatchInput(event,'${q.id}',${pairs.length})"
+            style="font-size:13px;">
+            <option value="">— Select —</option>
+            ${matches.map(m=>`<option value="${_escAttr(m)}">${_esc(m)}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+    </div>`;
   },
 
   _renderEssay(q, idx) {
@@ -1587,6 +1712,26 @@ const ExamApp = {
     const val = event.target.value.toUpperCase();
     event.target.value = val;
     this.selectAnswer(questionId, val);
+  },
+
+  handleEnumInput(event, questionId, count) {
+    // Collect all enum inputs for this question
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      const el = document.getElementById(`enum-${questionId}-${i}`);
+      items.push(el ? el.value.trim() : '');
+    }
+    this.selectAnswer(questionId, items.join('\n'));
+  },
+
+  handleMatchInput(event, questionId, pairCount) {
+    // Collect all match selects for this question
+    const matched = {};
+    for (let i = 0; i < pairCount; i++) {
+      const el = document.getElementById(`match-${questionId}-${i}`);
+      matched[i] = el ? el.value : '';
+    }
+    this.selectAnswer(questionId, JSON.stringify(matched));
   },
 
   handleEssayInput(event, questionId, minWords) {
@@ -1697,6 +1842,100 @@ const ExamApp = {
 
   cancelSubmit() {
     document.getElementById('confirm-submit-modal').classList.add('hidden');
+  },
+
+  showReview() {
+    const sess = this.session ? DB.getSession(this.session.id) : null;
+    const exam = this.exam;
+    if (!sess || !exam) return;
+
+    this.showState('review');
+    const titleEl = document.getElementById('review-exam-title');
+    if (titleEl) titleEl.textContent = exam.title;
+    const nameEl = document.getElementById('review-student-name');
+    if (nameEl) nameEl.textContent = sess.studentName + ' · ' + sess.studentId;
+    const scoreEl = document.getElementById('review-score-chip');
+    if (scoreEl) {
+      const pct = sess.maxScore ? Math.round(sess.score / sess.maxScore * 100) : 0;
+      scoreEl.textContent = `${sess.score}/${sess.maxScore} — ${pct}%`;
+      scoreEl.style.background = pct >= 75 ? 'rgba(21,128,61,0.8)' : pct >= 60 ? 'rgba(217,119,6,0.8)' : 'rgba(220,38,38,0.8)';
+    }
+
+    const container = document.getElementById('review-container');
+    if (!container) return;
+
+    container.innerHTML = exam.questions.map((q, idx) => {
+      const ans = (sess.answers || {})[q.id];
+      let resultHtml = '';
+
+      if (q.type === 'essay') {
+        resultHtml = `
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;">${_esc(ans||'(no answer)')}</div>
+          <div style="font-size:12px;color:#9ca3af;margin-top:6px;font-style:italic;">Essay — manually graded by instructor.</div>`;
+      } else if (q.type === 'enumeration') {
+        const expected = q.answers || [];
+        const studentItems = (ans||'').split('\n').map(s=>s.trim().toUpperCase()).filter(Boolean);
+        const matched = expected.filter(e => studentItems.includes(e.toUpperCase()));
+        resultHtml = `
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
+            ${expected.map((e,i) => {
+              const got = studentItems.includes(e.toUpperCase());
+              return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+                <span style="color:${got?'#15803d':'#dc2626'};font-size:16px;">${got?'✓':'✗'}</span>
+                <span>${_esc(e)}</span>
+                ${!got && studentItems[i] ? `<span style="color:#9ca3af;font-size:12px;">(you wrote: ${_esc(studentItems[i]||'—')})</span>`:''}
+              </div>`;
+            }).join('')}
+          </div>
+          <div style="font-size:12px;color:#6b7280;margin-top:6px;">${matched.length}/${expected.length} correct</div>`;
+      } else if (q.type === 'matching') {
+        const pairs = q.pairs || [];
+        const studentAns = (() => { try { return JSON.parse(ans||'{}'); } catch { return {}; } })();
+        resultHtml = `
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+            ${pairs.map((p,pi) => {
+              const correct = (studentAns[pi]||'').toUpperCase() === p.match.toUpperCase();
+              return `<div style="display:grid;grid-template-columns:1fr 24px 1fr;gap:8px;align-items:center;font-size:13px;">
+                <div style="background:#f9fafb;border-radius:6px;padding:6px 10px;">${_esc(p.term)}</div>
+                <div style="text-align:center;color:${correct?'#15803d':'#dc2626'};font-weight:700;">${correct?'✓':'✗'}</div>
+                <div style="background:${correct?'#f0fdf4':'#fef2f2'};border-radius:6px;padding:6px 10px;border:1px solid ${correct?'#bbf7d0':'#fecaca'};">
+                  ${_esc(studentAns[pi]||'(no answer)')}
+                  ${!correct?`<span style="color:#9ca3af;font-size:11px;"> → ${_esc(p.match)}</span>`:''}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>`;
+      } else {
+        const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer||'').toString().trim().toUpperCase();
+        const color = !ans ? '#9ca3af' : correct ? '#15803d' : '#dc2626';
+        resultHtml = `
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <span style="font-weight:700;color:#6b7280;min-width:90px;">Your answer:</span>
+              <span style="color:${color};font-weight:600;">${_esc(ans||'(no answer)')}</span>
+              ${ans ? `<span style="font-size:16px;">${correct?'✓':'✗'}</span>` : ''}
+            </div>
+            ${!correct ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <span style="font-weight:700;color:#6b7280;min-width:90px;">Correct:</span>
+              <span style="color:#15803d;font-weight:600;">${_esc(q.correctAnswer)}</span>
+            </div>` : ''}
+          </div>`;
+      }
+
+      const typeColors = { mcq:'#3b82f6',tf:'#8b5cf6',identification:'#f59e0b',enumeration:'#0d9488',matching:'#dc2626',essay:'#0f2d1a' };
+      const typeLabel  = { mcq:'MCQ',tf:'T/F',identification:'ID',enumeration:'Enum',matching:'Match',essay:'Essay' };
+      return `<div style="background:#fff;border-radius:14px;padding:18px 20px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;">
+          <div style="font-size:14px;font-weight:700;color:#111827;flex:1;line-height:1.4;">
+            <span style="display:inline-block;width:26px;height:26px;border-radius:50%;background:${typeColors[q.type]||'#6b7280'};color:#fff;font-size:11px;font-weight:800;text-align:center;line-height:26px;margin-right:8px;flex-shrink:0;">${idx+1}</span>
+            ${_esc(q.content)}
+          </div>
+          <div style="font-size:10px;font-weight:700;background:${typeColors[q.type]||'#6b7280'}22;color:${typeColors[q.type]||'#6b7280'};padding:2px 8px;border-radius:20px;white-space:nowrap;">${typeLabel[q.type]||q.type}</div>
+        </div>
+        ${q.imageUrl?`<img src="${q.imageUrl}" style="max-width:100%;border-radius:8px;margin-bottom:10px;" />`:''}
+        ${resultHtml}
+      </div>`;
+    }).join('');
   },
 
   returnToLogin() {
@@ -1813,12 +2052,18 @@ const ExamApp = {
       const bar = document.getElementById('score-bar-fill');
       if (bar) bar.style.width = pct + '%';
     } else if (!freshSubmit) {
-      // Returning student, scores not yet released — show pending notice
       scoreDisplay.classList.add('hidden');
       scorePending.classList.remove('hidden');
     } else {
       scoreDisplay.classList.add('hidden');
       scorePending.classList.add('hidden');
+    }
+
+    // Show "Review Answers" button if exam allows it
+    const reviewBtn = document.getElementById('btn-review-answers');
+    if (reviewBtn) {
+      const examObj = this.exam || (session ? DB.getExam(session.examId) : null);
+      reviewBtn.style.display = (examObj && examObj.allowReview) ? '' : 'none';
     }
   },
 
@@ -1832,16 +2077,30 @@ const ExamApp = {
 
     for (const q of questions) {
       max += q.points;
-      if (q.type === 'essay') continue; // essays require manual grading; score starts at 0
+      if (q.type === 'essay') continue; // manual grading
 
       const ans = this.answers[q.id];
       if (!ans || ans.toString().trim() === '') continue;
 
-      const studentAns = ans.toString().trim().toUpperCase();
-      const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
-
-      if (studentAns === correctAns) {
-        earned += q.points;
+      if (q.type === 'enumeration') {
+        const expected = (q.answers || []).map(a => a.toUpperCase());
+        const given    = ans.split('\n').map(s => s.trim().toUpperCase()).filter(Boolean);
+        const correct  = expected.filter(e => given.includes(e)).length;
+        if (q.partialScoring === false) {
+          if (correct === expected.length) earned += q.points;
+        } else {
+          earned += expected.length > 0 ? Math.round((correct / expected.length) * q.points) : 0;
+        }
+      } else if (q.type === 'matching') {
+        const pairs = q.pairs || [];
+        let studentAns = {};
+        try { studentAns = JSON.parse(ans); } catch {}
+        const correct = pairs.filter((p,i) => (studentAns[i]||'').toUpperCase() === p.match.toUpperCase()).length;
+        earned += pairs.length > 0 ? Math.round((correct / pairs.length) * q.points) : 0;
+      } else {
+        const studentAns = ans.toString().trim().toUpperCase();
+        const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
+        if (studentAns === correctAns) earned += q.points;
       }
     }
 

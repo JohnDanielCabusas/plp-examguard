@@ -232,6 +232,21 @@
     </div><!-- /student-portal -->
   </div>
 
+  <!-- STATE: REVIEW (student reviews their answers) -->
+  <div id="state-review" class="hidden" style="background:#f0f2f5;min-height:100vh;">
+    <div style="background:#0f2d1a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div>
+        <div style="font-size:15px;font-weight:800;color:#fff;" id="review-exam-title">Exam Review</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);" id="review-student-name"></div>
+      </div>
+      <div id="review-score-chip" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:8px 18px;font-size:15px;font-weight:800;color:#fff;"></div>
+    </div>
+    <div style="max-width:760px;margin:0 auto;padding:24px 16px 60px;" id="review-container"></div>
+    <div style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e5e7eb;padding:14px 24px;text-align:center;">
+      <button class="btn btn-primary" onclick="ExamApp.returnToLogin()" style="min-width:160px;">← Back</button>
+    </div>
+  </div>
+
   <!-- STATE: ENTRY (fallback if no session) -->
   <div id="state-entry" class="state-center hidden">
     <div class="state-card">
@@ -331,8 +346,21 @@
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="ExamApp.returnToLogin()">← Back</button>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px;">
+        <button id="btn-review-answers" class="btn btn-secondary btn-block" onclick="ExamApp.showReview()" style="display:none;">
+          📋 Review My Answers
+        </button>
+        <button class="btn btn-primary btn-block" onclick="ExamApp.returnToLogin()">← Back</button>
+      </div>
     </div>
+  </div>
+
+  <!-- Motion Warning Overlay -->
+  <div id="motion-warning-overlay" style="display:none;position:fixed;inset:0;background:rgba(220,38,38,0.95);z-index:9000;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#fff;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="margin-bottom:20px;opacity:0.9;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div style="font-size:28px;font-weight:900;margin-bottom:10px;font-family:'Plus Jakarta Sans',sans-serif;">No Person Detected</div>
+    <div style="font-size:16px;opacity:0.85;margin-bottom:24px;max-width:400px;line-height:1.5;">Please return to your camera view.<br>The exam will resume once you are detected.</div>
+    <div style="font-size:13px;opacity:0.7;">Stay visible in front of your camera to continue the exam.</div>
   </div>
 
   <!-- Camera Container (shown when exam requireCamera is true) -->

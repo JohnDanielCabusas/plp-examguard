@@ -3174,6 +3174,34 @@ body.exam-page {
 .dash-empty-title { font-size: 16px; font-weight: 700; color: #374151; margin-bottom: 5px; }
 .dash-empty-sub   { font-size: 13px; color: #9ca3af; }
 
+/* ── Question builder redesign ───────────────────────── */
+.btn-qtype {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 20px;
+  border: 1.5px solid #e5e7eb; background: #fff;
+  font-size: 12px; font-weight: 700; cursor: pointer; color: #374151;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: all 0.15s;
+}
+.btn-qtype:hover { background: #f9fafb; border-color: #d1d5db; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+.qtype-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Redesigned question block */
+.question-block {
+  border-radius: 14px !important;
+  border: 1.5px solid #f3f4f6 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+  margin-bottom: 12px !important;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.question-block:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.09) !important; }
+.question-block-header {
+  padding: 12px 16px !important;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.question-block-title { font-size: 13px !important; font-weight: 700 !important; }
+
 /* ── Course view ──────────────────────────────────────── */
 
 /* Portal font override */
