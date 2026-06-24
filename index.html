@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PLP ExamGuard - Online Examination System</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<!-- Firebase loading overlay -->
+<div id="fb-loading" style="position:fixed;inset:0;background:rgba(255,255,255,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;gap:14px;">
+  <div style="width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#1a4d2a;border-radius:50%;animation:_fbspin 0.75s linear infinite;"></div>
+  <p style="color:#6b7280;font-size:13px;font-family:sans-serif;margin:0;">Connecting to server&hellip;</p>
+  <style>@keyframes _fbspin{to{transform:rotate(360deg)}}</style>
+</div>
+
+<div class="login-page">
+  <div class="login-orb login-orb-1"></div>
+  <div class="login-orb login-orb-2"></div>
+  <div class="login-orb login-orb-3"></div>
+  <div class="login-orb login-orb-4"></div>
+
+  <div class="login-card">
+    <!-- Logo -->
+    <div class="login-logo" id="login-logo">
+      <img src="https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png" alt="PLP Logo" id="logo-icon" style="width:80px;height:80px;object-fit:contain;">
+      <h1 id="school-name">Pamantasan ng Lungsod ng Pasig</h1>
+      <p>Online Examination System</p>
+      <p class="login-tagline">University of Pasig City</p>
+    </div>
+
+    <!-- Tab Switcher: Admin | Student -->
+    <div class="tab-switcher">
+      <button class="tab-btn active" id="tab-admin-btn" onclick="switchTab('admin')">Admin Login</button>
+      <button class="tab-btn" id="tab-student-btn" onclick="switchTab('student')">Student Login</button>
+    </div>
+
+    <!-- Tab Panels -->
+    <div class="tab-content">
+
+      <!-- ===== ADMIN TAB ===== -->
+      <div class="tab-panel active" id="tab-admin">
+        <div class="form-group">
+          <label for="admin-username">Username</label>
+          <input type="text" class="form-control" id="admin-username" placeholder="Enter username" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="admin-password">Password</label>
+          <div style="position:relative;">
+            <input type="password" class="form-control" id="admin-password" placeholder="Enter password" autocomplete="current-password" style="padding-right:42px;" />
+            <button type="button" onclick="togglePassword('admin-password',this)" tabindex="-1" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:#666;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="admin-error" class="text-danger mb-12" style="font-size:13px;display:none;"></div>
+        <button class="btn btn-primary btn-block btn-lg" onclick="doAdminLogin()">Sign In</button>
+      </div>
+
+      <!-- ===== STUDENT TAB ===== -->
+      <div class="tab-panel" id="tab-student">
+
+        <!-- STEP 1: Email -->
+        <div id="student-step-1">
+          <div class="form-group">
+            <label for="student-email">PLP Email Address</label>
+            <input type="email" class="form-control" id="student-email" placeholder="e.g. juandelacruz@plpasig.edu.ph" autocomplete="email" />
+          </div>
+          <div id="student-step1-error" class="text-danger mb-12" style="font-size:13px;display:none;"></div>
+          <button class="btn btn-primary btn-block btn-lg" onclick="doEmailContinue()">Continue</button>
+          <p class="text-center text-muted mt-8" style="font-size:12px;">Must be a <strong>@plpasig.edu.ph</strong> email address.</p>
+        </div>
+
+        <!-- STEP 2A: Returning student — enter password -->
+        <div id="student-step-2a" style="display:none;">
+          <!-- Email pill + back button -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;background:#f3f4f6;border-radius:8px;padding:8px 12px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <span id="student-email-display" style="font-size:13px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <button onclick="studentGoBack()" style="background:none;border:none;cursor:pointer;font-size:11px;color:#6b7280;white-space:nowrap;padding:0;">Change</button>
+          </div>
+          <div class="form-group">
+            <label for="student-password">Password</label>
+            <div style="position:relative;">
+              <input type="password" class="form-control" id="student-password" placeholder="Enter your password" autocomplete="current-password" style="padding-right:42px;" />
+              <button type="button" onclick="togglePassword('student-password',this)" tabindex="-1" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:#666;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="student-step2a-error" class="text-danger mb-12" style="font-size:13px;display:none;"></div>
+          <button class="btn btn-primary btn-block btn-lg" onclick="doPasswordLogin()">Sign In</button>
+          <p class="text-center text-muted mt-8" style="font-size:11px;">Forgot your password? Contact your instructor to reset it.</p>
+        </div>
+
+        <!-- STEP 2B: First-time login — create account -->
+        <div id="student-step-2b" style="display:none;">
+          <!-- Email pill -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;background:#f0f7f2;border:1px solid #bbf7d0;border-radius:8px;padding:8px 12px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <span id="student-email-display2" style="font-size:13px;font-weight:600;color:#15803d;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <button onclick="studentGoBack()" style="background:none;border:none;cursor:pointer;font-size:11px;color:#6b7280;white-space:nowrap;padding:0;">Change</button>
+          </div>
+          <p style="font-size:12px;color:#6b7280;margin-bottom:14px;">First login detected. Set up your account to continue.</p>
+
+          <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 13px;margin-bottom:14px;font-size:12px;color:#92400e;line-height:1.5;">
+            <strong>Important:</strong> Your Student ID cannot be changed after account creation. Double-check it carefully — only your professor can correct it.
+          </div>
+          <div class="form-group">
+            <label for="student-setup-id">Student ID <span style="color:#9ca3af;font-weight:400;">(YY-NNNNN)</span></label>
+            <input type="text" class="form-control" id="student-setup-id" placeholder="e.g. 23-00218" inputmode="numeric" maxlength="8" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="student-setup-id-confirm">Confirm Student ID</label>
+            <input type="text" class="form-control" id="student-setup-id-confirm" placeholder="Re-enter your Student ID" inputmode="numeric" maxlength="8" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="student-setup-name">Full Name <span style="color:#9ca3af;font-weight:400;">(if not yet registered)</span></label>
+            <input type="text" class="form-control" id="student-setup-name" placeholder="Last, First Middle" autocomplete="name" />
+          </div>
+          <div class="form-group">
+            <label for="student-setup-pass">Create Password</label>
+            <div style="position:relative;">
+              <input type="password" class="form-control" id="student-setup-pass" placeholder="Minimum 6 characters" style="padding-right:42px;" />
+              <button type="button" onclick="togglePassword('student-setup-pass',this)" tabindex="-1" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0;color:#666;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="student-setup-confirm">Confirm Password</label>
+            <input type="password" class="form-control" id="student-setup-confirm" placeholder="Re-enter password" />
+          </div>
+          <div id="student-step2b-error" class="text-danger mb-12" style="font-size:13px;display:none;"></div>
+          <button class="btn btn-primary btn-block btn-lg" onclick="doFirstSetup()">Create Account &amp; Sign In</button>
+        </div>
+
+      </div><!-- /tab-student -->
+
+    </div><!-- /tab-content -->
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="js/firebase-sync.js"></script>
+<script src="js/data.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    btn.querySelector('svg').innerHTML = isHidden
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>'
+      : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  }
+</script>
+<script>
+  document.addEventListener('firebaseReady', function init() {
+    const PLP_LOGO = 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png';
+    const settings = DB.getSettings();
+    document.getElementById('school-name').textContent = settings.schoolName || 'Pamantasan ng Lungsod ng Pasig';
+    document.title = 'PLP ExamGuard - Online Examination System';
+    const logoEl = document.getElementById('logo-icon');
+    if (logoEl && logoEl.tagName === 'IMG') logoEl.src = settings.logoUrl || PLP_LOGO;
+
+    // Check query param
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'student') switchTab('student');
+
+    // Redirect if already logged in
+    if (Auth.getAdminSession()) { window.location.href = 'admin.html'; return; }
+    if (Auth.getStudentSession()) { window.location.href = 'exam.html'; return; }
+
+    // Keyboard shortcuts
+    document.getElementById('admin-password').addEventListener('keydown', e => { if (e.key === 'Enter') doAdminLogin(); });
+    document.getElementById('admin-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('admin-password').focus(); });
+    document.getElementById('student-email').addEventListener('keydown', e => { if (e.key === 'Enter') doEmailContinue(); });
+    document.getElementById('student-password').addEventListener('keydown', e => { if (e.key === 'Enter') doPasswordLogin(); });
+    document.getElementById('student-setup-confirm').addEventListener('keydown', e => { if (e.key === 'Enter') doFirstSetup(); });
+
+    // Auto-format student ID in setup; Tab to next field
+    // Auto-format both student ID fields
+    ['student-setup-id', 'student-setup-id-confirm'].forEach(id => {
+      document.getElementById(id).addEventListener('input', function() {
+        const cursor = this.selectionStart;
+        const prev = this.value;
+        let digits = prev.replace(/\D/g, '').slice(0, 7);
+        this.value = digits.length > 2 ? digits.slice(0, 2) + '-' + digits.slice(2) : digits;
+        const added = this.value.length - prev.length;
+        this.setSelectionRange(cursor + added, cursor + added);
+      });
+    });
+    document.getElementById('student-setup-id').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('student-setup-id-confirm').focus();
+    });
+    document.getElementById('student-setup-id-confirm').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('student-setup-name').focus();
+    });
+    document.getElementById('student-setup-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('student-setup-pass').focus();
+    });
+    document.getElementById('student-setup-pass').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('student-setup-confirm').focus();
+    });
+  });
+
+  function switchTab(tab) {
+    ['admin','student'].forEach(t => {
+      document.getElementById('tab-' + t).classList.toggle('active', tab === t);
+      document.getElementById('tab-' + t + '-btn').classList.toggle('active', tab === t);
+    });
+    if (document.getElementById('admin-error')) document.getElementById('admin-error').style.display = 'none';
+    resetStudentSteps();
+  }
+
+  function resetStudentSteps() {
+    document.getElementById('student-step-1').style.display = '';
+    document.getElementById('student-step-2a').style.display = 'none';
+    document.getElementById('student-step-2b').style.display = 'none';
+    ['student-step1-error','student-step2a-error','student-step2b-error'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+
+  function studentGoBack() {
+    resetStudentSteps();
+    document.getElementById('student-email').focus();
+  }
+
+  function showErr(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // STEP 1: Check email
+  function doEmailContinue() {
+    const email = document.getElementById('student-email').value.trim().toLowerCase();
+    const errId = 'student-step1-error';
+    document.getElementById(errId).style.display = 'none';
+
+    if (!email) { showErr(errId, 'Please enter your PLP email address.'); return; }
+    if (!email.endsWith('@plpasig.edu.ph')) { showErr(errId, 'Only @plpasig.edu.ph email addresses are allowed.'); return; }
+
+    const result = Auth.checkStudentEmail(email);
+
+    // Hide step 1, show appropriate step
+    document.getElementById('student-step-1').style.display = 'none';
+
+    if (result.hasPassword) {
+      // Returning student — show password field
+      document.getElementById('student-email-display').textContent = email;
+      document.getElementById('student-step-2a').style.display = '';
+      document.getElementById('student-password').value = '';
+      setTimeout(() => document.getElementById('student-password').focus(), 80);
+    } else {
+      // First time (new account or no password set yet)
+      document.getElementById('student-email-display2').textContent = email;
+      document.getElementById('student-step-2b').style.display = '';
+      setTimeout(() => document.getElementById('student-setup-id').focus(), 80);
+    }
+  }
+
+  // STEP 2A: Password login
+  function doPasswordLogin() {
+    const email = document.getElementById('student-email').value.trim().toLowerCase();
+    const password = document.getElementById('student-password').value;
+    const errId = 'student-step2a-error';
+    document.getElementById(errId).style.display = 'none';
+
+    if (!password) { showErr(errId, 'Please enter your password.'); return; }
+
+    const result = Auth.studentLoginWithPassword(email, password);
+    if (result.success) {
+      window.location.href = 'exam.html';
+    } else {
+      showErr(errId, result.message);
+    }
+  }
+
+  // STEP 2B: First-time setup
+  function doFirstSetup() {
+    const email = document.getElementById('student-email').value.trim().toLowerCase();
+    const studentId = document.getElementById('student-setup-id').value.trim().toUpperCase();
+    const name = document.getElementById('student-setup-name').value.trim();
+    const password = document.getElementById('student-setup-pass').value;
+    const confirm = document.getElementById('student-setup-confirm').value;
+    const errId = 'student-step2b-error';
+    document.getElementById(errId).style.display = 'none';
+
+    const studentIdConfirm = document.getElementById('student-setup-id-confirm').value.trim().toUpperCase();
+
+    if (!studentId) { showErr(errId, 'Please enter your Student ID.'); return; }
+    const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
+    if (!idMatch) { showErr(errId, 'Student ID must be in YY-NNNNN format (e.g. 23-00218).'); return; }
+    const yr = parseInt(idMatch[1]);
+    if (yr < 18 || yr > 35) { showErr(errId, 'Invalid Student ID year.'); return; }
+    if (studentId !== studentIdConfirm) { showErr(errId, 'Student IDs do not match. Please check and re-enter.'); return; }
+
+    if (!password) { showErr(errId, 'Please create a password.'); return; }
+    if (password.length < 6) { showErr(errId, 'Password must be at least 6 characters.'); return; }
+    if (password !== confirm) { showErr(errId, 'Passwords do not match.'); return; }
+
+    const result = Auth.studentFirstSetup(email, studentId, password, name);
+    if (result.success) {
+      window.location.href = 'exam.html';
+    } else {
+      showErr(errId, result.message);
+    }
+  }
+
+  function doAdminLogin() {
+    const username = document.getElementById('admin-username').value.trim();
+    const password = document.getElementById('admin-password').value;
+    const errEl = document.getElementById('admin-error');
+    errEl.style.display = 'none';
+    if (!username || !password) { errEl.textContent = 'Please enter username and password.'; errEl.style.display = 'block'; return; }
+    const result = Auth.adminLogin(username, password);
+    if (result.success) {
+      window.location.href = 'admin.html';
+    } else {
+      errEl.textContent = result.message;
+      errEl.style.display = 'block';
+    }
+  }
+</script>
+<script>
+  (function() {
+    const el = document.getElementById('fb-loading');
+    document.addEventListener('firebaseReady', () => { if (el) el.style.display = 'none'; });
+    setTimeout(() => {
+      if (el && el.style.display !== 'none') {
+        el.style.display = 'none';
+        document.dispatchEvent(new Event('firebaseReady'));
+      }
+    }, 8000);
+    FirebaseSync.init();
+  })();
+</script>
+</body>
+</html>
