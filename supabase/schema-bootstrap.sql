@@ -165,6 +165,7 @@ alter table public.sessions enable row level security;
 alter table public.logs enable row level security;
 
 drop policy if exists "dev full access settings" on public.settings;
+drop policy if exists "anon full access settings" on public.settings;
 drop policy if exists "public read settings" on public.settings;
 create policy "public read settings"
 on public.settings
@@ -173,6 +174,7 @@ to anon, authenticated
 using (true);
 
 drop policy if exists "dev full access admins" on public.admins;
+drop policy if exists "anon full access admins" on public.admins;
 drop policy if exists "authenticated full access admins" on public.admins;
 create policy "authenticated full access admins"
 on public.admins
@@ -229,6 +231,7 @@ using (auth.role() = 'authenticated')
 with check (auth.role() = 'authenticated');
 
 drop policy if exists "dev full access subjects" on public.subjects;
+drop policy if exists "anon full access subjects" on public.subjects;
 drop policy if exists "public read subjects" on public.subjects;
 create policy "public read subjects"
 on public.subjects
@@ -245,6 +248,7 @@ using (auth.role() = 'authenticated')
 with check (auth.role() = 'authenticated');
 
 drop policy if exists "dev full access exams" on public.exams;
+drop policy if exists "anon full access exams" on public.exams;
 drop policy if exists "public read exams" on public.exams;
 create policy "public read exams"
 on public.exams
@@ -261,6 +265,7 @@ using (auth.role() = 'authenticated')
 with check (auth.role() = 'authenticated');
 
 drop policy if exists "dev full access sessions" on public.sessions;
+drop policy if exists "anon full access sessions" on public.sessions;
 drop policy if exists "public read sessions" on public.sessions;
 create policy "public read sessions"
 on public.sessions
@@ -277,6 +282,7 @@ using (auth.role() = 'authenticated')
 with check (auth.role() = 'authenticated');
 
 drop policy if exists "dev full access logs" on public.logs;
+drop policy if exists "anon full access logs" on public.logs;
 drop policy if exists "public read logs" on public.logs;
 create policy "public read logs"
 on public.logs
