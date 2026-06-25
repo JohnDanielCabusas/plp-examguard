@@ -200,26 +200,28 @@ export default function AdminPage() {
                   <div className="section-title">Students</div>
                   <div className="section-subtitle">Manage enrolled students</div>
                 </div>
-                <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <select id="filter-year-level" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                    <option value="">All Year Levels</option>
+                    <option value="1st Year">1st Year</option>
+                    <option value="2nd Year">2nd Year</option>
+                    <option value="3rd Year">3rd Year</option>
+                    <option value="4th Year">4th Year</option>
+                  </select>
+                  <select id="filter-section" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                    <option value="">All Sections</option>
+                  </select>
+                  <select id="filter-program" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                    <option value="">All Programs</option>
+                  </select>
+                  <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
+                </div>
               </div>
-              <div className="toolbar" style={{ flexWrap: 'wrap', gap: '10px' }}>
-                <div className="search-input" style={{ flex: 1, minWidth: '200px' }}>
+              <div className="toolbar" style={{ gap: '10px', marginBottom: '16px' }}>
+                <div className="search-input" style={{ flex: 1 }}>
                   <span className="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                   <input type="text" id="student-search" placeholder="Search students..." onInput={() => window.filterStudents()} />
                 </div>
-                <select id="filter-year-level" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
-                  <option value="">All Year Levels</option>
-                  <option value="1st Year">1st Year</option>
-                  <option value="2nd Year">2nd Year</option>
-                  <option value="3rd Year">3rd Year</option>
-                  <option value="4th Year">4th Year</option>
-                </select>
-                <select id="filter-section" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
-                  <option value="">All Sections</option>
-                </select>
-                <select id="filter-program" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
-                  <option value="">All Programs</option>
-                </select>
               </div>
               <div className="card">
                 <div className="card-body" style={{ padding: 0 }}>
@@ -295,11 +297,23 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-q" /> Shuffle Questions</label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-shuffle-a" /> Shuffle Answers</label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-require-camera" /><span>Motion Detection <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>REMOTE</span></span></label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-ai-detect" /><span>AI Detection <span style={{ fontSize: '10px', background: '#fef9c3', color: '#92400e', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>ESSAYS</span></span></label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" id="exam-allow-review" /><span>Allow Review <span style={{ fontSize: '10px', background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>STUDENTS</span></span></label>
+                      {[
+                        ['exam-shuffle-q',     'Shuffle Questions', null],
+                        ['exam-shuffle-a',     'Shuffle Answers', null],
+                        ['exam-require-camera','Motion Detection', {text:'REMOTE', bg:'#dbeafe', color:'#1e40af'}],
+                        ['exam-ai-detect',     'AI Detection', {text:'ESSAYS', bg:'#fef9c3', color:'#92400e'}],
+                        ['exam-allow-review',  'Allow Review',  {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
+                      ].map(([id, label, badge]) => (
+                        <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <div className="checkbox-wrapper-30">
+                            <div className="checkbox" style={{'--size':'1.0','--stroke':'#1a6b35'}}>
+                              <input type="checkbox" id={id} />
+                              <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg>
+                            </div>
+                          </div>
+                          <span>{label}{badge && <span style={{ fontSize: '10px', background: badge.bg, color: badge.color, padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '4px' }}>{badge.text}</span>}</span>
+                        </label>
+                      ))}
                     </div>
                     {/* Hidden audience inputs kept for saveExamFromEditor compatibility */}
                     <div style={{ display: 'none' }}>
@@ -316,14 +330,22 @@ export default function AdminPage() {
                     </div>
                     <div id="questions-list" />
                     <div className="exam-add-q-bar">
-                      {[['mcq','#3b82f6','Multiple Choice'],['tf','#8b5cf6','True / False'],['identification','#f59e0b','Identification'],['enumeration','#0d9488','Enumeration'],['matching','#dc2626','Matching Type'],['essay','#0f2d1a','Essay']].map(([type,color,label]) => (
-                        <button key={type} className="btn-qtype" onClick={() => window.addQuestion(type)}>
-                          <span className="qtype-dot" style={{ background: color }} />{label}
+                      {[
+                        ['mcq',            'Multiple Choice'],
+                        ['checkbox',       'Checkboxes'],
+                        ['tf',             'True / False'],
+                        ['identification', 'Identification'],
+                        ['enumeration',    'Enumeration'],
+                        ['matching',       'Matching Type'],
+                        ['essay',          'Essay'],
+                      ].map(([type, label]) => (
+                        <button key={type} className="add-q-btn" onClick={() => window.addQuestion(type)}>
+                          {label}
                         </button>
                       ))}
-                      <span style={{ width: '1px', height: '22px', background: 'var(--border)', margin: '0 4px' }} />
-                      <button className="btn btn-primary btn-sm" onClick={() => window.openAIGen()}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>AI Generate
+                      <button className="add-q-btn add-q-ai" onClick={() => window.openAIGen()}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        AI Generate
                       </button>
                     </div>
                   </div>
@@ -334,35 +356,39 @@ export default function AdminPage() {
 
             {/* MONITORING */}
             <section id="section-monitoring" className="admin-section hidden">
-              <div className="section-header">
+              <div className="monitor-topbar">
                 <div>
-                  <div className="section-title">Live Monitoring</div>
+                  <div className="section-title" style={{ marginBottom: '2px' }}>Live Monitoring</div>
                   <div className="section-subtitle">Real-time student exam activity</div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <span id="monitor-live-badge" className="hidden" style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600 }}><span className="live-dot" />LIVE</span>
-                  <select className="form-control" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()} style={{ width: '240px' }}>
+                  <span id="monitor-live-badge" className="hidden monitor-live-chip">
+                    <span className="live-dot" />LIVE
+                  </span>
+                  <select className="form-control filter-select" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()}>
                     <option value="">Select an exam to monitor</option>
                   </select>
                 </div>
               </div>
               <div className="monitoring-grid" id="monitoring-grid">
-                <div className="card">
-                  <div className="card-header">
+                <div className="card" style={{ overflow: 'hidden' }}>
+                  <div className="card-header" style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <span className="card-title">Student Sessions</span>
-                    <span id="monitor-count" className="badge badge-info">0 students</span>
+                    <span id="monitor-count" className="monitor-count-chip">0 students</span>
                   </div>
-                  <div className="card-body" style={{ padding: 0 }}>
-                    <div className="table-wrapper">
-                      <table>
-                        <thead><tr><th>Student</th><th style={{textAlign:'center'}}>Progress</th><th style={{textAlign:'center'}}>Warnings</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Logs</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
-                        <tbody id="monitor-tbody" />
-                      </table>
-                    </div>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Student</th><th style={{textAlign:'center'}}>Progress</th><th style={{textAlign:'center'}}>Warnings</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Logs</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
+                      <tbody id="monitor-tbody" />
+                    </table>
                   </div>
                 </div>
                 <div className="activity-log" id="activity-log-panel">
-                  <div className="activity-log-header">Activity Log <span id="log-student-name" style={{ opacity: 0.75, fontWeight: 400, fontSize: '12px' }} /></div>
+                  <div className="activity-log-header">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Activity Log
+                    <span id="log-student-name" style={{ fontWeight: 500, fontSize: '12px', color: '#9ca3af' }} />
+                  </div>
                   <div className="activity-log-body" id="log-body">
                     <div className="empty-state"><p>Select a student to view activity</p></div>
                   </div>
@@ -578,7 +604,8 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: '10px', background: '#f9fafb' }}>
                   {['A','B','C','D','E'].map(s => (
                     <label key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, minWidth: '48px' }}>
-                      <input type="checkbox" className="subj-section-cb" value={`Section ${s}`} style={{ accentColor: '#0f2d1a', width: '15px', height: '15px' }} /> {s}
+                      <div className="checkbox-wrapper-30"><div className="checkbox" style={{'--size':'0.9','--stroke':'#1a6b35'}}><input type="checkbox" className="subj-section-cb" value={`Section ${s}`} /><svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg></div></div>
+                      {s}
                     </label>
                   ))}
                 </div>
@@ -721,7 +748,10 @@ export default function AdminPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '12px 14px', background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '10px' }}>
                 {[['mcq','#3b82f6','Multiple Choice',true],['tf','#8b5cf6','True/False',true],['identification','#f59e0b','Identification',true],['enumeration','#0d9488','Enumeration',false],['matching','#dc2626','Matching Type',false],['essay','#0f2d1a','Essay',false]].map(([val,color,label,checked]) => (
                   <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
-                    <input type="checkbox" className="ai-type-cb" value={val} style={{ accentColor: color, width: '15px', height: '15px' }} defaultChecked={checked} />
+                    <div className="checkbox-wrapper-30"><div className="checkbox" style={{'--size':'0.9','--stroke':color,'--brdr-actv':color}}>
+                      <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} />
+                      <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg>
+                    </div></div>
                     <span style={{ color }}>●</span> {label}
                   </label>
                 ))}

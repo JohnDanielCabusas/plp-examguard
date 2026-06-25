@@ -66,6 +66,88 @@ document.addEventListener('firebaseReady', function init() {
 // ============================================================
 // NAVIGATION
 // ============================================================
+// ── Universal animated custom dropdown ───────────────────
+function makeCustomDropdown(sel) {
+  if (!sel || sel._cdDone || sel.closest('.qe-type-dd')) return;
+  sel._cdDone = true;
+
+  // Wrapper takes select's place in layout
+  const wrap = document.createElement('div');
+  const isFilter = sel.classList.contains('filter-select');
+  wrap.className = 'sys-dd qe-type-dd' + (isFilter ? ' filter-dd' : '');
+  const uid = 'sdd-' + Math.random().toString(36).slice(2);
+  wrap.id = uid;
+  sel.parentNode.insertBefore(wrap, sel);
+  sel.style.display = 'none';
+  wrap.appendChild(sel);
+
+  // Trigger button
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'qe-type-trigger sys-dd-trigger';
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'qtd-label';
+  const chevron = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  chevron.setAttribute('class','qtd-chevron');
+  chevron.setAttribute('width','13'); chevron.setAttribute('height','13');
+  chevron.setAttribute('viewBox','0 0 24 24'); chevron.setAttribute('fill','none');
+  chevron.setAttribute('stroke','currentColor'); chevron.setAttribute('stroke-width','2.5');
+  const poly = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+  poly.setAttribute('points','6 9 12 15 18 9');
+  chevron.appendChild(poly);
+  trigger.appendChild(labelSpan);
+  trigger.appendChild(chevron);
+  wrap.appendChild(trigger);
+
+  // Panel
+  const panel = document.createElement('div');
+  panel.className = 'qtd-panel sys-dd-panel';
+  wrap.appendChild(panel);
+
+  const syncLabel = () => {
+    const opt = sel.options[sel.selectedIndex];
+    labelSpan.textContent = opt ? opt.text : '';
+  };
+  const buildPanel = () => {
+    panel.innerHTML = '';
+    Array.from(sel.options).forEach((opt, i) => {
+      const div = document.createElement('div');
+      div.className = 'qtd-opt' + (sel.selectedIndex === i ? ' qtd-active' : '');
+      div.textContent = opt.text;
+      div.onclick = (e) => {
+        e.stopPropagation();
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        syncLabel();
+        buildPanel();
+        wrap.classList.remove('open');
+      };
+      panel.appendChild(div);
+    });
+  };
+
+  syncLabel();
+  buildPanel();
+
+  trigger.onclick = (e) => {
+    e.stopPropagation();
+    const isOpen = wrap.classList.contains('open');
+    document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+    if (!isOpen) wrap.classList.add('open');
+  };
+
+  // Rebuild when options change (dynamic population)
+  new MutationObserver(() => { syncLabel(); buildPanel(); }).observe(sel, { childList: true });
+
+  // Sync when value is set programmatically
+  sel.addEventListener('change', () => { syncLabel(); buildPanel(); });
+}
+
+function initCustomDropdowns(root) {
+  const ctx = root || document;
+  ctx.querySelectorAll('select.form-control, select.form-filter').forEach(makeCustomDropdown);
+}
+
 function showSection(name) {
   // Stop monitoring if leaving that section
   if (currentSection === 'monitoring' && name !== 'monitoring') stopMonitoring();
@@ -95,6 +177,10 @@ function showSection(name) {
     case 'settings': loadSettings(); break;
     case 'archive': renderArchive(); break;
   }
+
+  // Convert any new selects in the revealed section
+  const secEl = document.getElementById('section-' + name);
+  if (secEl) requestAnimationFrame(() => initCustomDropdowns(secEl));
 
   closeSidebar();
 }
@@ -1287,10 +1373,10 @@ function openExamEditor(id) {
   // Switch views
   document.getElementById('exams-list-view').classList.add('hidden');
   document.getElementById('exam-editor-view').classList.remove('hidden');
-  // Init drag after DOM update
   requestAnimationFrame(() => {
     if (id) renderQuestionsList(id);
     initExamEditorDrag();
+    initCustomDropdowns(document.getElementById('exam-editor-view'));
   });
 }
 
@@ -1700,9 +1786,70 @@ function removeMatchPair(qIdx, pIdx) {
   renderQuestionsList(currentQBuilderExamId);
 }
 
+// ── Custom question-type dropdown ────────────────────────
+function toggleTypeDD(idx) {
+  const dd = document.getElementById(`qtd-${idx}`);
+  if (!dd) return;
+  const isOpen = dd.classList.contains('open');
+  document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+  if (!isOpen) dd.classList.add('open');
+}
+
+function pickQuestionType(idx, type) {
+  document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+  changeQuestionType(idx, type);
+}
+
+// Close on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+});
+
+function setTFAnswer(qIdx, answer) {
+  updateQField(qIdx, 'correctAnswer', answer);
+  // In-place update — no re-render
+  const grp = document.getElementById(`tf-group-${qIdx}`);
+  if (!grp) return;
+  grp.querySelectorAll('.tf-option').forEach(label => {
+    const isNow = label.dataset.val === answer;
+    label.classList.toggle('tf-selected', isNow);
+    const radio = label.querySelector('.anim-radio');
+    if (radio) radio.classList.toggle('anim-radio-on', isNow);
+  });
+}
+
+function pickEnumScoring(qIdx, partial) {
+  document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+  updateQField(qIdx, 'partialScoring', partial);
+  // Update label in-place
+  const dd = document.getElementById(`qtd-score-${qIdx}`);
+  if (dd) {
+    const label = dd.querySelector('.qtd-label');
+    if (label) label.textContent = partial ? 'Partial scoring' : 'All-or-nothing';
+    dd.querySelectorAll('.qtd-opt').forEach((opt, i) => opt.classList.toggle('qtd-active', partial ? i===0 : i===1));
+  }
+}
+
+function changeQuestionType(idx, newType) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const defaults = {
+    mcq:           { options: ['','','',''], correctAnswer: '', points: 1 },
+    checkbox:      { options: ['','','',''], correctAnswerIndices: [], points: 1 },
+    tf:            { options: ['True','False'], correctAnswer: 'True', points: 1 },
+    identification:{ options: [], correctAnswer: '', points: 1 },
+    essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
+    enumeration:   { options: [], correctAnswer: '', points: 5, answers: ['','',''], partialScoring: true },
+    matching:      { options: [], correctAnswer: '', points: 5, pairs: [{term:'',match:''},{term:'',match:''}], partialScoring: true },
+  };
+  const questions = exam.questions.map((q, i) => i !== idx ? q : { ...q, type: newType, ...(defaults[newType] || {}) });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
 function buildQuestionBlock(q, idx) {
-  const typeColors = { mcq:'#3b82f6', tf:'#8b5cf6', identification:'#f59e0b', enumeration:'#0d9488', matching:'#dc2626', essay:'#0f2d1a' };
-  const typeLabel  = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', enumeration:'Enumeration', matching:'Matching Type', essay:'Essay' }[q.type] || q.type;
+  const PLP = '#166534';
+  const typeColors = { mcq: PLP, checkbox: PLP, tf: PLP, identification: PLP, enumeration: PLP, matching: PLP, essay: PLP };
   const typeColor  = typeColors[q.type] || '#6b7280';
   let optionsHtml  = '';
 
@@ -1723,10 +1870,16 @@ function buildQuestionBlock(q, idx) {
       </div>
       <div class="form-group">
         <label>Scoring</label>
-        <select class="form-control" style="width:260px;" onchange="updateQField(${idx},'partialScoring',this.value==='true')">
-          <option value="true" ${q.partialScoring!==false?'selected':''}>Partial (each correct item = partial pts)</option>
-          <option value="false" ${q.partialScoring===false?'selected':''}>All-or-nothing</option>
-        </select>
+        <div class="qe-type-dd" id="qtd-score-${idx}" style="display:inline-block;">
+          <button class="qe-type-trigger" onclick="event.stopPropagation();toggleTypeDD('score-${idx}')">
+            <span class="qtd-label">${q.partialScoring!==false?'Partial scoring':'All-or-nothing'}</span>
+            <svg class="qtd-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="qtd-panel">
+            <div class="qtd-opt${q.partialScoring!==false?' qtd-active':''}" onclick="event.stopPropagation();pickEnumScoring(${idx},true)">Partial (per correct item)</div>
+            <div class="qtd-opt${q.partialScoring===false?' qtd-active':''}" onclick="event.stopPropagation();pickEnumScoring(${idx},false)">All-or-nothing</div>
+          </div>
+        </div>
       </div>`;
   } else if (q.type === 'matching') {
     const pairs = Array.isArray(q.pairs) ? q.pairs : [{term:'',match:''}];
@@ -1762,24 +1915,50 @@ function buildQuestionBlock(q, idx) {
       <div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
         <strong>Note:</strong> Essay answers are manually graded by the instructor. Students' scores for essay questions start at 0 until you grade them in Reports.
       </div>`;
+  } else if (q.type === 'checkbox') {
+    // correctAnswerIndices stores INDICES so empty-string options don't collide
+    const correctIndices = Array.isArray(q.correctAnswerIndices) ? q.correctAnswerIndices : [];
+    optionsHtml = `<div id="opts-${idx}" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">` +
+      q.options.map((opt, oi) => {
+        const on = correctIndices.includes(oi);
+        // Simple SVG indicator — no animated checkbox here (re-render replaces DOM, so animations don't fire anyway)
+        const cbIcon = on
+          ? `<svg class="qe-cb-icon qe-cb-on" width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#1a6b35"/><polyline points="15,6 8,14 4,10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+          : `<svg class="qe-cb-icon" width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="0.75" y="0.75" width="18.5" height="18.5" rx="3.5" stroke="#d1d5db" stroke-width="1.5"/></svg>`;
+        return `<div class="qe-opt-row${on ? ' qe-opt-correct' : ''}" onclick="toggleCheckboxAnswer(${idx},${oi})">
+          ${cbIcon}
+          <input type="text" class="qe-opt-input" value="${escHtml(opt)}" placeholder="Option ${oi+1}" onchange="updateOption(${idx},${oi},this.value)" onclick="event.stopPropagation()" />
+          <button class="qe-opt-del" onclick="event.stopPropagation();removeOption(${idx},${oi})" title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>`;
+      }).join('') +
+      `</div>
+      <button class="qe-add-opt" onclick="addOption(${idx})">+ Add option</button>
+      <div class="qe-hint"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="9 11 12 14 22 4"/></svg> Multiple correct answers — tap each correct option</div>`;
   } else if (q.type === 'mcq') {
-    optionsHtml = `<div id="opts-${idx}" class="mb-8">` +
+    const isCorrect = (opt) => q.correctAnswer === opt;
+    optionsHtml = `<div id="opts-${idx}" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">` +
       q.options.map((opt, oi) => `
-        <div class="option-row${q.correctAnswer === opt ? ' option-row-correct' : ''}">
-          <input type="text" class="form-control option-input${q.correctAnswer === opt ? ' option-input-correct' : ''}" value="${escHtml(opt)}" placeholder="Option ${oi+1}" onchange="updateOption(${idx},${oi},this.value)" />
-          <button class="option-correct ${q.correctAnswer === opt ? 'selected' : ''}" title="Mark as correct" onclick="setCorrectOption(${idx},${oi})">&#10003;</button>
-          <button class="option-remove-btn" onclick="removeOption(${idx},${oi})" title="Remove option"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <div class="qe-opt-row${isCorrect(opt) ? ' qe-opt-correct' : ''}" onclick="setCorrectOption(${idx},${oi})">
+          <div class="anim-radio${isCorrect(opt) ? ' anim-radio-on' : ''}"><div class="anim-radio-inner"></div></div>
+          <input type="text" class="qe-opt-input" value="${escHtml(opt)}" placeholder="Option ${oi+1}" onchange="updateOption(${idx},${oi},this.value)" onclick="event.stopPropagation()" />
+          <button class="qe-opt-del" onclick="event.stopPropagation();removeOption(${idx},${oi})" title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>`).join('') +
       `</div>
-      <button class="add-option-btn" onclick="addOption(${idx})">+ Add Option</button>`;
+      <button class="qe-add-opt" onclick="addOption(${idx})">+ Add option</button>
+      <div class="qe-hint"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg> Single correct answer — tap an option to mark it</div>`;
   } else if (q.type === 'tf') {
     optionsHtml = `
-      <div class="form-group">
-        <label>Correct Answer</label>
-        <select class="form-control" onchange="updateQField(${idx},'correctAnswer',this.value)">
-          <option value="True" ${q.correctAnswer === 'True' ? 'selected' : ''}>True</option>
-          <option value="False" ${q.correctAnswer === 'False' ? 'selected' : ''}>False</option>
-        </select>
+      <div class="tf-group" id="tf-group-${idx}">
+        <div class="tf-label">Correct Answer</div>
+        <div class="tf-options">
+          ${['True','False'].map(val => `
+            <label class="tf-option${q.correctAnswer===val?' tf-selected':''}" data-val="${val}" onclick="setTFAnswer(${idx},'${val}')">
+              <div class="anim-radio${q.correctAnswer===val?' anim-radio-on':''}">
+                <div class="anim-radio-inner"></div>
+              </div>
+              <span>${val}</span>
+            </label>`).join('')}
+        </div>
       </div>`;
   } else if (q.type === 'identification') {
     optionsHtml = `
@@ -1793,45 +1972,45 @@ function buildQuestionBlock(q, idx) {
     ? `<img src="${escHtml(q.imageUrl)}" alt="Question image" class="q-img-preview" onerror="this.style.display='none'" />`
     : '';
 
-  const typeAccent = typeColors[q.type] || '#6b7280';
   return `
-    <div class="question-block" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeAccent}">
-      <div class="question-block-header">
-        <div class="q-header-left">
-          <span class="q-drag-handle" title="Drag to reorder">
-            <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
-              <circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/>
-              <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
-              <circle cx="3" cy="13.5" r="1.3"/><circle cx="7" cy="13.5" r="1.3"/>
-            </svg>
-          </span>
-          <span class="q-number-badge">Q${idx+1}</span>
-          <span class="q-type-chip" style="background:${typeAccent}18;color:${typeAccent};border:1px solid ${typeAccent}38">${typeLabel}</span>
-        </div>
-        <div class="q-header-right">
-          <label class="q-required-toggle" title="Students must answer this">
-            <input type="checkbox" ${q.required !== false ? 'checked' : ''} onchange="updateQField(${idx},'required',this.checked)" />
-            <span>Required</span>
-          </label>
-          <div class="q-points-wrap">
-            <span class="q-points-label">Pts</span>
-            <input type="number" class="q-points-input" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
+    <div class="qe-card" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeColor}">
+      <div class="qe-card-header">
+        <div class="qe-header-left">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;" onclick="event.stopPropagation()">
+            <div class="checkbox-wrapper-30">
+              <div class="checkbox" style="--size:0.78;--stroke:#1a6b35">
+                <input type="checkbox" ${q.required !== false ? 'checked' : ''} onchange="updateQField(${idx},'required',this.checked)" />
+                <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+              </div>
+            </div>
+            <span style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;line-height:1;user-select:none;">Required</span>
           </div>
-          <button class="q-remove-btn" onclick="removeQuestion(${idx})" title="Remove question">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span class="qe-badge" style="background:${typeColor}">Q${idx+1}</span>
+          <div class="qe-type-dd" id="qtd-${idx}">
+            <button class="qe-type-trigger" onclick="event.stopPropagation();toggleTypeDD(${idx})">
+              <span class="qtd-label">${{mcq:'Multiple choice',checkbox:'Checkboxes',tf:'True / False',identification:'Identification',enumeration:'Enumeration',matching:'Matching Type',essay:'Essay'}[q.type]||q.type}</span>
+              <svg class="qtd-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="qtd-panel">
+              ${[['mcq','Multiple choice'],['checkbox','Checkboxes'],['tf','True / False'],['identification','Identification'],['enumeration','Enumeration'],['matching','Matching Type'],['essay','Essay']].map(([t,l])=>`<div class="qtd-opt${q.type===t?' qtd-active':''}" onclick="event.stopPropagation();pickQuestionType(${idx},'${t}')">${l}</div>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="qe-header-right">
+          <span class="qe-pts-label">Pts</span>
+          <input type="number" class="qe-pts-input" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
+          <button class="qe-del-btn" onclick="removeQuestion(${idx})" title="Delete question">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
         </div>
       </div>
-      <div class="q-block-body">
-        <textarea class="form-control q-textarea" rows="1" placeholder="Type your question here…" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onchange="updateQField(${idx},'content',this.value)">${escHtml(q.content)}</textarea>
-        ${imgPreview ? `<div class="q-img-preview-wrap" id="qimg-preview-${idx}">${imgPreview}</div>` : `<div class="q-img-preview-wrap" id="qimg-preview-${idx}" style="display:none;"></div>`}
-        <div class="q-image-row">
-          <label class="q-upload-btn" for="qimg-input-${idx}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Image
-          </label>
+      <div class="qe-card-body">
+        <textarea class="qe-q-textarea" rows="1" placeholder="Question text" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onchange="updateQField(${idx},'content',this.value)">${escHtml(q.content)}</textarea>
+        ${imgPreview ? `<div class="q-img-preview-wrap" id="qimg-preview-${idx}" style="margin-bottom:10px;">${imgPreview}</div>` : `<div id="qimg-preview-${idx}" style="display:none;"></div>`}
+        <div class="qe-img-row">
+          <label class="qe-img-btn" for="qimg-input-${idx}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Image</label>
           <input type="file" id="qimg-input-${idx}" accept="image/*" style="display:none;" onchange="handleQImageUpload(${idx}, this)" />
-          ${q.imageUrl ? `<button class="q-remove-img-btn" onclick="clearQImage(${idx})">Remove</button>` : ''}
+          ${q.imageUrl ? `<button class="qe-img-remove" onclick="clearQImage(${idx})">Remove</button>` : ''}
         </div>
         ${optionsHtml}
       </div>
@@ -1848,7 +2027,7 @@ function initExamEditorDrag() {
   container._dragInited = true;
 
   container.addEventListener('dragstart', e => {
-    const block = e.target.closest('.question-block');
+    const block = e.target.closest('.qe-card');
     if (!block) return;
     _dragQIdx = parseInt(block.dataset.qidx);
     e.dataTransfer.effectAllowed = 'move';
@@ -1865,7 +2044,7 @@ function initExamEditorDrag() {
   container.addEventListener('dragover', e => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    const block = e.target.closest('.question-block');
+    const block = e.target.closest('.qe-card');
     if (!block) return;
     const overIdx = parseInt(block.dataset.qidx);
     if (overIdx === _dragQIdx) return;
@@ -1881,7 +2060,7 @@ function initExamEditorDrag() {
 
   container.addEventListener('drop', e => {
     e.preventDefault();
-    const block = e.target.closest('.question-block');
+    const block = e.target.closest('.qe-card');
     if (!block || _dragQIdx === null) return;
     const dropIdx = parseInt(block.dataset.qidx);
     if (dropIdx === _dragQIdx) return;
@@ -1895,11 +2074,51 @@ function initExamEditorDrag() {
   });
 }
 
+function toggleCheckboxAnswer(qIdx, optIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const q = exam.questions[qIdx];
+  if (!q) return;
+
+  // Compute new state
+  const correctAnswerIndices = Array.isArray(q.correctAnswerIndices) ? [...q.correctAnswerIndices] : [];
+  const pos = correctAnswerIndices.indexOf(optIdx);
+  const nowCorrect = pos < 0;
+  if (pos >= 0) correctAnswerIndices.splice(pos, 1);
+  else correctAnswerIndices.push(optIdx);
+
+  // Persist to DB
+  const questions = exam.questions.map((q2, i) => i !== qIdx ? q2 : { ...q2, correctAnswerIndices });
+  DB.updateExam(currentQBuilderExamId, { questions });
+
+  // Update ONLY the clicked row in-place — no full re-render
+  const container = document.getElementById(`opts-${qIdx}`);
+  if (!container) return;
+  const rows = container.querySelectorAll('.qe-opt-row');
+  const row = rows[optIdx];
+  if (!row) return;
+
+  row.classList.toggle('qe-opt-correct', nowCorrect);
+
+  const on = nowCorrect;
+  const newIcon = on
+    ? `<svg class="qe-cb-icon qe-cb-on" width="20" height="20" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#1a6b35"/><polyline points="15,6 8,14 4,10" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    : `<svg class="qe-cb-icon" width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="0.75" y="0.75" width="18.5" height="18.5" rx="3.5" stroke="#d1d5db" stroke-width="1.5"/></svg>`;
+
+  const icon = row.querySelector('.qe-cb-icon');
+  if (icon) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = newIcon;
+    icon.replaceWith(tmp.firstChild);
+  }
+}
+
 function addQuestion(type) {
   const exam = DB.getExam(currentQBuilderExamId);
   if (!exam) return;
   const defaults = {
     mcq:           { options: ['','','',''], correctAnswer: '', points: 1 },
+    checkbox:      { options: ['','','',''], correctAnswerIndices: [], points: 1 },
     tf:            { options: ['True','False'], correctAnswer: 'True', points: 1 },
     identification:{ options: [], correctAnswer: '', points: 1 },
     essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
@@ -1917,9 +2136,14 @@ function addQuestion(type) {
   const questions = [...exam.questions, newQ];
   DB.updateExam(currentQBuilderExamId, { questions });
   renderQuestionsList(currentQBuilderExamId);
-  // Scroll to bottom
+  // Animate + scroll the new question into view
   const container = document.getElementById('questions-list');
-  container.lastElementChild && container.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+  const last = container.lastElementChild;
+  if (last) {
+    last.classList.add('qe-new');
+    last.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => last.classList.remove('qe-new'), 300);
+  }
 }
 
 function removeQuestion(idx) {
@@ -1955,9 +2179,24 @@ function setCorrectOption(qIdx, oIdx) {
   if (!exam) return;
   const q = exam.questions[qIdx];
   const correctAnswer = q.options[oIdx];
-  const questions = exam.questions.map((q, i) => i === qIdx ? { ...q, correctAnswer } : q);
+  const questions = exam.questions.map((q2, i) => i === qIdx ? { ...q2, correctAnswer } : q2);
   DB.updateExam(currentQBuilderExamId, { questions });
-  renderQuestionsList(currentQBuilderExamId);
+
+  // Update only this question's option rows in-place
+  const container = document.getElementById(`opts-${qIdx}`);
+  if (!container) { renderQuestionsList(currentQBuilderExamId); return; }
+  container.querySelectorAll('.qe-opt-row').forEach((row, i) => {
+    const nowCorrect = i === oIdx;
+    row.classList.toggle('qe-opt-correct', nowCorrect);
+    // Animated radio
+    const radio = row.querySelector('.anim-radio');
+    if (radio) radio.classList.toggle('anim-radio-on', nowCorrect);
+    // Legacy selectors (fallback)
+    const inp = row.querySelector('.option-input, .qe-opt-input');
+    if (inp) inp.classList.toggle('option-input-correct', nowCorrect);
+    const btn = row.querySelector('.option-correct');
+    if (btn) btn.classList.toggle('selected', nowCorrect);
+  });
 }
 
 function addOption(qIdx) {
@@ -2177,14 +2416,17 @@ function renderMonitoringTable(examId) {
   const submitted  = sessions.filter(s => s.submitted).length;
   const flagged    = sessions.filter(s => s.warnings >= 2).length;
 
-  const statColors = [
-    { bg: '#eff6ff', color: '#1d4ed8', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, value: sessions.length, label: 'Total' },
-    { bg: '#dcfce7', color: '#15803d', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`, value: inProgress, label: 'In Progress' },
-    { bg: '#e0e7ff', color: '#4338ca', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`, value: submitted, label: 'Submitted' },
-    { bg: '#fee2e2', color: '#dc2626', icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`, value: flagged, label: 'Flagged' },
+  const stats = [
+    { accent:'#166534', bg:'#dcfce7', value: sessions.length, label:'Total',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
+    { accent:'#d97706', bg:'#fef3c7', value: inProgress, label:'In Progress',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
+    { accent:'#166534', bg:'#dcfce7', value: submitted,  label:'Submitted',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` },
+    { accent:'#dc2626', bg:'#fee2e2', value: flagged,    label:'Flagged',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>` },
   ];
 
-  // Inject stats strip above the monitoring-grid if not already there
   let strip = document.getElementById('monitor-stats-strip');
   if (!strip) {
     strip = document.createElement('div');
@@ -2192,12 +2434,12 @@ function renderMonitoringTable(examId) {
     strip.className = 'monitor-stats-strip';
     grid.parentNode.insertBefore(strip, grid);
   }
-  strip.innerHTML = statColors.map(c => `
-    <div class="monitor-stat-card">
-      <div class="monitor-stat-icon" style="background:${c.bg};color:${c.color};">${c.icon}</div>
-      <div>
-        <div class="monitor-stat-num">${c.value}</div>
-        <div class="monitor-stat-label">${c.label}</div>
+  strip.innerHTML = stats.map(c => `
+    <div class="monitor-stat-card" style="border-left-color:${c.accent}">
+      <div class="msc-icon" style="background:${c.bg};">${c.icon}</div>
+      <div class="msc-body">
+        <div class="msc-value" style="color:${c.accent}">${c.value}</div>
+        <div class="msc-label">${c.label}</div>
       </div>
     </div>`).join('');
 
@@ -2222,17 +2464,21 @@ function renderMonitoringTable(examId) {
     const color   = chipColor(s.studentId);
 
     const statusBadgeHtml = s.submitted
-      ? (s.autoSubmitted ? '<span class="badge badge-warning">Auto-Submitted</span>' : '<span class="badge badge-success">Submitted</span>')
-      : '<span class="badge badge-info">In Progress</span>';
+      ? (s.autoSubmitted
+          ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
+          : '<span class="ms-badge ms-badge-green">Submitted</span>')
+      : '<span class="ms-badge ms-badge-blue">In Progress</span>';
 
     const warnHtml = s.warnings > 0
-      ? `<span class="badge badge-danger">${s.warnings} ⚠</span>`
-      : `<span style="color:#9ca3af;font-size:12px;">—</span>`;
+      ? `<span class="ms-warn-pill">${s.warnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>`
+      : `<span style="color:#d1d5db;font-size:13px;">—</span>`;
 
     const activityCount = (s.activities || []).length;
-    const logsHtml = `<button class="tbl-btn tbl-btn-edit" onclick="showStudentLog('${s.id}')">
-      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      Logs${activityCount > 0 ? ` <span style="background:#fee2e2;color:#dc2626;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;">${activityCount}</span>` : ''}
+    const eyeOpen   = `<svg class="ms-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    const eyeClosed = `<svg class="ms-eye ms-eye-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+    const logsHtml = `<button class="ms-log-btn" id="ms-log-btn-${s.id}" onclick="showStudentLog('${s.id}')">
+      ${eyeClosed}
+      ${activityCount > 0 ? `<span class="ms-log-count">${activityCount}</span>` : '<span style="color:#d1d5db;font-size:12px;">—</span>'}
     </button>`;
 
     return `<tr>
@@ -2263,10 +2509,39 @@ function renderMonitoringTable(examId) {
   }).join('');
 }
 
+const EYE_OPEN   = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
+const EYE_CLOSED = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
+
+function _setEye(sessionId, open) {
+  const btn = document.getElementById(`ms-log-btn-${sessionId}`);
+  if (!btn) return;
+  const eye = btn.querySelector('.ms-eye');
+  if (!eye) return;
+  eye.innerHTML = open ? EYE_OPEN : EYE_CLOSED;
+  eye.classList.toggle('ms-eye-closed', !open);
+}
+
+let _activeLogSessionId = null;
 function showStudentLog(sessionId) {
+  // Toggle: if already open for this student, close it
+  if (_activeLogSessionId === sessionId) {
+    _setEye(sessionId, false);
+    _activeLogSessionId = null;
+    document.getElementById('log-student-name').textContent = '';
+    document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
+    return;
+  }
+
+  // Close previously active eye
+  if (_activeLogSessionId) _setEye(_activeLogSessionId, false);
+
+  // Open new
+  _activeLogSessionId = sessionId;
+  _setEye(sessionId, true);
+
   const session = DB.getSession(sessionId);
   if (!session) return;
-  document.getElementById('log-student-name').textContent = ' - ' + session.studentName;
+  document.getElementById('log-student-name').textContent = ' — ' + session.studentName;
   const activities = session.activities || [];
   if (!activities.length) {
     document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>No suspicious activity recorded.</p></div>`;
@@ -2778,6 +3053,7 @@ function openModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
   modal.classList.remove('hidden');
+  requestAnimationFrame(() => initCustomDropdowns(modal));
 }
 
 function closeModal(id) {
@@ -3161,13 +3437,14 @@ Rules:
 - Difficulty: ${difficulty}
 - Return ONLY a valid JSON array with no other text, explanation, or markdown.
 - Each question object schema:
-  { "type": "mcq"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
+  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
 - For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
+- For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
 - For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
 - For "identification": options = []; correctAnswer = expected answer string (1-4 words).
-- For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; points = 5.
-- For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; points = 5.
-- For "essay": options = []; correctAnswer = ""; points = 10. Include a "rubric" field with grading guidance.
+- For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.
+- For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.
+- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
 
 Course material:
 ${rawText}`;
@@ -3287,9 +3564,19 @@ function importAIQuestions() {
     return {
       id: DB.generateId(),
       type: q.type,
-      content: q.content,
-      options: q.options,
-      correctAnswer: q.correctAnswer,
+      content: q.content || '',
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: q.correctAnswer || '',
+      // Checkbox type
+      correctAnswerIndices: Array.isArray(q.correctAnswerIndices) ? q.correctAnswerIndices : undefined,
+      // Matching type
+      pairs: Array.isArray(q.pairs) ? q.pairs : undefined,
+      partialScoring: q.partialScoring !== false,
+      // Enumeration type
+      answers: Array.isArray(q.answers) ? q.answers : undefined,
+      // Essay type
+      rubric: q.rubric || '',
+      minWords: q.minWords || 0,
       points: q.points || 1,
       imageUrl: '',
       required: true,
