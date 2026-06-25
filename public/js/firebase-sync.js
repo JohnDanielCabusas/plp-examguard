@@ -33,6 +33,11 @@ const FirebaseSync = {
   _unsubscribers: [],
   _readyEmitted: false,
 
+  _writeLocal(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+    window.DB?.clearCacheKey?.(key);
+  },
+
   // ---- Public: call once per page load ----
   async init() {
     // DB.init() has already seeded localStorage, so the UI can render immediately.
@@ -97,10 +102,10 @@ const FirebaseSync = {
     ]);
 
     if (settingsDoc.exists) {
-      localStorage.setItem('acs_settings', JSON.stringify(settingsDoc.data()));
+      this._writeLocal('acs_settings', settingsDoc.data());
     }
     COLS.forEach((col, i) => {
-      localStorage.setItem('acs_' + col, JSON.stringify(snaps[i].docs.map(d => d.data())));
+      this._writeLocal('acs_' + col, snaps[i].docs.map(d => d.data()));
     });
   },
 
@@ -109,12 +114,12 @@ const FirebaseSync = {
   _setupListeners() {
     const listenCol = (col, lsKey) =>
       this.db.collection(col).onSnapshot(snap => {
-        localStorage.setItem(lsKey, JSON.stringify(snap.docs.map(d => d.data())));
+        this._writeLocal(lsKey, snap.docs.map(d => d.data()));
       });
 
     const listenDoc = (path, lsKey) =>
       this.db.doc(path).onSnapshot(snap => {
-        if (snap.exists) localStorage.setItem(lsKey, JSON.stringify(snap.data()));
+        if (snap.exists) this._writeLocal(lsKey, snap.data());
       });
 
     this._unsubscribers = [

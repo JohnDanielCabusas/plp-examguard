@@ -206,19 +206,25 @@ export default function ExamPage() {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                       <div className="settings-field" style={{ margin: 0 }}>
-                        <div className="settings-field-label">Year Level</div>
-                        <select className="form-control" id="stg-year">
-                          <option value="">Select year level</option>
-                          <option value="1st Year">1st Year</option>
-                          <option value="2nd Year">2nd Year</option>
-                          <option value="3rd Year">3rd Year</option>
-                          <option value="4th Year">4th Year</option>
-                        </select>
+                        <div className="settings-field-label">Year &amp; Section</div>
+                        <input type="text" className="form-control" id="stg-year-section" placeholder="e.g. 3-B" maxLength={3} autoComplete="off" />
                       </div>
                       <div className="settings-field" style={{ margin: 0 }}>
-                        <div className="settings-field-label">Section</div>
-                        <input type="text" className="form-control" id="stg-section" placeholder="e.g. Section A" autoComplete="off" />
+                        <div className="settings-field-label">Program</div>
+                        <input type="text" className="form-control" id="stg-program" placeholder="e.g. BSIT" autoComplete="off" />
                       </div>
+                    </div>
+                    <div className="settings-field">
+                      <div className="settings-field-label">Department</div>
+                      <select className="form-control" id="stg-department">
+                        <option value="">Select department</option>
+                        <option value="College of Arts & Sciences (CAS)">College of Arts & Sciences (CAS)</option>
+                        <option value="College of Education (COE)">College of Education (COE)</option>
+                        <option value="College of Business & Accountancy (CBA)">College of Business & Accountancy (CBA)</option>
+                        <option value="College of Computer Studies (CCS)">College of Computer Studies (CCS)</option>
+                        <option value="College of Engineering (COE)">College of Engineering (COE)</option>
+                        <option value="College of Nursing (CON)">College of Nursing (CON)</option>
+                      </select>
                     </div>
                     <div id="stg-profile-msg" style={{ fontSize: '12px', marginBottom: '10px', minHeight: '16px' }} />
                     <button className="btn btn-primary" onClick={() => window.ExamApp.saveStudentProfile()}>Save Profile</button>

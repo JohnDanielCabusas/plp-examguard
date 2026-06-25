@@ -12,6 +12,33 @@ const DB = {
     sessions: 'acs_sessions',
     logs: 'acs_logs',
   },
+  _cache: {},
+
+  _read(key, fallback) {
+    if (Object.prototype.hasOwnProperty.call(this._cache, key)) return this._cache[key];
+    try {
+      const raw = localStorage.getItem(key);
+      const value = raw ? JSON.parse(raw) : fallback;
+      this._cache[key] = value ?? fallback;
+    } catch {
+      this._cache[key] = fallback;
+    }
+    return this._cache[key];
+  },
+
+  _write(key, value) {
+    this._cache[key] = value;
+    localStorage.setItem(key, JSON.stringify(value));
+    return value;
+  },
+
+  clearCacheKey(key) {
+    delete this._cache[key];
+  },
+
+  clearCache() {
+    this._cache = {};
+  },
 
   init() {
     // Settings
@@ -19,6 +46,7 @@ const DB = {
       localStorage.setItem(this.KEYS.settings, JSON.stringify({
         schoolName: 'Pamantasan ng Lungsod ng Pasig',
         logoUrl: 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png',
+        department: '',
         adminName: 'Administrator',
         adminEmail: 'admin@school.edu',
       }));
@@ -149,35 +177,35 @@ const DB = {
 
   // ---- Settings ----
   getSettings() {
-    return JSON.parse(localStorage.getItem(this.KEYS.settings)) || {};
+    return this._read(this.KEYS.settings, {});
   },
   updateSettings(updates) {
     const current = this.getSettings();
     const next = { ...current, ...updates };
-    localStorage.setItem(this.KEYS.settings, JSON.stringify(next));
+    this._write(this.KEYS.settings, next);
     FirebaseSync.syncSettings(next);
   },
 
   // ---- Admins ----
   getAdmins() {
-    return JSON.parse(localStorage.getItem(this.KEYS.admins)) || [];
+    return this._read(this.KEYS.admins, []);
   },
   getAdmin(username) {
     return this.getAdmins().find(a => a.username === username) || null;
   },
   updateAdmin(id, updates) {
     const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...updates } : a);
-    localStorage.setItem(this.KEYS.admins, JSON.stringify(admins));
+    this._write(this.KEYS.admins, admins);
     const updated = admins.find(a => a.id === id);
     if (updated) FirebaseSync.syncDoc('admins', updated);
   },
 
   // ---- Students ----
   getStudents() {
-    return (JSON.parse(localStorage.getItem(this.KEYS.students)) || []).filter(s => !s.archived);
+    return this.getAllStudentsRaw().filter(s => !s.archived);
   },
   getAllStudentsRaw() {
-    return JSON.parse(localStorage.getItem(this.KEYS.students)) || [];
+    return this._read(this.KEYS.students, []);
   },
   getArchivedStudents() {
     return this.getAllStudentsRaw().filter(s => s.archived);
@@ -189,16 +217,16 @@ const DB = {
     return this.getAllStudentsRaw().find(s => s.id === id) || null;
   },
   addStudent(data) {
-    const students = this.getStudents();
+    const students = [...this.getAllStudentsRaw()];
     const newStudent = { id: this.generateId(), ...data };
     students.push(newStudent);
-    localStorage.setItem(this.KEYS.students, JSON.stringify(students));
+    this._write(this.KEYS.students, students);
     FirebaseSync.syncDoc('students', newStudent);
     return newStudent;
   },
   updateStudent(id, updates) {
-    const students = this.getStudents().map(s => s.id === id ? { ...s, ...updates } : s);
-    localStorage.setItem(this.KEYS.students, JSON.stringify(students));
+    const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...updates } : s);
+    this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('students', updated);
   },
@@ -213,11 +241,14 @@ const DB = {
         studentName: nextStudent.name,
         yearLevel: nextStudent.yearLevel || '',
         section: nextStudent.section || '',
+        yearSection: nextStudent.yearSection || '',
+        department: nextStudent.department || '',
+        program: nextStudent.program || '',
       };
       FirebaseSync.syncDoc('sessions', updatedSession);
       return updatedSession;
     });
-    localStorage.setItem(this.KEYS.sessions, JSON.stringify(sessions));
+    this._write(this.KEYS.sessions, sessions);
 
     const logs = this.getLogs().map(log => {
       if (log.studentId !== previousStudentId) return log;
@@ -225,23 +256,23 @@ const DB = {
       FirebaseSync.syncDoc('logs', updatedLog);
       return updatedLog;
     });
-    localStorage.setItem(this.KEYS.logs, JSON.stringify(logs));
+    this._write(this.KEYS.logs, logs);
   },
   archiveStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: true, archivedAt: new Date().toISOString() } : s);
-    localStorage.setItem(this.KEYS.students, JSON.stringify(students));
+    this._write(this.KEYS.students, students);
     const archived = students.find(s => s.id === id);
     if (archived) FirebaseSync.syncDoc('students', archived);
   },
   restoreStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: false, archivedAt: null } : s);
-    localStorage.setItem(this.KEYS.students, JSON.stringify(students));
+    this._write(this.KEYS.students, students);
     const restored = students.find(s => s.id === id);
     if (restored) FirebaseSync.syncDoc('students', restored);
   },
   deleteStudent(id) {
     const students = this.getAllStudentsRaw().filter(s => s.id !== id);
-    localStorage.setItem(this.KEYS.students, JSON.stringify(students));
+    this._write(this.KEYS.students, students);
     FirebaseSync.deleteDoc('students', id);
   },
   studentExists(studentId) {
@@ -250,34 +281,34 @@ const DB = {
 
   // ---- Subjects ----
   getSubjects() {
-    return JSON.parse(localStorage.getItem(this.KEYS.subjects)) || [];
+    return this._read(this.KEYS.subjects, []);
   },
   getSubject(id) {
     return this.getSubjects().find(s => s.id === id) || null;
   },
   addSubject(data) {
-    const subjects = this.getSubjects();
+    const subjects = [...this.getSubjects()];
     const newSubject = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
     subjects.push(newSubject);
-    localStorage.setItem(this.KEYS.subjects, JSON.stringify(subjects));
+    this._write(this.KEYS.subjects, subjects);
     FirebaseSync.syncDoc('subjects', newSubject);
     return newSubject;
   },
   updateSubject(id, updates) {
     const subjects = this.getSubjects().map(s => s.id === id ? { ...s, ...updates } : s);
-    localStorage.setItem(this.KEYS.subjects, JSON.stringify(subjects));
+    this._write(this.KEYS.subjects, subjects);
     const updated = subjects.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('subjects', updated);
   },
   deleteSubject(id) {
     const subjects = this.getSubjects().filter(s => s.id !== id);
-    localStorage.setItem(this.KEYS.subjects, JSON.stringify(subjects));
+    this._write(this.KEYS.subjects, subjects);
     FirebaseSync.deleteDoc('subjects', id);
   },
 
   // ---- Exams ----
   getExams() {
-    return JSON.parse(localStorage.getItem(this.KEYS.exams)) || [];
+    return this._read(this.KEYS.exams, []);
   },
   getExam(id) {
     return this.getExams().find(e => e.id === id) || null;
@@ -286,22 +317,22 @@ const DB = {
     return this.getExams().find(e => e.code === code.toUpperCase()) || null;
   },
   addExam(data) {
-    const exams = this.getExams();
+    const exams = [...this.getExams()];
     const newExam = { id: this.generateId(), createdAt: new Date().toISOString(), questions: [], ...data };
     exams.push(newExam);
-    localStorage.setItem(this.KEYS.exams, JSON.stringify(exams));
+    this._write(this.KEYS.exams, exams);
     FirebaseSync.syncDoc('exams', newExam);
     return newExam;
   },
   updateExam(id, updates) {
     const exams = this.getExams().map(e => e.id === id ? { ...e, ...updates } : e);
-    localStorage.setItem(this.KEYS.exams, JSON.stringify(exams));
+    this._write(this.KEYS.exams, exams);
     const updated = exams.find(e => e.id === id);
     if (updated) FirebaseSync.syncDoc('exams', updated);
   },
   deleteExam(id) {
     const exams = this.getExams().filter(e => e.id !== id);
-    localStorage.setItem(this.KEYS.exams, JSON.stringify(exams));
+    this._write(this.KEYS.exams, exams);
     FirebaseSync.deleteDoc('exams', id);
   },
   getActiveExams() {
@@ -310,7 +341,7 @@ const DB = {
 
   // ---- Sessions ----
   getSessions() {
-    return JSON.parse(localStorage.getItem(this.KEYS.sessions)) || [];
+    return this._read(this.KEYS.sessions, []);
   },
   getSession(id) {
     return this.getSessions().find(s => s.id === id) || null;
@@ -322,29 +353,29 @@ const DB = {
     return this.getSessions().find(s => s.examId === examId && s.studentId === studentId) || null;
   },
   addSession(data) {
-    const sessions = this.getSessions();
+    const sessions = [...this.getSessions()];
     const newSession = { id: this.generateId(), ...data };
     sessions.push(newSession);
-    localStorage.setItem(this.KEYS.sessions, JSON.stringify(sessions));
+    this._write(this.KEYS.sessions, sessions);
     FirebaseSync.syncDoc('sessions', newSession);
     return newSession;
   },
   updateSession(id, updates) {
     const sessions = this.getSessions().map(s => s.id === id ? { ...s, ...updates } : s);
-    localStorage.setItem(this.KEYS.sessions, JSON.stringify(sessions));
+    this._write(this.KEYS.sessions, sessions);
     const updated = sessions.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('sessions', updated);
   },
 
   // ---- Logs ----
   getLogs() {
-    return JSON.parse(localStorage.getItem(this.KEYS.logs)) || [];
+    return this._read(this.KEYS.logs, []);
   },
   addLog(data) {
-    const logs = this.getLogs();
+    const logs = [...this.getLogs()];
     const newLog = { id: this.generateId(), timestamp: new Date().toISOString(), ...data };
     logs.push(newLog);
-    localStorage.setItem(this.KEYS.logs, JSON.stringify(logs));
+    this._write(this.KEYS.logs, logs);
     FirebaseSync.syncDoc('logs', newLog);
   },
   getLogsBySession(sessionId) {
@@ -354,6 +385,10 @@ const DB = {
 
 // Auto-initialize on load (seeds localStorage defaults; Firebase data overwrites on firebaseReady)
 DB.init();
+window.addEventListener('storage', e => {
+  if (e.key) DB.clearCacheKey(e.key);
+  else DB.clearCache();
+});
 
 // Expose as global for ES-module consumers (React)
 window.DB = DB;

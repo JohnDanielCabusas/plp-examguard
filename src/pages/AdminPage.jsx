@@ -185,6 +185,7 @@ export default function AdminPage() {
               <div className="section-header">
                 <div>
                   <div className="section-title">Courses</div>
+                  <div className="section-subtitle" id="courses-department-title" style={{ marginTop: '6px', fontSize: '20px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.02em', lineHeight: 1.2 }} />
                   <div className="section-subtitle">Manage courses and their target year levels &amp; sections</div>
                 </div>
                 <button className="btn btn-primary" onClick={() => window.openSubjectModal()}>+ Add Course</button>
@@ -216,12 +217,15 @@ export default function AdminPage() {
                 <select id="filter-section" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
                   <option value="">All Sections</option>
                 </select>
+                <select id="filter-program" className="form-control" style={{ width: 'auto', minWidth: '140px' }} onChange={() => window.filterStudents()}>
+                  <option value="">All Programs</option>
+                </select>
               </div>
               <div className="card">
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th>Email</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th>Email</th><th>Program</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                       <tbody id="students-tbody" />
                     </table>
                   </div>
@@ -277,7 +281,7 @@ export default function AdminPage() {
                     <input type="hidden" id="exam-id" />
                     <div className="form-row cols-2">
                       <div className="form-group"><label>Exam Title *</label><input type="text" className="form-control" id="exam-title-field" placeholder="e.g. Midterm Examination" onInput={() => { const v = document.getElementById('exam-title-field').value; const el = document.getElementById('exam-editor-title-display'); if(el) el.textContent = v || 'New Exam'; }} /></div>
-                      <div className="form-group"><label>Subject *</label><select className="form-control" id="exam-subject-field" /></div>
+                      <div className="form-group"><label>Subject/Course *</label><select className="form-control" id="exam-subject-field" /></div>
                     </div>
                     <div className="form-group"><label>Description</label><textarea className="form-control" id="exam-desc-field" rows="2" placeholder="Optional exam description" /></div>
                     <div className="form-row cols-2">
@@ -456,8 +460,20 @@ export default function AdminPage() {
                   <div className="card-header"><span className="card-title">School / System</span></div>
                   <div className="card-body">
                     <div className="form-group"><label>School / System Name</label><input type="text" className="form-control" id="set-school-name" /></div>
-                    <div className="form-group"><label>Admin Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
-                    <div className="form-group"><label>Admin Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
+                    <div className="form-group">
+                      <label>Department</label>
+                      <select className="form-control" id="set-department">
+                        <option value="">Select Department</option>
+                        <option value="College of Arts & Sciences (CAS)">College of Arts & Sciences (CAS)</option>
+                        <option value="College of Education (COE)">College of Education (COE)</option>
+                        <option value="College of Business & Accountancy (CBA)">College of Business & Accountancy (CBA)</option>
+                        <option value="College of Computer Studies (CCS)">College of Computer Studies (CCS)</option>
+                        <option value="College of Engineering (COE)">College of Engineering (COE)</option>
+                        <option value="College of Nursing (CON)">College of Nursing (CON)</option>
+                      </select>
+                    </div>
+                    <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
+                    <div className="form-group"><label>Professor Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
                     <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
                   </div>
                 </div>
@@ -468,7 +484,7 @@ export default function AdminPage() {
                     <div className="logo-upload-area" onClick={() => document.getElementById('logo-file-input').click()}>
                       <div style={{ marginBottom: '6px', color: 'var(--text-muted)' }}><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
                       <div>Click to upload logo</div>
-                      <div style={{ fontSize: '11px', marginTop: '4px' }}>PNG, JPG, SVG (max 2MB)</div>
+                      <div style={{ fontSize: '11px', marginTop: '4px' }}>PNG, JPG, SVG (max 5MB)</div>
                     </div>
                     <input type="file" id="logo-file-input" accept="image/*" style={{ display: 'none' }} onChange={(e) => window.handleLogoUpload(e.target.files[0])} />
                     <button className="btn btn-danger btn-sm mt-8" onClick={() => window.removeLogo()} id="btn-remove-logo" style={{ display: 'none' }}>Remove Logo</button>

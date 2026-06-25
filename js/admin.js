@@ -9,6 +9,23 @@ let monitorExamId = null;
 let currentQBuilderExamId = null;
 let confirmResolve = null;
 
+function refreshAdminIdentity() {
+  const session = Auth.getAdminSession();
+  if (!session) return;
+  const displayName = session.name || 'Administrator';
+  const initial = displayName.charAt(0).toUpperCase() || 'A';
+
+  const sidebarName = document.getElementById('sb-user-name');
+  const sidebarAvatar = document.getElementById('sb-avatar');
+  const topbarName = document.getElementById('topbar-admin-name');
+  const topbarAvatar = document.getElementById('topbar-avatar');
+
+  if (sidebarName) sidebarName.textContent = displayName;
+  if (sidebarAvatar) sidebarAvatar.textContent = initial;
+  if (topbarName) topbarName.textContent = displayName;
+  if (topbarAvatar) topbarAvatar.textContent = initial;
+}
+
 // ---- Bootstrap ----
 document.addEventListener('firebaseReady', function init() {
   if (!Auth.requireAdmin()) return;
@@ -16,9 +33,8 @@ document.addEventListener('firebaseReady', function init() {
   const session = Auth.getAdminSession();
   const settings = DB.getSettings();
 
-  // Sidebar user info
-  document.getElementById('sb-user-name').textContent = session.name;
-  document.getElementById('sb-avatar').textContent = session.name.charAt(0).toUpperCase();
+  // Sidebar and topbar user info
+  refreshAdminIdentity();
   document.getElementById('sb-school-name').textContent = settings.schoolName || 'PLP ExamGuard';
   document.title = 'PLP ExamGuard - Admin Panel';
 
@@ -456,6 +472,9 @@ async function removeStudentFromCourse(studentId, subjectId) {
 }
 
 function renderSubjects() {
+  const settings = DB.getSettings();
+  const deptTitle = document.getElementById('courses-department-title');
+  if (deptTitle) deptTitle.textContent = settings.department || '';
   const subjects = DB.getSubjects().filter(s => !s.archived);
   const grid = document.getElementById('course-cards-grid');
   if (!subjects.length) {
@@ -658,24 +677,33 @@ function renderStudents(filter) {
   secSel.innerHTML = '<option value="">All Sections</option>' +
     sections.map(s => `<option value="${escHtml(s)}" ${s === prevSec ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
 
+  const programs = [...new Set(students.map(s => s.program).filter(Boolean))].sort();
+  const programSel = document.getElementById('filter-program');
+  const prevProgram = programSel.value;
+  programSel.innerHTML = '<option value="">All Programs</option>' +
+    programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
+
   const q = (filter || '').toLowerCase();
   const yearFilter = document.getElementById('filter-year-level').value;
   const sectionFilter = secSel.value;
+  const programFilter = programSel.value;
 
   if (q) {
     students = students.filter(s =>
       s.name.toLowerCase().includes(q) ||
       s.studentId.toLowerCase().includes(q) ||
+      (s.program || '').toLowerCase().includes(q) ||
       (s.section || '').toLowerCase().includes(q) ||
       computeYearLevel(s.studentId).toLowerCase().includes(q)
     );
   }
   if (yearFilter) students = students.filter(s => computeYearLevel(s.studentId) === yearFilter);
   if (sectionFilter) students = students.filter(s => s.section === sectionFilter);
+  if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
 
   const tbody = document.getElementById('students-tbody');
   if (!students.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = students.map(s => {
@@ -687,6 +715,7 @@ function renderStudents(filter) {
       <td data-label="Year Level" style="text-align:center;">${escHtml(yl)}</td>
       <td data-label="Section" style="text-align:center;">${escHtml(s.section || '—')}</td>
       <td data-label="Email" style="text-align:center;" class="text-muted">${escHtml(s.email || '—')}</td>
+      <td data-label="Program" style="text-align:center;">${escHtml(s.program || '—')}</td>
       <td data-label="">
         <div class="table-actions" style="justify-content:center;">
           <button class="btn btn-secondary btn-sm" onclick="openStudentModal('${s.id}')">Edit</button>
@@ -697,9 +726,14 @@ function renderStudents(filter) {
   }).join('');
 }
 
+let studentFilterFrame = 0;
 function filterStudents() {
   const q = document.getElementById('student-search').value;
-  renderStudents(q);
+  if (studentFilterFrame) cancelAnimationFrame(studentFilterFrame);
+  studentFilterFrame = requestAnimationFrame(() => {
+    studentFilterFrame = 0;
+    renderStudents(q);
+  });
 }
 
 function populateStudentDropdowns(savedYear, savedSection) {
@@ -1127,7 +1161,6 @@ function openExamModal(id, startTab) {
     sel.value = e.subjectId;
     populateAudienceSelectors(e.subjectId, e.targetYearLevels || [], e.targetSections || []);
     currentQBuilderExamId = id;
-    renderQuestionsList(id);
     updateQBadge(id);
     tabs.classList.remove('hidden');
     switchExamTab(startTab || 'details');
@@ -1136,6 +1169,7 @@ function openExamModal(id, startTab) {
     switchExamTab('details');
   }
   openModal('modal-exam');
+  if (id) requestAnimationFrame(() => renderQuestionsList(id));
 }
 
 function switchExamTab(tab) {
@@ -2355,6 +2389,7 @@ async function allowStudentRetake(sessionId) {
 function loadSettings() {
   const s = DB.getSettings();
   document.getElementById('set-school-name').value = s.schoolName || '';
+  document.getElementById('set-department').value = s.department || '';
   document.getElementById('set-admin-name').value = s.adminName || '';
   document.getElementById('set-admin-email').value = s.adminEmail || '';
   document.getElementById('set-claude-api-key').value = s.claudeApiKey || '';
@@ -2368,11 +2403,23 @@ function loadSettings() {
 
 function saveSettings() {
   const schoolName = document.getElementById('set-school-name').value.trim();
+  const department = document.getElementById('set-department').value.trim();
   const adminName = document.getElementById('set-admin-name').value.trim();
   const adminEmail = document.getElementById('set-admin-email').value.trim();
   if (!schoolName) { showToast('School name is required.', 'error'); return; }
-  DB.updateSettings({ schoolName, adminName, adminEmail });
+  DB.updateSettings({ schoolName, department, adminName, adminEmail });
+  const session = Auth.getAdminSession();
+  if (session) {
+    sessionStorage.setItem('acs_admin_session', JSON.stringify({
+      ...session,
+      name: adminName || session.name,
+      email: adminEmail || session.email
+    }));
+    refreshAdminIdentity();
+  }
   document.getElementById('sb-school-name').textContent = schoolName;
+  const deptTitle = document.getElementById('courses-department-title');
+  if (deptTitle) deptTitle.textContent = department || '';
   document.title = 'PLP ExamGuard - Admin Panel';
   showToast('Settings saved.', 'success');
 }
@@ -2419,7 +2466,7 @@ async function testGroqKey() {
 
 function handleLogoUpload(file) {
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { showToast('Logo must be less than 2MB.', 'error'); return; }
+  if (file.size > 5 * 1024 * 1024) { showToast('Logo must be less than 5MB.', 'error'); return; }
   const reader = new FileReader();
   reader.onload = e => {
     const base64 = e.target.result;
@@ -2466,11 +2513,15 @@ function changePassword() {
 // MODAL HELPERS
 // ============================================================
 function openModal(id) {
-  document.getElementById(id).classList.remove('hidden');
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove('hidden');
 }
 
 function closeModal(id) {
-  document.getElementById(id).classList.add('hidden');
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.add('hidden');
 }
 
 // Close modal on backdrop click

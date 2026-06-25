@@ -6,6 +6,15 @@ const EYE_OPEN = (
     <circle cx="12" cy="12" r="3" />
   </>
 );
+
+const DEPARTMENT_OPTIONS = [
+  'College of Arts & Sciences (CAS)',
+  'College of Education (COE)',
+  'College of Business & Accountancy (CBA)',
+  'College of Computer Studies (CCS)',
+  'College of Engineering (COE)',
+  'College of Nursing (CON)',
+];
 const EYE_CLOSED = (
   <>
     <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
@@ -31,15 +40,24 @@ function EyeToggle({ show, onToggle }) {
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('admin');
-  const [studentStep, setStudentStep] = useState(1); // 1 | '2a' | '2b'
+  const [adminStep, setAdminStep] = useState('login');
+  const [studentStep, setStudentStep] = useState(1); // 1 | 'verify' | '2a' | '2b'
   const [studentEmail, setStudentEmail] = useState('');
+  const [studentCodePreview, setStudentCodePreview] = useState('');
+  const [studentVerifyMessage, setStudentVerifyMessage] = useState('');
   const [adminError, setAdminError] = useState('');
+  const [adminResetEmail, setAdminResetEmail] = useState('');
+  const [adminResetCodePreview, setAdminResetCodePreview] = useState('');
+  const [adminResetMessage, setAdminResetMessage] = useState('');
   const [step1Error, setStep1Error] = useState('');
   const [step2aError, setStep2aError] = useState('');
   const [step2bError, setStep2bError] = useState('');
   const [showAdminPass, setShowAdminPass] = useState(false);
   const [showStudentPass, setShowStudentPass] = useState(false);
   const [showSetupPass, setShowSetupPass] = useState(false);
+  const [showSetupConfirmPass, setShowSetupConfirmPass] = useState(false);
+  const [showAdminResetPass, setShowAdminResetPass] = useState(false);
+  const [showAdminResetConfirm, setShowAdminResetConfirm] = useState(false);
   const [fbLoading, setFbLoading] = useState(true);
   const [settings, setSettings] = useState({
     schoolName: 'Pamantasan ng Lungsod ng Pasig',
@@ -48,48 +66,154 @@ export default function LoginPage() {
 
   const adminUsernameRef = useRef();
   const adminPasswordRef = useRef();
+  const adminResetEmailRef = useRef();
+  const adminResetCodeRef = useRef();
+  const adminResetPasswordRef = useRef();
+  const adminResetConfirmRef = useRef();
   const studentEmailRef = useRef();
+  const studentVerifyCodeRef = useRef();
   const studentPasswordRef = useRef();
   const setupIdRef = useRef();
-  const setupIdConfirmRef = useRef();
   const setupNameRef = useRef();
+  const setupYearSectionRef = useRef();
+  const setupDepartmentRef = useRef();
+  const setupProgramRef = useRef();
   const setupPassRef = useRef();
   const setupConfirmRef = useRef();
+  const readyHandledRef = useRef(false);
 
   useEffect(() => {
-    const onReady = () => {
+    const applyBootState = () => {
       setFbLoading(false);
-      const s = window.DB.getSettings();
+      const s = window.DB?.getSettings?.() || {};
       setSettings({
         schoolName: s.schoolName || 'Pamantasan ng Lungsod ng Pasig',
         logoUrl: s.logoUrl || '/plp-logo.png',
       });
       const params = new URLSearchParams(window.location.search);
       if (params.get('tab') === 'student') setActiveTab('student');
-      if (window.Auth.getAdminSession()) { window.location.href = 'admin.html'; return; }
-      if (window.Auth.getStudentSession()) { window.location.href = 'exam.html'; return; }
+      if (window.Auth?.getAdminSession?.()) { window.location.replace('admin.html'); return; }
+      if (window.Auth?.getStudentSession?.()) { window.location.replace('exam.html'); return; }
+    };
+
+    const onReady = () => {
+      if (readyHandledRef.current) return;
+      readyHandledRef.current = true;
+      applyBootState();
     };
 
     document.addEventListener('firebaseReady', onReady);
-    const fallback = setTimeout(() => {
+    if (window.DB && window.Auth) {
+      applyBootState();
+    } else {
       setFbLoading(false);
-      document.dispatchEvent(new Event('firebaseReady'));
-    }, 1200);
-    window.FirebaseSync.init();
+    }
+    if (window.FirebaseSync?.init) window.FirebaseSync.init();
 
     return () => {
       document.removeEventListener('firebaseReady', onReady);
-      clearTimeout(fallback);
     };
   }, []);
 
   const switchTab = (tab) => {
     setActiveTab(tab);
+    setAdminStep('login');
     setAdminError('');
+    setAdminResetEmail('');
+    setAdminResetCodePreview('');
+    setAdminResetMessage('');
     setStep1Error('');
     setStep2aError('');
     setStep2bError('');
+    setStudentCodePreview('');
+    setStudentVerifyMessage('');
+    window.Auth?.clearStudentEmailVerification?.();
     setStudentStep(1);
+  };
+
+  const startAdminReset = () => {
+    setAdminStep('email');
+    setAdminError('');
+    setAdminResetEmail('');
+    setAdminResetCodePreview('');
+    setAdminResetMessage('');
+    requestAnimationFrame(() => adminResetEmailRef.current?.focus());
+  };
+
+  const adminResetBackToLogin = () => {
+    setAdminStep('login');
+    setAdminError('');
+    setAdminResetMessage('');
+    setAdminResetCodePreview('');
+    window.Auth?.clearAdminPasswordReset?.();
+    requestAnimationFrame(() => adminUsernameRef.current?.focus());
+  };
+
+  const sendAdminResetCode = () => {
+    const email = (adminResetEmailRef.current?.value || '').trim().toLowerCase();
+    setAdminError('');
+    if (!email) {
+      const message = 'Please enter your professor email address.';
+      setAdminError(message);
+      return;
+    }
+    const result = window.Auth.beginAdminPasswordReset(email);
+    if (!result.success) {
+      setAdminError(result.message);
+      return;
+    }
+    setAdminResetEmail(email);
+    setAdminResetCodePreview(result.previewCode || '');
+    setAdminResetMessage(result.message);
+    setAdminStep('code');
+    requestAnimationFrame(() => adminResetCodeRef.current?.focus());
+  };
+
+  const verifyAdminResetCode = () => {
+    const code = (adminResetCodeRef.current?.value || '').trim();
+    setAdminError('');
+    if (!/^\d{6}$/.test(code)) {
+      const message = 'Please enter the 6-digit verification code.';
+      setAdminError(message);
+      return;
+    }
+    const result = window.Auth.verifyAdminResetCode(adminResetEmail, code);
+    if (!result.success) {
+      setAdminError(result.message);
+      return;
+    }
+    setAdminResetMessage('Code verified. You can now create a new password.');
+    setAdminStep('password');
+    requestAnimationFrame(() => adminResetPasswordRef.current?.focus());
+  };
+
+  const saveAdminNewPassword = () => {
+    const password = adminResetPasswordRef.current?.value || '';
+    const confirm = adminResetConfirmRef.current?.value || '';
+    setAdminError('');
+    if (password.length < 6) {
+      const message = 'Password must be at least 6 characters.';
+      setAdminError(message);
+      return;
+    }
+    if (password !== confirm) {
+      const message = 'Passwords do not match.';
+      setAdminError(message);
+      return;
+    }
+    const result = window.Auth.completeAdminPasswordReset(adminResetEmail, password);
+    if (!result.success) {
+      setAdminError(result.message);
+      return;
+    }
+    setAdminResetMessage('Password updated successfully. Sign in with your new password.');
+    setAdminStep('login');
+    setAdminResetCodePreview('');
+    requestAnimationFrame(() => {
+      if (adminUsernameRef.current && result.username) adminUsernameRef.current.value = result.username;
+      if (adminPasswordRef.current) adminPasswordRef.current.value = '';
+      adminPasswordRef.current?.focus();
+    });
   };
 
   const studentGoBack = () => {
@@ -97,7 +221,10 @@ export default function LoginPage() {
     setStep1Error('');
     setStep2aError('');
     setStep2bError('');
-    setTimeout(() => studentEmailRef.current?.focus(), 0);
+    setStudentCodePreview('');
+    setStudentVerifyMessage('');
+    window.Auth?.clearStudentEmailVerification?.();
+    requestAnimationFrame(() => studentEmailRef.current?.focus());
   };
 
   const doEmailContinue = () => {
@@ -105,14 +232,29 @@ export default function LoginPage() {
     setStep1Error('');
     if (!email) { setStep1Error('Please enter your PLP email address.'); return; }
     if (!email.endsWith('@plpasig.edu.ph')) { setStep1Error('Only @plpasig.edu.ph email addresses are allowed.'); return; }
-    const result = window.Auth.checkStudentEmail(email);
+    const result = window.Auth.beginStudentEmailVerification(email);
+    if (!result.success) { setStep1Error(result.message); return; }
     setStudentEmail(email);
+    setStudentCodePreview(result.previewCode || '');
+    setStudentVerifyMessage(result.message || '');
+    setStudentStep('verify');
+    requestAnimationFrame(() => studentVerifyCodeRef.current?.focus());
+  };
+
+  const verifyStudentEmail = () => {
+    const code = (studentVerifyCodeRef.current?.value || '').trim();
+    setStep1Error('');
+    if (!/^\d{6}$/.test(code)) { setStep1Error('Please enter the 6-digit verification code.'); return; }
+    const result = window.Auth.verifyStudentEmailCode(studentEmail, code);
+    if (!result.success) { setStep1Error(result.message); return; }
+    setStudentVerifyMessage('Email verified successfully.');
+    setStudentCodePreview('');
     if (result.hasPassword) {
       setStudentStep('2a');
-      setTimeout(() => studentPasswordRef.current?.focus(), 80);
+      requestAnimationFrame(() => studentPasswordRef.current?.focus());
     } else {
       setStudentStep('2b');
-      setTimeout(() => setupIdRef.current?.focus(), 80);
+      requestAnimationFrame(() => setupNameRef.current?.focus());
     }
   };
 
@@ -129,23 +271,28 @@ export default function LoginPage() {
   const doFirstSetup = () => {
     const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
     const studentId = (setupIdRef.current?.value || '').trim().toUpperCase();
-    const studentIdConfirm = (setupIdConfirmRef.current?.value || '').trim().toUpperCase();
     const name = (setupNameRef.current?.value || '').trim();
+    const yearSection = (setupYearSectionRef.current?.value || '').trim().toUpperCase();
+    const department = (setupDepartmentRef.current?.value || '').trim();
+    const program = (setupProgramRef.current?.value || '').trim().toUpperCase();
     const password = setupPassRef.current?.value || '';
     const confirm = setupConfirmRef.current?.value || '';
     setStep2bError('');
 
+    if (!name) { setStep2bError('Please enter your full name.'); return; }
     if (!studentId) { setStep2bError('Please enter your Student ID.'); return; }
     const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
     if (!idMatch) { setStep2bError('Student ID must be in YY-NNNNN format (e.g. 23-00218).'); return; }
     const yr = parseInt(idMatch[1]);
     if (yr < 18 || yr > 35) { setStep2bError('Invalid Student ID year.'); return; }
-    if (studentId !== studentIdConfirm) { setStep2bError('Student IDs do not match. Please check and re-enter.'); return; }
+    if (!/^[1-4]-[A-Z]$/.test(yearSection)) { setStep2bError('Year & section must use the format 3-B.'); return; }
+    if (!department) { setStep2bError('Please select your department.'); return; }
+    if (!program) { setStep2bError('Please enter your program, such as BSIT or BSCS.'); return; }
     if (!password) { setStep2bError('Please create a password.'); return; }
     if (password.length < 6) { setStep2bError('Password must be at least 6 characters.'); return; }
     if (password !== confirm) { setStep2bError('Passwords do not match.'); return; }
 
-    const result = window.Auth.studentFirstSetup(email, studentId, password, name);
+    const result = window.Auth.studentFirstSetup(email, studentId, password, name, yearSection, department, program);
     if (result.success) { window.location.href = 'exam.html'; }
     else { setStep2bError(result.message); }
   };
@@ -203,23 +350,115 @@ export default function LoginPage() {
 
             {/* ===== ADMIN TAB ===== */}
             <div id="tab-admin" className={`tab-panel${activeTab === 'admin' ? ' active' : ''}`}>
-              <div className="form-group">
-                <label htmlFor="admin-username">Username</label>
-                <input type="text" className="form-control" id="admin-username" ref={adminUsernameRef}
-                  placeholder="Enter username" autoComplete="username"
-                  onKeyDown={(e) => { if (e.key === 'Enter') adminPasswordRef.current?.focus(); }} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="admin-password">Password</label>
-                <div style={{ position: 'relative' }}>
-                  <input type={showAdminPass ? 'text' : 'password'} className="form-control" id="admin-password" ref={adminPasswordRef}
-                    placeholder="Enter password" autoComplete="current-password" style={{ paddingRight: '42px' }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') doAdminLogin(); }} />
-                  <EyeToggle show={showAdminPass} onToggle={() => setShowAdminPass(v => !v)} />
-                </div>
-              </div>
+              {adminStep === 'login' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="admin-username">Username</label>
+                    <input type="text" className="form-control" id="admin-username" ref={adminUsernameRef}
+                      placeholder="Enter username" autoComplete="username"
+                      onKeyDown={(e) => { if (e.key === 'Enter') adminPasswordRef.current?.focus(); }} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-password">Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showAdminPass ? 'text' : 'password'} className="form-control" id="admin-password" ref={adminPasswordRef}
+                        placeholder="Enter password" autoComplete="current-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') doAdminLogin(); }} />
+                      <EyeToggle show={showAdminPass} onToggle={() => setShowAdminPass(v => !v)} />
+                    </div>
+                  </div>
+                </>
+              )}
+              {adminStep === 'email' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="admin-reset-email">Professor Email</label>
+                    <input type="email" className="form-control" id="admin-reset-email" ref={adminResetEmailRef}
+                      placeholder="Enter your email address" autoComplete="email"
+                      onKeyDown={(e) => { if (e.key === 'Enter') sendAdminResetCode(); }} />
+                  </div>
+                  <p className="text-muted" style={{ fontSize: '12px', marginTop: '-4px', marginBottom: '14px' }}>
+                    Enter the professor email linked to your account to receive a 6-digit verification code.
+                  </p>
+                </>
+              )}
+              {adminStep === 'code' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminResetEmail}</span>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-reset-code">6-Digit Verification Code</label>
+                    <input type="text" className="form-control" id="admin-reset-code" ref={adminResetCodeRef}
+                      placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                      onKeyDown={(e) => { if (e.key === 'Enter') verifyAdminResetCode(); }} />
+                  </div>
+                  {adminResetCodePreview && (
+                    <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '12px', color: '#92400e' }}>
+                      Verification code: <strong>{adminResetCodePreview}</strong>
+                    </div>
+                  )}
+                </>
+              )}
+              {adminStep === 'password' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#ecfdf5', borderRadius: '8px', padding: '8px 12px', border: '1px solid #bbf7d0' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#166534' }}>Code verified for {adminResetEmail}</span>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-reset-password">New Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showAdminResetPass ? 'text' : 'password'} className="form-control" id="admin-reset-password" ref={adminResetPasswordRef}
+                        placeholder="Minimum 6 characters" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') adminResetConfirmRef.current?.focus(); }} />
+                      <EyeToggle show={showAdminResetPass} onToggle={() => setShowAdminResetPass(v => !v)} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-reset-confirm">Confirm New Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showAdminResetConfirm ? 'text' : 'password'} className="form-control" id="admin-reset-confirm" ref={adminResetConfirmRef}
+                        placeholder="Re-enter new password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveAdminNewPassword(); }} />
+                      <EyeToggle show={showAdminResetConfirm} onToggle={() => setShowAdminResetConfirm(v => !v)} />
+                    </div>
+                  </div>
+                </>
+              )}
               {adminError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{adminError}</div>}
-              <button className="btn btn-primary btn-block btn-lg" onClick={doAdminLogin}>Sign In</button>
+              {adminResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminResetMessage}</div>}
+              {adminStep === 'login' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={doAdminLogin}>Sign In</button>
+                  <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                    <button type="button" onClick={startAdminReset} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600 }}>
+                      Forgot Password?
+                    </button>
+                  </div>
+                </>
+              )}
+              {adminStep === 'email' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode}>Send Code</button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={adminResetBackToLogin}>Back to Sign In</button>
+                </>
+              )}
+              {adminStep === 'code' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
+                  <button type="button" onClick={sendAdminResetCode} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, marginTop: '10px', width: '100%', textAlign: 'right' }}>
+                    Resend Code
+                  </button>
+                </>
+              )}
+              {adminStep === 'password' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={saveAdminNewPassword}>Update Password</button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={adminResetBackToLogin}>Cancel</button>
+                </>
+              )}
             </div>
 
             {/* ===== STUDENT TAB ===== */}
@@ -240,6 +479,30 @@ export default function LoginPage() {
                 </div>
               )}
 
+              {studentStep === 'verify' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="student-verify-code">6-Digit Verification Code</label>
+                    <input type="text" className="form-control" id="student-verify-code" ref={studentVerifyCodeRef}
+                      placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                      onKeyDown={(e) => { if (e.key === 'Enter') verifyStudentEmail(); }} />
+                  </div>
+                  {studentVerifyMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentVerifyMessage}</div>}
+                  {studentCodePreview && (
+                    <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '12px', color: '#92400e' }}>
+                      Verification code: <strong>{studentCodePreview}</strong>
+                    </div>
+                  )}
+                  {step1Error && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
+                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentEmail}>Verify Email</button>
+                </div>
+              )}
+
               {/* STEP 2A: Returning student */}
               {studentStep === '2a' && (
                 <div>
@@ -252,7 +515,7 @@ export default function LoginPage() {
                     <label htmlFor="student-password">Password</label>
                     <div style={{ position: 'relative' }}>
                       <input type={showStudentPass ? 'text' : 'password'} className="form-control" id="student-password" ref={studentPasswordRef}
-                        placeholder="Enter your password" autoComplete="current-password" style={{ paddingRight: '42px' }}
+                        placeholder="Enter your password" autoComplete="new-password" style={{ paddingRight: '42px' }}
                         onKeyDown={(e) => { if (e.key === 'Enter') doPasswordLogin(); }} />
                       <EyeToggle show={showStudentPass} onToggle={() => setShowStudentPass(v => !v)} />
                     </div>
@@ -272,43 +535,58 @@ export default function LoginPage() {
                     <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '14px' }}>First login detected. Set up your account to continue.</p>
-                  <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 13px', marginBottom: '14px', fontSize: '12px', color: '#92400e', lineHeight: 1.5 }}>
-                    <strong>Important:</strong> Your Student ID cannot be changed after account creation. Double-check it carefully — only your professor can correct it.
+                  <div className="form-group">
+                    <label htmlFor="student-setup-name">Full Name</label>
+                    <input type="text" className="form-control" id="student-setup-name" ref={setupNameRef}
+                      placeholder="Last, First Middle" autoComplete="name"
+                      onKeyDown={(e) => { if (e.key === 'Enter') setupIdRef.current?.focus(); }} />
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-setup-id">Student ID <span style={{ color: '#9ca3af', fontWeight: 400 }}>(YY-NNNNN)</span></label>
                     <input type="text" className="form-control" id="student-setup-id" ref={setupIdRef}
                       placeholder="e.g. 23-00218" inputMode="numeric" maxLength={8} autoComplete="off"
                       onInput={formatStudentId}
-                      onKeyDown={(e) => { if (e.key === 'Enter') setupIdConfirmRef.current?.focus(); }} />
+                      onKeyDown={(e) => { if (e.key === 'Enter') setupYearSectionRef.current?.focus(); }} />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="student-setup-id-confirm">Confirm Student ID</label>
-                    <input type="text" className="form-control" id="student-setup-id-confirm" ref={setupIdConfirmRef}
-                      placeholder="Re-enter your Student ID" inputMode="numeric" maxLength={8} autoComplete="off"
-                      onInput={formatStudentId}
-                      onKeyDown={(e) => { if (e.key === 'Enter') setupNameRef.current?.focus(); }} />
+                    <label htmlFor="student-setup-year-section">Year &amp; Section</label>
+                    <input type="text" className="form-control" id="student-setup-year-section" ref={setupYearSectionRef}
+                      placeholder="e.g. 3-B" autoComplete="off" maxLength={3}
+                      onInput={(e) => { e.target.value = e.target.value.toUpperCase().replace(/[^0-9A-Z-]/g, '').slice(0, 3); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') setupDepartmentRef.current?.focus(); }} />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="student-setup-name">Full Name <span style={{ color: '#9ca3af', fontWeight: 400 }}>(if not yet registered)</span></label>
-                    <input type="text" className="form-control" id="student-setup-name" ref={setupNameRef}
-                      placeholder="Last, First Middle" autoComplete="name"
+                    <label htmlFor="student-setup-department">Department</label>
+                    <select className="form-control" id="student-setup-department" ref={setupDepartmentRef}
+                      onKeyDown={(e) => { if (e.key === 'Enter') setupProgramRef.current?.focus(); }}>
+                      <option value="">Select your department</option>
+                      {DEPARTMENT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="student-setup-program">Program</label>
+                    <input type="text" className="form-control" id="student-setup-program" ref={setupProgramRef}
+                      placeholder="e.g. BSIT or BSCS" autoComplete="off"
+                      onInput={(e) => { e.target.value = e.target.value.toUpperCase(); }}
                       onKeyDown={(e) => { if (e.key === 'Enter') setupPassRef.current?.focus(); }} />
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-setup-pass">Create Password</label>
                     <div style={{ position: 'relative' }}>
                       <input type={showSetupPass ? 'text' : 'password'} className="form-control" id="student-setup-pass" ref={setupPassRef}
-                        placeholder="Minimum 6 characters" style={{ paddingRight: '42px' }}
+                        placeholder="Minimum 6 characters" autoComplete="new-password" style={{ paddingRight: '42px' }}
                         onKeyDown={(e) => { if (e.key === 'Enter') setupConfirmRef.current?.focus(); }} />
                       <EyeToggle show={showSetupPass} onToggle={() => setShowSetupPass(v => !v)} />
                     </div>
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-setup-confirm">Confirm Password</label>
-                    <input type="password" className="form-control" id="student-setup-confirm" ref={setupConfirmRef}
-                      placeholder="Re-enter password"
-                      onKeyDown={(e) => { if (e.key === 'Enter') doFirstSetup(); }} />
+                    <div style={{ position: 'relative' }}>
+                      <input type={showSetupConfirmPass ? 'text' : 'password'} className="form-control" id="student-setup-confirm" ref={setupConfirmRef}
+                        placeholder="Re-enter password" autoComplete="new-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') doFirstSetup(); }} />
+                      <EyeToggle show={showSetupConfirmPass} onToggle={() => setShowSetupConfirmPass(v => !v)} />
+                    </div>
                   </div>
                   {step2bError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2bError}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={doFirstSetup}>Create Account &amp; Sign In</button>

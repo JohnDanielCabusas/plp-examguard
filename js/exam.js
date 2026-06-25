@@ -163,10 +163,12 @@ const ExamApp = {
     if (emailEl) emailEl.textContent = sess.email || '—';
     const sidEl = document.getElementById('stg-studentid');
     if (sidEl) sidEl.value = sess.studentId || '';
-    const yrEl = document.getElementById('stg-year');
-    if (yrEl) yrEl.value = sess.yearLevel || (student ? (student.yearLevel || '') : '');
-    const secEl = document.getElementById('stg-section');
-    if (secEl) secEl.value = sess.section || (student ? (student.section || '') : '');
+    const yearSectionEl = document.getElementById('stg-year-section');
+    if (yearSectionEl) yearSectionEl.value = sess.yearSection || (student ? (student.yearSection || '') : '');
+    const departmentEl = document.getElementById('stg-department');
+    if (departmentEl) departmentEl.value = sess.department || (student ? (student.department || '') : '');
+    const programEl = document.getElementById('stg-program');
+    if (programEl) programEl.value = sess.program || (student ? (student.program || '') : '');
     // clear messages
     ['stg-profile-msg','stg-pass-msg'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -177,8 +179,9 @@ const ExamApp = {
     if (!sess) return;
     const name = (document.getElementById('stg-name').value || '').trim();
     const studentId = (document.getElementById('stg-studentid').value || '').trim().toUpperCase();
-    const yearLevel = (document.getElementById('stg-year').value || '').trim();
-    const section = (document.getElementById('stg-section').value || '').trim();
+    const yearSection = (document.getElementById('stg-year-section').value || '').trim().toUpperCase();
+    const department = (document.getElementById('stg-department').value || '').trim();
+    const program = (document.getElementById('stg-program').value || '').trim().toUpperCase();
     const msgEl = document.getElementById('stg-profile-msg');
     if (!name) { msgEl.textContent = 'Name cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
     if (!studentId) { msgEl.textContent = 'Student ID cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
@@ -202,7 +205,14 @@ const ExamApp = {
       return;
     }
 
-    const updates = { name, studentId, yearLevel, section };
+    const yearSectionMatch = yearSection.match(/^([1-4])-([A-Z])$/);
+    if (!yearSectionMatch) { msgEl.textContent = 'Year & section must use the format 3-B.'; msgEl.style.color = '#dc2626'; return; }
+    if (!department) { msgEl.textContent = 'Please select your department.'; msgEl.style.color = '#dc2626'; return; }
+    if (!program) { msgEl.textContent = 'Please enter your program.'; msgEl.style.color = '#dc2626'; return; }
+    const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+    const yearLevel = yearMap[yearSectionMatch[1]] || '';
+    const section = `Section ${yearSectionMatch[2]}`;
+    const updates = { name, studentId, yearLevel, section, yearSection, department, program };
     DB.updateStudent(student.id, updates);
     const updatedStudent = { ...student, ...updates };
     DB.syncStudentReferences(sess.studentId, updatedStudent);
@@ -214,6 +224,9 @@ const ExamApp = {
       studentName: name,
       yearLevel,
       section,
+      yearSection,
+      department,
+      program,
     };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
     document.getElementById('portal-footer-name').textContent = name;
@@ -227,6 +240,9 @@ const ExamApp = {
         studentName: name,
         yearLevel,
         section,
+        yearSection,
+        department,
+        program,
       };
     }
 
@@ -237,7 +253,7 @@ const ExamApp = {
 
   _formatFooterMeta(sess) {
     if (!sess) return '';
-    return [sess.studentId, sess.yearLevel, sess.section].filter(Boolean).join(' · ');
+    return [sess.studentId, sess.yearSection || [sess.yearLevel, sess.section].filter(Boolean).join(' / '), sess.program].filter(Boolean).join(' · ');
   },
 
   saveStudentPassword() {

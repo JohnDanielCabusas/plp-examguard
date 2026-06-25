@@ -130,7 +130,6 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   inset: -80px;
   background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
   background-size: 32px 32px;
-  animation: grid-drift 20s linear infinite alternate;
   pointer-events: none;
 }
 
@@ -141,8 +140,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
   background-size: 256px 256px;
-  animation: noise-move 8s steps(1) infinite;
-  opacity: 0.5;
+  opacity: 0.3;
   pointer-events: none;
 }
 
@@ -150,9 +148,10 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 .login-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(70px);
+  filter: blur(42px);
   pointer-events: none;
   z-index: 0;
+  will-change: transform;
 }
 .login-orb-1 {
   width: 420px; height: 420px;
@@ -1112,8 +1111,7 @@ tr:hover td { background: #F8FDF8; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(2px);
+  background: rgba(0,0,0,0.42);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -4099,11 +4097,30 @@ body.exam-page {
    ============================================================ */
 
 /* Font */
-.admin-layout, .admin-layout *, .modal-backdrop, .modal-backdrop * {
+.admin-layout,
+.modal-backdrop,
+.login-page {
   font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
 }
-.login-page, .login-page * {
-  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+
+.admin-layout button,
+.admin-layout input,
+.admin-layout select,
+.admin-layout textarea,
+.modal-backdrop button,
+.modal-backdrop input,
+.modal-backdrop select,
+.modal-backdrop textarea,
+.login-page button,
+.login-page input,
+.login-page select,
+.login-page textarea {
+  font: inherit;
+}
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
 }
 
 /* ── Sidebar refinements ───────────────────────────────── */
@@ -4221,6 +4238,16 @@ body.exam-page {
 /* ── Section headers ───────────────────────────────────── */
 .section-title { display: none !important; } /* already shown in topbar */
 .section-subtitle { font-size: 13px !important; color: #9ca3af !important; font-weight: 500 !important; }
+
+#courses-department-title {
+  font-size: 30px !important;
+  font-weight: 800 !important;
+  color: var(--primary) !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.1 !important;
+  margin-top: 8px !important;
+  margin-bottom: 4px !important;
+}
 
 /* ── Stat cards — top-border style + bigger numbers ─────── */
 .stat-card {
