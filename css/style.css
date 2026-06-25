@@ -765,6 +765,18 @@ textarea.form-control {
   gap: 12px;
 }
 
+.section-header-students {
+  align-items: flex-end;
+}
+
+.section-header-copy {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .section-title {
   display: none !important; /* topbar already shows the page name */
 }
@@ -960,16 +972,48 @@ tr:hover td { background: #F8FDF8; }
   flex-wrap: wrap;
 }
 
+.students-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.students-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.students-filters .filter-select {
+  min-width: 150px;
+}
+
 .reports-toolbar {
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.reports-toolbar-select {
+  flex: 0 1 240px;
+}
+
+.reports-toolbar-select .form-control {
+  width: 100%;
 }
 
 .reports-toolbar-actions {
   display: flex;
   gap: 12px;
-  margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 .search-input {
@@ -2710,6 +2754,13 @@ body.exam-page {
 
   /* Section header */
   .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-header-students { align-items: flex-start; }
+  .section-header-copy,
+  .students-toolbar,
+  .students-filters,
+  .reports-toolbar-select,
+  .reports-toolbar-actions { width: 100%; }
+  .students-toolbar { justify-content: flex-start; gap: 12px; }
   .section-title { font-size: 18px; }
 
   /* Stats */
@@ -2809,6 +2860,8 @@ body.exam-page {
   /* Toolbar / search */
   .toolbar { gap: 8px; }
   .search-input { min-width: 100%; }
+  .reports-toolbar { align-items: stretch; }
+  .reports-toolbar-select { flex-basis: auto; }
 
   /* Login card */
   .login-card { padding: 24px 18px; max-width: 100%; }
