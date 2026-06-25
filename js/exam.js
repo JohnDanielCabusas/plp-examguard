@@ -198,8 +198,7 @@ const ExamApp = {
       return;
     }
 
-    const duplicate = DB.getStudent(studentId);
-    if (duplicate && duplicate.id !== student.id) {
+    if (DB.studentExists(studentId, student.id)) {
       msgEl.textContent = 'That Student ID is already assigned to another account.';
       msgEl.style.color = '#dc2626';
       return;
@@ -213,7 +212,13 @@ const ExamApp = {
     const yearLevel = yearMap[yearSectionMatch[1]] || '';
     const section = `Section ${yearSectionMatch[2]}`;
     const updates = { name, studentId, yearLevel, section, yearSection, department, program };
-    DB.updateStudent(student.id, updates);
+    try {
+      DB.updateStudent(student.id, updates);
+    } catch (error) {
+      msgEl.textContent = error instanceof Error ? error.message : 'Unable to update your profile right now.';
+      msgEl.style.color = '#dc2626';
+      return;
+    }
     const updatedStudent = { ...student, ...updates };
     DB.syncStudentReferences(sess.studentId, updatedStudent);
 

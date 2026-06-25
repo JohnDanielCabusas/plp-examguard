@@ -789,25 +789,41 @@ function openStudentModal(id) {
 
 function saveStudent() {
   const id = document.getElementById('stu-id').value;
-  const studentId = document.getElementById('stu-student-id').value.trim();
+  const studentId = DB.normalizeStudentId(document.getElementById('stu-student-id').value);
   const name = document.getElementById('stu-name').value.trim();
   const yearLevel = document.getElementById('stu-year').value.trim();
   const section = document.getElementById('stu-section').value.trim();
-  const email = document.getElementById('stu-email').value.trim();
+  const email = DB.normalizeEmail(document.getElementById('stu-email').value);
 
   if (!studentId || !name) { showToast('Student ID and name are required.', 'error'); return; }
   const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
   if (!idMatch) { showToast('Student ID must be in YY-NNNNN format (e.g. 23-00218).', 'error'); return; }
   const yr = parseInt(idMatch[1]);
   if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
+  if (email && !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email)) {
+    showToast('Please enter a valid student email address.', 'error');
+    return;
+  }
+  if (DB.studentExists(studentId, id || null)) {
+    showToast('Student ID already exists.', 'error');
+    return;
+  }
+  if (email && DB.emailExists(email, id || null)) {
+    showToast('Student email already exists.', 'error');
+    return;
+  }
 
-  if (id) {
-    DB.updateStudent(id, { name, yearLevel, section, email });
-    showToast('Student updated.', 'success');
-  } else {
-    if (DB.studentExists(studentId)) { showToast('Student ID already exists.', 'error'); return; }
-    DB.addStudent({ studentId, name, yearLevel, section, email });
-    showToast('Student added.', 'success');
+  try {
+    if (id) {
+      DB.updateStudent(id, { name, yearLevel, section, email });
+      showToast('Student updated.', 'success');
+    } else {
+      DB.addStudent({ studentId, name, yearLevel, section, email });
+      showToast('Student added.', 'success');
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Unable to save the student right now.', 'error');
+    return;
   }
   closeModal('modal-student');
   renderStudents();
@@ -2388,10 +2404,13 @@ async function allowStudentRetake(sessionId) {
 // ============================================================
 function loadSettings() {
   const s = DB.getSettings();
+  const session = Auth.getAdminSession();
+  const admin = session ? DB.getAdmins().find(item => item.id === session.id) : DB.getAdmins()[0];
   document.getElementById('set-school-name').value = s.schoolName || '';
   document.getElementById('set-department').value = s.department || '';
-  document.getElementById('set-admin-name').value = s.adminName || '';
-  document.getElementById('set-admin-email').value = s.adminEmail || '';
+  document.getElementById('set-admin-name').value = s.adminName || admin?.name || '';
+  document.getElementById('set-admin-email').value = s.adminEmail || admin?.email || '';
+  document.getElementById('set-admin-username').value = s.adminUsername || admin?.username || '';
   document.getElementById('set-claude-api-key').value = s.claudeApiKey || '';
 
   if (s.logoUrl) {
@@ -2405,13 +2424,33 @@ function saveSettings() {
   const schoolName = document.getElementById('set-school-name').value.trim();
   const department = document.getElementById('set-department').value.trim();
   const adminName = document.getElementById('set-admin-name').value.trim();
-  const adminEmail = document.getElementById('set-admin-email').value.trim();
+  const adminEmail = DB.normalizeEmail(document.getElementById('set-admin-email').value);
+  const adminUsername = DB.normalizeUsername(document.getElementById('set-admin-username').value);
   if (!schoolName) { showToast('School name is required.', 'error'); return; }
-  DB.updateSettings({ schoolName, department, adminName, adminEmail });
   const session = Auth.getAdminSession();
+  if (!adminName) { showToast('Professor name is required.', 'error'); return; }
+  if (!adminEmail) { showToast('Professor email is required.', 'error'); return; }
+  if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(adminEmail)) { showToast('Please enter a valid professor email address.', 'error'); return; }
+  if (!adminUsername) { showToast('Professor username is required.', 'error'); return; }
+
+  try {
+    if (session?.id) {
+      DB.updateAdmin(session.id, {
+        name: adminName,
+        email: adminEmail,
+        username: adminUsername,
+      });
+    }
+    DB.updateSettings({ schoolName, department, adminName, adminEmail, adminUsername });
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Unable to save settings right now.', 'error');
+    return;
+  }
+
   if (session) {
     sessionStorage.setItem('acs_admin_session', JSON.stringify({
       ...session,
+      username: adminUsername || session.username,
       name: adminName || session.name,
       email: adminEmail || session.email
     }));
@@ -2502,7 +2541,12 @@ function changePassword() {
   const admin = admins.find(a => a.id === session.id);
   if (!admin || admin.password !== curPass) { showToast('Current password is incorrect.', 'error'); return; }
 
-  DB.updateAdmin(session.id, { password: newPass });
+  try {
+    DB.updateAdmin(session.id, { password: newPass });
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Unable to change the password right now.', 'error');
+    return;
+  }
   document.getElementById('set-cur-pass').value = '';
   document.getElementById('set-new-pass').value = '';
   document.getElementById('set-confirm-pass').value = '';

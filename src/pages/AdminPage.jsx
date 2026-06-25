@@ -500,6 +500,7 @@ export default function AdminPage() {
                     </div>
                     <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
                     <div className="form-group"><label>Professor Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
+                    <div className="form-group"><label>Professor Username</label><input type="text" className="form-control" id="set-admin-username" autoComplete="username" /></div>
                     <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
                   </div>
                 </div>

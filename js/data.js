@@ -14,6 +14,22 @@ const DB = {
   },
   _cache: {},
 
+  normalizeEmail(email) {
+    return String(email || '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
+  },
+
+  normalizeStudentId(studentId) {
+    return String(studentId || '').trim().toUpperCase();
+  },
+
+  normalizeUsername(username) {
+    return String(username || '').trim().toLowerCase();
+  },
+
   _read(key, fallback) {
     if (Object.prototype.hasOwnProperty.call(this._cache, key)) return this._cache[key];
     try {
@@ -49,7 +65,18 @@ const DB = {
         department: '',
         adminName: 'Administrator',
         adminEmail: 'admin@school.edu',
+        adminUsername: 'admin',
       }));
+    } else {
+      const settings = JSON.parse(localStorage.getItem(this.KEYS.settings) || '{}');
+      const admins = JSON.parse(localStorage.getItem(this.KEYS.admins) || '[]');
+      const primaryAdmin = admins[0] || {};
+      if (!settings.adminUsername) {
+        localStorage.setItem(this.KEYS.settings, JSON.stringify({
+          ...settings,
+          adminUsername: this.normalizeUsername(primaryAdmin.username || 'admin'),
+        }));
+      }
     }
 
     // Admins
@@ -57,6 +84,14 @@ const DB = {
       localStorage.setItem(this.KEYS.admins, JSON.stringify([
         { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu' }
       ]));
+    } else {
+      const admins = JSON.parse(localStorage.getItem(this.KEYS.admins) || '[]');
+      const normalizedAdmins = admins.map(admin => ({
+        ...admin,
+        username: this.normalizeUsername(admin.username),
+        email: this.normalizeEmail(admin.email),
+      }));
+      localStorage.setItem(this.KEYS.admins, JSON.stringify(normalizedAdmins));
     }
 
     // Students - seed demo students
@@ -71,11 +106,16 @@ const DB = {
       const students = JSON.parse(localStorage.getItem(this.KEYS.students));
       const oldFmt = /^STU(\d+)$/i;
       const migrated = students.map((s, i) => {
+        const normalizedStudent = {
+          ...s,
+          studentId: this.normalizeStudentId(s.studentId),
+          email: s.email ? this.normalizeEmail(s.email) : s.email,
+        };
         if (oldFmt.test(s.studentId)) {
           const num = String(i + 1).padStart(5, '0');
-          return { ...s, studentId: '26-' + num };
+          return { ...normalizedStudent, studentId: '26-' + num };
         }
-        return s;
+        return normalizedStudent;
       });
       localStorage.setItem(this.KEYS.students, JSON.stringify(migrated));
     }
@@ -191,12 +231,48 @@ const DB = {
     return this._read(this.KEYS.admins, []);
   },
   getAdmin(username) {
-    return this.getAdmins().find(a => a.username === username) || null;
+    const normalizedUsername = this.normalizeUsername(username);
+    return this.getAdmins().find(a => this.normalizeUsername(a.username) === normalizedUsername) || null;
+  },
+  adminUsernameExists(username, excludeId = null) {
+    const normalizedUsername = this.normalizeUsername(username);
+    if (!normalizedUsername) return false;
+    return this.getAdmins().some(admin =>
+      admin.id !== excludeId &&
+      this.normalizeUsername(admin.username) === normalizedUsername
+    );
+  },
+  adminEmailExists(email, excludeId = null) {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return false;
+    return this.getAdmins().some(admin =>
+      admin.id !== excludeId &&
+      this.normalizeEmail(admin.email) === normalizedEmail
+    );
   },
   updateAdmin(id, updates) {
+    const nextUsername = Object.prototype.hasOwnProperty.call(updates, 'username')
+      ? this.normalizeUsername(updates.username)
+      : null;
+    const nextEmail = Object.prototype.hasOwnProperty.call(updates, 'email')
+      ? this.normalizeEmail(updates.email)
+      : null;
+
+    if (nextUsername && this.adminUsernameExists(nextUsername, id)) {
+      throw new Error('That professor username is already in use.');
+    }
+    if (nextEmail && this.adminEmailExists(nextEmail, id)) {
+      throw new Error('That professor email is already in use.');
+    }
+
     const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...updates } : a);
-    this._write(this.KEYS.admins, admins);
-    const updated = admins.find(a => a.id === id);
+    const normalizedAdmins = admins.map(admin => admin.id !== id ? admin : {
+      ...admin,
+      username: nextUsername ?? admin.username,
+      email: Object.prototype.hasOwnProperty.call(updates, 'email') ? nextEmail : admin.email,
+    });
+    this._write(this.KEYS.admins, normalizedAdmins);
+    const updated = normalizedAdmins.find(a => a.id === id);
     if (updated) FirebaseSync.syncDoc('admins', updated);
   },
 
@@ -211,21 +287,86 @@ const DB = {
     return this.getAllStudentsRaw().filter(s => s.archived);
   },
   getStudent(studentId) {
-    return this.getStudents().find(s => s.studentId === studentId) || null;
+    const normalizedStudentId = this.normalizeStudentId(studentId);
+    return this.getStudents().find(s => this.normalizeStudentId(s.studentId) === normalizedStudentId) || null;
   },
   getStudentById(id) {
     return this.getAllStudentsRaw().find(s => s.id === id) || null;
   },
+  getStudentByStudentId(studentId, options = {}) {
+    const { includeArchived = false } = options;
+    const normalizedStudentId = this.normalizeStudentId(studentId);
+    const source = includeArchived ? this.getAllStudentsRaw() : this.getStudents();
+    return source.find(s => this.normalizeStudentId(s.studentId) === normalizedStudentId) || null;
+  },
+  findStudentsByEmail(email, options = {}) {
+    const { includeArchived = false } = options;
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return [];
+    const source = includeArchived ? this.getAllStudentsRaw() : this.getStudents();
+    return source.filter(student => this.normalizeEmail(student.email) === normalizedEmail);
+  },
+  findStudentByEmail(email, options = {}) {
+    const students = this.findStudentsByEmail(email, options);
+    if (!students.length) return null;
+    const ranked = [...students].sort((a, b) => {
+      if (Boolean(a.archived) !== Boolean(b.archived)) return a.archived ? 1 : -1;
+      if (Boolean(a.password) !== Boolean(b.password)) return a.password ? -1 : 1;
+      return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+    });
+    return ranked[0] || null;
+  },
+  emailExists(email, excludeId = null) {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return false;
+    return this.getAllStudentsRaw().some(student =>
+      student.id !== excludeId &&
+      this.normalizeEmail(student.email) === normalizedEmail
+    );
+  },
   addStudent(data) {
+    const studentId = this.normalizeStudentId(data.studentId);
+    const email = data.email ? this.normalizeEmail(data.email) : '';
+    if (this.studentExists(studentId)) {
+      throw new Error('Student ID already exists.');
+    }
+    if (email && this.emailExists(email)) {
+      throw new Error('Student email already exists.');
+    }
     const students = [...this.getAllStudentsRaw()];
-    const newStudent = { id: this.generateId(), ...data };
+    const newStudent = {
+      id: this.generateId(),
+      ...data,
+      studentId,
+      email,
+    };
     students.push(newStudent);
     this._write(this.KEYS.students, students);
     FirebaseSync.syncDoc('students', newStudent);
     return newStudent;
   },
   updateStudent(id, updates) {
-    const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...updates } : s);
+    const currentStudent = this.getStudentById(id);
+    if (!currentStudent) return;
+
+    const hasStudentIdUpdate = Object.prototype.hasOwnProperty.call(updates, 'studentId');
+    const hasEmailUpdate = Object.prototype.hasOwnProperty.call(updates, 'email');
+    const nextStudentId = hasStudentIdUpdate ? this.normalizeStudentId(updates.studentId) : this.normalizeStudentId(currentStudent.studentId);
+    const nextEmail = hasEmailUpdate ? this.normalizeEmail(updates.email) : this.normalizeEmail(currentStudent.email);
+
+    if (nextStudentId && this.studentExists(nextStudentId, id)) {
+      throw new Error('Student ID already exists.');
+    }
+    if (nextEmail && this.emailExists(nextEmail, id)) {
+      throw new Error('Student email already exists.');
+    }
+
+    const students = this.getAllStudentsRaw().map(student => student.id === id ? {
+      ...student,
+      ...updates,
+      studentId: nextStudentId,
+      email: hasEmailUpdate ? nextEmail : student.email,
+    } : student);
     this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('students', updated);
@@ -275,8 +416,13 @@ const DB = {
     this._write(this.KEYS.students, students);
     FirebaseSync.deleteDoc('students', id);
   },
-  studentExists(studentId) {
-    return this.getStudents().some(s => s.studentId === studentId);
+  studentExists(studentId, excludeId = null) {
+    const normalizedStudentId = this.normalizeStudentId(studentId);
+    if (!normalizedStudentId) return false;
+    return this.getAllStudentsRaw().some(student =>
+      student.id !== excludeId &&
+      this.normalizeStudentId(student.studentId) === normalizedStudentId
+    );
   },
 
   // ---- Subjects ----

@@ -100,21 +100,29 @@ const Auth = {
   // --- New email-based student auth ---
 
   checkStudentEmail(email) {
-    const e = email.trim().toLowerCase();
-    const students = DB.getStudents();
-    const student = students.find(s => s.email && s.email.toLowerCase() === e);
-    if (!student) return { exists: false };
-    if (!student.password) return { exists: true, needsSetup: true };
+    const normalizedEmail = DB.normalizeEmail(email);
+    const matches = DB.findStudentsByEmail(normalizedEmail, { includeArchived: true });
+    const activeMatches = matches.filter(student => !student.archived);
+    const preferredStudent = activeMatches.find(student => student.password) || activeMatches[0] || null;
+
+    if (!matches.length) return { exists: false };
+    if (!activeMatches.length) {
+      return { exists: true, archived: true, message: 'This student account is archived. Please contact your professor.' };
+    }
+    if (!preferredStudent.password) return { exists: true, needsSetup: true };
     return { exists: true, hasPassword: true };
   },
 
   beginStudentEmailVerification(email) {
-    const e = email.trim().toLowerCase();
+    const e = DB.normalizeEmail(email);
     if (!e.endsWith('@plpasig.edu.ph')) {
       return { success: false, message: 'Only @plpasig.edu.ph email addresses are allowed.' };
     }
 
     const studentStatus = this.checkStudentEmail(e);
+    if (studentStatus.archived) {
+      return { success: false, message: studentStatus.message };
+    }
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const payload = {
       email: e,
@@ -168,11 +176,21 @@ const Auth = {
   },
 
   studentLoginWithPassword(email, password) {
-    const e = email.trim().toLowerCase();
-    const students = DB.getStudents();
-    const student = students.find(s => s.email && s.email.toLowerCase() === e);
-    if (!student) return { success: false, message: 'No account found with this email.' };
-    if (!student.password) return { success: false, message: 'Account setup incomplete. Please set up your account first.' };
+    const e = DB.normalizeEmail(email);
+    const matches = DB.findStudentsByEmail(e, { includeArchived: true });
+    const activeMatches = matches.filter(student => !student.archived);
+    if (!matches.length) return { success: false, message: 'No account found with this email.' };
+    if (!activeMatches.length) {
+      return { success: false, message: 'This student account is archived. Please contact your professor.' };
+    }
+
+    const passwordEnabledMatches = activeMatches.filter(student => student.password);
+    if (!passwordEnabledMatches.length) {
+      return { success: false, message: 'Account setup incomplete. Please set up your account first.' };
+    }
+
+    const student = passwordEnabledMatches.find(candidate => candidate.password === password)
+      || passwordEnabledMatches[0];
     if (student.password !== password) return { success: false, message: 'Incorrect password. Please try again.' };
     const session = {
       studentId: student.studentId,
@@ -190,8 +208,8 @@ const Auth = {
   },
 
   studentFirstSetup(email, studentId, password, fullName, yearSection, department, program) {
-    const e = email.trim().toLowerCase();
-    const sid = studentId.trim().toUpperCase();
+    const e = DB.normalizeEmail(email);
+    const sid = DB.normalizeStudentId(studentId);
     const displayName = (fullName || '').trim();
     const normalizedYearSection = (yearSection || '').trim().toUpperCase();
     const yearSectionMatch = normalizedYearSection.match(/^([1-4])-([A-Z])$/);
@@ -208,12 +226,23 @@ const Auth = {
     const parsedSection = `Section ${yearSectionMatch[2]}`;
 
     // Check: is this email already fully registered?
-    const students = DB.getStudents();
-    const byEmail = students.find(s => s.email && s.email.toLowerCase() === e && s.password);
+    const studentsByEmail = DB.findStudentsByEmail(e, { includeArchived: true });
+    const activeStudentsByEmail = studentsByEmail.filter(student => !student.archived);
+    const byEmail = activeStudentsByEmail.find(student => student.password);
     if (byEmail) return { success: false, message: 'An account already exists with this email. Please sign in instead.' };
+    if (studentsByEmail.length && !activeStudentsByEmail.length) {
+      return { success: false, message: 'This student account is archived. Please contact your professor.' };
+    }
 
     // Look for existing student record by student ID
-    const byId = students.find(s => s.studentId === sid);
+    const byId = DB.getStudentByStudentId(sid, { includeArchived: true });
+    if (byId?.archived) {
+      return { success: false, message: 'This student ID belongs to an archived account. Please contact your professor.' };
+    }
+    const duplicateEmailOwner = activeStudentsByEmail.find(student => student.id !== byId?.id);
+    if (duplicateEmailOwner) {
+      return { success: false, message: 'That email is already linked to another student account.' };
+    }
 
     let student;
     if (byId) {
