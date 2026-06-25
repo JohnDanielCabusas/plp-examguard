@@ -38,16 +38,31 @@ function EyeToggle({ show, onToggle }) {
   );
 }
 
+function ButtonSpinner() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: '16px',
+        height: '16px',
+        border: '2px solid rgba(255,255,255,0.35)',
+        borderTopColor: '#ffffff',
+        borderRadius: '50%',
+        display: 'inline-block',
+        animation: 'loginBtnSpin 0.75s linear infinite',
+      }}
+    />
+  );
+}
+
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('admin');
   const [adminStep, setAdminStep] = useState('login');
   const [studentStep, setStudentStep] = useState(1); // 1 | 'verify' | '2a' | '2b'
   const [studentEmail, setStudentEmail] = useState('');
-  const [studentCodePreview, setStudentCodePreview] = useState('');
   const [studentVerifyMessage, setStudentVerifyMessage] = useState('');
   const [adminError, setAdminError] = useState('');
   const [adminResetEmail, setAdminResetEmail] = useState('');
-  const [adminResetCodePreview, setAdminResetCodePreview] = useState('');
   const [adminResetMessage, setAdminResetMessage] = useState('');
   const [step1Error, setStep1Error] = useState('');
   const [step2aError, setStep2aError] = useState('');
@@ -59,6 +74,11 @@ export default function LoginPage() {
   const [showAdminResetPass, setShowAdminResetPass] = useState(false);
   const [showAdminResetConfirm, setShowAdminResetConfirm] = useState(false);
   const [fbLoading, setFbLoading] = useState(true);
+  const [studentEmailLookupBusy, setStudentEmailLookupBusy] = useState(false);
+  const [studentEmailSendBusy, setStudentEmailSendBusy] = useState(false);
+  const [adminEmailSendBusy, setAdminEmailSendBusy] = useState(false);
+  const [studentResendCooldown, setStudentResendCooldown] = useState(0);
+  const [adminResendCooldown, setAdminResendCooldown] = useState(0);
   const [settings, setSettings] = useState({
     schoolName: 'Pamantasan ng Lungsod ng Pasig',
     logoUrl: '/plp-logo.png',
@@ -115,18 +135,34 @@ export default function LoginPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!studentResendCooldown) return undefined;
+    const timer = window.setInterval(() => {
+      setStudentResendCooldown(value => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [studentResendCooldown]);
+
+  useEffect(() => {
+    if (!adminResendCooldown) return undefined;
+    const timer = window.setInterval(() => {
+      setAdminResendCooldown(value => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [adminResendCooldown]);
+
   const switchTab = (tab) => {
     setActiveTab(tab);
     setAdminStep('login');
     setAdminError('');
     setAdminResetEmail('');
-    setAdminResetCodePreview('');
     setAdminResetMessage('');
+    setAdminResendCooldown(0);
     setStep1Error('');
     setStep2aError('');
     setStep2bError('');
-    setStudentCodePreview('');
     setStudentVerifyMessage('');
+    setStudentResendCooldown(0);
     window.Auth?.clearStudentEmailVerification?.();
     setStudentStep(1);
   };
@@ -135,8 +171,8 @@ export default function LoginPage() {
     setAdminStep('email');
     setAdminError('');
     setAdminResetEmail('');
-    setAdminResetCodePreview('');
     setAdminResetMessage('');
+    setAdminResendCooldown(0);
     requestAnimationFrame(() => adminResetEmailRef.current?.focus());
   };
 
@@ -144,12 +180,25 @@ export default function LoginPage() {
     setAdminStep('login');
     setAdminError('');
     setAdminResetMessage('');
-    setAdminResetCodePreview('');
+    setAdminResendCooldown(0);
     window.Auth?.clearAdminPasswordReset?.();
     requestAnimationFrame(() => adminUsernameRef.current?.focus());
   };
 
-  const sendAdminResetCode = () => {
+  const sendVerificationEmail = async ({ email, code, type }) => {
+    const response = await fetch('/api/email/send-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, type }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Unable to send the verification email.');
+    }
+  };
+
+  const sendAdminResetCode = async () => {
     const email = (adminResetEmailRef.current?.value || '').trim().toLowerCase();
     setAdminError('');
     if (!email) {
@@ -162,9 +211,22 @@ export default function LoginPage() {
       setAdminError(result.message);
       return;
     }
+    setAdminEmailSendBusy(true);
+    try {
+      await sendVerificationEmail({
+        email,
+        code: result.previewCode,
+        type: 'admin-reset',
+      });
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');
+      return;
+    } finally {
+      setAdminEmailSendBusy(false);
+    }
     setAdminResetEmail(email);
-    setAdminResetCodePreview(result.previewCode || '');
-    setAdminResetMessage(result.message);
+    setAdminResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+    setAdminResendCooldown(60);
     setAdminStep('code');
     requestAnimationFrame(() => adminResetCodeRef.current?.focus());
   };
@@ -208,7 +270,6 @@ export default function LoginPage() {
     }
     setAdminResetMessage('Password updated successfully. Sign in with your new password.');
     setAdminStep('login');
-    setAdminResetCodePreview('');
     requestAnimationFrame(() => {
       if (adminUsernameRef.current && result.username) adminUsernameRef.current.value = result.username;
       if (adminPasswordRef.current) adminPasswordRef.current.value = '';
@@ -221,22 +282,72 @@ export default function LoginPage() {
     setStep1Error('');
     setStep2aError('');
     setStep2bError('');
-    setStudentCodePreview('');
     setStudentVerifyMessage('');
+    setStudentResendCooldown(0);
     window.Auth?.clearStudentEmailVerification?.();
     requestAnimationFrame(() => studentEmailRef.current?.focus());
   };
 
-  const doEmailContinue = () => {
+  const resolveStudentEmailStatus = async (email, options = {}) => {
+    const { advanceToPassword = true, showErrors = true, showLoading = true } = options;
+    if (!email) {
+      if (showErrors) setStep1Error('Please enter your PLP email address.');
+      return { success: false, reason: 'missing-email' };
+    }
+    if (!email.endsWith('@plpasig.edu.ph')) {
+      if (showErrors) setStep1Error('Only @plpasig.edu.ph email addresses are allowed.');
+      return { success: false, reason: 'invalid-domain' };
+    }
+
+    if (showLoading) setStudentEmailLookupBusy(true);
+    try {
+      const studentStatus = await window.Auth.checkStudentEmail(email);
+      if (studentStatus?.hasPassword) {
+        setStudentEmail(email);
+        setStudentVerifyMessage('');
+        setStudentResendCooldown(0);
+        setStep1Error('');
+        if (advanceToPassword) {
+          setStudentStep('2a');
+          requestAnimationFrame(() => studentPasswordRef.current?.focus());
+        }
+        return { success: true, status: 'existing', studentStatus };
+      }
+      return { success: true, status: 'verification-needed', studentStatus };
+    } catch (error) {
+      if (showErrors) {
+        setStep1Error(error instanceof Error ? error.message : 'Unable to validate the student email right now. Please try again.');
+      }
+      return { success: false, reason: 'lookup-failed' };
+    } finally {
+      if (showLoading) setStudentEmailLookupBusy(false);
+    }
+  };
+
+  const doEmailContinue = async () => {
     const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
     setStep1Error('');
-    if (!email) { setStep1Error('Please enter your PLP email address.'); return; }
-    if (!email.endsWith('@plpasig.edu.ph')) { setStep1Error('Only @plpasig.edu.ph email addresses are allowed.'); return; }
-    const result = window.Auth.beginStudentEmailVerification(email);
-    if (!result.success) { setStep1Error(result.message); return; }
+    try {
+      const lookup = await resolveStudentEmailStatus(email);
+      if (!lookup.success) return;
+      if (lookup.status === 'existing') return;
+      const result = await window.Auth.beginStudentEmailVerification(email);
+      if (!result.success) { setStep1Error(result.message); return; }
+      setStudentEmailSendBusy(true);
+      await sendVerificationEmail({
+        email,
+        code: result.previewCode,
+        type: 'student-verification',
+      });
+    } catch (error) {
+      setStep1Error(error instanceof Error ? error.message : 'Unable to continue right now. Please try again.');
+      return;
+    } finally {
+      setStudentEmailSendBusy(false);
+    }
     setStudentEmail(email);
-    setStudentCodePreview(result.previewCode || '');
-    setStudentVerifyMessage(result.message || '');
+    setStudentVerifyMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+    setStudentResendCooldown(60);
     setStudentStep('verify');
     requestAnimationFrame(() => studentVerifyCodeRef.current?.focus());
   };
@@ -248,7 +359,6 @@ export default function LoginPage() {
     const result = window.Auth.verifyStudentEmailCode(studentEmail, code);
     if (!result.success) { setStep1Error(result.message); return; }
     setStudentVerifyMessage('Email verified successfully.');
-    setStudentCodePreview('');
     if (result.hasPassword) {
       setStudentStep('2a');
       requestAnimationFrame(() => studentPasswordRef.current?.focus());
@@ -258,17 +368,23 @@ export default function LoginPage() {
     }
   };
 
-  const doPasswordLogin = () => {
+  const doPasswordLogin = async () => {
     const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
     const password = studentPasswordRef.current?.value || '';
     setStep2aError('');
     if (!password) { setStep2aError('Please enter your password.'); return; }
-    const result = window.Auth.studentLoginWithPassword(email, password);
+    let result;
+    try {
+      result = await window.Auth.studentLoginWithPassword(email, password);
+    } catch (error) {
+      setStep2aError(error instanceof Error ? error.message : 'Unable to sign in right now. Please try again.');
+      return;
+    }
     if (result.success) { window.location.href = 'exam.html'; }
     else { setStep2aError(result.message); }
   };
 
-  const doFirstSetup = () => {
+  const doFirstSetup = async () => {
     const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
     const studentId = (setupIdRef.current?.value || '').trim().toUpperCase();
     const name = (setupNameRef.current?.value || '').trim();
@@ -292,7 +408,13 @@ export default function LoginPage() {
     if (password.length < 6) { setStep2bError('Password must be at least 6 characters.'); return; }
     if (password !== confirm) { setStep2bError('Passwords do not match.'); return; }
 
-    const result = window.Auth.studentFirstSetup(email, studentId, password, name, yearSection, department, program);
+    let result;
+    try {
+      result = await window.Auth.studentFirstSetup(email, studentId, password, name, yearSection, department, program);
+    } catch (error) {
+      setStep2bError(error instanceof Error ? error.message : 'Unable to create the student account right now. Please try again.');
+      return;
+    }
     if (result.success) { window.location.href = 'exam.html'; }
     else { setStep2bError(result.message); }
   };
@@ -319,11 +441,11 @@ export default function LoginPage() {
 
   return (
     <>
+      <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}} @keyframes loginBtnSpin{to{transform:rotate(360deg)}}`}</style>
       {fbLoading && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
           <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
           <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Connecting to server&hellip;</p>
-          <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
 
@@ -394,11 +516,6 @@ export default function LoginPage() {
                       placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                       onKeyDown={(e) => { if (e.key === 'Enter') verifyAdminResetCode(); }} />
                   </div>
-                  {adminResetCodePreview && (
-                    <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '12px', color: '#92400e' }}>
-                      Verification code: <strong>{adminResetCodePreview}</strong>
-                    </div>
-                  )}
                 </>
               )}
               {adminStep === 'password' && (
@@ -441,16 +558,21 @@ export default function LoginPage() {
               )}
               {adminStep === 'email' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode}>Send Code</button>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode} disabled={adminEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    {adminEmailSendBusy && <ButtonSpinner />}
+                    <span>{adminEmailSendBusy ? 'Sending Code...' : 'Send Code'}</span>
+                  </button>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={adminResetBackToLogin}>Back to Sign In</button>
                 </>
               )}
               {adminStep === 'code' && (
                 <>
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
-                  <button type="button" onClick={sendAdminResetCode} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, marginTop: '10px', width: '100%', textAlign: 'right' }}>
-                    Resend Code
-                  </button>
+                  <div style={{ marginTop: '10px', textAlign: 'right' }}>
+                    <button type="button" onClick={sendAdminResetCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
+                      {adminEmailSendBusy ? 'Sending...' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
+                    </button>
+                  </div>
                 </>
               )}
               {adminStep === 'password' && (
@@ -474,7 +596,10 @@ export default function LoginPage() {
                       onKeyDown={(e) => { if (e.key === 'Enter') doEmailContinue(); }} />
                   </div>
                   {step1Error && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
-                  <button className="btn btn-primary btn-block btn-lg" onClick={doEmailContinue}>Continue</button>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={doEmailContinue} disabled={studentEmailLookupBusy || studentEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    {(studentEmailLookupBusy || studentEmailSendBusy) && <ButtonSpinner />}
+                    <span>{studentEmailSendBusy ? 'Sending Code...' : 'Continue'}</span>
+                  </button>
                   <p className="text-center text-muted mt-8" style={{ fontSize: '12px' }}>Must be a <strong>@plpasig.edu.ph</strong> email address.</p>
                 </div>
               )}
@@ -493,12 +618,12 @@ export default function LoginPage() {
                       onKeyDown={(e) => { if (e.key === 'Enter') verifyStudentEmail(); }} />
                   </div>
                   {studentVerifyMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentVerifyMessage}</div>}
-                  {studentCodePreview && (
-                    <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '12px', color: '#92400e' }}>
-                      Verification code: <strong>{studentCodePreview}</strong>
-                    </div>
-                  )}
                   {step1Error && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
+                  <div style={{ marginTop: '-2px', marginBottom: '12px', textAlign: 'right' }}>
+                    <button type="button" onClick={doEmailContinue} disabled={studentEmailSendBusy || studentResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: studentEmailSendBusy || studentResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentEmailSendBusy || studentResendCooldown > 0 ? 0.6 : 1 }}>
+                      {studentEmailSendBusy ? 'Sending...' : studentResendCooldown > 0 ? `Send Code Again in ${studentResendCooldown}s` : 'Send Code Again'}
+                    </button>
+                  </div>
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentEmail}>Verify Email</button>
                 </div>
               )}

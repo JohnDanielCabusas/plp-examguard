@@ -99,22 +99,21 @@ const Auth = {
 
   // --- New email-based student auth ---
 
-  checkStudentEmail(email) {
+  async checkStudentEmail(email) {
     const e = email.trim().toLowerCase();
-    const students = DB.getStudents();
-    const student = students.find(s => s.email && s.email.toLowerCase() === e);
+    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
     if (!student) return { exists: false };
     if (!student.password) return { exists: true, needsSetup: true };
     return { exists: true, hasPassword: true };
   },
 
-  beginStudentEmailVerification(email) {
+  async beginStudentEmailVerification(email) {
     const e = email.trim().toLowerCase();
     if (!e.endsWith('@plpasig.edu.ph')) {
       return { success: false, message: 'Only @plpasig.edu.ph email addresses are allowed.' };
     }
 
-    const studentStatus = this.checkStudentEmail(e);
+    const studentStatus = await this.checkStudentEmail(e);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const payload = {
       email: e,
@@ -167,10 +166,9 @@ const Auth = {
     sessionStorage.removeItem(this.STUDENT_VERIFY_KEY);
   },
 
-  studentLoginWithPassword(email, password) {
+  async studentLoginWithPassword(email, password) {
     const e = email.trim().toLowerCase();
-    const students = DB.getStudents();
-    const student = students.find(s => s.email && s.email.toLowerCase() === e);
+    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
     if (!student) return { success: false, message: 'No account found with this email.' };
     if (!student.password) return { success: false, message: 'Account setup incomplete. Please set up your account first.' };
     if (student.password !== password) return { success: false, message: 'Incorrect password. Please try again.' };
@@ -189,7 +187,7 @@ const Auth = {
     return { success: true, session };
   },
 
-  studentFirstSetup(email, studentId, password, fullName, yearSection, department, program) {
+  async studentFirstSetup(email, studentId, password, fullName, yearSection, department, program) {
     const e = email.trim().toLowerCase();
     const sid = studentId.trim().toUpperCase();
     const displayName = (fullName || '').trim();
@@ -207,27 +205,53 @@ const Auth = {
     const parsedYearLevel = yearMap[yearSectionMatch[1]] || '';
     const parsedSection = `Section ${yearSectionMatch[2]}`;
 
-    // Check: is this email already fully registered?
-    const students = DB.getStudents();
-    const byEmail = students.find(s => s.email && s.email.toLowerCase() === e && s.password);
-    if (byEmail) return { success: false, message: 'An account already exists with this email. Please sign in instead.' };
+    const byEmail = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
+    if (byEmail?.password) return { success: false, message: 'An account already exists with this email. Please sign in instead.' };
 
-    // Look for existing student record by student ID
-    const byId = students.find(s => s.studentId === sid);
+    const byId = await DB.getStudentByStudentIdAsync(sid, { fallbackLocal: false });
+    const existingStudent = byId || byEmail;
 
     let student;
-    if (byId) {
-      // Existing student — link email + set password; update name if provided and still default
-      const updates = { email: e, password, yearLevel: parsedYearLevel, section: parsedSection, yearSection: normalizedYearSection, department: selectedDepartment, program: selectedProgram };
-      if (displayName && (byId.name === byId.studentId || !byId.name)) updates.name = displayName;
-      DB.updateStudent(byId.id, updates);
-      student = { ...byId, ...updates };
+    if (existingStudent) {
+      const updates = {
+        email: e,
+        password,
+        yearLevel: parsedYearLevel,
+        section: parsedSection,
+        yearSection: normalizedYearSection,
+        department: selectedDepartment,
+        program: selectedProgram,
+      };
+      if (displayName && (existingStudent.name === existingStudent.studentId || !existingStudent.name)) updates.name = displayName;
+      if (!existingStudent.studentId) updates.studentId = sid;
+      student = await DB._saveStudentToSupabase({ ...existingStudent, ...updates });
     } else {
-      // New student — auto-create record
       const idMatch = sid.match(/^(\d{2})-\d{5}$/);
       if (!idMatch) return { success: false, message: 'Invalid Student ID format (use YY-NNNNN, e.g. 23-00218).' };
       const name = displayName || sid;
-      student = DB.addStudent({ studentId: sid, name, email: e, password, yearLevel: parsedYearLevel, section: parsedSection, yearSection: normalizedYearSection, department: selectedDepartment, program: selectedProgram, enrolledSubjects: [] });
+      student = await DB._saveStudentToSupabase({
+        id: DB.generateId(),
+        studentId: sid,
+        name,
+        email: e,
+        password,
+        yearLevel: parsedYearLevel,
+        section: parsedSection,
+        yearSection: normalizedYearSection,
+        department: selectedDepartment,
+        program: selectedProgram,
+        enrolledSubjects: [],
+        archived: false,
+        archivedAt: null,
+      });
+    }
+
+    if ((!student?.email || student.email.toLowerCase() !== e) && e) {
+      student = await DB.ensureStudentEmailInSupabase({
+        id: student?.id || existingStudent?.id || null,
+        studentId: student?.studentId || sid,
+        email: e,
+      }) || { ...student, email: e };
     }
 
     const session = {

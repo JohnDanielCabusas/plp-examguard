@@ -6,10 +6,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "node server.js",
+    "supabase:schema": "node scripts/apply-supabase-schema.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "@vitejs/plugin-react": "^6.0.3",
+    "dotenv": "^17.4.2",
+    "nodemailer": "^9.0.1",
+    "pg": "^8.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "vite": "^8.1.0"

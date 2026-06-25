@@ -40,6 +40,201 @@ const DB = {
     this._cache = {};
   },
 
+  _getSupabaseClient() {
+    return window.SupabaseBridge?.client || window.supabase || null;
+  },
+
+  _normalizeStudentFromSupabase(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      studentId: row.student_id,
+      name: row.name,
+      email: row.email || '',
+      password: row.password || '',
+      yearLevel: row.year_level || '',
+      section: row.section || '',
+      yearSection: row.year_section || '',
+      department: row.department || '',
+      program: row.program || '',
+      enrolledSubjects: Array.isArray(row.enrolled_subjects) ? row.enrolled_subjects : [],
+      archived: !!row.archived,
+      archivedAt: row.archived_at || null,
+      createdAt: row.created_at || null,
+      updatedAt: row.updated_at || null,
+    };
+  },
+
+  _normalizeStudentForSupabase(student) {
+    return {
+      id: student.id,
+      student_id: student.studentId,
+      name: student.name,
+      email: student.email || null,
+      password: student.password || null,
+      year_level: student.yearLevel || null,
+      section: student.section || null,
+      year_section: student.yearSection || null,
+      department: student.department || null,
+      program: student.program || null,
+      enrolled_subjects: Array.isArray(student.enrolledSubjects) ? student.enrolledSubjects : [],
+      archived: !!student.archived,
+      archived_at: student.archivedAt || null,
+    };
+  },
+
+  _upsertStudentInLocalCache(student) {
+    if (!student?.id) return null;
+    const students = [...this.getAllStudentsRaw()];
+    const index = students.findIndex(entry => entry.id === student.id);
+    if (index >= 0) students[index] = { ...students[index], ...student };
+    else students.push(student);
+    this._write(this.KEYS.students, students);
+    return students[index >= 0 ? index : students.length - 1];
+  },
+
+  async _findMatchingSupabaseStudent(student) {
+    const supabase = this._getSupabaseClient();
+    if (!supabase || !student) return null;
+
+    if (student.id) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('id', student.id)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) return this._normalizeStudentFromSupabase(data);
+    }
+
+    if (student.studentId) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('student_id', student.studentId)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) return this._normalizeStudentFromSupabase(data);
+    }
+
+    if (student.email) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('email', student.email)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) return this._normalizeStudentFromSupabase(data);
+    }
+
+    return null;
+  },
+
+  async _saveStudentToSupabase(student) {
+    const supabase = this._getSupabaseClient();
+    if (!supabase) return student;
+    const existingStudent = await this._findMatchingSupabaseStudent(student);
+    const payload = this._normalizeStudentForSupabase(existingStudent ? { ...existingStudent, ...student, id: existingStudent.id } : student);
+    const { data, error } = await supabase
+      .from('students')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .single();
+    if (error) throw error;
+    const normalized = this._normalizeStudentFromSupabase(data);
+    this._upsertStudentInLocalCache(normalized);
+    return normalized;
+  },
+
+  async ensureStudentEmailInSupabase({ id, studentId, email }) {
+    const supabase = this._getSupabaseClient();
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!supabase || !normalizedEmail) return null;
+
+    let query = supabase
+      .from('students')
+      .update({ email: normalizedEmail })
+      .select()
+      .limit(1);
+
+    if (id) query = query.eq('id', id);
+    else if (studentId) query = query.eq('student_id', String(studentId || '').trim().toUpperCase());
+    else return null;
+
+    const { data, error } = await query.single();
+    if (error) throw error;
+    const normalized = this._normalizeStudentFromSupabase(data);
+    this._upsertStudentInLocalCache(normalized);
+    return normalized;
+  },
+
+  async getStudentByEmailAsync(email, options = {}) {
+    const { fallbackLocal = true } = options;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const supabase = this._getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('email', normalizedEmail)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        const normalized = this._normalizeStudentFromSupabase(data);
+        this._upsertStudentInLocalCache(normalized);
+        return normalized;
+      }
+    }
+
+    if (!fallbackLocal) return null;
+
+    const localStudent = this.getStudents().find(s => s.email && s.email.toLowerCase() === normalizedEmail) || null;
+    if (localStudent && supabase) {
+      this._saveStudentToSupabase(localStudent).catch(error => {
+        console.warn('[Supabase] Unable to backfill local student by email:', error.message || error);
+      });
+    }
+    return localStudent;
+  },
+
+  async getStudentByStudentIdAsync(studentId, options = {}) {
+    const { fallbackLocal = true } = options;
+    const normalizedStudentId = String(studentId || '').trim().toUpperCase();
+    if (!normalizedStudentId) return null;
+
+    const supabase = this._getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('student_id', normalizedStudentId)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        const normalized = this._normalizeStudentFromSupabase(data);
+        this._upsertStudentInLocalCache(normalized);
+        return normalized;
+      }
+    }
+
+    if (!fallbackLocal) return null;
+
+    const localStudent = this.getStudents().find(s => s.studentId === normalizedStudentId) || null;
+    if (localStudent && supabase) {
+      this._saveStudentToSupabase(localStudent).catch(error => {
+        console.warn('[Supabase] Unable to backfill local student by student ID:', error.message || error);
+      });
+    }
+    return localStudent;
+  },
+
   init() {
     // Settings
     if (!localStorage.getItem(this.KEYS.settings)) {
@@ -222,6 +417,9 @@ const DB = {
     students.push(newStudent);
     this._write(this.KEYS.students, students);
     FirebaseSync.syncDoc('students', newStudent);
+    this._saveStudentToSupabase(newStudent).catch(error => {
+      console.warn('[Supabase] Unable to sync new student record:', error.message || error);
+    });
     return newStudent;
   },
   updateStudent(id, updates) {
@@ -229,6 +427,11 @@ const DB = {
     this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
     if (updated) FirebaseSync.syncDoc('students', updated);
+    if (updated) {
+      this._saveStudentToSupabase(updated).catch(error => {
+        console.warn('[Supabase] Unable to sync updated student record:', error.message || error);
+      });
+    }
   },
   syncStudentReferences(previousStudentId, nextStudent) {
     if (!previousStudentId || !nextStudent) return;

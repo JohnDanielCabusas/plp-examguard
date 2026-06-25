@@ -33,6 +33,16 @@ const ExamApp = {
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _dashInterval: null,      // dashboard poll interval
 
+  _repairStudentEmail(studentSession) {
+    if (!studentSession?.studentId || !studentSession?.email) return;
+    DB.ensureStudentEmailInSupabase({
+      studentId: studentSession.studentId,
+      email: studentSession.email,
+    }).catch(error => {
+      console.warn('[Supabase] Unable to repair student email:', error.message || error);
+    });
+  },
+
   // ============================================================
   // INIT
   // ============================================================
@@ -44,6 +54,8 @@ const ExamApp = {
       window.location.href = 'index.html';
       return;
     }
+
+    this._repairStudentEmail(studentSession);
 
     // If no exam code selected yet, show dashboard
     if (!studentSession.examCode) {
@@ -161,6 +173,7 @@ const ExamApp = {
   _loadSettingsForm() {
     const sess = Auth.getStudentSession();
     if (!sess) return;
+    this._repairStudentEmail(sess);
     const student = DB.getStudent(sess.studentId);
     const nameEl = document.getElementById('stg-name');
     if (nameEl) nameEl.value = sess.studentName || sess.studentId;
@@ -179,7 +192,7 @@ const ExamApp = {
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   },
 
-  saveStudentProfile() {
+  async saveStudentProfile() {
     const sess = Auth.getStudentSession();
     if (!sess) return;
     const name = (document.getElementById('stg-name').value || '').trim();
@@ -218,7 +231,17 @@ const ExamApp = {
     const yearLevel = yearMap[yearSectionMatch[1]] || '';
     const section = `Section ${yearSectionMatch[2]}`;
     const updates = { name, studentId, yearLevel, section, yearSection, department, program };
+    if (sess.email) updates.email = sess.email;
     DB.updateStudent(student.id, updates);
+    if (sess.email) {
+      await DB.ensureStudentEmailInSupabase({
+        id: student.id,
+        studentId,
+        email: sess.email,
+      }).catch(error => {
+        console.warn('[Supabase] Unable to persist student email from profile save:', error.message || error);
+      });
+    }
     const updatedStudent = { ...student, ...updates };
     DB.syncStudentReferences(sess.studentId, updatedStudent);
 
@@ -261,7 +284,7 @@ const ExamApp = {
     return [sess.studentId, sess.yearSection || [sess.yearLevel, sess.section].filter(Boolean).join(' / '), sess.program].filter(Boolean).join(' · ');
   },
 
-  saveStudentPassword() {
+  async saveStudentPassword() {
     const sess = Auth.getStudentSession();
     if (!sess) return;
     const cur     = document.getElementById('stg-cur-pass').value;
@@ -277,7 +300,18 @@ const ExamApp = {
     if (!student) { msgEl.textContent = 'Student record not found.'; msgEl.style.color = '#dc2626'; return; }
     if (student.password !== cur) { msgEl.textContent = 'Current password is incorrect.'; msgEl.style.color = '#dc2626'; return; }
 
-    DB.updateStudent(student.id, { password: next });
+    const passwordUpdates = { password: next };
+    if (sess.email) passwordUpdates.email = sess.email;
+    DB.updateStudent(student.id, passwordUpdates);
+    if (sess.email) {
+      await DB.ensureStudentEmailInSupabase({
+        id: student.id,
+        studentId: student.studentId,
+        email: sess.email,
+      }).catch(error => {
+        console.warn('[Supabase] Unable to persist student email from password save:', error.message || error);
+      });
+    }
     msgEl.textContent = 'Password changed successfully!';
     msgEl.style.color = '#15803d';
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { document.getElementById(id).value = ''; });
