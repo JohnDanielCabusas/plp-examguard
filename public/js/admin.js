@@ -3343,14 +3343,12 @@ function setAIFile(file) {
   aiSelectedFile = file;
   document.getElementById('ai-file-info').style.display = 'flex';
   document.getElementById('ai-file-name').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
-  document.getElementById('ai-drop-zone').style.display = 'none';
   scrollAIChat();
 }
 
 function clearAIFile() {
   aiSelectedFile = null;
   document.getElementById('ai-file-info').style.display = 'none';
-  document.getElementById('ai-drop-zone').style.display = '';
   document.getElementById('ai-file-input').value = '';
 }
 

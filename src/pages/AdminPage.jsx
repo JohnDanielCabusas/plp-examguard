@@ -708,8 +708,8 @@ export default function AdminPage() {
 
           {/* Header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-            <div style={{ width: '38px', height: '38px', background: 'linear-gradient(135deg, #1a4d2a 0%, #2d8a50 100%)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <div style={{ width: '38px', height: '38px', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, background: '#f0f7f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img src="/plp-logo.png" alt="PLP" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f2d1a' }}>ExamGuard AI</div>
@@ -730,24 +730,16 @@ export default function AdminPage() {
 
             {/* Welcome bubble */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
-              <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <div style={{ width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0, background: '#f0f7f2', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1fae5' }}>
+                <img src="/plp-logo.png" alt="PLP" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
               </div>
               <div style={{ background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '80%', fontSize: '13px', color: '#374151', lineHeight: 1.5 }}>
                 Hi! Upload your course material and I'll generate exam questions for you. You can add specific instructions in the chat below.
               </div>
             </div>
 
-            {/* Drop zone — shown until file attached */}
-            <div id="ai-drop-zone"
-              onClick={() => document.getElementById('ai-file-input').click()}
-              style={{ border: '2px dashed #a3c4a8', borderRadius: '14px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer', background: '#f8fdf9', transition: 'all 0.2s', animation: 'aiBubbleIn 0.3s ease 0.1s both' }}>
-              <div style={{ color: '#1a4d2a', marginBottom: '8px' }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              </div>
-              <p style={{ fontWeight: 600, color: '#0f2d1a', margin: '0 0 3px', fontSize: '13px' }}>Click or drag &amp; drop a file</p>
-              <p style={{ color: '#9ca3af', fontSize: '11px', margin: 0 }}>PDF, DOCX, PPTX, TXT — max 10MB</p>
-            </div>
+            {/* Hidden drop zone — drag-drop handled by chat body; attach via paperclip */}
+            <div id="ai-drop-zone" style={{ display: 'none' }} />
             <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display: 'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
 
             {/* File attached — user bubble, hidden until file set */}
@@ -761,8 +753,8 @@ export default function AdminPage() {
 
             {/* Typing / status indicator */}
             <div id="ai-status" style={{ display: 'none', gap: '10px', alignItems: 'flex-end' }}>
-              <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <div style={{ width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0, background: '#f0f7f2', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #d1fae5' }}>
+                <img src="/plp-logo.png" alt="PLP" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
               </div>
               <div style={{ background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '12px 16px' }}>
                 <div style={{ display: 'flex', gap: '5px', alignItems: 'center', marginBottom: '4px' }}>
