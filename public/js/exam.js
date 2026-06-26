@@ -1247,6 +1247,12 @@ const ExamApp = {
         this._detectMotion(video);
       }
     }, 600);
+
+    // Start periodic snapshot for admin live monitoring (every 8 seconds)
+    if (this._snapInterval) clearInterval(this._snapInterval);
+    this._snapInterval = setInterval(() => this.captureSnapshot(), 8000);
+    // Capture one immediately so the grid shows something right away
+    setTimeout(() => this.captureSnapshot(), 1500);
   },
 
   _detectMotion(video) {
@@ -1394,18 +1400,19 @@ const ExamApp = {
     if (!video || !canvas || !this._cameraStream || !this.session) return;
     if (video.readyState < 2) return;
     try {
-      canvas.width = 160; canvas.height = 120;
+      // 320×240 for live grid; mirror the image so it looks natural
+      canvas.width = 320; canvas.height = 240;
       const ctx = canvas.getContext('2d');
-      ctx.save(); ctx.scale(-1,1);
-      ctx.drawImage(video, -160, 0, 160, 120);
+      ctx.save(); ctx.scale(-1, 1);
+      ctx.drawImage(video, -320, 0, 320, 240);
       ctx.restore();
-      const imageData = canvas.toDataURL('image/jpeg', 0.5);
+      const imageData = canvas.toDataURL('image/jpeg', 0.6);
       const session = DB.getSession(this.session.id);
       if (!session) return;
-      const snaps = session.cameraSnapshots || [];
-      snaps.push({ timestamp: new Date().toISOString(), imageData });
-      if (snaps.length > 5) snaps.splice(0, snaps.length-5);
-      DB.updateSession(this.session.id, { cameraSnapshots: snaps });
+      // Keep only the latest snapshot (index 0) — admin grid reads [0]
+      DB.updateSession(this.session.id, {
+        cameraSnapshots: [{ timestamp: new Date().toISOString(), imageData }],
+      });
     } catch(e) {}
   },
 

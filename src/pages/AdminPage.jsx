@@ -374,8 +374,30 @@ export default function AdminPage() {
                   <select className="form-control filter-select" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()}>
                     <option value="">Select an exam to monitor</option>
                   </select>
+                  <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: '8px', padding: '2px' }}>
+                    <button id="monitor-view-table" onClick={() => window.setMonitorView('table')}
+                      style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, background: '#1a4d2a', color: '#fff', transition: 'all 0.15s' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                      Sessions
+                    </button>
+                    <button id="monitor-view-camera" onClick={() => window.setMonitorView('camera')}
+                      style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, background: 'transparent', color: '#6b7280', transition: 'all 0.15s' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      Camera Grid
+                    </button>
+                  </div>
                 </div>
               </div>
+              {/* Camera grid view */}
+              <div id="camera-grid-view" style={{ display: 'none', padding: '0' }}>
+                <div id="camera-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '2px', background: '#111', minHeight: '300px', borderRadius: '0 0 12px 12px' }} />
+                <div id="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: '#9ca3af', background: '#111', borderRadius: '0 0 12px 12px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#6b7280' }}>No camera feeds available</div>
+                  <div style={{ fontSize: '12px', marginTop: '4px', color: '#4b5563' }}>Camera feeds appear here when students have Motion Detection enabled</div>
+                </div>
+              </div>
+
               <div className="monitoring-grid" id="monitoring-grid">
                 <div className="card" style={{ overflow: 'hidden' }}>
                   <div className="card-header" style={{ borderBottom: '1px solid #f3f4f6' }}>

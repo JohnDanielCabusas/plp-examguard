@@ -5651,6 +5651,10 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .examv2-question-wrap { flex: 1; overflow-y: auto; padding: 24px 28px 12px; }
 
+/* Camera grid live pulse */
+@keyframes camPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+#camera-grid-container { transition: all 0.3s; }
+
 /* Suppress old CSS counter letter — new exam uses mcq-option-letter div */
 .examv2-question-wrap .mcq-option { counter-increment: none; }
 .examv2-question-wrap .mcq-option::before { display: none !important; }

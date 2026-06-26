@@ -2375,18 +2375,105 @@ function loadMonitoringExams() {
   if (cur) sel.value = cur;
 }
 
+let _monitorView = 'table'; // 'table' | 'camera'
+
+function setMonitorView(view) {
+  _monitorView = view;
+  const tableView = document.getElementById('monitoring-grid');
+  const camView = document.getElementById('camera-grid-view');
+  const btnTable = document.getElementById('monitor-view-table');
+  const btnCam = document.getElementById('monitor-view-camera');
+
+  const activeStyle = { background: '#1a4d2a', color: '#fff' };
+  const inactiveStyle = { background: 'transparent', color: '#6b7280' };
+
+  if (view === 'camera') {
+    if (tableView) tableView.style.display = 'none';
+    if (camView) camView.style.display = '';
+    if (btnTable) Object.assign(btnTable.style, inactiveStyle);
+    if (btnCam) Object.assign(btnCam.style, activeStyle);
+    renderCameraGrid(monitorExamId);
+  } else {
+    if (tableView) tableView.style.display = '';
+    if (camView) camView.style.display = 'none';
+    if (btnTable) Object.assign(btnTable.style, activeStyle);
+    if (btnCam) Object.assign(btnCam.style, inactiveStyle);
+  }
+}
+
+function renderCameraGrid(examId) {
+  const container = document.getElementById('camera-grid-container');
+  const empty = document.getElementById('camera-grid-empty');
+  if (!container) return;
+
+  if (!examId) {
+    container.innerHTML = '';
+    if (empty) { empty.style.display = ''; container.style.display = 'none'; }
+    return;
+  }
+
+  const sessions = DB.getSessionsByExam(examId).filter(s => !s.submitted || s.cameraSnapshots?.length);
+  const withCamera = sessions.filter(s => s.cameraSnapshots?.length > 0);
+
+  if (!withCamera.length) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  container.style.display = 'grid';
+
+  container.innerHTML = withCamera.map(s => {
+    const snap = s.cameraSnapshots[0];
+    const warnColor = s.warnings >= 3 ? '#dc2626' : s.warnings >= 2 ? '#f59e0b' : s.warnings >= 1 ? '#eab308' : '#22c55e';
+    const statusDot = s.submitted
+      ? `<span style="background:#6b7280;width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;"></span>Submitted`
+      : `<span style="background:#22c55e;width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;animation:camPulse 1.5s infinite;"></span>Live`;
+
+    const warnBadge = s.warnings > 0
+      ? `<span style="position:absolute;top:8px;right:8px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;">⚠ ${s.warnings}/3</span>`
+      : '';
+
+    const timeAgo = snap?.timestamp ? (() => {
+      const secs = Math.floor((Date.now() - new Date(snap.timestamp).getTime()) / 1000);
+      if (secs < 60) return secs + 's ago';
+      return Math.floor(secs/60) + 'm ago';
+    })() : '';
+
+    return `<div style="position:relative;aspect-ratio:4/3;background:#1a1a1a;overflow:hidden;">
+      <img src="${escHtml(snap.imageData)}" alt="${escHtml(s.studentName)}"
+        style="width:100%;height:100%;object-fit:cover;display:block;"
+        onerror="this.style.display='none'" />
+      ${warnBadge}
+      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.85));padding:8px 10px;">
+        <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(s.studentName)}</div>
+        <div style="color:rgba(255,255,255,0.6);font-size:10px;display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
+          <span style="display:flex;align-items:center;font-size:10px;">${statusDot}</span>
+          <span>${escHtml(timeAgo)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
   document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   renderMonitoringTable(monitorExamId);
+  if (_monitorView === 'camera') renderCameraGrid(monitorExamId);
 }
 
 function startMonitoring() {
   stopMonitoring();
   monitorInterval = setInterval(() => {
     loadMonitoringExams();
-    if (monitorExamId) renderMonitoringTable(monitorExamId);
+    if (monitorExamId) {
+      renderMonitoringTable(monitorExamId);
+      if (_monitorView === 'camera') renderCameraGrid(monitorExamId);
+    }
   }, 3000);
   document.getElementById('monitor-live-badge').classList.remove('hidden');
 }
