@@ -3317,6 +3317,7 @@ function openAIGen() {
   document.getElementById('ai-import-btn').style.display = 'none';
   document.getElementById('modal-ai-gen').classList.remove('hidden');
   scrollAIChat();
+  requestAnimationFrame(() => document.getElementById('ai-custom-prompt')?.focus());
 }
 
 function closeAIGen() {
@@ -3411,10 +3412,16 @@ async function runAIGenerate() {
   if (!aiSelectedFile) { showToast('Please attach a file first using the 📎 button.', 'error'); return; }
 
   const apiKey = DB.getSettings().claudeApiKey;
-  const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count').value) || 10));
+  const mode = document.getElementById('ai-mode')?.value || 'quick';
+  const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count')?.value) || 10));
   const selectedTypes = [...document.querySelectorAll('.ai-type-cb:checked')].map(cb => cb.value);
-  const difficulty = document.getElementById('ai-difficulty').value;
+  const difficulty = document.getElementById('ai-difficulty')?.value || 'mixed';
   const customPrompt = (document.getElementById('ai-custom-prompt')?.value || '').trim();
+
+  if (mode === 'custom' && !customPrompt) {
+    showToast('In Custom mode, describe your questions in the message field.', 'error');
+    return;
+  }
 
   // Promote pending file chip → user chat bubble
   const pendingName = document.getElementById('ai-file-name')?.textContent || '';
@@ -3447,20 +3454,8 @@ async function runAIGenerate() {
   // Trim to ~12000 chars to fit context
   if (rawText.length > 12000) rawText = rawText.slice(0, 12000) + '\n[content truncated]';
 
-  const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq','tf','identification'];
-  const typeInstruction = typeList.length === 1
-    ? `Use only "${typeList[0]}" type.`
-    : `Use a mix of these types: ${typeList.join(', ')}.`;
-
-  const customInstruction = customPrompt ? `\nAdditional instructions from the professor: ${customPrompt}` : '';
-
-  const prompt = `Generate exactly ${count} exam questions based on the course material provided below.
-
-Rules:
-- ${typeInstruction}
-- Difficulty: ${difficulty}${customInstruction}
-- Return ONLY a valid JSON array with no other text, explanation, or markdown.
-- Each question object schema:
+  const schemaRules = `Return ONLY a valid JSON array with no other text, explanation, or markdown.
+Each question object schema:
   { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
 - For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
 - For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
@@ -3468,10 +3463,34 @@ Rules:
 - For "identification": options = []; correctAnswer = expected answer string (1-4 words).
 - For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.
 - For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.
-- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
+- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.`;
+
+  let prompt;
+  if (mode === 'custom') {
+    prompt = `Professor's instructions: ${customPrompt}
+
+Rules:
+- ${schemaRules}
 
 Course material:
 ${rawText}`;
+  } else {
+    const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq', 'tf', 'identification'];
+    const typeInstruction = typeList.length === 1
+      ? `Use only "${typeList[0]}" type.`
+      : `Use a mix of these types: ${typeList.join(', ')}.`;
+    const customInstruction = customPrompt ? `\nAdditional topic/instructions: ${customPrompt}` : '';
+
+    prompt = `Generate exactly ${count} exam questions based on the course material below.
+
+Rules:
+- ${typeInstruction}
+- Difficulty: ${difficulty}${customInstruction}
+- ${schemaRules}
+
+Course material:
+${rawText}`;
+  }
 
   document.getElementById('ai-status-text').textContent = 'Sending to Groq AI...';
 

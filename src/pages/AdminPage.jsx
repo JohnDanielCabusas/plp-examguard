@@ -4,6 +4,8 @@ export default function AdminPage() {
   const booted = useRef(false);
   const [aiDiff, setAiDiff] = useState('mixed');
   const [diffOpen, setDiffOpen] = useState(false);
+  const [aiMode, setAiMode] = useState('quick');
+  const [aiCount, setAiCount] = useState(10);
 
   useEffect(() => {
     if (booted.current) return;
@@ -790,94 +792,117 @@ export default function AdminPage() {
             </div>{/* /inner bottom-anchor wrapper */}
           </div>
 
+          {/* Hidden sync inputs for admin.js */}
+          <select id="ai-difficulty" value={aiDiff} onChange={(e) => setAiDiff(e.target.value)} style={{ display: 'none' }} />
+          <input id="ai-count" type="number" value={aiCount} onChange={(e) => setAiCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))} style={{ display: 'none' }} />
+          <input id="ai-mode" type="hidden" value={aiMode} readOnly />
+
           {/* Options bar */}
-          <div style={{ padding: '10px 18px', background: '#f8fdf9', borderTop: '1px solid #d1fae5', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
-            {/* Question count */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '5px 10px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-              <input type="number" id="ai-count" defaultValue="10" min="1" max="100"
-                style={{ width: '36px', border: 'none', outline: 'none', fontWeight: 700, fontSize: '13px', background: 'transparent', color: '#0f2d1a' }} />
-              <span style={{ fontSize: '11px', color: '#1a4d2a', fontWeight: 700 }}>Qs</span>
+          <div style={{ background: '#f8fdf9', borderTop: '1px solid #d1fae5', flexShrink: 0 }}>
+            {/* Mode toggle */}
+            <div style={{ padding: '10px 18px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {[['quick','Quick'], ['custom','Custom']].map(([m, l]) => (
+                <button key={m} type="button"
+                  onClick={() => setAiMode(m)}
+                  style={{ padding: '5px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, border: '1.5px solid #1a4d2a', cursor: 'pointer', transition: 'all 0.15s', background: aiMode === m ? '#1a4d2a' : 'transparent', color: aiMode === m ? '#fff' : '#1a4d2a' }}>
+                  {l}
+                </button>
+              ))}
+              <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '4px' }}>
+                {aiMode === 'quick' ? 'Set count, difficulty & types' : 'Describe everything in your message'}
+              </span>
             </div>
 
-            {/* Animated difficulty dropdown */}
-            <div style={{ position: 'relative' }}>
-              <select id="ai-difficulty" value={aiDiff} onChange={(e) => setAiDiff(e.target.value)} style={{ display: 'none' }} readOnly />
-              <button type="button"
-                onClick={(e) => { e.stopPropagation(); setDiffOpen(v => !v); }}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, color: '#0f2d1a', cursor: 'pointer', outline: 'none', transition: 'border-color 0.15s' }}>
-                {aiDiff.charAt(0).toUpperCase() + aiDiff.slice(1)}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2.5" style={{ transition: 'transform 0.2s', transform: diffOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}><polyline points="6 9 12 15 18 9"/></svg>
-              </button>
-              {diffOpen && (
-                <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '12px', boxShadow: '0 8px 24px rgba(26,77,42,0.15)', overflow: 'hidden', zIndex: 100, minWidth: '110px', animation: 'dropdownUp 0.18s cubic-bezier(0.34,1.56,0.64,1)' }}>
-                  {[['mixed','Mixed'],['easy','Easy'],['medium','Medium'],['hard','Hard']].map(([v, l]) => (
-                    <button key={v} type="button"
-                      onClick={() => { setAiDiff(v); setDiffOpen(false); }}
-                      style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: aiDiff === v ? '#f0f7f2' : 'transparent', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: aiDiff === v ? 700 : 500, color: aiDiff === v ? '#1a4d2a' : '#374151', transition: 'background 0.1s' }}>
-                      {aiDiff === v && <span style={{ marginRight: '6px', color: '#1a4d2a' }}>✓</span>}{l}
-                    </button>
+            {/* Quick mode controls */}
+            {aiMode === 'quick' && (
+              <div style={{ padding: '8px 18px 10px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Count */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '5px 10px' }}>
+                  <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>#</span>
+                  <input type="number" min="1" max="100" value={aiCount}
+                    onChange={(e) => setAiCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                    style={{ width: '42px', border: 'none', outline: 'none', fontWeight: 700, fontSize: '14px', background: 'transparent', color: '#0f2d1a' }} />
+                  <span style={{ fontSize: '11px', color: '#1a4d2a', fontWeight: 700 }}>Qs</span>
+                </div>
+
+                {/* Difficulty dropdown */}
+                <div style={{ position: 'relative' }}>
+                  <button type="button"
+                    onClick={(e) => { e.stopPropagation(); setDiffOpen(v => !v); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, color: '#0f2d1a', cursor: 'pointer', outline: 'none' }}>
+                    {aiDiff.charAt(0).toUpperCase() + aiDiff.slice(1)}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2.5" style={{ transition: 'transform 0.2s', transform: diffOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  {diffOpen && (
+                    <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '12px', boxShadow: '0 8px 24px rgba(26,77,42,0.15)', overflow: 'hidden', zIndex: 100, minWidth: '110px', animation: 'dropdownUp 0.18s cubic-bezier(0.34,1.56,0.64,1)' }}>
+                      {[['mixed','Mixed'],['easy','Easy'],['medium','Medium'],['hard','Hard']].map(([v, l]) => (
+                        <button key={v} type="button"
+                          onClick={() => { setAiDiff(v); setDiffOpen(false); }}
+                          style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: aiDiff === v ? '#f0f7f2' : 'transparent', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: aiDiff === v ? 700 : 500, color: aiDiff === v ? '#1a4d2a' : '#374151', transition: 'background 0.1s' }}>
+                          {aiDiff === v && <span style={{ marginRight: '6px' }}>✓</span>}{l}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Type pills */}
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {[['mcq','MCQ',true],['tf','T/F',true],['identification','ID',true],['enumeration','Enum',false],['matching','Match',false],['essay','Essay',false]].map(([val, label, checked]) => (
+                    <label key={val} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display: 'none' }} />
+                      <span style={{ display: 'inline-block', padding: '5px 11px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #1a4d2a', color: checked ? '#fff' : '#1a4d2a', background: checked ? '#1a4d2a' : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
+                        onClick={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          const cb = e.currentTarget.closest('label').querySelector('input[type="checkbox"]');
+                          if (!cb) return;
+                          cb.checked = !cb.checked;
+                          e.currentTarget.style.background = cb.checked ? '#1a4d2a' : 'transparent';
+                          e.currentTarget.style.color = cb.checked ? '#fff' : '#1a4d2a';
+                        }}>{label}</span>
+                    </label>
                   ))}
                 </div>
-              )}
-            </div>
-
-            {/* Question type pills — green scheme */}
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              {[['mcq','MCQ',true],['tf','T/F',true],['identification','ID',true],['enumeration','Enum',false],['matching','Match',false],['essay','Essay',false]].map(([val, label, checked]) => (
-                <label key={val} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                  <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display: 'none' }} />
-                  <span style={{ display: 'inline-block', padding: '5px 11px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #1a4d2a', color: checked ? '#fff' : '#1a4d2a', background: checked ? '#1a4d2a' : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const cb = e.currentTarget.closest('label').querySelector('input[type="checkbox"]');
-                      if (!cb) return;
-                      cb.checked = !cb.checked;
-                      e.currentTarget.style.background = cb.checked ? '#1a4d2a' : 'transparent';
-                      e.currentTarget.style.color = cb.checked ? '#fff' : '#1a4d2a';
-                    }}>{label}</span>
-                </label>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Chat input bar */}
           <div style={{ borderTop: '1px solid #d1fae5', background: '#f8fdf9', flexShrink: 0 }}>
-            {/* Pending file chip — shown when file is attached, before sending */}
+            {/* Pending file chip */}
             <div id="ai-file-info" style={{ display: 'none', padding: '8px 18px 0', alignItems: 'center', gap: '8px' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#e8f5ec', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#0f2d1a', maxWidth: '100%' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#e8f5ec', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#0f2d1a' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
                 <span id="ai-file-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }} />
-                <button onClick={() => window.clearAIFile()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a4d2a', fontSize: '14px', lineHeight: 1, padding: 0, flexShrink: 0 }}>✕</button>
+                <button onClick={() => window.clearAIFile()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a4d2a', fontSize: '14px', lineHeight: 1, padding: 0 }}>✕</button>
               </div>
             </div>
 
             <div style={{ padding: '8px 18px 14px', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-            <label htmlFor="ai-file-input" style={{ width: '38px', height: '38px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
-              title="Attach file"
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f7f2'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            </label>
-            <textarea id="ai-custom-prompt" rows={1}
-              placeholder="Add topic or instructions… (optional)"
-              style={{ flex: 1, resize: 'none', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '9px 14px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, maxHeight: '96px', overflowY: 'auto', transition: 'border-color 0.15s' }}
-              onFocus={(e) => { e.target.style.borderColor = '#1a4d2a'; }}
-              onBlur={(e) => { e.target.style.borderColor = '#e5e7eb'; }}
-              onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
-            />
-            <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
-              style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'opacity 0.15s' }}
-              title="Generate (Enter)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            </button>
-            <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-              style={{ display: 'none', height: '38px', padding: '0 16px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-              Import Selected
-            </button>
-            </div>{/* /input row */}
+              <label htmlFor="ai-file-input" style={{ width: '38px', height: '38px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                title="Attach file"
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f7f2'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </label>
+              <textarea id="ai-custom-prompt" rows={1}
+                placeholder={aiMode === 'quick' ? 'Add topic or extra instructions… (optional)' : 'e.g. Generate 30 questions about photosynthesis — 20 MCQ and 10 identification, medium difficulty…'}
+                style={{ flex: 1, resize: 'none', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '9px 14px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, maxHeight: '96px', overflowY: 'auto', transition: 'border-color 0.15s' }}
+                onFocus={(e) => { e.target.style.borderColor = '#1a4d2a'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#e5e7eb'; }}
+                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
+              />
+              <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
+                style={{ width: '38px', height: '38px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'opacity 0.15s' }}
+                title="Generate (Enter)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              </button>
+              <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+                style={{ display: 'none', height: '38px', padding: '0 16px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                Import Selected
+              </button>
+            </div>
           </div>{/* /input bar */}
         </div>
       </div>
