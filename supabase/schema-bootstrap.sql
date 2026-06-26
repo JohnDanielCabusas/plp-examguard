@@ -9,6 +9,7 @@ create table if not exists public.settings (
   department text,
   admin_name text,
   admin_email text,
+  claude_api_key text,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );

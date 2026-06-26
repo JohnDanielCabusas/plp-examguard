@@ -67,15 +67,7 @@ const SupabaseSync = {
     }
 
     // Supabase has data — overwrite localStorage with it
-    if (settings) {
-      const currentSettings = this._local('acs_settings') || {};
-      const fromDb = this._dbToJsSettings(settings);
-      // Preserve local-only keys (API keys, etc.) that are never synced to Supabase
-      this._writeLocal('acs_settings', {
-        ...fromDb,
-        claudeApiKey: currentSettings.claudeApiKey || '',
-      });
-    }
+    if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
     if (superadmin)       this._writeLocal('acs_sysadmin',    this._dbToJsSysAdmin(superadmin));
     if (admins?.length)   this._writeLocal('acs_professors',  admins.map(r => this._dbToJsAdmin(r)));
     if (students?.length) this._writeLocal('acs_students',    students.map(r => this._dbToJsStudent(r)));
@@ -127,11 +119,7 @@ const SupabaseSync = {
       const current = (() => { try { return JSON.parse(localStorage.getItem(lsKey)) || []; } catch { return []; } })();
 
       if (table === 'settings') {
-        if (row) {
-          const currentSettings = (() => { try { return JSON.parse(localStorage.getItem(lsKey)) || {}; } catch { return {}; } })();
-          // Preserve local-only keys that are never stored in Supabase
-          this._writeLocal(lsKey, { ...normalizer(row), claudeApiKey: currentSettings.claudeApiKey || '' });
-        }
+        if (row) this._writeLocal(lsKey, normalizer(row));
         return;
       }
       if (eventType === 'DELETE') {
@@ -211,6 +199,7 @@ const SupabaseSync = {
       department: d.department || null,
       admin_name: d.adminName || null,
       admin_email: d.adminEmail || null,
+      claude_api_key: d.claudeApiKey || null,
     };
   },
 
@@ -356,6 +345,7 @@ const SupabaseSync = {
       department: r.department || '',
       adminName: r.admin_name || '',
       adminEmail: r.admin_email || '',
+      claudeApiKey: r.claude_api_key || '',
     };
   },
 
