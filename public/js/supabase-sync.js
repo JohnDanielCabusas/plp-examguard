@@ -209,6 +209,8 @@ const SupabaseSync = {
       username: d.username,
       password: d.password,
       name: d.name || 'System Administrator',
+      email: d.email || null,
+      department: d.department || null,
     };
   },
 
@@ -217,6 +219,8 @@ const SupabaseSync = {
       username: r.username,
       password: r.password,
       name: r.name || 'System Administrator',
+      email: r.email || '',
+      department: r.department || '',
     };
   },
 
@@ -227,6 +231,7 @@ const SupabaseSync = {
       password: d.password,
       name: d.name,
       email: d.email || null,
+      department: d.department || null,
     };
   },
 
@@ -356,6 +361,7 @@ const SupabaseSync = {
       password: r.password,
       name: r.name,
       email: r.email || '',
+      department: r.department || '',
       createdAt: r.created_at || null,
     };
   },

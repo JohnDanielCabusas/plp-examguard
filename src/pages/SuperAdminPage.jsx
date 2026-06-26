@@ -32,9 +32,7 @@ function Toast({ message, type, onDone }) {
   }, [onDone]);
   const bg = type === 'error' ? '#dc2626' : type === 'warning' ? '#d97706' : '#16a34a';
   return (
-    <div style={{ position:'fixed', bottom:'24px', right:'24px', background:bg, color:'#fff',
-                  padding:'12px 20px', borderRadius:'10px', fontSize:'13px', fontWeight:600,
-                  boxShadow:'0 4px 16px rgba(0,0,0,0.2)', zIndex:99999, maxWidth:'320px' }}>
+    <div className="sa-toast" style={{ background:bg }}>
       {message}
     </div>
   );
@@ -71,14 +69,12 @@ function StatCard({ label, value, icon, color }) {
 // ── confirm dialog ──────────────────────────────────────────────
 function ConfirmDialog({ message, onConfirm, onCancel }) {
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9999,
-                  display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ background:'#fff', borderRadius:'16px', padding:'28px 28px 20px',
-                    maxWidth:'380px', width:'90%', boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
-        <div style={{ fontSize:'15px', fontWeight:600, color:'#1f2937', marginBottom:'20px', lineHeight:1.5 }}>
+    <div className="sa-modal-overlay">
+      <div className="sa-modal sa-modal-sm">
+        <div className="sa-confirm-message">
           {message}
         </div>
-        <div style={{ display:'flex', gap:'10px', justifyContent:'flex-end' }}>
+        <div className="sa-modal-actions">
           <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
           <button className="btn btn-danger" onClick={onConfirm}>Delete</button>
         </div>
@@ -119,19 +115,16 @@ function ProfessorModal({ professor, onSave, onClose }) {
   };
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9999,
-                  display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ background:'#fff', borderRadius:'16px', width:'90%', maxWidth:'440px',
-                    boxShadow:'0 8px 32px rgba(0,0,0,0.18)', overflow:'hidden' }}>
-        <div style={{ padding:'20px 24px', borderBottom:'1px solid #f3f4f6', display:'flex',
-                      alignItems:'center', justifyContent:'space-between' }}>
+    <div className="sa-modal-overlay">
+      <div className="sa-modal sa-modal-md">
+        <div className="sa-modal-header">
           <span style={{ fontWeight:700, fontSize:'16px', color:'var(--primary)' }}>
             {isEdit ? 'Edit Professor' : 'Add Professor'}
           </span>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer',
                                               fontSize:'20px', color:'#9ca3af', lineHeight:1 }}>&#10005;</button>
         </div>
-        <div style={{ padding:'20px 24px' }}>
+        <div className="sa-modal-body">
           <div className="form-group">
             <label>Full Name *</label>
             <input ref={nameRef} type="text" className="form-control" placeholder="e.g. Dr. Maria Santos"
@@ -158,7 +151,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
           </div>
           {error && <div className="text-danger mb-12" style={{ fontSize:'13px' }}>{error}</div>}
         </div>
-        <div style={{ padding:'12px 24px 20px', display:'flex', gap:'10px', justifyContent:'flex-end' }}>
+        <div className="sa-modal-actions">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSave}>
             {isEdit ? 'Save Changes' : 'Add Professor'}
@@ -175,6 +168,8 @@ export default function SuperAdminPage() {
   const [section, setSection] = useState('dashboard');
   const [professors, setProfessors] = useState([]);
   const [stats, setStats] = useState({ professors: 0, students: 0, exams: 0, subjects: 0 });
+  const [systemSettings, setSystemSettings] = useState({ schoolName: '', logoUrl: '' });
+  const [adminProfile, setAdminProfile] = useState({ name: '', username: '', email: '', department: '' });
   const [toast, setToast] = useState(null);
   const [confirm, setConfirm] = useState(null); // { message, onConfirm }
   const [profModal, setProfModal] = useState(null); // null | { professor?: obj }
@@ -202,12 +197,24 @@ export default function SuperAdminPage() {
     const students = window.DB?.getStudents?.() || [];
     const exams = window.DB?.getExams?.() || [];
     const subjects = window.DB?.getSubjects?.() || [];
+    const settings = window.DB?.getSettings?.() || {};
+    const sysAdmin = window.DB?.getSysAdmin?.() || {};
     setProfessors(profs);
     setStats({
       professors: profs.length,
       students: students.length,
       exams: exams.length,
       subjects: subjects.length,
+    });
+    setSystemSettings({
+      schoolName: settings.schoolName || 'PLP ExamGuard',
+      logoUrl: settings.logoUrl || '',
+    });
+    setAdminProfile({
+      name: sysAdmin.name || 'System Administrator',
+      username: sysAdmin.username || 'sysadmin',
+      email: sysAdmin.email || '',
+      department: sysAdmin.department || '',
     });
   }, []);
 
@@ -283,6 +290,70 @@ export default function SuperAdminPage() {
     });
   };
 
+  const saveSystemSettings = () => {
+    const schoolName = (systemSettings.schoolName || '').trim();
+    if (!schoolName) { showToast('School / System name is required.', 'error'); return; }
+    const next = { schoolName, logoUrl: systemSettings.logoUrl || '' };
+    window.DB?.updateSettings?.(next);
+    setSystemSettings(next);
+    showToast('School / System settings saved.');
+  };
+
+  const saveAdminProfile = () => {
+    const name = (adminProfile.name || '').trim();
+    const username = (adminProfile.username || '').trim().toLowerCase();
+    const email = (adminProfile.email || '').trim().toLowerCase();
+    const department = (adminProfile.department || '').trim();
+
+    if (!name) { showToast('Administrator name is required.', 'error'); return; }
+    if (!username) { showToast('Administrator username is required.', 'error'); return; }
+    if (!/^[a-z0-9_.-]{3,30}$/.test(username)) {
+      showToast('Username must be 3-30 characters.', 'error');
+      return;
+    }
+
+    const updated = window.DB?.updateSysAdmin?.({ name, username, email, department });
+    sessionRef.current = {
+      ...(sessionRef.current || {}),
+      name,
+      username,
+      email,
+      department,
+    };
+    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify({
+      ...(sessionRef.current || {}),
+      loginAt: sessionRef.current?.loginAt || new Date().toISOString(),
+    }));
+    setAdminProfile({
+      name: updated?.name || name,
+      username: updated?.username || username,
+      email: updated?.email || email,
+      department: updated?.department || department,
+    });
+    showToast('Administrator account information saved.');
+  };
+
+  const handleSystemLogoUpload = (file) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Logo must be less than 5MB.', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setSystemSettings((prev) => ({ ...prev, logoUrl: e.target?.result || '' }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeSystemLogo = () => {
+    const schoolName = (systemSettings.schoolName || '').trim() || 'PLP ExamGuard';
+    const next = { ...systemSettings, schoolName, logoUrl: '' };
+    setSystemSettings(next);
+    window.DB?.updateSettings?.(next);
+    showToast('Logo removed successfully.');
+  };
+
   // ── Change password ─────────────────────────────────────────
   const changePassword = () => {
     const cur = curPassRef.current?.value || '';
@@ -312,6 +383,11 @@ export default function SuperAdminPage() {
   const dateStr = now.toLocaleDateString('en-PH', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
   const session = sessionRef.current;
+  const hasCustomLogo = !!String(systemSettings.logoUrl || '').trim();
+  const brandLogo = hasCustomLogo ? systemSettings.logoUrl : '';
+  const brandName = systemSettings.schoolName || 'PLP ExamGuard';
+  const brandInitial = (brandName || 'P').trim().charAt(0).toUpperCase() || 'P';
+  const adminDepartment = adminProfile.department || session?.department || '';
 
   // ── render ──────────────────────────────────────────────────
   return (
@@ -336,15 +412,19 @@ export default function SuperAdminPage() {
         style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:998 }} />}
 
       {ready && (
-        <div className="admin-layout">
+        <div className="admin-layout super-admin-shell">
           {/* SIDEBAR */}
           <aside className="sidebar" id="sidebar" style={sidebarOpen ? { transform:'translateX(0)', zIndex:999 } : {}}>
             <div className="sidebar-brand">
               <div className="sidebar-brand-icon">
-                <img src="/plp-logo.png" alt="PLP" style={{ width:'40px', height:'40px', objectFit:'contain' }} />
+                {brandLogo ? (
+                  <img src={brandLogo} alt="PLP" style={{ width:'40px', height:'40px', objectFit:'contain' }} />
+                ) : (
+                  <div className="sa-brand-logo-fallback">{brandInitial}</div>
+                )}
               </div>
               <div className="sidebar-brand-text">
-                <h2>PLP ExamGuard</h2>
+                <h2>{brandName}</h2>
                 <p>System Admin</p>
               </div>
             </div>
@@ -377,8 +457,8 @@ export default function SuperAdminPage() {
 
           {/* MAIN */}
           <div className="main-content">
-            <header className="topbar">
-              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+            <header className="topbar sa-topbar">
+              <div className="sa-topbar-main">
                 <button className="hamburger-btn" onClick={() => setSidebarOpen(v => !v)}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                        stroke="currentColor" strokeWidth="2">
@@ -391,16 +471,13 @@ export default function SuperAdminPage() {
                   {section === 'settings' && 'Settings'}
                 </span>
               </div>
-              <div className="topbar-actions">
-                <span style={{ fontSize:'12px', color:'var(--text-muted)' }}>{dateStr}</span>
-                <div style={{ display:'flex', alignItems:'center', gap:'8px', background:'#f3f4f6',
-                              borderRadius:'100px', padding:'4px 12px 4px 4px' }}>
-                  <div style={{ width:'28px', height:'28px', background:'var(--accent)', borderRadius:'50%',
-                                display:'flex', alignItems:'center', justifyContent:'center',
-                                fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+              <div className="topbar-actions sa-topbar-actions">
+                <span className="topbar-date sa-topbar-date">{dateStr}</span>
+                <div className="sa-user-pill">
+                  <div className="sa-user-avatar">
                     {(session?.name || 'A').charAt(0).toUpperCase()}
                   </div>
-                  <span style={{ fontSize:'13px', fontWeight:600, color:'var(--primary)', whiteSpace:'nowrap' }}>
+                  <span className="sa-user-name">
                     {session?.name || 'System Admin'}
                   </span>
                 </div>
@@ -415,30 +492,26 @@ export default function SuperAdminPage() {
                   <div className="section-header">
                     <div>
                       <div className="section-title">Dashboard</div>
+                      {adminDepartment && <div className="section-subtitle" style={{ marginTop:'6px', fontSize:'22px', fontWeight:800, color:'var(--primary)', letterSpacing:'-0.03em', lineHeight:1.15 }}>{adminDepartment}</div>}
                       <div className="section-subtitle">System overview</div>
                     </div>
-                    <button className="btn btn-primary" onClick={() => { navTo('professors'); openAddProfessor(); }}>
-                      + Add Professor
-                    </button>
                   </div>
 
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:'16px' }}>
+                  <div className="sa-stats-grid">
                     {[
                       { label:'Professors', value:stats.professors, bg:'#1a4d2a', icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
                       { label:'Students',   value:stats.students,   bg:'#2563eb', icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
                       { label:'Exams',      value:stats.exams,      bg:'#7c3aed', icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
                       { label:'Courses',    value:stats.subjects,   bg:'#0891b2', icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
                     ].map(({ label, value, bg, icon }) => (
-                      <div key={label} style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
-                                    boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex', alignItems:'center', gap:'16px' }}>
-                        <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:bg,
-                                      display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <div key={label} className="sa-stat-card">
+                        <div className="sa-stat-icon" style={{ background:bg }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
                                fill="none" stroke="#fff" strokeWidth="2" dangerouslySetInnerHTML={{ __html: icon }} />
                         </div>
                         <div>
-                          <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{value}</div>
-                          <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>{label}</div>
+                          <div className="sa-stat-value">{value}</div>
+                          <div className="sa-stat-label">{label}</div>
                         </div>
                       </div>
                     ))}
@@ -479,23 +552,21 @@ export default function SuperAdminPage() {
                             <tbody>
                               {professors.map(p => (
                                 <tr key={p.id}>
-                                  <td>
-                                    <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                                      <div style={{ width:'34px', height:'34px', borderRadius:'50%', background:'var(--accent)',
-                                                    display:'flex', alignItems:'center', justifyContent:'center',
-                                                    fontSize:'13px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                                  <td data-label="Name">
+                                    <div className="sa-person-cell">
+                                      <div className="sa-person-avatar">
                                         {(p.name || '?').charAt(0).toUpperCase()}
                                       </div>
                                       <span style={{ fontWeight:600 }}>{p.name}</span>
                                     </div>
                                   </td>
-                                  <td><span style={{ fontFamily:'monospace', background:'#f3f4f6', padding:'2px 8px', borderRadius:'6px', fontSize:'12px' }}>@{p.username}</span></td>
-                                  <td style={{ color:'#6b7280', fontSize:'13px' }}>{p.email || '—'}</td>
-                                  <td style={{ color:'#9ca3af', fontSize:'12px' }}>
+                                  <td data-label="Username"><span className="sa-mono-chip">@{p.username}</span></td>
+                                  <td data-label="Email" style={{ color:'#6b7280', fontSize:'13px' }}>{p.email || '—'}</td>
+                                  <td data-label="Created" style={{ color:'#9ca3af', fontSize:'12px' }}>
                                     {p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' }) : '—'}
                                   </td>
-                                  <td style={{ textAlign:'center' }}>
-                                    <div style={{ display:'flex', gap:'6px', justifyContent:'center' }}>
+                                  <td data-label="Actions" style={{ textAlign:'center' }}>
+                                    <div className="sa-row-actions">
                                       <button className="btn btn-secondary btn-sm" onClick={() => openEditProfessor(p)}>Edit</button>
                                       <button className="btn btn-danger btn-sm" onClick={() => confirmDeleteProfessor(p)}>Delete</button>
                                     </div>
@@ -517,10 +588,97 @@ export default function SuperAdminPage() {
                   <div className="section-header">
                     <div>
                       <div className="section-title">Settings</div>
-                      <div className="section-subtitle">System administrator account settings</div>
+                      <div className="section-subtitle">System administrator and school configuration</div>
                     </div>
                   </div>
-                  <div style={{ maxWidth:'480px' }}>
+                  <div className="settings-main-grid">
+                    <div className="card sa-school-system-card">
+                      <div className="card-header"><span className="card-title">School / System</span></div>
+                      <div className="card-body">
+                        <div className="form-group">
+                          <label>School / System Name</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={systemSettings.schoolName}
+                            onChange={(e) => setSystemSettings((prev) => ({ ...prev, schoolName: e.target.value }))}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Logo</label>
+                          <div className="sa-logo-shell">
+                            <div className="sa-logo-current-card">
+                              <div className="sa-logo-status">{hasCustomLogo ? 'Current Logo' : 'No Logo Uploaded'}</div>
+                              {hasCustomLogo ? (
+                                <img src={brandLogo} className="logo-preview sa-logo-preview" alt="Logo preview" />
+                              ) : (
+                                <div className="sa-logo-empty-state">
+                                  <div className="sa-logo-empty-mark">{brandInitial}</div>
+                                  <span>Upload a school logo to display it across the system.</span>
+                                </div>
+                              )}
+                              <div className="sa-logo-current-divider" />
+                              <button className="sa-logo-remove-btn" onClick={removeSystemLogo} type="button" disabled={!hasCustomLogo}>
+                                Remove Current Logo
+                              </button>
+                            </div>
+                            <label className="logo-upload-area sa-logo-upload-card" style={{ display:'block' }}>
+                              <div className="sa-logo-upload-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
+                                  <path d="m8 17 4-4 4 4"/>
+                                  <path d="M12 13v8"/>
+                                </svg>
+                              </div>
+                              <div className="sa-logo-upload-title">Upload New Logo</div>
+                              <div className="sa-logo-upload-sub">PNG, JPG, SVG (MAX 5MB)</div>
+                              <div className="sa-logo-upload-cta">Choose File</div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display:'none' }}
+                                onChange={(e) => handleSystemLogoUpload(e.target.files?.[0])}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        <div className="sa-card-actions">
+                          <button className="btn btn-primary" onClick={saveSystemSettings} type="button">Save School / System</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="card">
+                      <div className="card-header"><span className="card-title">Administrator Account Information</span></div>
+                      <div className="card-body">
+                        <div className="form-group">
+                          <label>Administrator Name</label>
+                          <input type="text" className="form-control" value={adminProfile.name} onChange={(e) => setAdminProfile((prev) => ({ ...prev, name: e.target.value }))} />
+                        </div>
+                        <div className="form-group">
+                          <label>Administrator Username</label>
+                          <input type="text" className="form-control" autoComplete="username" value={adminProfile.username} onChange={(e) => setAdminProfile((prev) => ({ ...prev, username: e.target.value }))} />
+                        </div>
+                        <div className="form-group">
+                          <label>Administrator Email</label>
+                          <input type="email" className="form-control" value={adminProfile.email} onChange={(e) => setAdminProfile((prev) => ({ ...prev, email: e.target.value }))} />
+                        </div>
+                        <div className="form-group">
+                          <label>Department</label>
+                          <select className="form-control" value={adminProfile.department} onChange={(e) => setAdminProfile((prev) => ({ ...prev, department: e.target.value }))}>
+                            <option value="">Select Department</option>
+                            <option value="College of Arts & Sciences (CAS)">College of Arts & Sciences (CAS)</option>
+                            <option value="College of Education (COE)">College of Education (COE)</option>
+                            <option value="College of Business & Accountancy (CBA)">College of Business & Accountancy (CBA)</option>
+                            <option value="College of Computer Studies (CCS)">College of Computer Studies (CCS)</option>
+                            <option value="College of Engineering (COE)">College of Engineering (COE)</option>
+                            <option value="College of Nursing (CON)">College of Nursing (CON)</option>
+                          </select>
+                        </div>
+                        <div className="sa-card-actions">
+                          <button className="btn btn-primary" onClick={saveAdminProfile} type="button">Save Account Information</button>
+                        </div>
+                      </div>
+                    </div>
                     <div className="card">
                       <div className="card-header"><span className="card-title">Change Admin Password</span></div>
                       <div className="card-body">
@@ -551,7 +709,9 @@ export default function SuperAdminPage() {
                         </div>
                         {settingsError && <div className="text-danger mb-12" style={{ fontSize:'13px' }}>{settingsError}</div>}
                         {settingsSuccess && <div style={{ color:'#16a34a', fontSize:'13px', marginBottom:'12px' }}>{settingsSuccess}</div>}
-                        <button className="btn btn-primary" onClick={changePassword}>Update Password</button>
+                        <div className="sa-card-actions">
+                          <button className="btn btn-primary" onClick={changePassword}>Update Password</button>
+                        </div>
                       </div>
                     </div>
                   </div>

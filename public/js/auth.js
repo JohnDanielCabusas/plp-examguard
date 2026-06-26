@@ -10,7 +10,7 @@ const Auth = {
     const admin = DB.getAdmin(username);
     if (!admin) return { success: false, message: 'Invalid username or password.' };
     if (admin.password !== password) return { success: false, message: 'Invalid username or password.' };
-    const session = { id: admin.id, username: admin.username, name: admin.name, email: admin.email, loginAt: new Date().toISOString() };
+    const session = { id: admin.id, username: admin.username, name: admin.name, email: admin.email, department: admin.department || '', loginAt: new Date().toISOString() };
     sessionStorage.setItem('acs_admin_session', JSON.stringify(session));
     return { success: true, admin: session };
   },
@@ -358,7 +358,7 @@ const Auth = {
     const sysAdmin = DB.getSysAdmin();
     if (!sysAdmin || sysAdmin.username !== username.trim()) return { success: false, message: 'Invalid username or password.' };
     if (sysAdmin.password !== password) return { success: false, message: 'Invalid username or password.' };
-    const session = { username: sysAdmin.username, name: sysAdmin.name, loginAt: new Date().toISOString() };
+    const session = { username: sysAdmin.username, name: sysAdmin.name, email: sysAdmin.email || '', department: sysAdmin.department || '', loginAt: new Date().toISOString() };
     sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(session));
     return { success: true, session };
   },

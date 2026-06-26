@@ -250,7 +250,7 @@ const DB = {
     // Professors
     if (!localStorage.getItem(this.KEYS.admins)) {
       localStorage.setItem(this.KEYS.admins, JSON.stringify([
-        { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu' }
+        { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu', department: '' }
       ]));
     }
 
@@ -260,6 +260,8 @@ const DB = {
         username: 'sysadmin',
         password: 'admin123',
         name: 'System Administrator',
+        email: 'sysadmin@school.edu',
+        department: '',
       }));
     }
 
@@ -420,7 +422,7 @@ const DB = {
   // ---- System Admin ----
   getSysAdmin() {
     const stored = this._read('acs_sysadmin', null);
-    return stored || { username: 'sysadmin', password: 'admin123', name: 'System Administrator' };
+    return stored || { username: 'sysadmin', password: 'admin123', name: 'System Administrator', email: 'sysadmin@school.edu', department: '' };
   },
   updateSysAdmin(updates) {
     const current = this.getSysAdmin();

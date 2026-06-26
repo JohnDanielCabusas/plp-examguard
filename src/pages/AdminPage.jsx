@@ -160,6 +160,7 @@ export default function AdminPage() {
               <div className="section-header">
                 <div>
                   <div className="section-title">Dashboard</div>
+                  <div className="section-subtitle" id="dashboard-department-title" style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.03em', lineHeight: 1.15 }} />
                   <div className="section-subtitle">Overview and predictive analytics</div>
                 </div>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="dash-refresh-time" />
@@ -513,9 +514,11 @@ export default function AdminPage() {
               </div>
               <div className="settings-main-grid">
                 <div className="card">
-                  <div className="card-header"><span className="card-title">School / System</span></div>
+                  <div className="card-header"><span className="card-title">Account Information</span></div>
                   <div className="card-body">
-                    <div className="form-group"><label>School / System Name</label><input type="text" className="form-control" id="set-school-name" /></div>
+                    <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
+                    <div className="form-group"><label>Professor Username</label><input type="text" className="form-control" id="set-admin-username" autoComplete="username" /></div>
+                    <div className="form-group"><label>Professor Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
                     <div className="form-group">
                       <label>Department</label>
                       <select className="form-control" id="set-department">
@@ -528,23 +531,9 @@ export default function AdminPage() {
                         <option value="College of Nursing (CON)">College of Nursing (CON)</option>
                       </select>
                     </div>
-                    <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
-                    <div className="form-group"><label>Professor Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
-                    <div className="form-group"><label>Professor Username</label><input type="text" className="form-control" id="set-admin-username" autoComplete="username" /></div>
-                    <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
-                  </div>
-                </div>
-                <div className="card">
-                  <div className="card-header"><span className="card-title">Logo</span></div>
-                  <div className="card-body">
-                    <div id="logo-preview-wrap" className="mb-12 hidden"><img id="logo-preview-img" className="logo-preview" src="/plp-logo.png" alt="Logo" /></div>
-                    <div className="logo-upload-area" onClick={() => document.getElementById('logo-file-input').click()}>
-                      <div style={{ marginBottom: '6px', color: 'var(--text-muted)' }}><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
-                      <div>Click to upload logo</div>
-                      <div style={{ fontSize: '11px', marginTop: '4px' }}>PNG, JPG, SVG (max 5MB)</div>
+                    <div className="sa-card-actions">
+                      <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
                     </div>
-                    <input type="file" id="logo-file-input" accept="image/*" style={{ display: 'none' }} onChange={(e) => window.handleLogoUpload(e.target.files[0])} />
-                    <button className="btn btn-danger btn-sm mt-8" onClick={() => window.removeLogo()} id="btn-remove-logo" style={{ display: 'none' }}>Remove Logo</button>
                   </div>
                 </div>
                 <div className="card">
@@ -553,7 +542,9 @@ export default function AdminPage() {
                     <div className="form-group"><label>Current Password</label><input type="password" className="form-control" id="set-cur-pass" /></div>
                     <div className="form-group"><label>New Password</label><input type="password" className="form-control" id="set-new-pass" /></div>
                     <div className="form-group"><label>Confirm New Password</label><input type="password" className="form-control" id="set-confirm-pass" /></div>
-                    <button className="btn btn-warning" onClick={() => window.changePassword()}>Change Password</button>
+                    <div className="sa-card-actions">
+                      <button className="btn btn-warning" onClick={() => window.changePassword()}>Change Password</button>
+                    </div>
                   </div>
                 </div>
               </div>

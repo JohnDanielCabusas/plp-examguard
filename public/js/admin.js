@@ -43,6 +43,8 @@ document.addEventListener('dbReady', function init() {
   refreshAdminIdentity();
   document.getElementById('sb-school-name').textContent = settings.schoolName || 'PLP ExamGuard';
   document.title = 'PLP ExamGuard - Admin Panel';
+  const dashboardDeptTitle = document.getElementById('dashboard-department-title');
+  if (dashboardDeptTitle) dashboardDeptTitle.textContent = session.department || '';
 
   if (settings.logoUrl) {
     const wrap = document.getElementById('sb-logo-wrap');
@@ -641,9 +643,10 @@ async function removeStudentFromCourse(studentId, subjectId) {
 }
 
 function renderSubjects() {
+  const session = Auth.getAdminSession() || {};
   const settings = DB.getSettings();
   const deptTitle = document.getElementById('courses-department-title');
-  if (deptTitle) deptTitle.textContent = settings.department || '';
+  if (deptTitle) deptTitle.textContent = session.department || settings.department || '';
   const subjects = DB.getSubjects().filter(s => !s.archived);
   const grid = document.getElementById('course-cards-grid');
   if (!subjects.length) {
@@ -3022,38 +3025,82 @@ async function allowStudentRetake(sessionId) {
 // ============================================================
 function loadSettings() {
   const s = DB.getSettings();
-  document.getElementById('set-school-name').value = s.schoolName || '';
-  document.getElementById('set-department').value = s.department || '';
-  document.getElementById('set-admin-name').value = s.adminName || '';
-  document.getElementById('set-admin-email').value = s.adminEmail || '';
-  document.getElementById('set-claude-api-key').value = s.claudeApiKey || '';
+  const session = Auth.getAdminSession() || {};
+  const schoolNameEl = document.getElementById('set-school-name');
+  const deptEl = document.getElementById('set-department');
+  const nameEl = document.getElementById('set-admin-name');
+  const emailEl = document.getElementById('set-admin-email');
+  const usernameEl = document.getElementById('set-admin-username');
+  const apiKeyEl = document.getElementById('set-claude-api-key');
+  const logoImg = document.getElementById('logo-preview-img');
+  const logoWrap = document.getElementById('logo-preview-wrap');
+  const removeLogoBtn = document.getElementById('btn-remove-logo');
 
-  if (s.logoUrl) {
-    document.getElementById('logo-preview-img').src = s.logoUrl;
-    document.getElementById('logo-preview-wrap').classList.remove('hidden');
-    document.getElementById('btn-remove-logo').style.display = 'inline-flex';
+  if (schoolNameEl) schoolNameEl.value = s.schoolName || '';
+  if (deptEl) deptEl.value = s.department || '';
+  if (nameEl) nameEl.value = session.name || s.adminName || '';
+  if (emailEl) emailEl.value = session.email || s.adminEmail || '';
+  if (usernameEl) usernameEl.value = session.username || '';
+  if (deptEl && session.department) deptEl.value = session.department;
+  if (apiKeyEl) apiKeyEl.value = s.claudeApiKey || '';
+
+  if (s.logoUrl && logoImg && logoWrap && removeLogoBtn) {
+    logoImg.src = s.logoUrl;
+    logoWrap.classList.remove('hidden');
+    removeLogoBtn.style.display = 'inline-flex';
   }
 }
 
 function saveSettings() {
-  const schoolName = document.getElementById('set-school-name').value.trim();
-  const department = document.getElementById('set-department').value.trim();
-  const adminName = document.getElementById('set-admin-name').value.trim();
-  const adminEmail = document.getElementById('set-admin-email').value.trim();
-  if (!schoolName) { showToast('School name is required.', 'error'); return; }
-  DB.updateSettings({ schoolName, department, adminName, adminEmail });
+  const schoolNameEl = document.getElementById('set-school-name');
+  const departmentEl = document.getElementById('set-department');
+  const adminNameEl = document.getElementById('set-admin-name');
+  const adminEmailEl = document.getElementById('set-admin-email');
+  const adminUsernameEl = document.getElementById('set-admin-username');
+  const schoolName = schoolNameEl ? schoolNameEl.value.trim() : '';
+  const department = departmentEl ? departmentEl.value.trim() : '';
+  const adminName = adminNameEl ? adminNameEl.value.trim() : '';
+  const adminEmail = adminEmailEl ? adminEmailEl.value.trim() : '';
+  const adminUsername = adminUsernameEl ? adminUsernameEl.value.trim().toLowerCase() : '';
   const session = Auth.getAdminSession();
-  if (session) {
+
+  if (schoolNameEl && !schoolName) { showToast('School name is required.', 'error'); return; }
+  if (adminUsernameEl && !adminUsername) { showToast('Professor username is required.', 'error'); return; }
+  if (session && adminUsernameEl) {
+    const duplicate = DB.getAdmins().find(a => a.username === adminUsername && a.id !== session.id);
+    if (duplicate) { showToast('Username already exists.', 'error'); return; }
+  }
+
+  if (schoolNameEl) {
+    DB.updateSettings({
+      schoolName,
+      ...(schoolNameEl ? { adminName } : {}),
+      ...(schoolNameEl ? { adminEmail } : {}),
+    });
+  }
+
+  if (session && adminNameEl && adminEmailEl && adminUsernameEl) {
+    DB.updateAdmin(session.id, {
+      name: adminName,
+      email: adminEmail,
+      username: adminUsername,
+      department,
+    });
     sessionStorage.setItem('acs_admin_session', JSON.stringify({
       ...session,
+      username: adminUsername || session.username,
       name: adminName || session.name,
-      email: adminEmail || session.email
+      email: adminEmail || session.email,
+      department: department || session.department || '',
     }));
     refreshAdminIdentity();
   }
-  document.getElementById('sb-school-name').textContent = schoolName;
+
+  if (schoolNameEl) document.getElementById('sb-school-name').textContent = schoolName;
   const deptTitle = document.getElementById('courses-department-title');
   if (deptTitle) deptTitle.textContent = department || '';
+  const dashboardDeptTitle = document.getElementById('dashboard-department-title');
+  if (dashboardDeptTitle) dashboardDeptTitle.textContent = department || '';
   document.title = 'PLP ExamGuard - Admin Panel';
   showToast('Settings saved.', 'success');
 }
