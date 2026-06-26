@@ -13,7 +13,7 @@ create table if not exists public.settings (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
-create table if not exists public.admins (
+create table if not exists public.professors (
   id text primary key,
   username text not null unique,
   password text not null,
@@ -127,7 +127,7 @@ alter table public.subjects
 alter table public.sessions
   add column if not exists camera_snapshots jsonb not null default '[]'::jsonb;
 
-alter table public.admins
+alter table public.professors
   alter column email drop not null;
 
 -- ── updated_at trigger ────────────────────────────────────────
@@ -148,9 +148,9 @@ create trigger trg_settings_updated_at
   before update on public.settings
   for each row execute function public.set_updated_at();
 
-drop trigger if exists trg_admins_updated_at on public.admins;
-create trigger trg_admins_updated_at
-  before update on public.admins
+drop trigger if exists trg_professors_updated_at on public.professors;
+create trigger trg_professors_updated_at
+  before update on public.professors
   for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_students_updated_at on public.students;
@@ -179,7 +179,7 @@ create trigger trg_sessions_updated_at
 -- basic shape checks on student inserts.
 
 alter table public.settings enable row level security;
-alter table public.admins enable row level security;
+alter table public.professors enable row level security;
 alter table public.students enable row level security;
 alter table public.subjects enable row level security;
 alter table public.exams enable row level security;
@@ -193,12 +193,10 @@ drop policy if exists "anon full access settings" on public.settings;
 create policy "anon full access settings"
   on public.settings for all to anon, authenticated using (true) with check (true);
 
--- admins
-drop policy if exists "dev full access admins" on public.admins;
-drop policy if exists "anon full access admins" on public.admins;
-drop policy if exists "authenticated full access admins" on public.admins;
-create policy "anon full access admins"
-  on public.admins for all to anon, authenticated using (true) with check (true);
+-- professors
+drop policy if exists "anon full access professors" on public.professors;
+create policy "anon full access professors"
+  on public.professors for all to anon, authenticated using (true) with check (true);
 
 -- students
 drop policy if exists "public read students" on public.students;
@@ -247,7 +245,7 @@ do $$
 declare
   tbl text;
 begin
-  foreach tbl in array array['settings', 'admins', 'students', 'subjects', 'exams', 'sessions', 'logs']
+  foreach tbl in array array['settings', 'professors', 'students', 'subjects', 'exams', 'sessions', 'logs']
   loop
     if not exists (
       select 1 from pg_publication_tables

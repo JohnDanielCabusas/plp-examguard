@@ -5,7 +5,7 @@
 const DB = {
   KEYS: {
     settings: 'acs_settings',
-    admins: 'acs_admins',
+    admins: 'acs_professors',
     students: 'acs_students',
     subjects: 'acs_subjects',
     exams: 'acs_exams',
@@ -247,7 +247,7 @@ const DB = {
       }));
     }
 
-    // Admins (professors)
+    // Professors
     if (!localStorage.getItem(this.KEYS.admins)) {
       localStorage.setItem(this.KEYS.admins, JSON.stringify([
         { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu' }
@@ -401,7 +401,7 @@ const DB = {
     const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...updates } : a);
     this._write(this.KEYS.admins, admins);
     const updated = admins.find(a => a.id === id);
-    if (updated) SupabaseSync.syncDoc('admins', updated);
+    if (updated) SupabaseSync.syncDoc('professors',updated);
   },
   addProfessor(data) {
     const admins = this.getAdmins();
@@ -409,7 +409,7 @@ const DB = {
     const newProf = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
     admins.push(newProf);
     this._write(this.KEYS.admins, admins);
-    SupabaseSync.syncDoc('admins', newProf);
+    SupabaseSync.syncDoc('professors',newProf);
     return { success: true, professor: newProf };
   },
   deleteProfessor(id) {

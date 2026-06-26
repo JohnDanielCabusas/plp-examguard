@@ -49,7 +49,7 @@ const SupabaseSync = {
       { data: logs },
     ] = await Promise.all([
       c.from('settings').select('*').eq('id', 'main').maybeSingle(),
-      c.from('admins').select('*'),
+      c.from('professors').select('*'),
       c.from('students').select('*'),
       c.from('subjects').select('*').order('created_at'),
       c.from('exams').select('*').order('created_at'),
@@ -65,8 +65,8 @@ const SupabaseSync = {
     }
 
     // Supabase has data — overwrite localStorage with it
-    if (settings)        this._writeLocal('acs_settings',  this._dbToJsSettings(settings));
-    if (admins?.length)  this._writeLocal('acs_admins',    admins.map(r => this._dbToJsAdmin(r)));
+    if (settings)        this._writeLocal('acs_settings',    this._dbToJsSettings(settings));
+    if (admins?.length)  this._writeLocal('acs_professors', admins.map(r => this._dbToJsAdmin(r)));
     if (students?.length) this._writeLocal('acs_students', students.map(r => this._dbToJsStudent(r)));
     if (subjects?.length) this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
     if (exams?.length)   this._writeLocal('acs_exams',     exams.map(r => this._dbToJsExam(r)));
@@ -85,7 +85,7 @@ const SupabaseSync = {
 
     // Order matters: subjects before exams (FK constraint)
     const seedings = [
-      ['admins',   'acs_admins',   r => this._jsToDbAdmin(r)],
+      ['professors', 'acs_professors', r => this._jsToDbAdmin(r)],
       ['students', 'acs_students', r => this._jsToDbStudent(r)],
       ['subjects', 'acs_subjects', r => this._jsToDbSubject(r)],
       ['exams',    'acs_exams',    r => this._jsToDbExam(r)],
@@ -127,8 +127,8 @@ const SupabaseSync = {
     this._channel = c.channel('acs-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' },
         applyChange('settings', 'acs_settings', r => this._dbToJsSettings(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' },
-        applyChange('admins', 'acs_admins', r => this._dbToJsAdmin(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professors' },
+        applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' },
         applyChange('students', 'acs_students', r => this._dbToJsStudent(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' },
@@ -283,7 +283,7 @@ const SupabaseSync = {
 
   _jsToDb(table, data) {
     switch (table) {
-      case 'admins':   return this._jsToDbAdmin(data);
+      case 'professors': return this._jsToDbAdmin(data);
       case 'students': return this._jsToDbStudent(data);
       case 'subjects': return this._jsToDbSubject(data);
       case 'exams':    return this._jsToDbExam(data);
