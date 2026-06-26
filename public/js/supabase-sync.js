@@ -127,7 +127,11 @@ const SupabaseSync = {
       const current = (() => { try { return JSON.parse(localStorage.getItem(lsKey)) || []; } catch { return []; } })();
 
       if (table === 'settings') {
-        if (row) this._writeLocal(lsKey, normalizer(row));
+        if (row) {
+          const currentSettings = (() => { try { return JSON.parse(localStorage.getItem(lsKey)) || {}; } catch { return {}; } })();
+          // Preserve local-only keys that are never stored in Supabase
+          this._writeLocal(lsKey, { ...normalizer(row), claudeApiKey: currentSettings.claudeApiKey || '' });
+        }
         return;
       }
       if (eventType === 'DELETE') {
