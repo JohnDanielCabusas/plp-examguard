@@ -3439,7 +3439,7 @@ async function runAIGenerate() {
   }
   const _sd = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
   _sd('ai-file-info', 'none'); _sd('ai-gen-btn', 'none');
-  _sd('ai-preview', 'none'); _sd('ai-status', '');
+  _sd('ai-preview', 'none'); _sd('ai-status', 'flex');
   const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting file content...';
   scrollAIChat();
 
@@ -3493,7 +3493,7 @@ Course material:
 ${rawText}`;
   }
 
-  if (stEl) stEl.textContent = 'Sending to Groq AI...';
+  if (stEl) stEl.textContent = 'Generating questions with AI…';
 
   let questions;
   try {
@@ -3592,8 +3592,8 @@ function renderAIPreview(questions) {
 
   const qPreview = document.getElementById('ai-questions-preview');
   if (qPreview) qPreview.innerHTML = html;
-  _sd('ai-preview', ''); _sd('ai-gen-btn', 'none');
-  _sd('ai-import-btn', ''); _sd('ai-status', 'none');
+  _sd('ai-preview', 'flex'); _sd('ai-gen-btn', 'none');
+  _sd('ai-import-btn', 'flex'); _sd('ai-status', 'none');
   scrollAIChat();
 }
 

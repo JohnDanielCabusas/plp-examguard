@@ -963,8 +963,8 @@ export default function AdminPage() {
         #ai-questions-preview .ai-q-card:hover { border-color:#1a4d2a; background:#f0f7f2; }
         #ai-questions-preview .ai-q-card label { display:flex; gap:10px; cursor:pointer; }
         #ai-questions-preview .ai-q-card .ai-q-correct { font-size:11px; color:#16a34a; margin-top:4px; }
-        #ai-status { display:none; flex-direction:row !important; }
-        #ai-preview { display:none; flex-direction:row !important; }
+        #ai-status { flex-direction:row; }
+        #ai-preview { flex-direction:row; }
         #ai-gen-btn:hover { opacity:0.85; }
         .ai-file-drop-hover label { background:#f0f7f2 !important; border-color:#1a4d2a !important; }
       `}</style>
