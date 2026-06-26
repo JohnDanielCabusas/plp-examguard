@@ -195,25 +195,27 @@ export default function AdminPage() {
 
             {/* STUDENTS */}
             <section id="section-students" className="admin-section hidden">
-              <div className="section-header">
-                <div>
+              <div className="section-header section-header-students">
+                <div className="section-header-copy">
                   <div className="section-title">Students</div>
                   <div className="section-subtitle">Manage enrolled students</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <select id="filter-year-level" className="form-control filter-select" onChange={() => window.filterStudents()}>
-                    <option value="">All Year Levels</option>
-                    <option value="1st Year">1st Year</option>
-                    <option value="2nd Year">2nd Year</option>
-                    <option value="3rd Year">3rd Year</option>
-                    <option value="4th Year">4th Year</option>
-                  </select>
-                  <select id="filter-section" className="form-control filter-select" onChange={() => window.filterStudents()}>
-                    <option value="">All Sections</option>
-                  </select>
-                  <select id="filter-program" className="form-control filter-select" onChange={() => window.filterStudents()}>
-                    <option value="">All Programs</option>
-                  </select>
+                <div className="students-toolbar">
+                  <div className="students-filters">
+                    <select id="filter-year-level" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                      <option value="">All Year Levels</option>
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
+                    <select id="filter-section" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                      <option value="">All Sections</option>
+                    </select>
+                    <select id="filter-program" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                      <option value="">All Programs</option>
+                    </select>
+                  </div>
                   <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
                 </div>
               </div>
@@ -405,9 +407,11 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="toolbar reports-toolbar" style={{ marginBottom: '20px' }}>
-                <select className="form-control" id="report-exam-select" onChange={() => window.renderReportTable()} style={{ width: '280px' }}>
-                  <option value="">Select an exam to review results</option>
-                </select>
+                <div className="reports-toolbar-select">
+                  <select className="form-control" id="report-exam-select" onChange={() => window.renderReportTable()}>
+                    <option value="">Select an exam to review results</option>
+                  </select>
+                </div>
                 <div className="reports-toolbar-actions">
                   <button className="btn btn-secondary" onClick={() => window.generatePDF()} id="btn-generate-pdf" disabled>Export PDF</button>
                   <button className="btn btn-success" onClick={() => window.releaseScores()} id="btn-release-scores" disabled>Release Scores to Students</button>
@@ -500,6 +504,7 @@ export default function AdminPage() {
                     </div>
                     <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
                     <div className="form-group"><label>Professor Email</label><input type="email" className="form-control" id="set-admin-email" /></div>
+                    <div className="form-group"><label>Professor Username</label><input type="text" className="form-control" id="set-admin-username" autoComplete="username" /></div>
                     <button className="btn btn-primary" onClick={() => window.saveSettings()}>Save Settings</button>
                   </div>
                 </div>

@@ -386,7 +386,7 @@ export default function LoginPage() {
   };
 
   const doPasswordLogin = async () => {
-    const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
     const password = studentPasswordRef.current?.value || '';
     setStep2aError('');
     if (!password) { setStep2aError('Please enter your password.'); return; }
@@ -402,7 +402,7 @@ export default function LoginPage() {
   };
 
   const doFirstSetup = async () => {
-    const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
     const studentId = (setupIdRef.current?.value || '').trim().toUpperCase();
     const name = (setupNameRef.current?.value || '').trim();
     const yearSection = (setupYearSectionRef.current?.value || '').trim().toUpperCase();
@@ -412,6 +412,7 @@ export default function LoginPage() {
     const confirm = setupConfirmRef.current?.value || '';
     setStep2bError('');
 
+    if (!email) { setStep2bError('Student email verification is missing. Please start again.'); return; }
     if (!name) { setStep2bError('Please enter your full name.'); return; }
     if (!studentId) { setStep2bError('Please enter your Student ID.'); return; }
     const idMatch = studentId.match(/^(\d{2})-\d{5}$/);

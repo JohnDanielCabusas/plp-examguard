@@ -187,11 +187,14 @@ alter table public.sessions enable row level security;
 alter table public.logs enable row level security;
 
 -- settings
+drop policy if exists "dev full access settings" on public.settings;
+drop policy if exists "public read settings" on public.settings;
 drop policy if exists "anon full access settings" on public.settings;
 create policy "anon full access settings"
   on public.settings for all to anon, authenticated using (true) with check (true);
 
 -- admins
+drop policy if exists "dev full access admins" on public.admins;
 drop policy if exists "anon full access admins" on public.admins;
 drop policy if exists "authenticated full access admins" on public.admins;
 create policy "anon full access admins"
@@ -207,6 +210,7 @@ create policy "anon full access students"
   on public.students for all to anon, authenticated using (true) with check (true);
 
 -- subjects
+drop policy if exists "dev full access subjects" on public.subjects;
 drop policy if exists "public read subjects" on public.subjects;
 drop policy if exists "authenticated full access subjects" on public.subjects;
 drop policy if exists "anon full access subjects" on public.subjects;
@@ -214,6 +218,7 @@ create policy "anon full access subjects"
   on public.subjects for all to anon, authenticated using (true) with check (true);
 
 -- exams
+drop policy if exists "dev full access exams" on public.exams;
 drop policy if exists "public read exams" on public.exams;
 drop policy if exists "authenticated full access exams" on public.exams;
 drop policy if exists "anon full access exams" on public.exams;
@@ -221,6 +226,7 @@ create policy "anon full access exams"
   on public.exams for all to anon, authenticated using (true) with check (true);
 
 -- sessions
+drop policy if exists "dev full access sessions" on public.sessions;
 drop policy if exists "public read sessions" on public.sessions;
 drop policy if exists "authenticated full access sessions" on public.sessions;
 drop policy if exists "anon full access sessions" on public.sessions;
@@ -228,6 +234,7 @@ create policy "anon full access sessions"
   on public.sessions for all to anon, authenticated using (true) with check (true);
 
 -- logs
+drop policy if exists "dev full access logs" on public.logs;
 drop policy if exists "public read logs" on public.logs;
 drop policy if exists "authenticated full access logs" on public.logs;
 drop policy if exists "anon full access logs" on public.logs;

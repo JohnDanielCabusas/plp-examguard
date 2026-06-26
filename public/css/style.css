@@ -885,6 +885,18 @@ textarea.form-control {
   gap: 12px;
 }
 
+.section-header-students {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.section-header-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .section-title {
   display: none !important; /* topbar already shows the page name */
 }
@@ -1080,14 +1092,35 @@ tr:hover td { background: #F8FDF8; }
   flex-wrap: wrap;
 }
 
+.students-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.students-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.students-filters .filter-select {
+  min-width: 150px;
+}
+
 .reports-toolbar {
   align-items: center;
+  justify-content: space-between;
 }
 
 .reports-toolbar-actions {
   display: flex;
   gap: 12px;
-  margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
