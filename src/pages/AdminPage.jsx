@@ -866,40 +866,82 @@ export default function AdminPage() {
             </span>
           </div>
 
-          {/* ── Input bar (both modes) ── */}
+          {/* ── Input bar ── */}
           <div style={{ borderTop:'1px solid #e8f5ec', background:'#fff', flexShrink:0 }}>
-            {/* Pending file chip */}
-            <div id="ai-file-info" style={{ display:'none', padding:'8px 18px 0', alignItems:'center' }}>
-              <div style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'#e8f5ec', border:'1.5px solid #a3c4a8', borderRadius:'10px', padding:'6px 12px', fontSize:'12px', fontWeight:600, color:'#0f2d1a' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                <span id="ai-file-name" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'340px' }} />
-                <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontSize:'14px', lineHeight:1, padding:0 }}>✕</button>
+            {/* Hidden textarea kept for admin.js in quick mode */}
+            <textarea id="ai-custom-prompt"
+              placeholder={aiMode==='quick' ? '' : 'e.g. Generate 30 questions — 20 MCQ and 10 identification, medium difficulty, focus on Chapter 3…'}
+              style={{ display: aiMode==='quick' ? 'none' : 'none', position:'absolute' }}
+              onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
+            />
+
+            {aiMode === 'quick' ? (
+              /* Quick: file attach zone */
+              <div style={{ padding:'12px 18px 16px' }}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-file-drop-hover'); }}
+                onDragLeave={(e) => e.currentTarget.classList.remove('ai-file-drop-hover')}
+                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-file-drop-hover'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}>
+                <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
+                  {/* File zone — expands to show chip when file attached */}
+                  <div id="ai-file-info" style={{ display:'none', flex:1, alignItems:'center', gap:'8px', background:'#e8f5ec', border:'1.5px solid #a3c4a8', borderRadius:'12px', padding:'10px 14px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    <span id="ai-file-name" style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:'13px', fontWeight:600, color:'#0f2d1a' }} />
+                    <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:'#6b7280', fontSize:'15px', lineHeight:1, padding:0, flexShrink:0 }}>✕</button>
+                  </div>
+                  {/* Attach button — shown when no file */}
+                  <label id="ai-attach-btn" htmlFor="ai-file-input"
+                    style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', border:'1.5px dashed #a3c4a8', borderRadius:'12px', padding:'11px 14px', cursor:'pointer', background:'#fafffe', transition:'all 0.15s', color:'#1a4d2a', fontWeight:600, fontSize:'13px' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background='#f0f7f2'; e.currentTarget.style.borderColor='#1a4d2a'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background='#fafffe'; e.currentTarget.style.borderColor='#a3c4a8'; }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    Attach or drop a file
+                  </label>
+                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate"
+                    style={{ width:'42px', height:'42px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  </button>
+                  <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+                    style={{ display:'none', height:'42px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap' }}>
+                    Import Selected
+                  </button>
+                </div>
               </div>
-            </div>
-            <div style={{ padding:'10px 18px 16px', display:'flex', gap:'10px', alignItems:'flex-end' }}>
-              <label htmlFor="ai-file-input" title="Attach file"
-                style={{ width:'40px', height:'40px', background:'#f3f4f6', border:'1.5px solid #e5e7eb', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'all 0.15s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background='#f0f7f2'; e.currentTarget.style.borderColor='#a3c4a8'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background='#f3f4f6'; e.currentTarget.style.borderColor='#e5e7eb'; }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-              </label>
-              <textarea id="ai-custom-prompt" rows={aiMode==='custom' ? 3 : 1}
-                placeholder={aiMode==='quick' ? 'Add topic or extra instructions… (optional)' : 'e.g. Generate 30 questions — 20 MCQ and 10 identification, medium difficulty, focus on Chapter 3…'}
-                style={{ flex:1, resize:'none', border:'1.5px solid #e5e7eb', borderRadius:'12px', padding:'10px 14px', fontSize:'13px', outline:'none', fontFamily:'inherit', lineHeight:1.5, overflowY:'auto', transition:'border-color 0.15s, height 0.2s', minHeight: aiMode==='custom' ? '72px' : 'unset' }}
-                onFocus={(e) => { e.target.style.borderColor='#1a4d2a'; }}
-                onBlur={(e) => { e.target.style.borderColor='#e5e7eb'; }}
-                onInput={(e) => { if (aiMode==='quick') { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,96)+'px'; } }}
-                onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
-              />
-              <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate (Enter)"
-                style={{ width:'40px', height:'40px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-              </button>
-              <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                style={{ display:'none', height:'40px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap' }}>
-                Import Selected
-              </button>
-            </div>
+            ) : (
+              /* Custom: textarea + paperclip + send */
+              <>
+                <div id="ai-file-info" style={{ display:'none', padding:'8px 18px 0', alignItems:'center' }}>
+                  <div style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'#e8f5ec', border:'1.5px solid #a3c4a8', borderRadius:'10px', padding:'6px 12px', fontSize:'12px', fontWeight:600, color:'#0f2d1a' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    <span id="ai-file-name" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'340px' }} />
+                    <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontSize:'14px', lineHeight:1, padding:0 }}>✕</button>
+                  </div>
+                </div>
+                <div style={{ padding:'8px 18px 14px', display:'flex', gap:'10px', alignItems:'flex-end' }}>
+                  <label htmlFor="ai-file-input" title="Attach file"
+                    style={{ width:'38px', height:'38px', background:'#f3f4f6', border:'1.5px solid #e5e7eb', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'all 0.15s' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background='#f0f7f2'; e.currentTarget.style.borderColor='#a3c4a8'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background='#f3f4f6'; e.currentTarget.style.borderColor='#e5e7eb'; }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  </label>
+                  <textarea id="ai-custom-prompt-custom" rows={1}
+                    placeholder="e.g. Generate 30 questions — 20 MCQ and 10 identification, medium difficulty…"
+                    style={{ flex:1, resize:'none', border:'1.5px solid #e5e7eb', borderRadius:'12px', padding:'9px 13px', fontSize:'13px', outline:'none', fontFamily:'inherit', lineHeight:1.5, maxHeight:'72px', overflowY:'auto', transition:'border-color 0.15s' }}
+                    onFocus={(e) => { e.target.style.borderColor='#1a4d2a'; }}
+                    onBlur={(e) => { e.target.style.borderColor='#e5e7eb'; }}
+                    onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,72)+'px'; const hidden=document.getElementById('ai-custom-prompt'); if(hidden) hidden.value=e.target.value; }}
+                    onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
+                  />
+                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate (Enter)"
+                    style={{ width:'38px', height:'38px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  </button>
+                  <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+                    style={{ display:'none', height:'38px', padding:'0 16px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap' }}>
+                    Import Selected
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
         </div>
@@ -931,6 +973,7 @@ export default function AdminPage() {
         #ai-status { display:none; flex-direction:row !important; }
         #ai-preview { display:none; flex-direction:row !important; }
         #ai-gen-btn:hover { opacity:0.85; }
+        .ai-file-drop-hover label { background:#f0f7f2 !important; border-color:#1a4d2a !important; }
       `}</style>
     </>
   );

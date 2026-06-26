@@ -3344,14 +3344,20 @@ function setAIFile(file) {
   if (!allowed.includes(file.type) && !extOk) { showToast('Unsupported file type. Use PDF, DOCX, PPTX, or TXT.', 'error'); return; }
   if (file.size > 10 * 1024 * 1024) { showToast('File too large. Max 10MB.', 'error'); return; }
   aiSelectedFile = file;
-  document.getElementById('ai-file-info').style.display = 'flex';
+  const fileInfo = document.getElementById('ai-file-info');
+  const attachBtn = document.getElementById('ai-attach-btn');
+  if (fileInfo) fileInfo.style.display = 'flex';
+  if (attachBtn) attachBtn.style.display = 'none';
   document.getElementById('ai-file-name').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
   scrollAIChat();
 }
 
 function clearAIFile() {
   aiSelectedFile = null;
-  document.getElementById('ai-file-info').style.display = 'none';
+  const fileInfo = document.getElementById('ai-file-info');
+  const attachBtn = document.getElementById('ai-attach-btn');
+  if (fileInfo) fileInfo.style.display = 'none';
+  if (attachBtn) attachBtn.style.display = '';
   document.getElementById('ai-file-input').value = '';
 }
 
