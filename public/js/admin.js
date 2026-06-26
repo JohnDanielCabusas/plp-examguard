@@ -3300,6 +3300,8 @@ ${text.slice(0, 2000)}
 let aiGeneratedQuestions = [];
 let aiSelectedFile = null;
 
+function _aiSD(id, v) { var el = document.getElementById(id); if (el) el.style.display = v; }
+
 function openAIGen() {
   if (!currentQBuilderExamId) { showToast('Save the exam details first.', 'error'); return; }
   const apiKey = DB.getSettings().claudeApiKey;
@@ -3310,9 +3312,8 @@ function openAIGen() {
   clearAIFile();
   const customPromptEl = document.getElementById('ai-custom-prompt');
   if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
-  const _s = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
-  _s('ai-status', 'none'); _s('ai-preview', 'none'); _s('ai-user-bubble', 'none');
-  _s('ai-gen-btn', ''); _s('ai-import-btn', 'none');
+  _aiSD('ai-status', 'none'); _aiSD('ai-preview', 'none'); _aiSD('ai-user-bubble', 'none');
+  _aiSD('ai-gen-btn', 'flex'); _aiSD('ai-import-btn', 'none');
   document.getElementById('modal-ai-gen').classList.remove('hidden');
   scrollAIChat();
   requestAnimationFrame(() => document.getElementById('ai-custom-prompt')?.focus());
@@ -3437,9 +3438,8 @@ async function runAIGenerate() {
     if (promptEl) { promptEl.textContent = customPrompt; promptEl.style.display = customPrompt ? '' : 'none'; }
     userBubble.style.display = 'flex';
   }
-  const _sd = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
-  _sd('ai-file-info', 'none'); _sd('ai-gen-btn', 'none');
-  _sd('ai-preview', 'none'); _sd('ai-status', 'flex');
+  _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none');
+  _aiSD('ai-preview', 'none'); _aiSD('ai-status', 'flex');
   const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting file content...';
   scrollAIChat();
 
@@ -3447,7 +3447,7 @@ async function runAIGenerate() {
   try {
     rawText = await extractTextFromFile(aiSelectedFile);
   } catch (err) {
-    _sd('ai-status', 'none'); _sd('ai-gen-btn', '');
+    _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
     showToast('Failed to read file: ' + err.message, 'error');
     return;
   }
@@ -3540,7 +3540,7 @@ ${rawText}`;
     }
     if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated.');
   } catch (err) {
-    _sd('ai-status', 'none'); _sd('ai-gen-btn', '');
+    _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
     showToast('AI generation failed: ' + err.message, 'error');
     return;
   }
@@ -3550,7 +3550,7 @@ ${rawText}`;
   questions.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3));
 
   aiGeneratedQuestions = questions;
-  _sd('ai-status', 'none');
+  _aiSD('ai-status', 'none');
   renderAIPreview(questions);
 }
 
@@ -3592,8 +3592,8 @@ function renderAIPreview(questions) {
 
   const qPreview = document.getElementById('ai-questions-preview');
   if (qPreview) qPreview.innerHTML = html;
-  _sd('ai-preview', 'flex'); _sd('ai-gen-btn', 'none');
-  _sd('ai-import-btn', 'flex'); _sd('ai-status', 'none');
+  _aiSD('ai-preview', 'flex'); _aiSD('ai-gen-btn', 'none');
+  _aiSD('ai-import-btn', 'flex'); _aiSD('ai-status', 'none');
   scrollAIChat();
 }
 
