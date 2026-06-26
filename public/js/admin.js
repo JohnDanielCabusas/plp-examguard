@@ -3310,11 +3310,9 @@ function openAIGen() {
   clearAIFile();
   const customPromptEl = document.getElementById('ai-custom-prompt');
   if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
-  document.getElementById('ai-status').style.display = 'none';
-  document.getElementById('ai-preview').style.display = 'none';
-  document.getElementById('ai-user-bubble').style.display = 'none';
-  document.getElementById('ai-gen-btn').style.display = '';
-  document.getElementById('ai-import-btn').style.display = 'none';
+  const _s = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
+  _s('ai-status', 'none'); _s('ai-preview', 'none'); _s('ai-user-bubble', 'none');
+  _s('ai-gen-btn', ''); _s('ai-import-btn', 'none');
   document.getElementById('modal-ai-gen').classList.remove('hidden');
   scrollAIChat();
   requestAnimationFrame(() => document.getElementById('ai-custom-prompt')?.focus());
@@ -3439,20 +3437,17 @@ async function runAIGenerate() {
     if (promptEl) { promptEl.textContent = customPrompt; promptEl.style.display = customPrompt ? '' : 'none'; }
     userBubble.style.display = 'flex';
   }
-  document.getElementById('ai-file-info').style.display = 'none';
-
-  document.getElementById('ai-gen-btn').style.display = 'none';
-  document.getElementById('ai-preview').style.display = 'none';
-  document.getElementById('ai-status').style.display = '';
-  document.getElementById('ai-status-text').textContent = 'Extracting file content...';
+  const _sd = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
+  _sd('ai-file-info', 'none'); _sd('ai-gen-btn', 'none');
+  _sd('ai-preview', 'none'); _sd('ai-status', '');
+  const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting file content...';
   scrollAIChat();
 
   let rawText;
   try {
     rawText = await extractTextFromFile(aiSelectedFile);
   } catch (err) {
-    document.getElementById('ai-status').style.display = 'none';
-    document.getElementById('ai-gen-btn').style.display = '';
+    _sd('ai-status', 'none'); _sd('ai-gen-btn', '');
     showToast('Failed to read file: ' + err.message, 'error');
     return;
   }
@@ -3498,7 +3493,7 @@ Course material:
 ${rawText}`;
   }
 
-  document.getElementById('ai-status-text').textContent = 'Sending to Groq AI...';
+  if (stEl) stEl.textContent = 'Sending to Groq AI...';
 
   let questions;
   try {
@@ -3545,8 +3540,7 @@ ${rawText}`;
     }
     if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated.');
   } catch (err) {
-    document.getElementById('ai-status').style.display = 'none';
-    document.getElementById('ai-gen-btn').style.display = '';
+    _sd('ai-status', 'none'); _sd('ai-gen-btn', '');
     showToast('AI generation failed: ' + err.message, 'error');
     return;
   }
@@ -3556,15 +3550,17 @@ ${rawText}`;
   questions.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3));
 
   aiGeneratedQuestions = questions;
-  document.getElementById('ai-status').style.display = 'none';
+  _sd('ai-status', 'none');
   renderAIPreview(questions);
 }
 
 function renderAIPreview(questions) {
   const typeLabel = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification' };
   const sectionColors = { mcq: '#0f2d1a', tf: '#0f2d1a', identification: '#0f2d1a' };
-  document.getElementById('ai-preview-title').textContent = `${questions.length} questions generated — select which to import`;
-  document.getElementById('ai-select-all').checked = true;
+  const previewTitle = document.getElementById('ai-preview-title');
+  if (previewTitle) previewTitle.textContent = `${questions.length} questions generated — select which to import`;
+  const selectAll = document.getElementById('ai-select-all');
+  if (selectAll) selectAll.checked = true;
 
   let html = '';
   let lastType = null;
@@ -3594,11 +3590,10 @@ function renderAIPreview(questions) {
     </div>`;
   });
 
-  document.getElementById('ai-questions-preview').innerHTML = html;
-  document.getElementById('ai-preview').style.display = '';
-  document.getElementById('ai-gen-btn').style.display = 'none';
-  document.getElementById('ai-import-btn').style.display = '';
-  document.getElementById('ai-status').style.display = 'none';
+  const qPreview = document.getElementById('ai-questions-preview');
+  if (qPreview) qPreview.innerHTML = html;
+  _sd('ai-preview', ''); _sd('ai-gen-btn', 'none');
+  _sd('ai-import-btn', ''); _sd('ai-status', 'none');
   scrollAIChat();
 }
 

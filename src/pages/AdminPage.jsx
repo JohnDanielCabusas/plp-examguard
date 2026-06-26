@@ -732,125 +732,118 @@ export default function AdminPage() {
           <div id="ai-drop-zone" style={{ display:'none' }} />
           <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display:'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
 
-          {/* ── Main content area: Quick form OR Custom chat ── */}
-          <div key={aiMode} style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', animation: aiMode === 'quick' ? 'quickModeIn 0.28s cubic-bezier(0.25,0.46,0.45,0.94)' : 'customModeIn 0.28s cubic-bezier(0.25,0.46,0.45,0.94)' }}>
+          {/* ── Unified scrollable content (#ai-chat-body scrolled by admin.js) ── */}
+          <div id="ai-chat-body" style={{ flex:1, overflowY:'auto' }}
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-drag-over'); }}
+            onDragLeave={(e) => e.currentTarget.classList.remove('ai-drag-over')}
+            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
+            onClick={() => setDiffOpen(false)}>
 
-            {aiMode === 'quick' ? (
-              /* ─── QUICK: full-area form ─── */
-              <div style={{ flex:1, overflowY:'auto', padding:'32px 36px', display:'flex', flexDirection:'column', gap:'28px' }}>
-                {/* Questions count */}
-                <div>
-                  <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Number of Questions</div>
-                  <div style={{ display:'flex', alignItems:'center', gap:'0', background:'#fff', border:'1.5px solid #a3c4a8', borderRadius:'12px', padding:'10px 16px', width:'fit-content' }}>
-                    <button type="button" onClick={() => setAiCount(v => Math.max(1, v-1))}
-                      style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 8px 0 0' }}>−</button>
-                    <input type="number" min="1" max="100" value={aiCount}
-                      onChange={(e) => setAiCount(Math.max(1,Math.min(100,parseInt(e.target.value)||1)))}
-                      style={{ width:'52px', border:'none', outline:'none', fontWeight:800, fontSize:'22px', textAlign:'center', background:'transparent', color:'#0f2d1a' }} />
-                    <button type="button" onClick={() => setAiCount(v => Math.min(100, v+1))}
-                      style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 0 0 8px' }}>+</button>
-                    <span style={{ fontSize:'12px', color:'#1a4d2a', fontWeight:700, marginLeft:'10px', paddingLeft:'10px', borderLeft:'1px solid #d1fae5' }}>questions</span>
-                  </div>
-                </div>
-
-                {/* Difficulty */}
-                <div>
-                  <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Difficulty</div>
-                  <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                    {[['mixed','Mixed'],['easy','Easy'],['medium','Medium'],['hard','Hard']].map(([v,l]) => (
-                      <button key={v} type="button" onClick={() => setAiDiff(v)}
-                        style={{ padding:'8px 20px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:'1.5px solid #1a4d2a', cursor:'pointer', transition:'all 0.15s', background: aiDiff===v ? '#1a4d2a' : '#fff', color: aiDiff===v ? '#fff' : '#1a4d2a' }}>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Question types */}
-                <div>
-                  <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Question Types</div>
-                  <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                    {[['mcq','Multiple Choice',true],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false]].map(([val,label,checked]) => (
-                      <label key={val} style={{ cursor:'pointer', userSelect:'none' }}>
-                        <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display:'none' }} />
-                        <span style={{ display:'inline-block', padding:'8px 16px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:'1.5px solid #1a4d2a', color: checked?'#fff':'#1a4d2a', background: checked?'#1a4d2a':'#fff', transition:'all 0.15s', userSelect:'none' }}
-                          onClick={(e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            const cb = e.currentTarget.closest('label').querySelector('input[type="checkbox"]');
-                            if (!cb) return;
-                            cb.checked = !cb.checked;
-                            e.currentTarget.style.background = cb.checked ? '#1a4d2a' : '#fff';
-                            e.currentTarget.style.color = cb.checked ? '#fff' : '#1a4d2a';
-                          }}>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* ─── CUSTOM: chat area ─── */
-              <div id="ai-chat-body" style={{ flex:1, overflowY:'auto' }}
-                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-drag-over'); }}
-                onDragLeave={(e) => e.currentTarget.classList.remove('ai-drag-over')}
-                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
-                onClick={() => setDiffOpen(false)}>
-                <div style={{ display:'flex', flexDirection:'column', justifyContent:'flex-end', minHeight:'100%', padding:'24px 24px 8px', gap:'16px' }}>
-
-                  {/* Welcome bubble */}
-                  <div style={{ display:'flex', gap:'10px', alignItems:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
-                      <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
-                    </div>
-                    <div style={{ background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'13px 17px', maxWidth:'82%', fontSize:'13px', color:'#374151', lineHeight:1.55 }}>
-                      Hi! Attach your course material using the 📎 button, then describe exactly what you want — include how many questions, what types, and difficulty.
+            {/* ── Mode-specific content (animated on switch) ── */}
+            <div key={aiMode} style={{ animation: aiMode==='quick' ? 'quickModeIn 0.28s cubic-bezier(0.25,0.46,0.45,0.94)' : 'customModeIn 0.28s cubic-bezier(0.25,0.46,0.45,0.94)' }}>
+              {aiMode === 'quick' ? (
+                /* QUICK: form */
+                <div style={{ padding:'32px 36px', display:'flex', flexDirection:'column', gap:'28px' }}>
+                  <div>
+                    <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Number of Questions</div>
+                    <div style={{ display:'flex', alignItems:'center', background:'#fff', border:'1.5px solid #a3c4a8', borderRadius:'12px', padding:'10px 16px', width:'fit-content' }}>
+                      <button type="button" onClick={() => setAiCount(v => Math.max(1,v-1))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 8px 0 0' }}>−</button>
+                      <input type="number" min="1" max="100" value={aiCount} onChange={(e) => setAiCount(Math.max(1,Math.min(100,parseInt(e.target.value)||1)))}
+                        style={{ width:'52px', border:'none', outline:'none', fontWeight:800, fontSize:'22px', textAlign:'center', background:'transparent', color:'#0f2d1a' }} />
+                      <button type="button" onClick={() => setAiCount(v => Math.min(100,v+1))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 0 0 8px' }}>+</button>
+                      <span style={{ fontSize:'12px', color:'#1a4d2a', fontWeight:700, marginLeft:'10px', paddingLeft:'10px', borderLeft:'1px solid #d1fae5' }}>questions</span>
                     </div>
                   </div>
-
-                  {/* User bubble (shown after Generate) */}
-                  <div id="ai-user-bubble" style={{ display:'none', justifyContent:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
-                    <div style={{ background:'#1a4d2a', borderRadius:'16px 16px 4px 16px', padding:'11px 15px', maxWidth:'78%' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                        <span id="ai-user-bubble-file" style={{ color:'#d1fae5', fontWeight:600, fontSize:'12px', wordBreak:'break-all' }} />
-                      </div>
-                      <div id="ai-user-bubble-prompt" style={{ display:'none', color:'#fff', fontSize:'13px', marginTop:'7px', lineHeight:1.45 }} />
+                  <div>
+                    <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Difficulty</div>
+                    <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                      {[['mixed','Mixed'],['easy','Easy'],['medium','Medium'],['hard','Hard']].map(([v,l]) => (
+                        <button key={v} type="button" onClick={() => setAiDiff(v)}
+                          style={{ padding:'8px 20px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:'1.5px solid #1a4d2a', cursor:'pointer', transition:'all 0.15s', background:aiDiff===v?'#1a4d2a':'#fff', color:aiDiff===v?'#fff':'#1a4d2a' }}>
+                          {l}
+                        </button>
+                      ))}
                     </div>
                   </div>
-
-                  {/* Typing indicator */}
-                  <div id="ai-status" style={{ display:'none', gap:'10px', alignItems:'flex-end' }}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
-                      <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
-                    </div>
-                    <div style={{ background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'12px 16px' }}>
-                      <div style={{ display:'flex', gap:'5px', alignItems:'center', marginBottom:'4px' }}>
-                        {[0, 0.2, 0.4].map((d, i) => (
-                          <span key={i} style={{ width:'7px', height:'7px', background:'#9ca3af', borderRadius:'50%', display:'inline-block', animation:`typingDot 1.2s ease-in-out ${d}s infinite` }} />
-                        ))}
-                      </div>
-                      <span id="ai-status-text" style={{ fontSize:'11px', color:'#9ca3af' }}>Working…</span>
-                    </div>
-                  </div>
-
-                  {/* Questions response */}
-                  <div id="ai-preview" style={{ display:'none', gap:'10px', alignItems:'flex-start', animation:'aiBubbleIn 0.35s ease' }}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, marginTop:'2px', background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
-                      <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
-                    </div>
-                    <div style={{ flex:1, background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'14px 16px', overflow:'hidden' }}>
-                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
-                        <span id="ai-preview-title" style={{ fontWeight:700, fontSize:'13px', color:'#0f2d1a' }} />
-                        <label style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', cursor:'pointer', color:'#6b7280', fontWeight:600 }}>
-                          <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
+                  <div>
+                    <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Question Types</div>
+                    <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                      {[['mcq','Multiple Choice',true],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false]].map(([val,label,checked]) => (
+                        <label key={val} style={{ cursor:'pointer', userSelect:'none' }}>
+                          <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display:'none' }} />
+                          <span style={{ display:'inline-block', padding:'8px 16px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:'1.5px solid #1a4d2a', color:checked?'#fff':'#1a4d2a', background:checked?'#1a4d2a':'#fff', transition:'all 0.15s', userSelect:'none' }}
+                            onClick={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              const cb = e.currentTarget.closest('label').querySelector('input[type="checkbox"]');
+                              if (!cb) return;
+                              cb.checked = !cb.checked;
+                              e.currentTarget.style.background = cb.checked?'#1a4d2a':'#fff';
+                              e.currentTarget.style.color = cb.checked?'#fff':'#1a4d2a';
+                            }}>{label}</span>
                         </label>
-                      </div>
-                      <div id="ai-questions-preview" style={{ display:'flex', flexDirection:'column', gap:'8px', maxHeight:'260px', overflowY:'auto', paddingRight:'4px' }} />
+                      ))}
                     </div>
                   </div>
+                </div>
+              ) : (
+                /* CUSTOM: welcome bubble only */
+                <div style={{ padding:'24px 24px 0', display:'flex', gap:'10px', alignItems:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
+                  <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
+                    <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
+                  </div>
+                  <div style={{ background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'13px 17px', maxWidth:'82%', fontSize:'13px', color:'#374151', lineHeight:1.55 }}>
+                    Attach your course material, then describe exactly what you want — how many questions, types, and difficulty.
+                  </div>
+                </div>
+              )}
+            </div>
 
+            {/* ── Always-present shared elements (always in DOM for admin.js) ── */}
+            <div style={{ padding:'16px 24px', display:'flex', flexDirection:'column', gap:'14px' }}>
+
+              {/* User bubble — only meaningful in Custom mode */}
+              <div id="ai-user-bubble" style={{ display:'none', justifyContent:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
+                <div style={{ background:'#1a4d2a', borderRadius:'16px 16px 4px 16px', padding:'11px 15px', maxWidth:'78%' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    <span id="ai-user-bubble-file" style={{ color:'#d1fae5', fontWeight:600, fontSize:'12px', wordBreak:'break-all' }} />
+                  </div>
+                  <div id="ai-user-bubble-prompt" style={{ display:'none', color:'#fff', fontSize:'13px', marginTop:'7px', lineHeight:1.45 }} />
                 </div>
               </div>
-            )}
+
+              {/* Typing indicator */}
+              <div id="ai-status" style={{ display:'none', gap:'10px', alignItems:'flex-end' }}>
+                <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
+                  <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
+                </div>
+                <div style={{ background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'12px 16px' }}>
+                  <div style={{ display:'flex', gap:'5px', alignItems:'center', marginBottom:'4px' }}>
+                    {[0,0.2,0.4].map((d,i) => (
+                      <span key={i} style={{ width:'7px', height:'7px', background:'#9ca3af', borderRadius:'50%', display:'inline-block', animation:`typingDot 1.2s ease-in-out ${d}s infinite` }} />
+                    ))}
+                  </div>
+                  <span id="ai-status-text" style={{ fontSize:'11px', color:'#9ca3af' }}>Working…</span>
+                </div>
+              </div>
+
+              {/* Generated questions */}
+              <div id="ai-preview" style={{ display:'none', gap:'10px', alignItems:'flex-start', animation:'aiBubbleIn 0.35s ease' }}>
+                <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, marginTop:'2px', background:'#f0f7f2', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #d1fae5' }}>
+                  <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
+                </div>
+                <div style={{ flex:1, background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'14px 16px', overflow:'hidden' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+                    <span id="ai-preview-title" style={{ fontWeight:700, fontSize:'13px', color:'#0f2d1a' }} />
+                    <label style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', cursor:'pointer', color:'#6b7280', fontWeight:600 }}>
+                      <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
+                    </label>
+                  </div>
+                  <div id="ai-questions-preview" style={{ display:'flex', flexDirection:'column', gap:'8px', maxHeight:'260px', overflowY:'auto', paddingRight:'4px' }} />
+                </div>
+              </div>
+
+            </div>
           </div>
 
           {/* ── Mode toggle bar ── */}
