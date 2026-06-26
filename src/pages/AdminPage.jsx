@@ -511,7 +511,7 @@ export default function AdminPage() {
                 <div className="card">
                   <div className="card-header"><span className="card-title">Logo</span></div>
                   <div className="card-body">
-                    <div id="logo-preview-wrap" className="mb-12 hidden"><img id="logo-preview-img" className="logo-preview" src="" alt="Logo" /></div>
+                    <div id="logo-preview-wrap" className="mb-12 hidden"><img id="logo-preview-img" className="logo-preview" src="/plp-logo.png" alt="Logo" /></div>
                     <div className="logo-upload-area" onClick={() => document.getElementById('logo-file-input').click()}>
                       <div style={{ marginBottom: '6px', color: 'var(--text-muted)' }}><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
                       <div>Click to upload logo</div>
@@ -694,7 +694,7 @@ export default function AdminPage() {
         <div className="modal-dialog modal-sm">
           <div className="modal-header"><span className="modal-title" id="modal-cam-title">Student Camera</span><button className="modal-close" onClick={() => window.closeModal('modal-camera-snap')}>&#10005;</button></div>
           <div className="modal-body" style={{ textAlign: 'center' }}>
-            <img id="modal-cam-img" src="" alt="Camera snapshot" style={{ maxWidth: '100%', borderRadius: '10px', border: '1px solid var(--border)' }} />
+            <img id="modal-cam-img" src="/plp-logo.png" alt="Camera snapshot" style={{ maxWidth: '100%', borderRadius: '10px', border: '1px solid var(--border)', display: 'none' }} />
             <p id="modal-cam-time" className="text-muted" style={{ fontSize: '12px', marginTop: '8px' }} />
             <div id="modal-cam-empty" className="text-muted" style={{ padding: '24px', fontSize: '14px' }}>No camera snapshot available for this student.</div>
           </div>
