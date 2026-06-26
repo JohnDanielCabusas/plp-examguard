@@ -1378,7 +1378,7 @@ const ExamApp = {
     if (this._motionBlocked) return;
     this._motionBlocked = true;
 
-    // Log the event
+    // Do NOT block the exam — just issue 1 warning
     if (this.session) {
       const session = DB.getSession(this.session.id);
       if (session) {
@@ -1387,11 +1387,7 @@ const ExamApp = {
       }
     }
 
-    // Show the motion warning overlay
-    const overlay = document.getElementById('motion-warning-overlay');
-    if (overlay) overlay.style.display = '';
-
-    // Issue a warning as violation
+    // Issue 1 warning (no blocking overlay — 3 warnings auto-submit)
     this.issueWarning('no_person', 'No person detected in camera frame');
   },
 
