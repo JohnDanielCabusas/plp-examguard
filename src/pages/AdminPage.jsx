@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export default function AdminPage() {
   const booted = useRef(false);
+  const [aiDiff, setAiDiff] = useState('mixed');
+  const [diffOpen, setDiffOpen] = useState(false);
 
   useEffect(() => {
     if (booted.current) return;
@@ -703,8 +705,8 @@ export default function AdminPage() {
       </div>
 
       {/* AI Exam Generator — Chat UI */}
-      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '660px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.25s cubic-bezier(0.34,1.56,0.64,1)' }}>
+      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { if (e.target === e.currentTarget) { setDiffOpen(false); } }}>
+        <div style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '780px', height: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
 
           {/* Header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
@@ -721,12 +723,14 @@ export default function AdminPage() {
             <button onClick={() => window.closeAIGen()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '20px', lineHeight: 1, padding: '4px' }}>&#10005;</button>
           </div>
 
-          {/* Chat body */}
+          {/* Chat body — bottom-anchored */}
           <div id="ai-chat-body"
-            style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 8px', display: 'flex', flexDirection: 'column', gap: '14px', minHeight: '260px' }}
+            style={{ flex: 1, overflowY: 'auto' }}
             onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-drag-over'); }}
             onDragLeave={(e) => e.currentTarget.classList.remove('ai-drag-over')}
-            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}>
+            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
+            onClick={() => setDiffOpen(false)}>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', minHeight: '100%', padding: '20px', gap: '16px' }}>
 
             {/* Welcome bubble */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
@@ -781,32 +785,52 @@ export default function AdminPage() {
                 <div id="ai-questions-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }} />
               </div>
             </div>
+            </div>{/* /inner bottom-anchor wrapper */}
           </div>
 
           {/* Options bar */}
-          <div style={{ padding: '10px 16px', background: '#fafafa', borderTop: '1px solid #f0f0f0', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '5px 10px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          <div style={{ padding: '10px 18px', background: '#f8fdf9', borderTop: '1px solid #d1fae5', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+            {/* Question count */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '5px 10px' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
               <input type="number" id="ai-count" defaultValue="10" min="1" max="100"
                 style={{ width: '36px', border: 'none', outline: 'none', fontWeight: 700, fontSize: '13px', background: 'transparent', color: '#0f2d1a' }} />
-              <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 600 }}>Qs</span>
+              <span style={{ fontSize: '11px', color: '#1a4d2a', fontWeight: 700 }}>Qs</span>
             </div>
-            <select id="ai-difficulty" style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, color: '#374151', outline: 'none', cursor: 'pointer' }}>
-              <option value="mixed">Mixed</option>
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
+
+            {/* Animated difficulty dropdown */}
+            <div style={{ position: 'relative' }}>
+              <select id="ai-difficulty" value={aiDiff} onChange={(e) => setAiDiff(e.target.value)} style={{ display: 'none' }} readOnly />
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); setDiffOpen(v => !v); }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, color: '#0f2d1a', cursor: 'pointer', outline: 'none', transition: 'border-color 0.15s' }}>
+                {aiDiff.charAt(0).toUpperCase() + aiDiff.slice(1)}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2.5" style={{ transition: 'transform 0.2s', transform: diffOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {diffOpen && (
+                <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '12px', boxShadow: '0 8px 24px rgba(26,77,42,0.15)', overflow: 'hidden', zIndex: 100, minWidth: '110px', animation: 'dropdownUp 0.18s cubic-bezier(0.34,1.56,0.64,1)' }}>
+                  {[['mixed','Mixed'],['easy','Easy'],['medium','Medium'],['hard','Hard']].map(([v, l]) => (
+                    <button key={v} type="button"
+                      onClick={() => { setAiDiff(v); setDiffOpen(false); }}
+                      style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: aiDiff === v ? '#f0f7f2' : 'transparent', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: aiDiff === v ? 700 : 500, color: aiDiff === v ? '#1a4d2a' : '#374151', transition: 'background 0.1s' }}>
+                      {aiDiff === v && <span style={{ marginRight: '6px', color: '#1a4d2a' }}>✓</span>}{l}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Question type pills — green scheme */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              {[['mcq','#3b82f6','MCQ',true],['tf','#8b5cf6','T/F',true],['identification','#f59e0b','ID',true],['enumeration','#0d9488','Enum',false],['matching','#dc2626','Match',false],['essay','#374151','Essay',false]].map(([val,color,label,checked]) => (
+              {[['mcq','MCQ',true],['tf','T/F',true],['identification','ID',true],['enumeration','Enum',false],['matching','Match',false],['essay','Essay',false]].map(([val, label, checked]) => (
                 <label key={val} style={{ cursor: 'pointer' }}>
                   <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display: 'none' }} />
-                  <span className="ai-type-pill" data-color={color} style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: `1.5px solid ${color}`, color: checked ? '#fff' : color, background: checked ? color : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
+                  <span style={{ display: 'inline-block', padding: '5px 11px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #1a4d2a', color: checked ? '#fff' : '#1a4d2a', background: checked ? '#1a4d2a' : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
                     onClick={(e) => {
                       const cb = e.currentTarget.previousSibling;
                       cb.checked = !cb.checked;
-                      e.currentTarget.style.background = cb.checked ? color : 'transparent';
-                      e.currentTarget.style.color = cb.checked ? '#fff' : color;
+                      e.currentTarget.style.background = cb.checked ? '#1a4d2a' : 'transparent';
+                      e.currentTarget.style.color = cb.checked ? '#fff' : '#1a4d2a';
                     }}>{label}</span>
                 </label>
               ))}
@@ -814,10 +838,12 @@ export default function AdminPage() {
           </div>
 
           {/* Chat input bar */}
-          <div style={{ padding: '10px 16px 14px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: '10px', alignItems: 'flex-end', flexShrink: 0 }}>
-            <label htmlFor="ai-file-input" style={{ width: '36px', height: '36px', background: '#f3f4f6', border: '1.5px solid #e5e7eb', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.15s' }}
-              title="Attach file">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <div style={{ padding: '10px 18px 16px', borderTop: '1px solid #d1fae5', background: '#f8fdf9', display: 'flex', gap: '10px', alignItems: 'flex-end', flexShrink: 0 }}>
+            <label htmlFor="ai-file-input" style={{ width: '38px', height: '38px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+              title="Attach file"
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f7f2'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </label>
             <textarea id="ai-custom-prompt" rows={1}
               placeholder="Add topic or instructions… (optional)"
@@ -848,18 +874,18 @@ export default function AdminPage() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes aiModalIn { from { opacity:0; transform:scale(0.94) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
-        @keyframes aiBubbleIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes aiModalIn { from { opacity:0; transform:scale(0.93) translateY(20px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        @keyframes aiBubbleIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
         @keyframes aiBlink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         @keyframes typingDot { 0%,60%,100% { transform:translateY(0); opacity:0.4; } 30% { transform:translateY(-5px); opacity:1; } }
-        #ai-chat-body.ai-drag-over { background:#f0fdf4; outline:2px dashed #1a4d2a; outline-offset:-4px; border-radius:8px; }
-        #ai-drop-zone:hover { background:#edfaef !important; border-color:#1a4d2a !important; }
-        #ai-chat-body { scrollbar-width:thin; scrollbar-color:#e5e7eb transparent; }
-        #ai-chat-body::-webkit-scrollbar { width:4px; } #ai-chat-body::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
+        @keyframes dropdownUp { from { opacity:0; transform:scale(0.92) translateY(6px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        #ai-chat-body.ai-drag-over { background:#f0fdf4; outline:2px dashed #1a4d2a; outline-offset:-6px; border-radius:12px; }
+        #ai-chat-body { scrollbar-width:thin; scrollbar-color:#a3c4a8 transparent; }
+        #ai-chat-body::-webkit-scrollbar { width:4px; } #ai-chat-body::-webkit-scrollbar-thumb { background:#a3c4a8; border-radius:4px; }
         #ai-questions-preview { scrollbar-width:thin; scrollbar-color:#e5e7eb transparent; }
         #ai-questions-preview::-webkit-scrollbar { width:4px; } #ai-questions-preview::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
         #ai-questions-preview .ai-q-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; animation:aiBubbleIn 0.2s ease; }
-        #ai-questions-preview .ai-q-card:hover { border-color:#a3c4a8; background:#f8fdf9; }
+        #ai-questions-preview .ai-q-card:hover { border-color:#1a4d2a; background:#f0f7f2; }
         #ai-questions-preview .ai-q-card label { display:flex; gap:10px; cursor:pointer; }
         #ai-questions-preview .ai-q-card .ai-q-correct { font-size:11px; color:#16a34a; margin-top:4px; }
         #ai-status { display:none; flex-direction:row !important; }
