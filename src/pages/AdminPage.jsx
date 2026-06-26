@@ -894,7 +894,7 @@ export default function AdminPage() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
                   </button>
                   <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                    style={{ display:'none', height:'42px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap' }}>
+                    style={{ display:'none', height:'42px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
                 </div>
@@ -929,7 +929,7 @@ export default function AdminPage() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
                   </button>
                   <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                    style={{ display:'none', height:'38px', padding:'0 16px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap' }}>
+                    style={{ display:'none', height:'38px', padding:'0 16px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
                 </div>

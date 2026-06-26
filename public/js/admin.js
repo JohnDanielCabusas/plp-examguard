@@ -3579,11 +3579,16 @@ function renderAIPreview(questions) {
     groupNum[q.type] = (groupNum[q.type] || 0) + 1;
     html += `
     <div class="ai-q-card">
-      <label>
-        <input type="checkbox" class="ai-q-check" data-idx="${i}" checked style="margin-top:3px;flex-shrink:0;" />
-        <div style="flex:1;">
+      <label style="align-items:flex-start;">
+        <div class="checkbox-wrapper-30" style="flex-shrink:0;margin-top:1px;">
+          <div class="checkbox" style="--size:0.9;--stroke:#1a6b35;">
+            <input type="checkbox" class="ai-q-check" data-idx="${i}" checked />
+            <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${groupNum[q.type]}. ${escHtml(q.content)}</div>
-          ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65 + oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
+          ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
           <div class="ai-q-correct">✓ ${escHtml(q.correctAnswer)}</div>
         </div>
       </label>
@@ -3593,7 +3598,7 @@ function renderAIPreview(questions) {
   const qPreview = document.getElementById('ai-questions-preview');
   if (qPreview) qPreview.innerHTML = html;
   _aiSD('ai-preview', 'flex'); _aiSD('ai-gen-btn', 'none');
-  _aiSD('ai-import-btn', 'flex'); _aiSD('ai-status', 'none');
+  _aiSD('ai-import-btn', 'inline-flex'); _aiSD('ai-status', 'none');
   scrollAIChat();
 }
 
