@@ -41,6 +41,7 @@ const SupabaseSync = {
     const c = this._client;
     const [
       { data: settings },
+      { data: superadmin },
       { data: admins },
       { data: students },
       { data: subjects },
@@ -49,6 +50,7 @@ const SupabaseSync = {
       { data: logs },
     ] = await Promise.all([
       c.from('settings').select('*').eq('id', 'main').maybeSingle(),
+      c.from('superadmin').select('*').eq('id', 'main').maybeSingle(),
       c.from('professors').select('*'),
       c.from('students').select('*'),
       c.from('subjects').select('*').order('created_at'),
@@ -65,13 +67,14 @@ const SupabaseSync = {
     }
 
     // Supabase has data — overwrite localStorage with it
-    if (settings)        this._writeLocal('acs_settings',    this._dbToJsSettings(settings));
-    if (admins?.length)  this._writeLocal('acs_professors', admins.map(r => this._dbToJsAdmin(r)));
-    if (students?.length) this._writeLocal('acs_students', students.map(r => this._dbToJsStudent(r)));
-    if (subjects?.length) this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
-    if (exams?.length)   this._writeLocal('acs_exams',     exams.map(r => this._dbToJsExam(r)));
-    if (sessions?.length) this._writeLocal('acs_sessions', sessions.map(r => this._dbToJsSession(r)));
-    if (logs?.length)    this._writeLocal('acs_logs',      logs.map(r => this._dbToJsLog(r)));
+    if (settings)         this._writeLocal('acs_settings',    this._dbToJsSettings(settings));
+    if (superadmin)       this._writeLocal('acs_sysadmin',    this._dbToJsSysAdmin(superadmin));
+    if (admins?.length)   this._writeLocal('acs_professors',  admins.map(r => this._dbToJsAdmin(r)));
+    if (students?.length) this._writeLocal('acs_students',    students.map(r => this._dbToJsStudent(r)));
+    if (subjects?.length) this._writeLocal('acs_subjects',    subjects.map(r => this._dbToJsSubject(r)));
+    if (exams?.length)    this._writeLocal('acs_exams',       exams.map(r => this._dbToJsExam(r)));
+    if (sessions?.length) this._writeLocal('acs_sessions',    sessions.map(r => this._dbToJsSession(r)));
+    if (logs?.length)     this._writeLocal('acs_logs',        logs.map(r => this._dbToJsLog(r)));
   },
 
   // ── Seed Supabase from localStorage on first run ────────────
@@ -81,6 +84,11 @@ const SupabaseSync = {
     const settings = this._local('acs_settings');
     if (settings) {
       await c.from('settings').upsert(this._jsToDbSettings(settings));
+    }
+
+    const sysAdmin = this._local('acs_sysadmin');
+    if (sysAdmin) {
+      await c.from('superadmin').upsert(this._jsToDbSysAdmin(sysAdmin));
     }
 
     // Order matters: subjects before exams (FK constraint)
@@ -127,6 +135,8 @@ const SupabaseSync = {
     this._channel = c.channel('acs-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' },
         applyChange('settings', 'acs_settings', r => this._dbToJsSettings(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'superadmin' },
+        applyChange('superadmin', 'acs_sysadmin', r => this._dbToJsSysAdmin(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'professors' },
         applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' },
@@ -148,6 +158,12 @@ const SupabaseSync = {
     if (!this._client) return;
     this._client.from('settings').upsert(this._jsToDbSettings(data))
       .then(({ error }) => { if (error) console.error('[SupabaseSync] syncSettings:', error.message); });
+  },
+
+  syncSysAdmin(data) {
+    if (!this._client) return;
+    this._client.from('superadmin').upsert(this._jsToDbSysAdmin(data))
+      .then(({ error }) => { if (error) console.error('[SupabaseSync] syncSysAdmin:', error.message); });
   },
 
   syncDoc(table, data) {
@@ -174,6 +190,23 @@ const SupabaseSync = {
       department: d.department || null,
       admin_name: d.adminName || null,
       admin_email: d.adminEmail || null,
+    };
+  },
+
+  _jsToDbSysAdmin(d) {
+    return {
+      id: 'main',
+      username: d.username,
+      password: d.password,
+      name: d.name || 'System Administrator',
+    };
+  },
+
+  _dbToJsSysAdmin(r) {
+    return {
+      username: r.username,
+      password: r.password,
+      name: r.name || 'System Administrator',
     };
   },
 

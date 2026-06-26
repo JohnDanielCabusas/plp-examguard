@@ -13,6 +13,15 @@ create table if not exists public.settings (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.superadmin (
+  id text primary key,
+  username text not null unique,
+  password text not null,
+  name text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create table if not exists public.professors (
   id text primary key,
   username text not null unique,
@@ -148,6 +157,16 @@ create trigger trg_settings_updated_at
   before update on public.settings
   for each row execute function public.set_updated_at();
 
+drop trigger if exists trg_superadmin_updated_at on public.superadmin;
+create trigger trg_superadmin_updated_at
+  before update on public.superadmin
+  for each row execute function public.set_updated_at();
+
+alter table public.superadmin enable row level security;
+drop policy if exists "anon full access superadmin" on public.superadmin;
+create policy "anon full access superadmin"
+  on public.superadmin for all to anon, authenticated using (true) with check (true);
+
 drop trigger if exists trg_professors_updated_at on public.professors;
 create trigger trg_professors_updated_at
   before update on public.professors
@@ -245,7 +264,7 @@ do $$
 declare
   tbl text;
 begin
-  foreach tbl in array array['settings', 'professors', 'students', 'subjects', 'exams', 'sessions', 'logs']
+  foreach tbl in array array['settings', 'superadmin', 'professors', 'students', 'subjects', 'exams', 'sessions', 'logs']
   loop
     if not exists (
       select 1 from pg_publication_tables

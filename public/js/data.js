@@ -426,6 +426,7 @@ const DB = {
     const current = this.getSysAdmin();
     const updated = { ...current, ...updates };
     this._write('acs_sysadmin', updated);
+    SupabaseSync.syncSysAdmin(updated);
     return updated;
   },
 
