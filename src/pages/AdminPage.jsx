@@ -702,93 +702,148 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* AI Exam Generator Modal */}
-      <div className="modal-backdrop hidden" id="modal-ai-gen">
-        <div className="modal-dialog modal-xl">
-          <div className="modal-header">
-            <span className="modal-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px', verticalAlign: 'middle' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-              Generate Exam Questions with AI
-            </span>
-            <button className="modal-close" onClick={() => window.closeAIGen()}>&#10005;</button>
+      {/* AI Exam Generator — Chat UI */}
+      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '660px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.25s cubic-bezier(0.34,1.56,0.64,1)' }}>
+
+          {/* Header */}
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+            <div style={{ width: '38px', height: '38px', background: 'linear-gradient(135deg, #1a4d2a 0%, #2d8a50 100%)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f2d1a' }}>ExamGuard AI</div>
+              <div style={{ fontSize: '11px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '6px', height: '6px', background: '#16a34a', borderRadius: '50%', display: 'inline-block', animation: 'aiBlink 2s ease-in-out infinite' }} />
+                Ready to generate
+              </div>
+            </div>
+            <button onClick={() => window.closeAIGen()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '20px', lineHeight: 1, padding: '4px' }}>&#10005;</button>
           </div>
-          <div className="modal-body">
-            <div id="ai-upload-section">
-              <div id="ai-drop-zone"
-                onClick={() => document.getElementById('ai-file-input').click()}
-                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
-                onDragLeave={(e) => e.currentTarget.classList.remove('drag-over')}
-                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
-                style={{ border: '2px dashed #a3c4a8', borderRadius: '12px', padding: '36px 24px', textAlign: 'center', cursor: 'pointer', background: '#f0f7f2', transition: 'background 0.2s' }}>
-                <div style={{ color: '#1a4d2a', marginBottom: '10px' }}>
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+
+          {/* Chat body */}
+          <div id="ai-chat-body"
+            style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 8px', display: 'flex', flexDirection: 'column', gap: '14px', minHeight: '260px' }}
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-drag-over'); }}
+            onDragLeave={(e) => e.currentTarget.classList.remove('ai-drag-over')}
+            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}>
+
+            {/* Welcome bubble */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
+              <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div style={{ background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '80%', fontSize: '13px', color: '#374151', lineHeight: 1.5 }}>
+                Hi! Upload your course material and I'll generate exam questions for you. You can add specific instructions in the chat below.
+              </div>
+            </div>
+
+            {/* Drop zone — shown until file attached */}
+            <div id="ai-drop-zone"
+              onClick={() => document.getElementById('ai-file-input').click()}
+              style={{ border: '2px dashed #a3c4a8', borderRadius: '14px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer', background: '#f8fdf9', transition: 'all 0.2s', animation: 'aiBubbleIn 0.3s ease 0.1s both' }}>
+              <div style={{ color: '#1a4d2a', marginBottom: '8px' }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <p style={{ fontWeight: 600, color: '#0f2d1a', margin: '0 0 3px', fontSize: '13px' }}>Click or drag &amp; drop a file</p>
+              <p style={{ color: '#9ca3af', fontSize: '11px', margin: 0 }}>PDF, DOCX, PPTX, TXT — max 10MB</p>
+            </div>
+            <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display: 'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
+
+            {/* File attached — user bubble, hidden until file set */}
+            <div id="ai-file-info" style={{ display: 'none', justifyContent: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
+              <div style={{ background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '75%', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                <span id="ai-file-name" style={{ color: '#d1fae5', fontWeight: 500, fontSize: '12px', wordBreak: 'break-all' }} />
+                <button onClick={() => window.clearAIFile()} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', flexShrink: 0 }}>✕</button>
+              </div>
+            </div>
+
+            {/* Typing / status indicator */}
+            <div id="ai-status" style={{ display: 'none', gap: '10px', alignItems: 'flex-end' }}>
+              <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div style={{ background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ width: '7px', height: '7px', background: '#9ca3af', borderRadius: '50%', display: 'inline-block', animation: 'typingDot 1.2s ease-in-out infinite' }} />
+                  <span style={{ width: '7px', height: '7px', background: '#9ca3af', borderRadius: '50%', display: 'inline-block', animation: 'typingDot 1.2s ease-in-out 0.2s infinite' }} />
+                  <span style={{ width: '7px', height: '7px', background: '#9ca3af', borderRadius: '50%', display: 'inline-block', animation: 'typingDot 1.2s ease-in-out 0.4s infinite' }} />
                 </div>
-                <p style={{ fontWeight: 600, color: '#0f2d1a', margin: '0 0 4px' }}>Click or drag &amp; drop a file</p>
-                <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>Supports PDF, DOCX, PPTX, TXT (max 10MB)</p>
-              </div>
-              <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display: 'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
-              <div id="ai-file-info" style={{ display: 'none', marginTop: '10px', padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '13px', alignItems: 'center', gap: '10px' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                <span id="ai-file-name" style={{ color: '#15803d', fontWeight: 500 }} />
-                <button onClick={() => window.clearAIFile()} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '18px', lineHeight: 1 }}>&#10005;</button>
+                <span id="ai-status-text" style={{ fontSize: '11px', color: '#9ca3af' }}>Working…</span>
               </div>
             </div>
-            <div className="form-group" style={{ marginTop: '16px' }}>
-              <label>Topic / Instructions <span style={{ fontWeight: 400, color: '#9ca3af' }}>(optional)</span></label>
-              <textarea className="form-control" id="ai-custom-prompt" rows="2"
-                placeholder="e.g. Focus on Chapter 3: Sorting Algorithms. Emphasize time complexity and practical use cases." />
-            </div>
-            <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label>Number of Questions (1–100)</label>
-                <input type="number" className="form-control" id="ai-count" defaultValue="10" min="1" max="100" style={{ fontSize: '15px', fontWeight: 700 }} />
+
+            {/* Questions response bubble */}
+            <div id="ai-preview" style={{ display: 'none', gap: '10px', alignItems: 'flex-start', animation: 'aiBubbleIn 0.35s ease' }}>
+              <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '50%', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               </div>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label>Difficulty</label>
-                <select className="form-control" id="ai-difficulty">
-                  <option value="mixed">Mixed</option>
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
-                </select>
-              </div>
-            </div>
-            <div className="form-group" style={{ marginTop: '14px' }}>
-              <label>Question Types <span style={{ fontWeight: 400, color: '#9ca3af' }}>(select one or more — none = mix all)</span></label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '12px 14px', background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '10px' }}>
-                {[['mcq','#3b82f6','Multiple Choice',true],['tf','#8b5cf6','True/False',true],['identification','#f59e0b','Identification',true],['enumeration','#0d9488','Enumeration',false],['matching','#dc2626','Matching Type',false],['essay','#0f2d1a','Essay',false]].map(([val,color,label,checked]) => (
-                  <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
-                    <div className="checkbox-wrapper-30"><div className="checkbox" style={{'--size':'0.9','--stroke':color,'--brdr-actv':color}}>
-                      <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} />
-                      <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg>
-                    </div></div>
-                    <span style={{ color }}>●</span> {label}
+              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', padding: '14px 16px', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span id="ai-preview-title" style={{ fontWeight: 700, fontSize: '13px', color: '#0f2d1a' }} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer', color: '#6b7280', fontWeight: 600 }}>
+                    <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
                   </label>
-                ))}
+                </div>
+                <div id="ai-questions-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }} />
               </div>
-            </div>
-            <div id="ai-status" style={{ display: 'none', marginTop: '20px', textAlign: 'center', padding: '24px' }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', color: '#0f2d1a' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                <span id="ai-status-text" style={{ fontSize: '14px', fontWeight: 500, color: '#0f2d1a' }}>Extracting file content...</span>
-              </div>
-            </div>
-            <div id="ai-preview" style={{ display: 'none', marginTop: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontWeight: 600, fontSize: '14px' }} id="ai-preview-title">Generated Questions</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                  <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
-                </label>
-              </div>
-              <div id="ai-questions-preview" style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }} />
             </div>
           </div>
-          <div className="modal-footer">
-            <button className="btn btn-secondary" onClick={() => window.closeAIGen()}>Cancel</button>
-            <button className="btn btn-primary" id="ai-gen-btn" onClick={() => window.runAIGenerate()}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '5px' }}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Generate Questions
+
+          {/* Options bar */}
+          <div style={{ padding: '10px 16px', background: '#fafafa', borderTop: '1px solid #f0f0f0', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '5px 10px' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+              <input type="number" id="ai-count" defaultValue="10" min="1" max="100"
+                style={{ width: '36px', border: 'none', outline: 'none', fontWeight: 700, fontSize: '13px', background: 'transparent', color: '#0f2d1a' }} />
+              <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 600 }}>Qs</span>
+            </div>
+            <select id="ai-difficulty" style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '10px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, color: '#374151', outline: 'none', cursor: 'pointer' }}>
+              <option value="mixed">Mixed</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {[['mcq','#3b82f6','MCQ',true],['tf','#8b5cf6','T/F',true],['identification','#f59e0b','ID',true],['enumeration','#0d9488','Enum',false],['matching','#dc2626','Match',false],['essay','#374151','Essay',false]].map(([val,color,label,checked]) => (
+                <label key={val} style={{ cursor: 'pointer' }}>
+                  <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display: 'none' }} />
+                  <span className="ai-type-pill" data-color={color} style={{ display: 'inline-block', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: `1.5px solid ${color}`, color: checked ? '#fff' : color, background: checked ? color : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
+                    onClick={(e) => {
+                      const cb = e.currentTarget.previousSibling;
+                      cb.checked = !cb.checked;
+                      e.currentTarget.style.background = cb.checked ? color : 'transparent';
+                      e.currentTarget.style.color = cb.checked ? '#fff' : color;
+                    }}>{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat input bar */}
+          <div style={{ padding: '10px 16px 14px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: '10px', alignItems: 'flex-end', flexShrink: 0 }}>
+            <label htmlFor="ai-file-input" style={{ width: '36px', height: '36px', background: '#f3f4f6', border: '1.5px solid #e5e7eb', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.15s' }}
+              title="Attach file">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </label>
+            <textarea id="ai-custom-prompt" rows={1}
+              placeholder="Add topic or instructions… (optional)"
+              style={{ flex: 1, resize: 'none', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '9px 14px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', lineHeight: 1.5, maxHeight: '96px', overflowY: 'auto', transition: 'border-color 0.15s' }}
+              onFocus={(e) => { e.target.style.borderColor = '#1a4d2a'; }}
+              onBlur={(e) => { e.target.style.borderColor = '#e5e7eb'; }}
+              onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
+            />
+            <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
+              style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'opacity 0.15s' }}
+              title="Generate (Enter)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             </button>
-            <button className="btn btn-primary" id="ai-import-btn" style={{ display: 'none' }} onClick={() => window.importAIQuestions()}>Import Selected</button>
+            <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+              style={{ display: 'none', height: '36px', padding: '0 16px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              Import Selected
+            </button>
           </div>
         </div>
       </div>
@@ -801,11 +856,23 @@ export default function AdminPage() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        #ai-drop-zone.drag-over { background:#e6f2eb; border-color:#1a4d2a; }
-        #ai-questions-preview .ai-q-card { background:#fafafa; border:1px solid #e5e7eb; border-radius:8px; padding:12px 14px; }
-        #ai-questions-preview .ai-q-card:hover { border-color:#a3c4a8; }
+        @keyframes aiModalIn { from { opacity:0; transform:scale(0.94) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        @keyframes aiBubbleIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes aiBlink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes typingDot { 0%,60%,100% { transform:translateY(0); opacity:0.4; } 30% { transform:translateY(-5px); opacity:1; } }
+        #ai-chat-body.ai-drag-over { background:#f0fdf4; outline:2px dashed #1a4d2a; outline-offset:-4px; border-radius:8px; }
+        #ai-drop-zone:hover { background:#edfaef !important; border-color:#1a4d2a !important; }
+        #ai-chat-body { scrollbar-width:thin; scrollbar-color:#e5e7eb transparent; }
+        #ai-chat-body::-webkit-scrollbar { width:4px; } #ai-chat-body::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
+        #ai-questions-preview { scrollbar-width:thin; scrollbar-color:#e5e7eb transparent; }
+        #ai-questions-preview::-webkit-scrollbar { width:4px; } #ai-questions-preview::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
+        #ai-questions-preview .ai-q-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; animation:aiBubbleIn 0.2s ease; }
+        #ai-questions-preview .ai-q-card:hover { border-color:#a3c4a8; background:#f8fdf9; }
         #ai-questions-preview .ai-q-card label { display:flex; gap:10px; cursor:pointer; }
         #ai-questions-preview .ai-q-card .ai-q-correct { font-size:11px; color:#16a34a; margin-top:4px; }
+        #ai-status { display:none; flex-direction:row !important; }
+        #ai-preview { display:none; flex-direction:row !important; }
+        #ai-gen-btn:hover { opacity:0.85; }
       `}</style>
     </>
   );

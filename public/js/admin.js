@@ -3321,6 +3321,11 @@ function closeAIGen() {
   document.getElementById('modal-ai-gen').classList.add('hidden');
 }
 
+function scrollAIChat() {
+  const body = document.getElementById('ai-chat-body');
+  if (body) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+}
+
 function handleAIFileSelect(file) {
   if (file) setAIFile(file);
 }
@@ -3339,6 +3344,7 @@ function setAIFile(file) {
   document.getElementById('ai-file-info').style.display = 'flex';
   document.getElementById('ai-file-name').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
   document.getElementById('ai-drop-zone').style.display = 'none';
+  scrollAIChat();
 }
 
 function clearAIFile() {
@@ -3414,6 +3420,7 @@ async function runAIGenerate() {
   document.getElementById('ai-preview').style.display = 'none';
   document.getElementById('ai-status').style.display = '';
   document.getElementById('ai-status-text').textContent = 'Extracting file content...';
+  scrollAIChat();
 
   let rawText;
   try {
@@ -3554,6 +3561,8 @@ function renderAIPreview(questions) {
   document.getElementById('ai-preview').style.display = '';
   document.getElementById('ai-gen-btn').style.display = 'none';
   document.getElementById('ai-import-btn').style.display = '';
+  document.getElementById('ai-status').style.display = 'none';
+  scrollAIChat();
 }
 
 function toggleAllAIQuestions(checked) {
