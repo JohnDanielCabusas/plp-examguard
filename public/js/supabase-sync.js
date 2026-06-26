@@ -67,7 +67,15 @@ const SupabaseSync = {
     }
 
     // Supabase has data — overwrite localStorage with it
-    if (settings)         this._writeLocal('acs_settings',    this._dbToJsSettings(settings));
+    if (settings) {
+      const currentSettings = this._local('acs_settings') || {};
+      const fromDb = this._dbToJsSettings(settings);
+      // Preserve local-only keys (API keys, etc.) that are never synced to Supabase
+      this._writeLocal('acs_settings', {
+        ...fromDb,
+        claudeApiKey: currentSettings.claudeApiKey || '',
+      });
+    }
     if (superadmin)       this._writeLocal('acs_sysadmin',    this._dbToJsSysAdmin(superadmin));
     if (admins?.length)   this._writeLocal('acs_professors',  admins.map(r => this._dbToJsAdmin(r)));
     if (students?.length) this._writeLocal('acs_students',    students.map(r => this._dbToJsStudent(r)));
