@@ -26,6 +26,12 @@ function refreshAdminIdentity() {
   if (topbarAvatar) topbarAvatar.textContent = initial;
 }
 
+// Surface Supabase sync failures visibly
+document.addEventListener('supabaseSyncError', (e) => {
+  const msg = e.detail?.message || 'Unknown error';
+  showToast('Sync error (' + e.detail?.table + '): ' + msg, 'error');
+});
+
 // ---- Bootstrap ----
 document.addEventListener('dbReady', function init() {
   if (!Auth.requireAdmin()) return;

@@ -684,11 +684,17 @@ const ExamApp = {
     html += `<div class="dash-section-label" style="margin-top:${activeExams.length ? '8px' : '0'};">My Courses</div>`;
 
     enrolledSubjects.forEach(subj => {
-      const subjectExams = allExams.filter(e =>
-        e.subjectId === subj.id &&
-        ['active','ready','closed'].includes(e.status) &&
-        audienceMatch(e)
-      );
+      const subjectExams = allExams.filter(e => {
+        if (e.subjectId !== subj.id) return false;
+        if (!audienceMatch(e)) return false;
+        if (['active','ready','closed'].includes(e.status)) return true;
+        // Also show draft exams if the student has a submitted session (they can view results)
+        if (e.status === 'draft') {
+          const s = DB.getStudentSession(e.id, sess.studentId);
+          return s && s.submitted;
+        }
+        return false;
+      });
 
       const examsHtml = subjectExams.length ? subjectExams.map(e => {
         const dbSession = DB.getStudentSession(e.id, sess.studentId);

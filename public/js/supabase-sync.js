@@ -170,8 +170,17 @@ const SupabaseSync = {
     if (!this._client || !data?.id) return;
     const row = this._jsToDb(table, data);
     if (!row) return;
-    this._client.from(table).upsert(row)
-      .then(({ error }) => { if (error) console.error(`[SupabaseSync] syncDoc(${table}):`, error.message); });
+    // onConflict:'id' ensures we always UPDATE existing rows by primary key,
+    // avoiding false conflicts on unique columns like exams.code
+    this._client.from(table).upsert(row, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) {
+          console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
+          // Surface sync failures as a visible warning
+          const ev = new CustomEvent('supabaseSyncError', { detail: { table, message: error.message } });
+          document.dispatchEvent(ev);
+        }
+      });
   },
 
   deleteDoc(table, id) {
@@ -260,7 +269,7 @@ const SupabaseSync = {
       title: d.title,
       description: d.description || null,
       time_limit: d.timeLimit || 60,
-      code: d.code || '',
+      code: d.code || ('D-' + (d.id || '').slice(-8).toUpperCase()),
       status: d.status || 'draft',
       shuffle_questions: !!d.shuffleQuestions,
       shuffle_answers: !!d.shuffleAnswers,
