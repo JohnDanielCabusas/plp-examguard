@@ -295,40 +295,105 @@ export default function ExamPage() {
       </div>
 
       {/* STATE: EXAM (active) */}
-      <div id="state-exam" className="hidden">
-        <div className="exam-header">
-          <div className="exam-header-left">
-            <div className="exam-header-logo">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            </div>
+      <div id="state-exam" className="hidden" style={{ display:'none', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#f3f4f6' }}>
+
+        {/* Top bar */}
+        <div className="examv2-topbar">
+          <div className="examv2-topbar-left">
+            <img src="/plp-logo.png" alt="PLP" style={{ width:'36px', height:'36px', objectFit:'contain', borderRadius:'50%', background:'#fff', padding:'2px' }} />
             <div>
-              <div className="exam-title" id="exam-header-title">Loading...</div>
-              <div className="exam-subject" id="exam-header-subject" />
+              <div className="examv2-title" id="exam-header-title">Loading…</div>
+              <div className="examv2-subject" id="exam-header-subject" />
             </div>
           </div>
-          <div id="exam-timer" className="exam-timer">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div id="exam-timer" className="examv2-timer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <span id="timer-display">--:--</span>
           </div>
-          <div className="exam-header-right">
-            <div className="warning-count" id="warning-count-display">
+          <div className="examv2-topbar-right">
+            <div className="examv2-student-chip" id="exam-student-info" />
+          </div>
+        </div>
+
+        {/* Stats bar */}
+        <div className="examv2-stats-bar">
+          <div className="examv2-stat">
+            <span className="examv2-stat-num" id="stat-total">0</span>
+            <span className="examv2-stat-label">Questions</span>
+          </div>
+          <div className="examv2-stat answered">
+            <span className="examv2-stat-num" id="stat-answered">0</span>
+            <span className="examv2-stat-label">Answered</span>
+          </div>
+          <div className="examv2-stat review">
+            <span className="examv2-stat-num" id="stat-review">0</span>
+            <span className="examv2-stat-label">For Review</span>
+          </div>
+          <div className="examv2-stat skipped">
+            <span className="examv2-stat-num" id="stat-skipped">0</span>
+            <span className="examv2-stat-label">Skipped</span>
+          </div>
+          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'12px' }}>
+            <div className="warning-count" id="warning-count-display" style={{ fontSize:'12px', color:'#dc2626', fontWeight:700, display:'flex', alignItems:'center', gap:'4px' }}>
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
               <span id="warning-num">0</span>/3
             </div>
-            <button className="btn btn-exam-submit" onClick={() => window.ExamApp.confirmSubmit()}>Submit Exam</button>
+            <button className="btn btn-exam-submit" onClick={() => window.ExamApp.confirmSubmit()}
+              style={{ background:'#1a4d2a', color:'#fff', border:'none', padding:'8px 20px', borderRadius:'8px', fontWeight:700, fontSize:'13px', cursor:'pointer' }}>
+              Finish Exam
+            </button>
           </div>
         </div>
-        <div className="exam-body">
-          <div className="exam-meta-bar">
-            <div className="exam-student-chip" id="exam-student-info" />
-            <div className="exam-answered-chip" id="exam-answered-status" />
-          </div>
-          <div className="progress-bar-wrap"><div className="progress-bar-fill" id="exam-progress-bar" style={{ width: '0%' }} /></div>
-          <div id="questions-container" />
-          <div className="exam-submit-area">
-            <div className="answered-progress" id="submit-progress" />
-            <button className="btn btn-primary btn-lg" onClick={() => window.ExamApp.confirmSubmit()}>Submit Exam</button>
-          </div>
+
+        {/* Main layout: nav panel + question content */}
+        <div className="examv2-layout">
+
+          {/* Left: question navigator */}
+          <aside className="examv2-nav-panel">
+            <div className="examv2-nav-header">Questions</div>
+            <div id="question-nav-grid" className="examv2-nav-grid" />
+            <div className="examv2-nav-legend">
+              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
+                <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:'#1a4d2a', display:'inline-block' }} /> Answered
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
+                <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:'#f59e0b', display:'inline-block' }} /> For Review
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
+                <span style={{ width:'10px', height:'10px', borderRadius:'50%', border:'1.5px solid #d1d5db', display:'inline-block' }} /> Unanswered
+              </div>
+            </div>
+          </aside>
+
+          {/* Right: question + navigation */}
+          <main className="examv2-main">
+            {/* Hidden legacy elements for backward compat */}
+            <div style={{ display:'none' }}>
+              <div id="exam-answered-status" />
+              <div id="exam-progress-bar" />
+              <div id="submit-progress" />
+            </div>
+
+            <div id="questions-container" className="examv2-question-wrap" />
+
+            <div className="examv2-nav-footer">
+              <label className="examv2-mark-review" id="mark-review-label">
+                <input type="checkbox" id="mark-review-cb" onChange={() => window.ExamApp.toggleMarkReview()} />
+                <span>Mark for Review</span>
+              </label>
+              <div style={{ display:'flex', gap:'10px' }}>
+                <button id="btn-prev" className="btn btn-secondary" onClick={() => window.ExamApp.prevQuestion()}
+                  style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px' }}>
+                  ← Previous
+                </button>
+                <button id="btn-next" className="btn btn-primary" onClick={() => window.ExamApp.nextQuestion()}
+                  style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px', background:'#1a4d2a', color:'#fff', border:'none' }}>
+                  Next →
+                </button>
+              </div>
+            </div>
+          </main>
+
         </div>
       </div>
 

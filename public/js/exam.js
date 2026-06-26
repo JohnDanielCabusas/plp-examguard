@@ -11,6 +11,8 @@ const ExamApp = {
   anticheatListeners: [],
   answers: {},              // { questionId: value }
   questionOrder: [],        // shuffled question list
+  currentQuestionIndex: 0, // index of currently displayed question
+  markedForReview: new Set(), // set of question indices marked for review
   timeRemaining: 0,
   _blurTimer: null,         // debounce timer for window blur
   _countdownInterval: null, // 10-second return-window countdown
@@ -1739,17 +1741,22 @@ const ExamApp = {
     const questions = [...this.exam.questions];
     if (this.exam.shuffleQuestions) this.shuffle(questions);
     this.questionOrder = questions;
+    this.currentQuestionIndex = 0;
+    this.markedForReview = new Set();
 
+    // Render all cards (hidden), show first via showQuestion
     const container = document.getElementById('questions-container');
     container.innerHTML = questions.map((q, idx) => this._renderQuestion(q, idx)).join('');
 
     // Restore previously answered questions
     questions.forEach((q, idx) => {
       const savedAns = this.answers[q.id];
-      if (savedAns !== undefined) {
-        this._restoreAnswer(q, idx, savedAns);
-      }
+      if (savedAns !== undefined) this._restoreAnswer(q, idx, savedAns);
     });
+
+    // Build nav grid and show question 0
+    this._buildNavGrid();
+    this.showQuestion(0);
   },
 
   _renderQuestion(q, idx) {
@@ -1780,7 +1787,7 @@ const ExamApp = {
       : '';
 
     return `
-      <div class="question-card" id="qcard-${q.id}" data-qid="${q.id}">
+      <div class="question-card" id="qcard-${q.id}" data-qid="${q.id}" style="display:none;">
         <div class="question-header">
           <div class="question-num">${idx + 1}</div>
           <div class="question-content">${_escText(q.content)}${requiredBadge}</div>
@@ -1796,12 +1803,13 @@ const ExamApp = {
   _renderMCQ(q, idx) {
     const options = [...q.options];
     if (this.exam.shuffleAnswers) this.shuffle(options);
+    const letters = ['A','B','C','D','E','F'];
 
     return `<div class="mcq-options" id="mcq-${q.id}">` +
       options.map((opt, oi) => `
         <div class="mcq-option" id="mcq-opt-${q.id}-${oi}" data-qid="${q.id}" data-val="${_escAttr(opt)}" onclick="ExamApp.selectMCQ('${q.id}', '${_escAttr(opt)}')">
-          <div class="mcq-option-bullet"></div>
-          <span>${_escText(opt)}</span>
+          <div class="mcq-option-letter">${letters[oi] || (oi+1)}</div>
+          <span class="mcq-option-text">${_escText(opt)}</span>
         </div>
       `).join('') +
       `</div>`;
@@ -1983,21 +1991,106 @@ const ExamApp = {
     DB.updateSession(this.session.id, { answers: this.answers });
   },
 
+  // ── Single-question navigation ───────────────────────────────
+
+  _buildNavGrid() {
+    const grid = document.getElementById('question-nav-grid');
+    if (!grid) return;
+    grid.innerHTML = this.questionOrder.map((q, idx) =>
+      `<button class="nav-q-btn" id="nav-q-${idx}" onclick="ExamApp.showQuestion(${idx})">${idx + 1}</button>`
+    ).join('');
+    this._updateNavGrid();
+  },
+
+  showQuestion(idx) {
+    const questions = this.questionOrder;
+    if (!questions.length) return;
+    idx = Math.max(0, Math.min(idx, questions.length - 1));
+    this.currentQuestionIndex = idx;
+
+    questions.forEach((q, i) => {
+      const card = document.getElementById(`qcard-${q.id}`);
+      if (card) card.style.display = i === idx ? '' : 'none';
+    });
+
+    const prevBtn = document.getElementById('btn-prev');
+    const nextBtn = document.getElementById('btn-next');
+    if (prevBtn) prevBtn.disabled = idx === 0;
+    if (nextBtn) nextBtn.disabled = idx === questions.length - 1;
+
+    const cb = document.getElementById('mark-review-cb');
+    if (cb) cb.checked = this.markedForReview.has(idx);
+
+    const wrap = document.querySelector('.examv2-main');
+    if (wrap) wrap.scrollTop = 0;
+
+    this._updateNavGrid();
+  },
+
+  _updateNavGrid() {
+    this.questionOrder.forEach((q, idx) => {
+      const btn = document.getElementById(`nav-q-${idx}`);
+      if (!btn) return;
+      btn.className = 'nav-q-btn';
+      const isAnswered = this.answers[q.id] !== undefined && this.answers[q.id] !== '' && this.answers[q.id] !== null;
+      if (idx === this.currentQuestionIndex) {
+        btn.classList.add('current');
+        if (isAnswered) btn.classList.add('answered');
+      } else if (this.markedForReview.has(idx)) {
+        btn.classList.add('review');
+      } else if (isAnswered) {
+        btn.classList.add('answered');
+      }
+    });
+  },
+
+  nextQuestion() {
+    if (this.currentQuestionIndex < this.questionOrder.length - 1) {
+      this.showQuestion(this.currentQuestionIndex + 1);
+    }
+  },
+
+  prevQuestion() {
+    if (this.currentQuestionIndex > 0) {
+      this.showQuestion(this.currentQuestionIndex - 1);
+    }
+  },
+
+  toggleMarkReview() {
+    const idx = this.currentQuestionIndex;
+    if (this.markedForReview.has(idx)) {
+      this.markedForReview.delete(idx);
+    } else {
+      this.markedForReview.add(idx);
+    }
+    this._updateNavGrid();
+    this._updateAnsweredStatus();
+  },
+
+  // ────────────────────────────────────────────────────────────
+
   _updateAnsweredStatus() {
     const total = this.questionOrder.length;
     const answered = Object.values(this.answers).filter(v => v !== null && v !== undefined && v !== '').length;
-    const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
+    const review = this.markedForReview ? this.markedForReview.size : 0;
+    const skipped = total - answered;
 
+    const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+    el('stat-total', total);
+    el('stat-answered', answered);
+    el('stat-review', review);
+    el('stat-skipped', Math.max(0, skipped));
+
+    // Legacy support
+    const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
     const progressBar = document.getElementById('exam-progress-bar');
     if (progressBar) progressBar.style.width = pct + '%';
-
     const statusEl = document.getElementById('exam-answered-status');
     if (statusEl) statusEl.textContent = `${answered} of ${total} answered`;
-
     const submitProgress = document.getElementById('submit-progress');
-    if (submitProgress) {
-      submitProgress.innerHTML = `<strong>${answered}</strong> of <strong>${total}</strong> questions answered`;
-    }
+    if (submitProgress) submitProgress.innerHTML = `<strong>${answered}</strong> of <strong>${total}</strong> questions answered`;
+
+    this._updateNavGrid && this._updateNavGrid();
   },
 
   // ============================================================
@@ -2020,9 +2113,9 @@ const ExamApp = {
         const card = document.getElementById('qcard-' + q.id);
         if (card) card.classList.add('q-required-missing');
       });
-      // Scroll to the first missing one
-      const firstCard = document.getElementById('qcard-' + unansweredRequired[0].id);
-      if (firstCard) firstCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Navigate to the first missing question
+      const firstIdx = this.questionOrder.findIndex(q => q.id === unansweredRequired[0].id);
+      if (firstIdx >= 0) this.showQuestion(firstIdx);
 
       const n = unansweredRequired.length;
       this._showRequiredError(`${n} required question${n !== 1 ? 's' : ''} must be answered before submitting.`);
