@@ -3308,6 +3308,8 @@ function openAIGen() {
     return;
   }
   clearAIFile();
+  const customPromptEl = document.getElementById('ai-custom-prompt');
+  if (customPromptEl) customPromptEl.value = '';
   document.getElementById('ai-status').style.display = 'none';
   document.getElementById('ai-preview').style.display = 'none';
   document.getElementById('ai-gen-btn').style.display = '';
@@ -3406,6 +3408,7 @@ async function runAIGenerate() {
   const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count').value) || 10));
   const selectedTypes = [...document.querySelectorAll('.ai-type-cb:checked')].map(cb => cb.value);
   const difficulty = document.getElementById('ai-difficulty').value;
+  const customPrompt = (document.getElementById('ai-custom-prompt')?.value || '').trim();
 
   document.getElementById('ai-gen-btn').style.display = 'none';
   document.getElementById('ai-preview').style.display = 'none';
@@ -3430,11 +3433,13 @@ async function runAIGenerate() {
     ? `Use only "${typeList[0]}" type.`
     : `Use a mix of these types: ${typeList.join(', ')}.`;
 
-  const prompt = `You are an exam question generator. Based on the course material below, generate exactly ${count} exam questions.
+  const customInstruction = customPrompt ? `\nAdditional instructions from the professor: ${customPrompt}` : '';
+
+  const prompt = `Generate exactly ${count} exam questions based on the course material provided below.
 
 Rules:
 - ${typeInstruction}
-- Difficulty: ${difficulty}
+- Difficulty: ${difficulty}${customInstruction}
 - Return ONLY a valid JSON array with no other text, explanation, or markdown.
 - Each question object schema:
   { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
@@ -3462,7 +3467,10 @@ ${rawText}`;
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: 'You are an educational exam question generator. Your sole purpose is to generate exam questions from provided course material. You must only produce exam questions — never answer unrelated questions, generate non-academic content, or deviate from the JSON schema. Always return a valid JSON array with no extra text.' },
+          { role: 'user', content: prompt },
+        ],
       }),
     });
 

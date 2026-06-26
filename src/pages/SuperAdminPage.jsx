@@ -415,102 +415,33 @@ export default function SuperAdminPage() {
                   <div className="section-header">
                     <div>
                       <div className="section-title">Dashboard</div>
-                      <div className="section-subtitle">System overview and statistics</div>
+                      <div className="section-subtitle">System overview</div>
                     </div>
+                    <button className="btn btn-primary" onClick={() => { navTo('professors'); openAddProfessor(); }}>
+                      + Add Professor
+                    </button>
                   </div>
 
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:'16px', marginBottom:'28px' }}>
-                    <div style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
-                                  boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex',
-                                  alignItems:'center', gap:'16px' }}>
-                      <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#1a4d2a',
-                                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                      </div>
-                      <div>
-                        <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{stats.professors}</div>
-                        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>Professors</div>
-                      </div>
-                    </div>
-                    <div style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
-                                  boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex',
-                                  alignItems:'center', gap:'16px' }}>
-                      <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#2563eb',
-                                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      </div>
-                      <div>
-                        <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{stats.students}</div>
-                        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>Students</div>
-                      </div>
-                    </div>
-                    <div style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
-                                  boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex',
-                                  alignItems:'center', gap:'16px' }}>
-                      <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#7c3aed',
-                                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                      </div>
-                      <div>
-                        <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{stats.exams}</div>
-                        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>Exams</div>
-                      </div>
-                    </div>
-                    <div style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
-                                  boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex',
-                                  alignItems:'center', gap:'16px' }}>
-                      <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:'#0891b2',
-                                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                      </div>
-                      <div>
-                        <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{stats.subjects}</div>
-                        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>Courses</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Professors quick list */}
-                  <div className="card">
-                    <div className="card-header">
-                      <span className="card-title">Professor Accounts</span>
-                      <button className="btn btn-primary btn-sm" onClick={() => { navTo('professors'); openAddProfessor(); }}>
-                        + Add Professor
-                      </button>
-                    </div>
-                    <div className="card-body" style={{ padding:0 }}>
-                      {professors.length === 0 ? (
-                        <div className="dash-empty" style={{ padding:'32px' }}>
-                          <div className="dash-empty-title">No professors yet</div>
-                          <div className="dash-empty-sub">Add professors so they can access the exam management panel.</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:'16px' }}>
+                    {[
+                      { label:'Professors', value:stats.professors, bg:'#1a4d2a', icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+                      { label:'Students',   value:stats.students,   bg:'#2563eb', icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+                      { label:'Exams',      value:stats.exams,      bg:'#7c3aed', icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
+                      { label:'Courses',    value:stats.subjects,   bg:'#0891b2', icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+                    ].map(({ label, value, bg, icon }) => (
+                      <div key={label} style={{ background:'#fff', borderRadius:'14px', padding:'20px 24px',
+                                    boxShadow:'0 1px 4px rgba(0,0,0,0.08)', display:'flex', alignItems:'center', gap:'16px' }}>
+                        <div style={{ width:'48px', height:'48px', borderRadius:'12px', background:bg,
+                                      display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                               fill="none" stroke="#fff" strokeWidth="2" dangerouslySetInnerHTML={{ __html: icon }} />
                         </div>
-                      ) : (
-                        <div className="table-wrapper">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Name</th>
-                                <th>Username</th>
-                                <th>Email</th>
-                                <th style={{ textAlign:'center' }}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {professors.map(p => (
-                                <tr key={p.id}>
-                                  <td style={{ fontWeight:600 }}>{p.name}</td>
-                                  <td><span style={{ fontFamily:'monospace', background:'#f3f4f6', padding:'2px 8px', borderRadius:'6px', fontSize:'12px' }}>@{p.username}</span></td>
-                                  <td style={{ color:'#6b7280', fontSize:'13px' }}>{p.email || '—'}</td>
-                                  <td style={{ textAlign:'center' }}>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => { navTo('professors'); openEditProfessor(p); }}>Edit</button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div>
+                          <div style={{ fontSize:'32px', fontWeight:800, color:'var(--primary)', lineHeight:1 }}>{value}</div>
+                          <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px', fontWeight:600 }}>{label}</div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

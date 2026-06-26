@@ -733,7 +733,12 @@ export default function AdminPage() {
                 <button onClick={() => window.clearAIFile()} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '18px', lineHeight: 1 }}>&#10005;</button>
               </div>
             </div>
-            <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="form-group" style={{ marginTop: '16px' }}>
+              <label>Topic / Instructions <span style={{ fontWeight: 400, color: '#9ca3af' }}>(optional)</span></label>
+              <textarea className="form-control" id="ai-custom-prompt" rows="2"
+                placeholder="e.g. Focus on Chapter 3: Sorting Algorithms. Emphasize time complexity and practical use cases." />
+            </div>
+            <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div className="form-group" style={{ margin: 0 }}>
                 <label>Number of Questions (1–100)</label>
                 <input type="number" className="form-control" id="ai-count" defaultValue="10" min="1" max="100" style={{ fontSize: '15px', fontWeight: 700 }} />
