@@ -1006,24 +1006,10 @@ const ExamApp = {
     let overlay = document.getElementById('fs-lock-overlay');
 
     const doReturn = () => {
-      if (overlay._cdTimer) clearInterval(overlay._cdTimer);
+      if (overlay && overlay._cdTimer) clearInterval(overlay._cdTimer);
       const el = document.documentElement;
       const req = el.requestFullscreen || el.webkitRequestFullscreen;
-      if (req) req.call(el).then(() => { overlay.style.display = 'none'; }).catch(() => {});
-    };
-
-    const startCountdown = () => {
-      // Don't auto-return if exam is about to be submitted (3 warnings)
-      if (this.warnings >= 3) return;
-      const cdEl = document.getElementById('fs-countdown');
-      if (cdEl) cdEl.textContent = secs;
-      if (overlay._cdTimer) clearInterval(overlay._cdTimer);
-      overlay._cdTimer = setInterval(() => {
-        secs--;
-        const el = document.getElementById('fs-countdown');
-        if (el) el.textContent = secs;
-        if (secs <= 0) { clearInterval(overlay._cdTimer); doReturn(); }
-      }, 1000);
+      if (req) req.call(el).then(() => { if (overlay) overlay.style.display = 'none'; }).catch(() => {});
     };
 
     if (!overlay) {
@@ -1035,12 +1021,9 @@ const ExamApp = {
             <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </div>
           <h2 style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px;">Fullscreen Required</h2>
-          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:12px;line-height:1.6;">
+          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:24px;line-height:1.6;">
             This exam must be taken in fullscreen mode.<br>
             Exiting fullscreen has been recorded as a violation.
-          </p>
-          <p style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:24px;">
-            Returning automatically in <span id="fs-countdown" style="font-weight:800;color:#fff;">3</span>s&hellip;
           </p>
           <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 32px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;">
             Return to Fullscreen
@@ -1055,7 +1038,8 @@ const ExamApp = {
       if (btn) { btn.onclick = null; btn.addEventListener('click', doReturn); }
     }
 
-    startCountdown();
+    // Attempt immediate fullscreen re-entry; button is fallback if browser blocks it
+    if (this.warnings < 3) doReturn();
   },
 
   _hideFullscreenLock() {

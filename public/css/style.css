@@ -5651,6 +5651,10 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .examv2-question-wrap { flex: 1; overflow-y: auto; padding: 24px 28px 12px; }
 
+/* Suppress old CSS counter letter — new exam uses mcq-option-letter div */
+.examv2-question-wrap .mcq-option { counter-increment: none; }
+.examv2-question-wrap .mcq-option::before { display: none !important; }
+
 /* Question card v2 */
 .examv2-question-wrap .question-card {
   background: #fff; border-radius: 16px; padding: 28px 32px;
