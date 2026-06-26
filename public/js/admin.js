@@ -27,7 +27,7 @@ function refreshAdminIdentity() {
 }
 
 // ---- Bootstrap ----
-document.addEventListener('firebaseReady', function init() {
+document.addEventListener('dbReady', function init() {
   if (!Auth.requireAdmin()) return;
 
   const session = Auth.getAdminSession();

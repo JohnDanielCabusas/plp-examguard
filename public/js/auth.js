@@ -353,6 +353,32 @@ const Auth = {
     return true;
   },
 
+  // ---- System Admin (sysadmin) ----
+  sysAdminLogin(username, password) {
+    const sysAdmin = DB.getSysAdmin();
+    if (!sysAdmin || sysAdmin.username !== username.trim()) return { success: false, message: 'Invalid username or password.' };
+    if (sysAdmin.password !== password) return { success: false, message: 'Invalid username or password.' };
+    const session = { username: sysAdmin.username, name: sysAdmin.name, loginAt: new Date().toISOString() };
+    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(session));
+    return { success: true, session };
+  },
+
+  getSysAdminSession() {
+    try { return JSON.parse(sessionStorage.getItem('acs_sysadmin_session')); } catch { return null; }
+  },
+
+  clearSysAdminSession() {
+    sessionStorage.removeItem('acs_sysadmin_session');
+  },
+
+  requireSysAdmin() {
+    if (!this.getSysAdminSession()) {
+      window.location.href = 'index.html';
+      return false;
+    }
+    return true;
+  },
+
   requireStudent() {
     if (!this.getStudentSession()) {
       window.location.href = 'index.html';

@@ -3,22 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PLP ExamGuard - Examination</title>
+  <title>PLP ExamGuard - System Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="/css/style.css" />
-  <!-- Face detection (BlazeFace via TF.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
   <!-- App globals -->
   <script src="/js/supabase-sync.js"></script>
   <script src="/js/data.js"></script>
   <script src="/js/auth.js"></script>
-  <!-- Exam SPA logic -->
-  <script src="/js/exam.js"></script>
 </head>
-<body class="exam-page">
+<body>
   <div id="root"></div>
-  <script type="module" src="/src/exam-main.jsx"></script>
+  <script type="module" src="/src/super-admin-main.jsx"></script>
 </body>
 </html>

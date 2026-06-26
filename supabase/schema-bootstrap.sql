@@ -1,5 +1,7 @@
 begin;
 
+-- ── Core tables ─────────────────────────────────────────────
+
 create table if not exists public.settings (
   id text primary key,
   school_name text not null,
@@ -16,7 +18,7 @@ create table if not exists public.admins (
   username text not null unique,
   password text not null,
   name text not null,
-  email text not null unique,
+  email text unique,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -44,6 +46,10 @@ create table if not exists public.subjects (
   code text not null unique,
   name text not null,
   description text,
+  year_level text,
+  sections jsonb not null default '[]'::jsonb,
+  enrollment_code text,
+  color text,
   archived boolean not null default false,
   archived_at timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
@@ -94,6 +100,7 @@ create table if not exists public.sessions (
   submitted boolean not null default false,
   auto_submitted boolean not null default false,
   score_released boolean not null default false,
+  camera_snapshots jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -109,6 +116,22 @@ create table if not exists public.logs (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+-- ── Add missing columns to existing tables (idempotent) ──────
+
+alter table public.subjects
+  add column if not exists year_level text,
+  add column if not exists sections jsonb not null default '[]'::jsonb,
+  add column if not exists enrollment_code text,
+  add column if not exists color text;
+
+alter table public.sessions
+  add column if not exists camera_snapshots jsonb not null default '[]'::jsonb;
+
+alter table public.admins
+  alter column email drop not null;
+
+-- ── updated_at trigger ────────────────────────────────────────
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -122,39 +145,38 @@ $$;
 
 drop trigger if exists trg_settings_updated_at on public.settings;
 create trigger trg_settings_updated_at
-before update on public.settings
-for each row
-execute function public.set_updated_at();
+  before update on public.settings
+  for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_admins_updated_at on public.admins;
 create trigger trg_admins_updated_at
-before update on public.admins
-for each row
-execute function public.set_updated_at();
+  before update on public.admins
+  for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_students_updated_at on public.students;
 create trigger trg_students_updated_at
-before update on public.students
-for each row
-execute function public.set_updated_at();
+  before update on public.students
+  for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_subjects_updated_at on public.subjects;
 create trigger trg_subjects_updated_at
-before update on public.subjects
-for each row
-execute function public.set_updated_at();
+  before update on public.subjects
+  for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_exams_updated_at on public.exams;
 create trigger trg_exams_updated_at
-before update on public.exams
-for each row
-execute function public.set_updated_at();
+  before update on public.exams
+  for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_sessions_updated_at on public.sessions;
 create trigger trg_sessions_updated_at
-before update on public.sessions
-for each row
-execute function public.set_updated_at();
+  before update on public.sessions
+  for each row execute function public.set_updated_at();
+
+-- ── Row Level Security ────────────────────────────────────────
+-- The app uses its own auth layer (not Supabase Auth), so all
+-- requests arrive as anon. Policies allow full anon access with
+-- basic shape checks on student inserts.
 
 alter table public.settings enable row level security;
 alter table public.admins enable row level security;
@@ -164,143 +186,64 @@ alter table public.exams enable row level security;
 alter table public.sessions enable row level security;
 alter table public.logs enable row level security;
 
-drop policy if exists "dev full access settings" on public.settings;
-drop policy if exists "public read settings" on public.settings;
-create policy "public read settings"
-on public.settings
-for select
-to anon, authenticated
-using (true);
+-- settings
+drop policy if exists "anon full access settings" on public.settings;
+create policy "anon full access settings"
+  on public.settings for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access admins" on public.admins;
+-- admins
+drop policy if exists "anon full access admins" on public.admins;
 drop policy if exists "authenticated full access admins" on public.admins;
-create policy "authenticated full access admins"
-on public.admins
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+create policy "anon full access admins"
+  on public.admins for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access students" on public.students;
+-- students
 drop policy if exists "public read students" on public.students;
-create policy "public read students"
-on public.students
-for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "anon full access students" on public.students;
 drop policy if exists "anon insert students" on public.students;
-create policy "anon insert students"
-on public.students
-for insert
-to anon
-with check (
-  length(trim(id)) > 0
-  and student_id ~ '^\d{2}-\d{5}$'
-  and length(trim(name)) > 0
-  and (email is null or email ~* '^[A-Z0-9._%+-]+@plpasig\.edu\.ph$')
-  and (password is null or length(password) >= 6)
-);
-
 drop policy if exists "anon update students" on public.students;
-create policy "anon update students"
-on public.students
-for update
-to anon
-using (
-  student_id ~ '^\d{2}-\d{5}$'
-  and (email is null or email ~* '^[A-Z0-9._%+-]+@plpasig\.edu\.ph$')
-)
-with check (
-  length(trim(id)) > 0
-  and student_id ~ '^\d{2}-\d{5}$'
-  and length(trim(name)) > 0
-  and (email is null or email ~* '^[A-Z0-9._%+-]+@plpasig\.edu\.ph$')
-  and (password is null or length(password) >= 6)
-);
-
 drop policy if exists "authenticated full access students" on public.students;
-create policy "authenticated full access students"
-on public.students
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+drop policy if exists "anon full access students" on public.students;
+create policy "anon full access students"
+  on public.students for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access subjects" on public.subjects;
+-- subjects
 drop policy if exists "public read subjects" on public.subjects;
-create policy "public read subjects"
-on public.subjects
-for select
-to anon, authenticated
-using (true);
-
 drop policy if exists "authenticated full access subjects" on public.subjects;
-create policy "authenticated full access subjects"
-on public.subjects
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+drop policy if exists "anon full access subjects" on public.subjects;
+create policy "anon full access subjects"
+  on public.subjects for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access exams" on public.exams;
+-- exams
 drop policy if exists "public read exams" on public.exams;
-create policy "public read exams"
-on public.exams
-for select
-to anon, authenticated
-using (true);
-
 drop policy if exists "authenticated full access exams" on public.exams;
-create policy "authenticated full access exams"
-on public.exams
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+drop policy if exists "anon full access exams" on public.exams;
+create policy "anon full access exams"
+  on public.exams for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access sessions" on public.sessions;
+-- sessions
 drop policy if exists "public read sessions" on public.sessions;
-create policy "public read sessions"
-on public.sessions
-for select
-to anon, authenticated
-using (true);
-
 drop policy if exists "authenticated full access sessions" on public.sessions;
-create policy "authenticated full access sessions"
-on public.sessions
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+drop policy if exists "anon full access sessions" on public.sessions;
+create policy "anon full access sessions"
+  on public.sessions for all to anon, authenticated using (true) with check (true);
 
-drop policy if exists "dev full access logs" on public.logs;
+-- logs
 drop policy if exists "public read logs" on public.logs;
-create policy "public read logs"
-on public.logs
-for select
-to anon, authenticated
-using (true);
-
 drop policy if exists "authenticated full access logs" on public.logs;
-create policy "authenticated full access logs"
-on public.logs
-for all
-to authenticated
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+drop policy if exists "anon full access logs" on public.logs;
+create policy "anon full access logs"
+  on public.logs for all to anon, authenticated using (true) with check (true);
+
+-- ── Realtime publications ─────────────────────────────────────
 
 do $$
 declare
   tbl text;
 begin
-  foreach tbl in array array['settings', 'students', 'subjects', 'exams', 'sessions', 'logs']
+  foreach tbl in array array['settings', 'admins', 'students', 'subjects', 'exams', 'sessions', 'logs']
   loop
     if not exists (
-      select 1
-      from pg_publication_tables
+      select 1 from pg_publication_tables
       where pubname = 'supabase_realtime'
         and schemaname = 'public'
         and tablename = tbl
@@ -311,29 +254,17 @@ begin
 end;
 $$;
 
-insert into public.settings (
-  id,
-  school_name,
-  logo_url,
-  department,
-  admin_name,
-  admin_email
-)
+-- ── Seed default settings row ─────────────────────────────────
+
+insert into public.settings (id, school_name, logo_url, department, admin_name, admin_email)
 values (
   'main',
   'Pamantasan ng Lungsod ng Pasig',
-  'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png',
+  '/plp-logo.png',
   null,
   'Administrator',
   'admin@school.edu'
 )
-on conflict (id) do update
-set
-  school_name = excluded.school_name,
-  logo_url = excluded.logo_url,
-  department = excluded.department,
-  admin_name = excluded.admin_name,
-  admin_email = excluded.admin_email,
-  updated_at = timezone('utc', now());
+on conflict (id) do nothing;
 
 commit;

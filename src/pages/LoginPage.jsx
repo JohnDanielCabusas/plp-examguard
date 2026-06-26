@@ -58,6 +58,10 @@ function ButtonSpinner() {
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('admin');
   const [adminStep, setAdminStep] = useState('login');
+  const [sysAdminError, setSysAdminError] = useState('');
+  const [showSysAdminPass, setShowSysAdminPass] = useState(false);
+  const sysAdminUsernameRef = useRef();
+  const sysAdminPasswordRef = useRef();
   const [studentStep, setStudentStep] = useState(1); // 1 | 'verify' | '2a' | '2b'
   const [studentEmail, setStudentEmail] = useState('');
   const [studentVerifyMessage, setStudentVerifyMessage] = useState('');
@@ -112,6 +116,8 @@ export default function LoginPage() {
       });
       const params = new URLSearchParams(window.location.search);
       if (params.get('tab') === 'student') setActiveTab('student');
+      if (params.get('tab') === 'sysadmin') setActiveTab('sysadmin');
+      if (window.Auth?.getSysAdminSession?.()) { window.location.replace('super-admin.html'); return; }
       if (window.Auth?.getAdminSession?.()) { window.location.replace('admin.html'); return; }
       if (window.Auth?.getStudentSession?.()) { window.location.replace('exam.html'); return; }
     };
@@ -122,16 +128,16 @@ export default function LoginPage() {
       applyBootState();
     };
 
-    document.addEventListener('firebaseReady', onReady);
+    document.addEventListener('dbReady', onReady);
     if (window.DB && window.Auth) {
       applyBootState();
     } else {
       setFbLoading(false);
     }
-    if (window.FirebaseSync?.init) window.FirebaseSync.init();
+    if (window.SupabaseSync?.init) window.SupabaseSync.init();
 
     return () => {
-      document.removeEventListener('firebaseReady', onReady);
+      document.removeEventListener('dbReady', onReady);
     };
   }, []);
 
@@ -163,8 +169,19 @@ export default function LoginPage() {
     setStep2bError('');
     setStudentVerifyMessage('');
     setStudentResendCooldown(0);
+    setSysAdminError('');
     window.Auth?.clearStudentEmailVerification?.();
     setStudentStep(1);
+  };
+
+  const doSysAdminLogin = () => {
+    const username = (sysAdminUsernameRef.current?.value || '').trim();
+    const password = sysAdminPasswordRef.current?.value || '';
+    setSysAdminError('');
+    if (!username || !password) { setSysAdminError('Please enter username and password.'); return; }
+    const result = window.Auth.sysAdminLogin(username, password);
+    if (result.success) { window.location.href = 'super-admin.html'; }
+    else { setSysAdminError(result.message); }
   };
 
   const startAdminReset = () => {
@@ -464,8 +481,9 @@ export default function LoginPage() {
           </div>
 
           <div className="tab-switcher">
-            <button className={`tab-btn${activeTab === 'admin' ? ' active' : ''}`} onClick={() => switchTab('admin')}>Professor Login</button>
-            <button className={`tab-btn${activeTab === 'student' ? ' active' : ''}`} onClick={() => switchTab('student')}>Student Login</button>
+            <button className={`tab-btn${activeTab === 'admin' ? ' active' : ''}`} onClick={() => switchTab('admin')}>Professor</button>
+            <button className={`tab-btn${activeTab === 'student' ? ' active' : ''}`} onClick={() => switchTab('student')}>Student</button>
+            <button className={`tab-btn${activeTab === 'sysadmin' ? ' active' : ''}`} onClick={() => switchTab('sysadmin')}>Admin</button>
           </div>
 
           <div className="tab-content">
@@ -719,6 +737,32 @@ export default function LoginPage() {
               )}
 
             </div>{/* /tab-student */}
+
+            {/* ===== SYSADMIN TAB ===== */}
+            <div id="tab-sysadmin" className={`tab-panel${activeTab === 'sysadmin' ? ' active' : ''}`}>
+              <div className="form-group">
+                <label htmlFor="sysadmin-username">Username</label>
+                <input type="text" className="form-control" id="sysadmin-username" ref={sysAdminUsernameRef}
+                  placeholder="Enter admin username" autoComplete="username"
+                  onKeyDown={(e) => { if (e.key === 'Enter') sysAdminPasswordRef.current?.focus(); }} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="sysadmin-password">Password</label>
+                <div style={{ position: 'relative' }}>
+                  <input type={showSysAdminPass ? 'text' : 'password'} className="form-control"
+                    id="sysadmin-password" ref={sysAdminPasswordRef}
+                    placeholder="Enter password" autoComplete="current-password" style={{ paddingRight: '42px' }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') doSysAdminLogin(); }} />
+                  <EyeToggle show={showSysAdminPass} onToggle={() => setShowSysAdminPass(v => !v)} />
+                </div>
+              </div>
+              {sysAdminError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{sysAdminError}</div>}
+              <button className="btn btn-primary btn-block btn-lg" onClick={doSysAdminLogin}>Sign In</button>
+              <p className="text-center text-muted mt-8" style={{ fontSize: '11px' }}>
+                System administrator access only.
+              </p>
+            </div>{/* /tab-sysadmin */}
+
           </div>{/* /tab-content */}
         </div>
       </div>

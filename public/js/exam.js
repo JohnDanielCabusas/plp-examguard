@@ -2386,7 +2386,7 @@ function formatDateTime(iso) {
 // ============================================================
 // BOOT
 // ============================================================
-document.addEventListener('firebaseReady', () => ExamApp.init());
+document.addEventListener('dbReady', () => ExamApp.init());
 
 
 // Expose as global for ES-module consumers (React)

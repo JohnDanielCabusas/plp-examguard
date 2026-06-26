@@ -19,11 +19,11 @@ export default function AdminPage() {
         if (avEl && avatar) avEl.textContent = avatar;
       });
     };
-    document.addEventListener('firebaseReady', onReady);
+    document.addEventListener('dbReady', onReady);
     setTimeout(() => {
       if (fbEl && fbEl.style.display !== 'none') {
         fbEl.style.display = 'none';
-        document.dispatchEvent(new Event('firebaseReady'));
+        document.dispatchEvent(new Event('dbReady'));
       }
     }, 1200);
 
@@ -40,12 +40,12 @@ export default function AdminPage() {
       }
     };
 
-    window.FirebaseSync.init();
+    window.SupabaseSync.init();
   }, []);
 
   return (
     <>
-      {/* Firebase loading overlay */}
+      {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
         <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
         <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Connecting to server&hellip;</p>

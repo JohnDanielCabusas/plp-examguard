@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
             }
             if (req.url === '/admin') req.url = '/admin.html';
             else if (req.url === '/exam') req.url = '/exam.html';
+            else if (req.url === '/super-admin') req.url = '/super-admin.html';
             next();
           });
         },
@@ -41,6 +42,7 @@ export default defineConfig(({ mode }) => {
           index: 'index.html',
           admin: 'admin.html',
           exam: 'exam.html',
+          'super-admin': 'super-admin.html',
         },
       },
     },

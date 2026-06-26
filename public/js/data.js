@@ -240,18 +240,27 @@ const DB = {
     if (!localStorage.getItem(this.KEYS.settings)) {
       localStorage.setItem(this.KEYS.settings, JSON.stringify({
         schoolName: 'Pamantasan ng Lungsod ng Pasig',
-        logoUrl: 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png',
+        logoUrl: '/plp-logo.png',
         department: '',
         adminName: 'Administrator',
         adminEmail: 'admin@school.edu',
       }));
     }
 
-    // Admins
+    // Admins (professors)
     if (!localStorage.getItem(this.KEYS.admins)) {
       localStorage.setItem(this.KEYS.admins, JSON.stringify([
         { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu' }
       ]));
+    }
+
+    // System admin credentials
+    if (!localStorage.getItem('acs_sysadmin')) {
+      localStorage.setItem('acs_sysadmin', JSON.stringify({
+        username: 'sysadmin',
+        password: 'admin123',
+        name: 'System Administrator',
+      }));
     }
 
     // Students - seed demo students
@@ -378,10 +387,10 @@ const DB = {
     const current = this.getSettings();
     const next = { ...current, ...updates };
     this._write(this.KEYS.settings, next);
-    FirebaseSync.syncSettings(next);
+    SupabaseSync.syncSettings(next);
   },
 
-  // ---- Admins ----
+  // ---- Admins (professors) ----
   getAdmins() {
     return this._read(this.KEYS.admins, []);
   },
@@ -392,7 +401,32 @@ const DB = {
     const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...updates } : a);
     this._write(this.KEYS.admins, admins);
     const updated = admins.find(a => a.id === id);
-    if (updated) FirebaseSync.syncDoc('admins', updated);
+    if (updated) SupabaseSync.syncDoc('admins', updated);
+  },
+  addProfessor(data) {
+    const admins = this.getAdmins();
+    if (admins.find(a => a.username === data.username)) return { success: false, message: 'Username already exists.' };
+    const newProf = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
+    admins.push(newProf);
+    this._write(this.KEYS.admins, admins);
+    SupabaseSync.syncDoc('admins', newProf);
+    return { success: true, professor: newProf };
+  },
+  deleteProfessor(id) {
+    const admins = this.getAdmins().filter(a => a.id !== id);
+    this._write(this.KEYS.admins, admins);
+  },
+
+  // ---- System Admin ----
+  getSysAdmin() {
+    const stored = this._read('acs_sysadmin', null);
+    return stored || { username: 'sysadmin', password: 'admin123', name: 'System Administrator' };
+  },
+  updateSysAdmin(updates) {
+    const current = this.getSysAdmin();
+    const updated = { ...current, ...updates };
+    this._write('acs_sysadmin', updated);
+    return updated;
   },
 
   // ---- Students ----
@@ -416,7 +450,7 @@ const DB = {
     const newStudent = { id: this.generateId(), ...data };
     students.push(newStudent);
     this._write(this.KEYS.students, students);
-    FirebaseSync.syncDoc('students', newStudent);
+    SupabaseSync.syncDoc('students', newStudent);
     this._saveStudentToSupabase(newStudent).catch(error => {
       console.warn('[Supabase] Unable to sync new student record:', error.message || error);
     });
@@ -426,7 +460,7 @@ const DB = {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...updates } : s);
     this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
-    if (updated) FirebaseSync.syncDoc('students', updated);
+    if (updated) SupabaseSync.syncDoc('students', updated);
     if (updated) {
       this._saveStudentToSupabase(updated).catch(error => {
         console.warn('[Supabase] Unable to sync updated student record:', error.message || error);
@@ -448,7 +482,7 @@ const DB = {
         department: nextStudent.department || '',
         program: nextStudent.program || '',
       };
-      FirebaseSync.syncDoc('sessions', updatedSession);
+      SupabaseSync.syncDoc('sessions', updatedSession);
       return updatedSession;
     });
     this._write(this.KEYS.sessions, sessions);
@@ -456,7 +490,7 @@ const DB = {
     const logs = this.getLogs().map(log => {
       if (log.studentId !== previousStudentId) return log;
       const updatedLog = { ...log, studentId: nextStudent.studentId };
-      FirebaseSync.syncDoc('logs', updatedLog);
+      SupabaseSync.syncDoc('logs', updatedLog);
       return updatedLog;
     });
     this._write(this.KEYS.logs, logs);
@@ -465,18 +499,18 @@ const DB = {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: true, archivedAt: new Date().toISOString() } : s);
     this._write(this.KEYS.students, students);
     const archived = students.find(s => s.id === id);
-    if (archived) FirebaseSync.syncDoc('students', archived);
+    if (archived) SupabaseSync.syncDoc('students', archived);
   },
   restoreStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: false, archivedAt: null } : s);
     this._write(this.KEYS.students, students);
     const restored = students.find(s => s.id === id);
-    if (restored) FirebaseSync.syncDoc('students', restored);
+    if (restored) SupabaseSync.syncDoc('students', restored);
   },
   deleteStudent(id) {
     const students = this.getAllStudentsRaw().filter(s => s.id !== id);
     this._write(this.KEYS.students, students);
-    FirebaseSync.deleteDoc('students', id);
+    SupabaseSync.deleteDoc('students', id);
   },
   studentExists(studentId) {
     return this.getStudents().some(s => s.studentId === studentId);
@@ -494,19 +528,19 @@ const DB = {
     const newSubject = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
     subjects.push(newSubject);
     this._write(this.KEYS.subjects, subjects);
-    FirebaseSync.syncDoc('subjects', newSubject);
+    SupabaseSync.syncDoc('subjects', newSubject);
     return newSubject;
   },
   updateSubject(id, updates) {
     const subjects = this.getSubjects().map(s => s.id === id ? { ...s, ...updates } : s);
     this._write(this.KEYS.subjects, subjects);
     const updated = subjects.find(s => s.id === id);
-    if (updated) FirebaseSync.syncDoc('subjects', updated);
+    if (updated) SupabaseSync.syncDoc('subjects', updated);
   },
   deleteSubject(id) {
     const subjects = this.getSubjects().filter(s => s.id !== id);
     this._write(this.KEYS.subjects, subjects);
-    FirebaseSync.deleteDoc('subjects', id);
+    SupabaseSync.deleteDoc('subjects', id);
   },
 
   // ---- Exams ----
@@ -524,19 +558,19 @@ const DB = {
     const newExam = { id: this.generateId(), createdAt: new Date().toISOString(), questions: [], ...data };
     exams.push(newExam);
     this._write(this.KEYS.exams, exams);
-    FirebaseSync.syncDoc('exams', newExam);
+    SupabaseSync.syncDoc('exams', newExam);
     return newExam;
   },
   updateExam(id, updates) {
     const exams = this.getExams().map(e => e.id === id ? { ...e, ...updates } : e);
     this._write(this.KEYS.exams, exams);
     const updated = exams.find(e => e.id === id);
-    if (updated) FirebaseSync.syncDoc('exams', updated);
+    if (updated) SupabaseSync.syncDoc('exams', updated);
   },
   deleteExam(id) {
     const exams = this.getExams().filter(e => e.id !== id);
     this._write(this.KEYS.exams, exams);
-    FirebaseSync.deleteDoc('exams', id);
+    SupabaseSync.deleteDoc('exams', id);
   },
   getActiveExams() {
     return this.getExams().filter(e => e.status === 'active');
@@ -560,14 +594,14 @@ const DB = {
     const newSession = { id: this.generateId(), ...data };
     sessions.push(newSession);
     this._write(this.KEYS.sessions, sessions);
-    FirebaseSync.syncDoc('sessions', newSession);
+    SupabaseSync.syncDoc('sessions', newSession);
     return newSession;
   },
   updateSession(id, updates) {
     const sessions = this.getSessions().map(s => s.id === id ? { ...s, ...updates } : s);
     this._write(this.KEYS.sessions, sessions);
     const updated = sessions.find(s => s.id === id);
-    if (updated) FirebaseSync.syncDoc('sessions', updated);
+    if (updated) SupabaseSync.syncDoc('sessions', updated);
   },
 
   // ---- Logs ----
@@ -579,14 +613,14 @@ const DB = {
     const newLog = { id: this.generateId(), timestamp: new Date().toISOString(), ...data };
     logs.push(newLog);
     this._write(this.KEYS.logs, logs);
-    FirebaseSync.syncDoc('logs', newLog);
+    SupabaseSync.syncDoc('logs', newLog);
   },
   getLogsBySession(sessionId) {
     return this.getLogs().filter(l => l.sessionId === sessionId);
   },
 };
 
-// Auto-initialize on load (seeds localStorage defaults; Firebase data overwrites on firebaseReady)
+// Auto-initialize on load (seeds localStorage defaults; Supabase data overwrites on dbReady)
 DB.init();
 window.addEventListener('storage', e => {
   if (e.key) DB.clearCacheKey(e.key);
