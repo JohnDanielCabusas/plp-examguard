@@ -3309,12 +3309,14 @@ function openAIGen() {
   }
   clearAIFile();
   const customPromptEl = document.getElementById('ai-custom-prompt');
-  if (customPromptEl) customPromptEl.value = '';
+  if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
   document.getElementById('ai-status').style.display = 'none';
   document.getElementById('ai-preview').style.display = 'none';
+  document.getElementById('ai-user-bubble').style.display = 'none';
   document.getElementById('ai-gen-btn').style.display = '';
   document.getElementById('ai-import-btn').style.display = 'none';
   document.getElementById('modal-ai-gen').classList.remove('hidden');
+  scrollAIChat();
 }
 
 function closeAIGen() {
@@ -3406,13 +3408,25 @@ async function extractTextPPTX(file) {
 }
 
 async function runAIGenerate() {
-  if (!aiSelectedFile) { showToast('Please select a file first.', 'error'); return; }
+  if (!aiSelectedFile) { showToast('Please attach a file first using the 📎 button.', 'error'); return; }
 
   const apiKey = DB.getSettings().claudeApiKey;
   const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count').value) || 10));
   const selectedTypes = [...document.querySelectorAll('.ai-type-cb:checked')].map(cb => cb.value);
   const difficulty = document.getElementById('ai-difficulty').value;
   const customPrompt = (document.getElementById('ai-custom-prompt')?.value || '').trim();
+
+  // Promote pending file chip → user chat bubble
+  const pendingName = document.getElementById('ai-file-name')?.textContent || '';
+  const userBubble = document.getElementById('ai-user-bubble');
+  if (userBubble && pendingName) {
+    const nameEl = document.getElementById('ai-user-bubble-file');
+    const promptEl = document.getElementById('ai-user-bubble-prompt');
+    if (nameEl) nameEl.textContent = pendingName;
+    if (promptEl) { promptEl.textContent = customPrompt; promptEl.style.display = customPrompt ? '' : 'none'; }
+    userBubble.style.display = 'flex';
+  }
+  document.getElementById('ai-file-info').style.display = 'none';
 
   document.getElementById('ai-gen-btn').style.display = 'none';
   document.getElementById('ai-preview').style.display = 'none';

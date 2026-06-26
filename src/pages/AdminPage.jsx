@@ -746,12 +746,14 @@ export default function AdminPage() {
             <div id="ai-drop-zone" style={{ display: 'none' }} />
             <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display: 'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
 
-            {/* File attached — user bubble, hidden until file set */}
-            <div id="ai-file-info" style={{ display: 'none', justifyContent: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
-              <div style={{ background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '75%', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                <span id="ai-file-name" style={{ color: '#d1fae5', fontWeight: 500, fontSize: '12px', wordBreak: 'break-all' }} />
-                <button onClick={() => window.clearAIFile()} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', flexShrink: 0 }}>✕</button>
+            {/* User bubble — shown after Generate is pressed (file + prompt) */}
+            <div id="ai-user-bubble" style={{ display: 'none', justifyContent: 'flex-end', animation: 'aiBubbleIn 0.3s ease' }}>
+              <div style={{ background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', borderRadius: '16px 16px 4px 16px', padding: '10px 14px', maxWidth: '78%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                  <span id="ai-user-bubble-file" style={{ color: '#d1fae5', fontWeight: 600, fontSize: '12px', wordBreak: 'break-all' }} />
+                </div>
+                <div id="ai-user-bubble-prompt" style={{ display: 'none', color: '#fff', fontSize: '13px', marginTop: '6px', lineHeight: 1.4 }} />
               </div>
             </div>
 
@@ -823,11 +825,14 @@ export default function AdminPage() {
             {/* Question type pills — green scheme */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
               {[['mcq','MCQ',true],['tf','T/F',true],['identification','ID',true],['enumeration','Enum',false],['matching','Match',false],['essay','Essay',false]].map(([val, label, checked]) => (
-                <label key={val} style={{ cursor: 'pointer' }}>
+                <label key={val} style={{ cursor: 'pointer', userSelect: 'none' }}>
                   <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display: 'none' }} />
                   <span style={{ display: 'inline-block', padding: '5px 11px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, border: '1.5px solid #1a4d2a', color: checked ? '#fff' : '#1a4d2a', background: checked ? '#1a4d2a' : 'transparent', transition: 'all 0.15s', userSelect: 'none' }}
                     onClick={(e) => {
-                      const cb = e.currentTarget.previousSibling;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const cb = e.currentTarget.closest('label').querySelector('input[type="checkbox"]');
+                      if (!cb) return;
                       cb.checked = !cb.checked;
                       e.currentTarget.style.background = cb.checked ? '#1a4d2a' : 'transparent';
                       e.currentTarget.style.color = cb.checked ? '#fff' : '#1a4d2a';
@@ -838,7 +843,17 @@ export default function AdminPage() {
           </div>
 
           {/* Chat input bar */}
-          <div style={{ padding: '10px 18px 16px', borderTop: '1px solid #d1fae5', background: '#f8fdf9', display: 'flex', gap: '10px', alignItems: 'flex-end', flexShrink: 0 }}>
+          <div style={{ borderTop: '1px solid #d1fae5', background: '#f8fdf9', flexShrink: 0 }}>
+            {/* Pending file chip — shown when file is attached, before sending */}
+            <div id="ai-file-info" style={{ display: 'none', padding: '8px 18px 0', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#e8f5ec', border: '1.5px solid #a3c4a8', borderRadius: '10px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, color: '#0f2d1a', maxWidth: '100%' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                <span id="ai-file-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }} />
+                <button onClick={() => window.clearAIFile()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a4d2a', fontSize: '14px', lineHeight: 1, padding: 0, flexShrink: 0 }}>✕</button>
+              </div>
+            </div>
+
+            <div style={{ padding: '8px 18px 14px', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
             <label htmlFor="ai-file-input" style={{ width: '38px', height: '38px', background: '#fff', border: '1.5px solid #a3c4a8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
               title="Attach file"
               onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f7f2'; }}
@@ -859,10 +874,11 @@ export default function AdminPage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             </button>
             <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-              style={{ display: 'none', height: '36px', padding: '0 16px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              style={{ display: 'none', height: '38px', padding: '0 16px', background: 'linear-gradient(135deg,#1a4d2a,#2d8a50)', border: 'none', borderRadius: '10px', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: '13px', flexShrink: 0, whiteSpace: 'nowrap' }}>
               Import Selected
             </button>
-          </div>
+            </div>{/* /input row */}
+          </div>{/* /input bar */}
         </div>
       </div>
 
