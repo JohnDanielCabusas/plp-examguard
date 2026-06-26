@@ -2387,15 +2387,19 @@ function setMonitorView(view) {
   const activeStyle = { background: '#1a4d2a', color: '#fff' };
   const inactiveStyle = { background: 'transparent', color: '#6b7280' };
 
+  const statsStrip = document.getElementById('monitor-stats-strip');
+
   if (view === 'camera') {
     if (tableView) tableView.style.display = 'none';
     if (camView) camView.style.display = '';
+    if (statsStrip) statsStrip.style.display = 'none';
     if (btnTable) Object.assign(btnTable.style, inactiveStyle);
     if (btnCam) Object.assign(btnCam.style, activeStyle);
     renderCameraGrid(monitorExamId);
   } else {
     if (tableView) tableView.style.display = '';
     if (camView) camView.style.display = 'none';
+    if (statsStrip) statsStrip.style.display = '';
     if (btnTable) Object.assign(btnTable.style, activeStyle);
     if (btnCam) Object.assign(btnCam.style, inactiveStyle);
   }
