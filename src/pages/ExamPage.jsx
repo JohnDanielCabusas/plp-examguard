@@ -338,7 +338,7 @@ export default function ExamPage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
               <span id="warning-num">0</span>/3
             </div>
-            <button className="btn btn-exam-submit" onClick={() => window.ExamApp.confirmSubmit()}
+            <button type="button" data-exam-control="true" className="btn btn-exam-submit examv2-interactive" onClick={() => window.ExamApp.confirmSubmit()}
               style={{ background:'#1a4d2a', color:'#fff', border:'none', padding:'8px 20px', borderRadius:'8px', fontWeight:700, fontSize:'13px', cursor:'pointer' }}>
               Finish Exam
             </button>
@@ -378,15 +378,15 @@ export default function ExamPage() {
 
             <div className="examv2-nav-footer">
               <label className="examv2-mark-review" id="mark-review-label">
-                <input type="checkbox" id="mark-review-cb" onChange={() => window.ExamApp.toggleMarkReview()} />
+                <input type="checkbox" id="mark-review-cb" data-exam-control="true" onChange={() => window.ExamApp.toggleMarkReview()} />
                 <span>Mark for Review</span>
               </label>
               <div style={{ display:'flex', gap:'10px' }}>
-                <button id="btn-prev" className="btn btn-secondary" onClick={() => window.ExamApp.prevQuestion()}
+                <button type="button" data-exam-control="true" id="btn-prev" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.prevQuestion()}
                   style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px' }}>
                   ← Previous
                 </button>
-                <button id="btn-next" className="btn btn-primary" onClick={() => window.ExamApp.nextQuestion()}
+                <button type="button" data-exam-control="true" id="btn-next" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.nextQuestion()}
                   style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px', background:'#1a4d2a', color:'#fff', border:'none' }}>
                   Next →
                 </button>
@@ -417,10 +417,10 @@ export default function ExamPage() {
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
-            <button id="btn-review-answers" className="btn btn-secondary btn-block" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
+            <button type="button" id="btn-review-answers" data-exam-control="true" className="btn btn-secondary btn-block examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
               📋 Review My Answers
             </button>
-            <button className="btn btn-primary btn-block" onClick={() => window.ExamApp.returnToLogin()}>← Back</button>
+            <button type="button" data-exam-control="true" className="btn btn-primary btn-block examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>← Back</button>
           </div>
         </div>
       </div>
@@ -457,8 +457,8 @@ export default function ExamPage() {
             <div className="confirm-title">Submit Exam?</div>
             <div className="confirm-message" id="confirm-submit-msg">Are you sure you want to submit? You cannot change your answers after submission.</div>
             <div className="confirm-actions">
-              <button className="btn btn-secondary" onClick={() => window.ExamApp.cancelSubmit()}>Continue Exam</button>
-              <button className="btn btn-primary" onClick={() => window.ExamApp.submitExam('manual')}>Submit Now</button>
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelSubmit()}>Continue Exam</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.submitExam('manual')}>Submit Now</button>
             </div>
           </div>
         </div>
@@ -477,8 +477,8 @@ export default function ExamPage() {
             <div className="confirm-title">Sign Out</div>
             <div className="confirm-message">Sign out of your student portal? You will need to log in again to continue.</div>
             <div className="confirm-actions">
-              <button className="btn btn-secondary" onClick={() => window.ExamApp.cancelLogout()}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => window.ExamApp.confirmLogout()}>Sign Out</button>
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelLogout()}>Cancel</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.confirmLogout()}>Sign Out</button>
             </div>
           </div>
         </div>

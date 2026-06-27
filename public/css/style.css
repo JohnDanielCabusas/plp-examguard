@@ -6443,6 +6443,18 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
+.examv2-interactive,
+.nav-q-btn,
+.examv2-question-wrap .mcq-option,
+.examv2-question-wrap .tf-btn,
+.examv2-question-wrap .checkbox-option,
+.examv2-question-wrap .id-input,
+.examv2-question-wrap .essay-textarea,
+.examv2-question-wrap .form-control,
+.examv2-mark-review,
+.examv2-mark-review input {
+  touch-action: manipulation;
+}
 .nav-q-btn:hover { border-color: #1a4d2a; color: #1a4d2a; }
 .nav-q-btn.answered { background: #1a4d2a; border-color: #1a4d2a; color: #fff; }
 .nav-q-btn.review { background: #fef3c7; border-color: #f59e0b; color: #92400e; }

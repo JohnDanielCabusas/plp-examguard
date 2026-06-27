@@ -34,6 +34,9 @@ const ExamApp = {
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _dashInterval: null,      // dashboard poll interval
+  _fullscreenInteractionGraceUntil: 0,
+  _pendingFullscreenRecovery: null,
+  _intentionalFullscreenExit: false,
 
   _repairStudentEmail(studentSession) {
     if (!studentSession?.studentId || !studentSession?.email) return;
@@ -977,6 +980,7 @@ const ExamApp = {
   // ACTIVE EXAM
   // ============================================================
   startExam() {
+    this._rememberTrustedInteraction(2000);
     this.requestFullscreen();
     this.initAntiCheat();
     this.startTimer();
@@ -1016,6 +1020,28 @@ const ExamApp = {
         document.documentElement.webkitRequestFullscreen();
       }
     } catch (e) { /* silently fail */ }
+  },
+
+  _rememberTrustedInteraction(durationMs = 1400) {
+    this._fullscreenInteractionGraceUntil = Date.now() + durationMs;
+  },
+
+  _hasRecentTrustedInteraction() {
+    return Date.now() <= (this._fullscreenInteractionGraceUntil || 0);
+  },
+
+  _attemptGracefulFullscreenRecovery() {
+    this._showFullscreenLock();
+    this._reenterFullscreen();
+
+    if (this._pendingFullscreenRecovery) clearTimeout(this._pendingFullscreenRecovery);
+    this._pendingFullscreenRecovery = setTimeout(() => {
+      this._pendingFullscreenRecovery = null;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement && !this._intentionalFullscreenExit) {
+        this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
+        this._showFullscreenLock();
+      }
+    }, 700);
   },
 
   _showFullscreenLock() {
@@ -1148,12 +1174,25 @@ const ExamApp = {
         this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
         this._showFullscreenLock();
       } else {
+        if (this._pendingFullscreenRecovery) {
+          clearTimeout(this._pendingFullscreenRecovery);
+          this._pendingFullscreenRecovery = null;
+        }
         this._hideFullscreenLock();
         this.cancelCountdown();
       }
     };
     document.addEventListener('fullscreenchange', fsHandler);
     document.addEventListener('webkitfullscreenchange', fsHandler);
+
+    const trustedInteractionHandler = e => {
+      const control = e.target.closest?.(
+        '[data-exam-control="true"], .nav-q-btn, .mcq-option, .tf-btn, .checkbox-option, .essay-textarea, .id-input, .form-control, .examv2-mark-review'
+      );
+      if (control) this._rememberTrustedInteraction();
+    };
+    document.addEventListener('pointerdown', trustedInteractionHandler);
+    document.addEventListener('focusin', trustedInteractionHandler);
 
     // ── Keyboard shortcuts blocked ───────────────────────────────
     const keyHandler = e => {
@@ -1182,6 +1221,8 @@ const ExamApp = {
       ['contextmenu',        document, rcHandler],
       ['fullscreenchange',   document, fsHandler],
       ['webkitfullscreenchange', document, fsHandler],
+      ['pointerdown',        document, trustedInteractionHandler],
+      ['focusin',            document, trustedInteractionHandler],
       ['keydown',            document, keyHandler],
     ];
   },
@@ -1449,6 +1490,12 @@ const ExamApp = {
 
   destroyAntiCheat() {
     if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
+    if (this._pendingFullscreenRecovery) {
+      clearTimeout(this._pendingFullscreenRecovery);
+      this._pendingFullscreenRecovery = null;
+    }
+    this._fullscreenInteractionGraceUntil = 0;
+    this._intentionalFullscreenExit = false;
     this.cancelCountdown(false);
     this.anticheatListeners.forEach(([event, target, handler]) => {
       target.removeEventListener(event, handler);
@@ -1583,6 +1630,16 @@ const ExamApp = {
   issueWarning(type, detail) {
     if (!this.session) return;
     if (this.warnings >= 3) return;
+    if (type === 'fullscreen_exit') {
+      if (this._intentionalFullscreenExit) {
+        this._intentionalFullscreenExit = false;
+        return;
+      }
+      if (this._hasRecentTrustedInteraction()) {
+        this._attemptGracefulFullscreenRecovery();
+        return;
+      }
+    }
     if (this._cameraPrompting) return; // camera permission dialog open — not a violation
 
     // Clear any in-progress read countdown so the new warning takes over cleanly
@@ -1816,7 +1873,7 @@ const ExamApp = {
 
     return `<div class="mcq-options" id="mcq-${q.id}">` +
       options.map((opt, oi) => `
-        <div class="mcq-option" id="mcq-opt-${q.id}-${oi}" data-qid="${q.id}" data-val="${_escAttr(opt)}" onclick="ExamApp.selectMCQ('${q.id}', '${_escAttr(opt)}')">
+        <div class="mcq-option" id="mcq-opt-${q.id}-${oi}" data-exam-control="true" data-qid="${q.id}" data-val="${_escAttr(opt)}" onclick="ExamApp.selectMCQ('${q.id}', '${_escAttr(opt)}')">
           <div class="mcq-option-letter">${letters[oi] || (oi+1)}</div>
           <span class="mcq-option-text">${_escText(opt)}</span>
         </div>
@@ -1826,13 +1883,13 @@ const ExamApp = {
 
   _renderTF(q, idx) {
     return `<div class="tf-options" id="tf-${q.id}">
-      <div class="tf-btn tf-true" id="tf-${q.id}-true" onclick="ExamApp.selectTF('${q.id}', 'True')">
+      <div class="tf-btn tf-true" data-exam-control="true" id="tf-${q.id}-true" onclick="ExamApp.selectTF('${q.id}', 'True')">
         <span class="tf-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </span>
         <span class="tf-label">True</span>
       </div>
-      <div class="tf-btn tf-false" id="tf-${q.id}-false" onclick="ExamApp.selectTF('${q.id}', 'False')">
+      <div class="tf-btn tf-false" data-exam-control="true" id="tf-${q.id}-false" onclick="ExamApp.selectTF('${q.id}', 'False')">
         <span class="tf-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </span>
@@ -1842,7 +1899,7 @@ const ExamApp = {
   },
 
   _renderIdentification(q, idx) {
-    return `<input type="text" class="id-input" id="id-input-${q.id}" placeholder="Type your answer here..."
+    return `<input type="text" class="id-input" id="id-input-${q.id}" data-exam-control="true" placeholder="Type your answer here..."
       autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
       oninput="ExamApp.handleIdentificationInput(event, '${q.id}')" />`;
   },
@@ -1852,7 +1909,7 @@ const ExamApp = {
     const rows = Array.from({length: count}, (_, i) => `
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:13px;color:#9ca3af;font-weight:700;min-width:22px;">${i+1}.</span>
-        <input type="text" class="form-control" id="enum-${q.id}-${i}" placeholder="Item ${i+1}"
+        <input type="text" class="form-control" id="enum-${q.id}-${i}" data-exam-control="true" placeholder="Item ${i+1}"
           autocomplete="off" spellcheck="true"
           oninput="ExamApp.handleEnumInput(event,'${q.id}',${count})" style="flex:1;" />
       </div>`).join('');
@@ -1869,7 +1926,7 @@ const ExamApp = {
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;">
           <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;">${_esc(p.term)}</div>
           <div style="color:#9ca3af;font-size:16px;">→</div>
-          <select class="form-control" id="match-${q.id}-${pi}"
+          <select class="form-control" id="match-${q.id}-${pi}" data-exam-control="true"
             onchange="ExamApp.handleMatchInput(event,'${q.id}',${pairs.length})"
             style="font-size:13px;">
             <option value="">— Select —</option>
@@ -1883,7 +1940,7 @@ const ExamApp = {
     const minW = q.minWords || 0;
     const note = minW > 0 ? `Minimum ${minW} words required.` : 'Write a detailed response.';
     return `
-      <textarea class="essay-textarea" id="essay-input-${q.id}" placeholder="Write your answer here..."
+      <textarea class="essay-textarea" id="essay-input-${q.id}" data-exam-control="true" placeholder="Write your answer here..."
         autocomplete="off" spellcheck="true"
         oninput="ExamApp.handleEssayInput(event, '${q.id}', ${minW})"
       ></textarea>
@@ -2006,7 +2063,7 @@ const ExamApp = {
     const grid = document.getElementById('question-nav-grid');
     if (!grid) return;
     grid.innerHTML = this.questionOrder.map((q, idx) =>
-      `<button class="nav-q-btn" id="nav-q-${idx}" onclick="ExamApp.showQuestion(${idx})">${idx + 1}</button>`
+      `<button type="button" class="nav-q-btn" data-exam-control="true" id="nav-q-${idx}" onclick="ExamApp.showQuestion(${idx})">${idx + 1}</button>`
     ).join('');
     this._updateNavGrid();
   },
@@ -2106,6 +2163,7 @@ const ExamApp = {
   // SUBMIT
   // ============================================================
   confirmSubmit() {
+    this._rememberTrustedInteraction(1800);
     // Check required questions first — block submission if any are unanswered
     const unansweredRequired = this.questionOrder.filter(q =>
       q.required !== false &&
@@ -2289,6 +2347,7 @@ const ExamApp = {
     this.stopTimer();
     this.destroyAntiCheat(); // also calls stopCamera()
     this.stopPoll();
+    this._intentionalFullscreenExit = true;
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});

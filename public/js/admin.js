@@ -2725,6 +2725,7 @@ function viewStudentAnswers(sessionId) {
   if (!session) return;
   const exam = DB.getExam(session.examId);
   if (!exam) return;
+  const aiScanJobs = [];
 
   let html = `
     <div class="student-info-box" style="margin-bottom:16px;">
@@ -2744,6 +2745,12 @@ function viewStudentAnswers(sessionId) {
     if (q.type === 'essay') {
       const aiId = `ai-badge-${session.id}-${q.id}`;
       const wordCount = studentAns ? studentAns.split(/\s+/).filter(Boolean).length : 0;
+      const cachedAIDetection = requireAI && studentAns
+        ? getCachedEssayAIDetection(session.id, q.id, studentAns)
+        : null;
+      if (requireAI && studentAns && !cachedAIDetection) {
+        aiScanJobs.push({ badgeId: aiId, questionId: q.id, text: studentAns });
+      }
       html += `
         <div class="answer-row" style="border-color:#e2e8f0;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
@@ -2756,10 +2763,10 @@ function viewStudentAnswers(sessionId) {
             ${requireAI && studentAns ? `
               <div style="display:flex;align-items:center;gap:8px;">
                 <div id="${aiId}-bar-wrap" style="width:120px;height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
-                  <div id="${aiId}-bar" style="height:100%;width:0%;border-radius:99px;background:#9ca3af;transition:width 0.4s;"></div>
+                  <div id="${aiId}-bar" style="height:100%;width:${cachedAIDetection ? cachedAIDetection.score : 0}%;border-radius:99px;background:${cachedAIDetection ? getAIDetectionBarColor(cachedAIDetection.label) : '#9ca3af'};transition:width 0.4s;"></div>
                 </div>
-                <span id="${aiId}" class="ai-badge ai-badge-pending" style="cursor:pointer;" onclick="detectAIContentDetailed(document.getElementById('essay-text-${session.id}-${q.id}').textContent,'${aiId}')">
-                  Scan for AI
+                <span id="${aiId}" class="ai-badge ${cachedAIDetection ? `ai-badge-${cachedAIDetection.label}` : 'ai-badge-scanning'}" style="cursor:pointer;" title="${escHtml(cachedAIDetection?.reason || 'Auto-scanning essay answer')}" onclick="detectAIContentDetailed(document.getElementById('essay-text-${session.id}-${q.id}').textContent,'${aiId}','${session.id}','${q.id}', true)">
+                  ${cachedAIDetection ? `AI: <strong>${cachedAIDetection.score}%</strong> <span style="font-weight:400;">(${cachedAIDetection.label})</span>` : 'Scanning...'}
                 </span>
               </div>` : requireAI ? '<span style="font-size:12px;color:#9ca3af;">No answer to scan</span>' : ''}
           </div>
@@ -2790,6 +2797,9 @@ function viewStudentAnswers(sessionId) {
   document.getElementById('modal-answers-title').textContent = `Answers - ${session.studentName}`;
   document.getElementById('modal-answers-body').innerHTML = html;
   openModal('modal-student-answers');
+  aiScanJobs.forEach(job => {
+    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
+  });
 }
 
 // ============================================================
@@ -3450,10 +3460,17 @@ function drawPdfPageHeader(doc, examTitle, headerImage) {
   let cursorY = 10;
 
   if (headerImage) {
-    const headerWidth = pageWidth - (marginLeft * 2);
     const headerProps = doc.getImageProperties(headerImage);
-    const headerHeight = Math.min(26, (headerProps.height * headerWidth) / headerProps.width);
-    doc.addImage(headerImage, 'PNG', marginLeft, cursorY, headerWidth, headerHeight);
+    const maxHeaderWidth = pageWidth - (marginLeft * 2);
+    const maxHeaderHeight = 24;
+    let headerWidth = maxHeaderWidth;
+    let headerHeight = (headerProps.height * headerWidth) / headerProps.width;
+    if (headerHeight > maxHeaderHeight) {
+      headerHeight = maxHeaderHeight;
+      headerWidth = (headerProps.width * headerHeight) / headerProps.height;
+    }
+    const headerX = (pageWidth - headerWidth) / 2;
+    doc.addImage(headerImage, 'PNG', headerX, cursorY, headerWidth, headerHeight);
     cursorY += headerHeight + 4;
   } else {
     doc.setFont('helvetica', 'bold');
@@ -3628,10 +3645,11 @@ async function exportExamReportPdf() {
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
       0: { halign: 'center', cellWidth: 12 },
-      3: { halign: 'center', cellWidth: 28 },
-      4: { halign: 'center', cellWidth: 22 },
-      5: { halign: 'center', cellWidth: 20 },
-      6: { halign: 'center', cellWidth: 20 },
+      2: { halign: 'center', cellWidth: 24 },
+      3: { halign: 'center', cellWidth: 30 },
+      4: { halign: 'center', cellWidth: 18 },
+      5: { halign: 'center', cellWidth: 22 },
+      6: { halign: 'center', cellWidth: 22 },
     },
     didDrawPage: () => {
       if (doc.internal.getCurrentPageInfo().pageNumber > 1) {
@@ -4036,13 +4054,97 @@ function viewCameraSnapshot(sessionId) {
 // ============================================================
 // AI CONTENT DETECTION (with visual gauge)
 // ============================================================
-async function detectAIContentDetailed(text, badgeId) {
+const AI_DETECTION_CACHE_KEY = 'acs_ai_detection_cache';
+
+function getAIDetectionCache() {
+  try {
+    return JSON.parse(localStorage.getItem(AI_DETECTION_CACHE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function setAIDetectionCache(cache) {
+  localStorage.setItem(AI_DETECTION_CACHE_KEY, JSON.stringify(cache));
+}
+
+function getEssayDetectionSignature(text) {
+  const normalized = String(text || '').trim().replace(/\s+/g, ' ');
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    hash = ((hash << 5) - hash + normalized.charCodeAt(i)) | 0;
+  }
+  return `${normalized.length}:${Math.abs(hash)}`;
+}
+
+function getEssayDetectionCacheKey(sessionId, questionId) {
+  return `${sessionId}::${questionId}`;
+}
+
+function getCachedEssayAIDetection(sessionId, questionId, text) {
+  if (!sessionId || !questionId || !text) return null;
+  const cache = getAIDetectionCache();
+  const cached = cache[getEssayDetectionCacheKey(sessionId, questionId)];
+  if (!cached) return null;
+  return cached.signature === getEssayDetectionSignature(text) ? cached.result : null;
+}
+
+function cacheEssayAIDetection(sessionId, questionId, text, result) {
+  if (!sessionId || !questionId || !text || !result) return;
+  const cache = getAIDetectionCache();
+  cache[getEssayDetectionCacheKey(sessionId, questionId)] = {
+    signature: getEssayDetectionSignature(text),
+    result,
+    updatedAt: new Date().toISOString(),
+  };
+  setAIDetectionCache(cache);
+}
+
+function getAIDetectionBarColor(label) {
+  return label === 'high' ? '#dc2626' : label === 'medium' ? '#d97706' : '#15803d';
+}
+
+async function analyzeAIContent(text) {
   const apiKey = DB.getSettings().claudeApiKey;
-  if (!apiKey) { showToast('Groq API key not set. Go to Settings.', 'error'); return; }
-  if (!text || text.trim().length < 20) { showToast('Text is too short to analyze.', 'warning'); return; }
+  if (!apiKey) throw new Error('Groq API key not set. Go to Settings.');
+  if (!text || text.trim().length < 20) throw new Error('Text is too short to analyze.');
+
+  const prompt = `You are an AI-generated content detector. Analyze the following student essay response and determine the likelihood that it was generated by an AI (such as ChatGPT, Claude, etc.) rather than written by a human student.
+
+Consider: vocabulary complexity, sentence structure variety, generic phrasing, lack of personal voice, overly perfect grammar, and typical AI writing patterns.
+
+Respond ONLY with a JSON object: {"score": <0-100>, "label": "<low|medium|high>", "reason": "<one brief sentence>"}
+- score 0-30 = likely human (label: "low")
+- score 31-69 = uncertain (label: "medium")
+- score 70-100 = likely AI (label: "high")
+
+Essay text:
+"""
+${text.slice(0, 2000)}
+"""`;
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 150, messages: [{ role:'user', content:prompt }] }),
+  });
+  const data = await res.json();
+  const raw = data.choices?.[0]?.message?.content || '';
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Invalid response');
+  const result = JSON.parse(match[0]);
+  return {
+    score: Math.min(100, Math.max(0, result.score || 0)),
+    label: result.label || 'medium',
+    reason: result.reason || '',
+  };
+}
+
+async function detectAIContentDetailed(text, badgeId, sessionId, questionId, forceRescan = false) {
+  const cachedResult = !forceRescan ? getCachedEssayAIDetection(sessionId, questionId, text) : null;
 
   const badgeEl = document.getElementById(badgeId);
-  const barEl   = document.getElementById(badgeId + '-bar');
+  const barEl = document.getElementById(badgeId + '-bar');
   if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-scanning'; badgeEl.textContent = 'Scanning…'; }
 
   const prompt = `You are an AI-generated content detector. Analyze the following student essay response and determine the likelihood that it was generated by an AI (such as ChatGPT, Claude, etc.) rather than written by a human student.
@@ -4059,73 +4161,54 @@ Essay text:
 ${text.slice(0, 2000)}
 """`;
 
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 150, messages: [{ role:'user', content:prompt }] }),
-    });
-    const data = await res.json();
-    const raw = data.choices?.[0]?.message?.content || '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Invalid response');
-    const result = JSON.parse(match[0]);
-    const score = Math.min(100, Math.max(0, result.score || 0));
-    const label = result.label || 'medium';
-    const barColor = label === 'high' ? '#dc2626' : label === 'medium' ? '#d97706' : '#15803d';
-
-    if (barEl) { barEl.style.width = score + '%'; barEl.style.background = barColor; }
-    if (badgeEl) {
-      badgeEl.className = `ai-badge ai-badge-${label}`;
-      badgeEl.innerHTML = `AI: <strong>${score}%</strong> <span style="font-weight:400;">(${label})</span>`;
-      badgeEl.title = result.reason || '';
-      badgeEl.style.cursor = 'default';
+  if (cachedResult) {
+    if (barEl) {
+      barEl.style.width = cachedResult.score + '%';
+      barEl.style.background = getAIDetectionBarColor(cachedResult.label);
     }
-  } catch(e) {
-    if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-medium'; badgeEl.textContent = 'Scan failed'; }
+    if (badgeEl) {
+      badgeEl.className = `ai-badge ai-badge-${cachedResult.label}`;
+      badgeEl.innerHTML = `AI: <strong>${cachedResult.score}%</strong> <span style="font-weight:400;">(${cachedResult.label})</span>`;
+      badgeEl.title = cachedResult.reason || '';
+    }
+    return cachedResult;
+  }
+  if (badgeEl) { badgeEl.textContent = 'Scanning...'; }
+
+  try {
+    const result = await analyzeAIContent(text);
+
+    if (barEl) {
+      barEl.style.width = result.score + '%';
+      barEl.style.background = getAIDetectionBarColor(result.label);
+    }
+    if (badgeEl) {
+      badgeEl.className = `ai-badge ai-badge-${result.label}`;
+      badgeEl.innerHTML = `AI: <strong>${result.score}%</strong> <span style="font-weight:400;">(${result.label})</span>`;
+      badgeEl.title = result.reason || '';
+    }
+    cacheEssayAIDetection(sessionId, questionId, text, result);
+    return result;
+  } catch (e) {
+    if (badgeEl) {
+      badgeEl.className = 'ai-badge ai-badge-medium';
+      badgeEl.textContent = 'Scan failed';
+    }
     showToast('AI detection failed: ' + e.message, 'error');
+    return null;
   }
 }
 
 async function detectAIContent(text, btnEl, badgeId) {
-  const apiKey = DB.getSettings().claudeApiKey;
-  if (!apiKey) { showToast('Groq API key not set. Go to Settings.', 'error'); return; }
-  if (!text || text.trim().length < 20) { showToast('Text is too short to analyze.', 'warning'); return; }
-
   if (btnEl) btnEl.disabled = true;
   const badgeEl = document.getElementById(badgeId);
   if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-scanning'; badgeEl.textContent = 'Scanning...'; }
 
-  const prompt = `You are an AI-generated content detector. Analyze the following student essay response and determine the likelihood that it was generated by an AI (such as ChatGPT, Claude, etc.) rather than written by a human student.
-
-Consider: vocabulary complexity, sentence structure variety, generic phrasing, lack of personal voice, overly perfect grammar, and typical AI writing patterns.
-
-Respond ONLY with a JSON object: {"score": <0-100>, "label": "<low|medium|high>", "reason": "<one brief sentence>"}
-- score 0-30 = likely human (label: "low")
-- score 31-69 = uncertain (label: "medium")
-- score 70-100 = likely AI (label: "high")
-
-Essay text:
-"""
-${text.slice(0, 2000)}
-"""`;
-
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 150, messages: [{ role: 'user', content: prompt }] }),
-    });
-    const data = await res.json();
-    const raw = data.choices?.[0]?.message?.content || '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Invalid response');
-    const result = JSON.parse(match[0]);
-    const label = result.label || 'medium';
-    const score = result.score || 0;
+    const result = await analyzeAIContent(text);
     if (badgeEl) {
-      badgeEl.className = `ai-badge ai-badge-${label}`;
-      badgeEl.textContent = `AI: ${score}% (${label})`;
+      badgeEl.className = `ai-badge ai-badge-${result.label}`;
+      badgeEl.textContent = `AI: ${result.score}% (${result.label})`;
       badgeEl.title = result.reason || '';
     }
   } catch (e) {
