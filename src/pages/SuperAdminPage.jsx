@@ -1,5 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
+const SUPERADMIN_SECTIONS = new Set(["dashboard", "professors", "settings"]);
+
+function readSuperAdminSectionFromUrl() {
+  if (typeof window === "undefined") return "dashboard";
+  const section = new URLSearchParams(window.location.search).get("section");
+  return SUPERADMIN_SECTIONS.has(section) ? section : "dashboard";
+}
+
+function writeSuperAdminSectionToUrl(section) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!section || section === "dashboard") {
+    url.searchParams.delete("section");
+  } else {
+    url.searchParams.set("section", section);
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 // ── tiny helpers ────────────────────────────────────────────────
 function EyeToggle({ show, onToggle }) {
   return (
@@ -469,7 +488,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
 // ── main page ───────────────────────────────────────────────────
 export default function SuperAdminPage() {
   const [ready, setReady] = useState(false);
-  const [section, setSection] = useState("dashboard");
+  const [section, setSection] = useState(() => readSuperAdminSectionFromUrl());
   const [professors, setProfessors] = useState([]);
   const [professorSearch, setProfessorSearch] = useState("");
   const [stats, setStats] = useState({
@@ -561,6 +580,10 @@ export default function SuperAdminPage() {
 
     return () => document.removeEventListener("dbReady", boot);
   }, [loadData]);
+
+  useEffect(() => {
+    writeSuperAdminSectionToUrl(section);
+  }, [section]);
 
   const doLogout = async () => {
     setConfirm({

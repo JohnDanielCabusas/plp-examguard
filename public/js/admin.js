@@ -10,6 +10,23 @@ let currentQBuilderExamId = null;
 let confirmResolve = null;
 let adminBootstrapped = false;
 let passwordPromptResolve = null;
+const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
+
+function readAdminSectionFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const section = params.get('section');
+  return ADMIN_SECTIONS.has(section) ? section : 'dashboard';
+}
+
+function writeAdminSectionToUrl(section) {
+  const url = new URL(window.location.href);
+  if (!section || section === 'dashboard') {
+    url.searchParams.delete('section');
+  } else {
+    url.searchParams.set('section', section);
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
 
 function getCurrentAdminRecord() {
   const session = Auth.getAdminSession();
@@ -135,7 +152,7 @@ document.addEventListener('dbReady', function init() {
   document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' });
 
   requestAnimationFrame(() => {
-    showSection('dashboard');
+    showSection(readAdminSectionFromUrl());
 
   // Student ID modal: digits only, auto-insert dash after 2nd digit (YY-NNNNN)
   const studentIdInput = document.getElementById('stu-student-id');
@@ -259,6 +276,7 @@ function showSection(name) {
   document.getElementById('topbar-title').textContent = titles[name] || name;
 
   currentSection = name;
+  writeAdminSectionToUrl(name);
 
   switch (name) {
     case 'dashboard': renderDashboard(); break;

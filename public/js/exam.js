@@ -37,6 +37,7 @@ const ExamApp = {
   _fullscreenInteractionGraceUntil: 0,
   _pendingFullscreenRecovery: null,
   _fullscreenVerifyTimer: null,
+  _recentClipboardShortcut: null,
   _intentionalFullscreenExit: false,
 
   _repairStudentEmail(studentSession) {
@@ -112,6 +113,132 @@ const ExamApp = {
     return options.trailing
       ? `<span style="display:inline-flex;align-items:center;gap:${gap}px;"><span>${safeLabel}</span>${icon}</span>`
       : `<span style="display:inline-flex;align-items:center;gap:${gap}px;">${icon}<span>${safeLabel}</span></span>`;
+  },
+
+  _formatExamCardDate(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Date unavailable';
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  },
+
+  _formatExamCardDateTime(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Date unavailable';
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  },
+
+  _isEditableTarget(target) {
+    if (!target || typeof target.matches !== 'function') return false;
+    return target.matches('input, textarea, [contenteditable="true"], [contenteditable=""], .essay-textarea');
+  },
+
+  _markClipboardShortcut(type) {
+    this._recentClipboardShortcut = { type, time: Date.now() };
+  },
+
+  _consumeRecentClipboardShortcut(type, maxAgeMs = 400) {
+    const recent = this._recentClipboardShortcut;
+    if (!recent || recent.type !== type) return false;
+    const isFresh = Date.now() - recent.time <= maxAgeMs;
+    if (isFresh) {
+      this._recentClipboardShortcut = null;
+      return true;
+    }
+    return false;
+  },
+
+  _ensureToastContainer() {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toast-container';
+      document.body.appendChild(container);
+    }
+    return container;
+  },
+
+  _showToast(message, type = 'success', options = {}) {
+    const icons = {
+      success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>',
+      error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+      warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+      info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    };
+    const container = this._ensureToastContainer();
+    const toast = document.createElement('div');
+    const variant = options.variant || 'default';
+    toast.className = `toast ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
+    toast.innerHTML = variant === 'settings'
+      ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(message)}</span>`
+      : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('removing');
+      setTimeout(() => toast.remove(), 350);
+    }, 3500);
+  },
+
+  _readPortalRoute() {
+    const params = new URLSearchParams(window.location.search);
+    const portal = params.get('portal');
+    const courseId = params.get('course');
+    const courseTab = params.get('courseTab');
+
+    if (portal === 'settings') return { view: 'settings' };
+    if (portal === 'course' && courseId) {
+      return {
+        view: 'course',
+        courseId,
+        courseTab: ['exams', 'people'].includes(courseTab) ? courseTab : 'exams',
+      };
+    }
+    return { view: 'home' };
+  },
+
+  _writePortalRoute(route = { view: 'home' }) {
+    const url = new URL(window.location.href);
+    if (route.view === 'settings') {
+      url.searchParams.set('portal', 'settings');
+      url.searchParams.delete('course');
+      url.searchParams.delete('courseTab');
+    } else if (route.view === 'course' && route.courseId) {
+      url.searchParams.set('portal', 'course');
+      url.searchParams.set('course', route.courseId);
+      url.searchParams.set('courseTab', ['people', 'exams'].includes(route.courseTab) ? route.courseTab : 'exams');
+    } else {
+      url.searchParams.delete('portal');
+      url.searchParams.delete('course');
+      url.searchParams.delete('courseTab');
+    }
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  },
+
+  _refreshPortalIdentity(sess) {
+    if (!sess) return;
+    const name = sess.studentName || sess.studentId || 'Student';
+    const initial = name.charAt(0).toUpperCase() || 'S';
+
+    const topbarAvatar = document.getElementById('portal-topbar-avatar');
+    const topbarName = document.getElementById('portal-topbar-name');
+    const footerAvatar = document.getElementById('portal-avatar');
+    const footerName = document.getElementById('portal-footer-name');
+    const footerMeta = document.getElementById('portal-footer-id');
+
+    if (topbarAvatar) topbarAvatar.textContent = initial;
+    if (topbarName) topbarName.textContent = name;
+    if (footerAvatar) footerAvatar.textContent = initial;
+    if (footerName) footerName.textContent = name;
+    if (footerMeta) footerMeta.textContent = this._formatFooterMeta(sess);
   },
 
   // ============================================================
@@ -238,6 +365,7 @@ const ExamApp = {
     const titleEl = document.getElementById('portal-topbar-title');
     if (titleEl) titleEl.textContent = titles[tab] || tab;
 
+    this._writePortalRoute({ view: tab === 'settings' ? 'settings' : 'home' });
     if (tab === 'settings') this._loadSettingsForm();
   },
 
@@ -272,32 +400,30 @@ const ExamApp = {
     const department = (document.getElementById('stg-department').value || '').trim();
     const program = (document.getElementById('stg-program').value || '').trim().toUpperCase();
     const msgEl = document.getElementById('stg-profile-msg');
-    if (!name) { msgEl.textContent = 'Name cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
-    if (!studentId) { msgEl.textContent = 'Student ID cannot be empty.'; msgEl.style.color = '#dc2626'; return; }
+    if (msgEl) msgEl.textContent = '';
+    if (!name) { this._showToast('Name cannot be empty.', 'error', { variant: 'settings' }); return; }
+    if (!studentId) { this._showToast('Student ID cannot be empty.', 'error', { variant: 'settings' }); return; }
     if (!/^(\d{2})-\d{5}$/.test(studentId)) {
-      msgEl.textContent = 'Student ID must be in YY-NNNNN format.';
-      msgEl.style.color = '#dc2626';
+      this._showToast('Student ID must be in YY-NNNNN format.', 'error', { variant: 'settings' });
       return;
     }
 
     const student = DB.getStudent(sess.studentId);
     if (!student) {
-      msgEl.textContent = 'Student record not found.';
-      msgEl.style.color = '#dc2626';
+      this._showToast('Student record not found.', 'error', { variant: 'settings' });
       return;
     }
 
     const duplicate = DB.getStudent(studentId);
     if (duplicate && duplicate.id !== student.id) {
-      msgEl.textContent = 'That Student ID is already assigned to another account.';
-      msgEl.style.color = '#dc2626';
+      this._showToast('That Student ID is already assigned to another account.', 'error', { variant: 'settings' });
       return;
     }
 
     const yearSectionMatch = yearSection.match(/^([1-4])-([A-Z])$/);
-    if (!yearSectionMatch) { msgEl.textContent = 'Year & section must use the format 3-B.'; msgEl.style.color = '#dc2626'; return; }
-    if (!department) { msgEl.textContent = 'Please select your department.'; msgEl.style.color = '#dc2626'; return; }
-    if (!program) { msgEl.textContent = 'Please enter your program.'; msgEl.style.color = '#dc2626'; return; }
+    if (!yearSectionMatch) { this._showToast('Year & section must use the format 3-B.', 'error', { variant: 'settings' }); return; }
+    if (!department) { this._showToast('Please select your department.', 'error', { variant: 'settings' }); return; }
+    if (!program) { this._showToast('Please enter your program.', 'error', { variant: 'settings' }); return; }
     const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
     const yearLevel = yearMap[yearSectionMatch[1]] || '';
     const section = `Section ${yearSectionMatch[2]}`;
@@ -328,9 +454,8 @@ const ExamApp = {
       program,
     };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
-    document.getElementById('portal-footer-name').textContent = name;
-    document.getElementById('portal-avatar').textContent = name.charAt(0).toUpperCase();
-    document.getElementById('portal-footer-id').textContent = this._formatFooterMeta(updated);
+    this._refreshPortalIdentity(updated);
+    this._renderDashboard(updated);
 
     if (this.session && this.session.studentId === sess.studentId) {
       this.session = {
@@ -345,9 +470,7 @@ const ExamApp = {
       };
     }
 
-    msgEl.textContent = 'Profile saved!';
-    msgEl.style.color = '#15803d';
-    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+    this._showToast('Profile updated successfully.', 'success', { variant: 'settings' });
   },
 
   _formatFooterMeta(sess) {
@@ -362,14 +485,15 @@ const ExamApp = {
     const next    = document.getElementById('stg-new-pass').value;
     const confirm = document.getElementById('stg-confirm-pass').value;
     const msgEl   = document.getElementById('stg-pass-msg');
+    if (msgEl) msgEl.textContent = '';
 
-    if (!cur || !next || !confirm) { msgEl.textContent = 'All fields are required.'; msgEl.style.color = '#dc2626'; return; }
-    if (next.length < 6) { msgEl.textContent = 'New password must be at least 6 characters.'; msgEl.style.color = '#dc2626'; return; }
-    if (next !== confirm) { msgEl.textContent = 'Passwords do not match.'; msgEl.style.color = '#dc2626'; return; }
+    if (!cur || !next || !confirm) { this._showToast('All fields are required.', 'error', { variant: 'settings' }); return; }
+    if (next.length < 6) { this._showToast('New password must be at least 6 characters.', 'error', { variant: 'settings' }); return; }
+    if (next !== confirm) { this._showToast('Passwords do not match.', 'error', { variant: 'settings' }); return; }
 
     const student = DB.getStudent(sess.studentId);
-    if (!student) { msgEl.textContent = 'Student record not found.'; msgEl.style.color = '#dc2626'; return; }
-    if (student.password !== cur) { msgEl.textContent = 'Current password is incorrect.'; msgEl.style.color = '#dc2626'; return; }
+    if (!student) { this._showToast('Student record not found.', 'error', { variant: 'settings' }); return; }
+    if (student.password !== cur) { this._showToast('Current password is incorrect.', 'error', { variant: 'settings' }); return; }
 
     const passwordUpdates = { password: next };
     if (sess.email) passwordUpdates.email = sess.email;
@@ -383,10 +507,8 @@ const ExamApp = {
         console.warn('[Supabase] Unable to persist student email from password save:', error.message || error);
       });
     }
-    msgEl.textContent = 'Password changed successfully!';
-    msgEl.style.color = '#15803d';
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { document.getElementById(id).value = ''; });
-    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+    this._showToast('Password changed successfully.', 'success', { variant: 'settings' });
   },
 
   _chipColors: ['#1d4ed8','#7c3aed','#d97706','#dc2626','#0d9488','#be185d','#ea580c','#0284c7'],
@@ -475,8 +597,11 @@ const ExamApp = {
         </div>`;
     }
 
-    // Default to exams tab
-    this.showCourseTab('exams');
+    const route = this._readPortalRoute();
+    const preferredTab = route.view === 'course' && route.courseId === subjId
+      ? route.courseTab || 'exams'
+      : 'exams';
+    this.showCourseTab(preferredTab);
   },
 
   showCourseTab(tab) {
@@ -488,6 +613,9 @@ const ExamApp = {
     });
     if (tab === 'exams')  this._renderCourseExams();
     if (tab === 'people') this._renderCoursePeople();
+    if (this._currentCourseId) {
+      this._writePortalRoute({ view: 'course', courseId: this._currentCourseId, courseTab: tab });
+    }
   },
 
   _renderCourseExams() {
@@ -525,14 +653,20 @@ const ExamApp = {
 
       exams.forEach(e => {
         const dbSess = DB.getStudentSession(e.id, sess.studentId);
-        let rightHtml = '';
+        let panelHtml = '';
+        let stateHtml = '';
+        let accentLabel = g.label;
+        const primaryDate = dbSess?.submitted
+          ? (dbSess.endTime || dbSess.startTime || e.closedAt || e.startedAt || e.createdAt)
+          : (e.startedAt || e.createdAt);
 
         const chips = [
+          `<span class="course-meta-chip">${this._portalLabel('clipboard', this._formatExamCardDate(primaryDate), { size: 13, gap: 6 })}</span>`,
           `<span class="course-meta-chip">${e.questions.length} questions</span>`,
           `<span class="course-meta-chip">${e.timeLimit} min</span>`,
         ];
         if (e.requireCamera) {
-          chips.push(`<span class="course-meta-chip chip-camera">${this._portalLabel('camera', 'Camera', { size: 13, gap: 5 })}</span>`);
+          chips.push(`<span class="course-meta-chip chip-camera">${this._portalLabel('camera', 'Camera Proctored', { size: 13, gap: 5 })}</span>`);
         }
 
         if (dbSess && dbSess.submitted) {
@@ -540,41 +674,77 @@ const ExamApp = {
           const scoreHtml = dbSess.scoreReleased
             ? `<span style="font-weight:700;color:#0f2d1a;">${dbSess.score}/${dbSess.maxScore}</span> <span style="color:#9ca3af;">(${pct}%)</span>`
             : `<span style="color:#9ca3af;font-size:12px;">Awaiting result</span>`;
-          rightHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-            <span class="badge badge-secondary" style="font-size:10px;display:inline-flex;align-items:center;gap:4px;">${this._portalIcon('checkCircle', { size: 11, stroke: '#4b5563' })}<span>Submitted</span></span>
-            <div style="font-size:13px;">${scoreHtml}</div>
-            <button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">View</button>
+          accentLabel = 'Completed';
+          stateHtml = `<span class="course-exam-state state-submitted">${this._portalIcon('checkCircle', { size: 12, stroke: '#4b5563' })}<span>Submitted</span></span>`;
+          panelHtml = `<div class="course-exam-panel panel-submitted">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(dbSess.endTime || dbSess.startTime || e.closedAt || e.startedAt || e.createdAt)}</div>
+              <div class="course-exam-panel-note">${scoreHtml}</div>
+            </div>
+            <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (e.status === 'active') {
-          rightHtml = `<div style="display:flex;align-items:center;gap:10px;">
-            <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:#15803d;">
-              <span style="width:7px;height:7px;border-radius:50%;background:#15803d;animation:pulse 1.2s infinite;display:inline-block;"></span>Live
-            </span>
-            <button class="btn-course-take" onclick="ExamApp.dashSelectExam('${e.code}')">${this._portalLabel('arrowRight', 'Take Exam', { trailing: true, gap: 8 })}</button>
+          accentLabel = 'Active';
+          stateHtml = `<span class="course-exam-state state-live"><span class="course-exam-state-dot"></span><span>Active Now</span></span>`;
+          panelHtml = `<div class="course-exam-panel panel-live">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.startedAt || e.createdAt)}</div>
+              <div class="course-exam-panel-note">You can enter this exam right now.</div>
+            </div>
+            <button class="course-exam-cta course-exam-cta-primary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>Take Exam</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (e.status === 'ready') {
-          rightHtml = `<div style="display:flex;align-items:center;gap:10px;">
-            <span class="badge badge-info" style="font-size:10px;">Scheduled</span>
-            <button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">Join Room</button>
+          accentLabel = 'Scheduled';
+          stateHtml = `<span class="course-exam-state state-ready">Scheduled</span>`;
+          panelHtml = `<div class="course-exam-panel panel-ready">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.createdAt)}</div>
+              <div class="course-exam-panel-note">This exam room is ready and waiting for activation.</div>
+            </div>
+            <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>Join Room</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (e.status === 'closed') {
-          rightHtml = `<span class="badge badge-secondary" style="font-size:10px;">Closed</span>`;
-          if (dbSess) rightHtml += ` <button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">View</button>`;
+          accentLabel = 'Closed';
+          stateHtml = `<span class="course-exam-state state-closed">Closed</span>`;
+          panelHtml = `<div class="course-exam-panel panel-closed">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.closedAt || e.updatedAt || e.createdAt)}</div>
+              <div class="course-exam-panel-note">This exam is no longer accepting submissions.</div>
+            </div>
+            ${dbSess
+              ? `<button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>`
+              : `<button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Closed</span></button>`}
+          </div>`;
         } else {
-          rightHtml = `<span class="badge badge-secondary" style="font-size:10px;opacity:0.6;">Draft</span>`;
+          accentLabel = 'Draft';
+          stateHtml = `<span class="course-exam-state state-closed">Draft</span>`;
+          panelHtml = `<div class="course-exam-panel panel-closed">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.createdAt)}</div>
+              <div class="course-exam-panel-note">This exam is not yet available.</div>
+            </div>
+          </div>`;
         }
 
         html += `<div class="course-exam-card ${g.cardClass}">
-          <div class="course-exam-card-left">
-            <div class="course-exam-icon ${g.iconClass}">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <div class="course-exam-shell">
+            <div class="course-exam-card-left">
+              <div class="course-exam-icon ${g.iconClass}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              </div>
+              <div class="course-exam-copy">
+                <div class="course-exam-kicker">${_esc(accentLabel)}</div>
+                <div class="course-exam-title">${_esc(e.title)}</div>
+                <div class="course-exam-meta">${chips.join('')}</div>
+              </div>
             </div>
-            <div>
-              <div class="course-exam-title">${_esc(e.title)}</div>
-              <div class="course-exam-meta">${chips.join('')}</div>
-            </div>
+            <div class="course-exam-actions-pane">${panelHtml}</div>
           </div>
-          <div class="dash-exam-actions" style="flex-shrink:0;">${rightHtml}</div>
         </div>`;
       });
 
@@ -641,23 +811,16 @@ const ExamApp = {
     if (!sess) { window.location.href = 'index.html'; return; }
 
     this.showState('dashboard');
-    this.showPortalTab('home');
 
     // Logo from settings
     const settings = DB.getSettings();
     const logoEl = document.getElementById('portal-logo');
     if (logoEl && settings.logoUrl) logoEl.src = settings.logoUrl;
 
-    // Sidebar footer
-    const name = sess.studentName || sess.studentId;
-    const avatarEl = document.getElementById('portal-avatar');
-    if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
-    const fnEl = document.getElementById('portal-footer-name');
-    if (fnEl) fnEl.textContent = name;
-    const fidEl = document.getElementById('portal-footer-id');
-    if (fidEl) fidEl.textContent = this._formatFooterMeta(sess);
+    this._refreshPortalIdentity(sess);
 
     // Greeting
+    const name = sess.studentName || sess.studentId;
     const greetEl = document.getElementById('dash-greeting');
     if (greetEl) {
       const hr = new Date().getHours();
@@ -684,6 +847,21 @@ const ExamApp = {
     this._renderDashboard(sess);
     if (this._dashInterval) clearInterval(this._dashInterval);
     this._dashInterval = setInterval(() => this._renderDashboard(Auth.getStudentSession()), 5000);
+
+    const route = this._readPortalRoute();
+    if (route.view === 'settings') {
+      this.showPortalTab('settings');
+      return;
+    }
+    if (route.view === 'course') {
+      const student = DB.getStudent(sess.studentId);
+      const enrolled = student?.enrolledSubjects || [];
+      if (enrolled.includes(route.courseId)) {
+        this.showCourseView(route.courseId);
+        return;
+      }
+    }
+    this.showPortalTab('home');
   },
 
   _renderDashboard(sess) {
@@ -1226,23 +1404,33 @@ const ExamApp = {
 
     // ── Copy / cut ───────────────────────────────────────────────
     const copyHandler = e => {
-      e.preventDefault();
-      this.issueWarning('copy_attempt', 'Copying content detected');
+      const action = e.type === 'cut' ? 'cut' : 'copy';
+      const editable = this._isEditableTarget(e.target);
+      const viaShortcut = this._consumeRecentClipboardShortcut(action);
+
+      if (!editable) e.preventDefault();
+      if (!viaShortcut) {
+        this._recordActivity('copy_attempt', `Copy/cut action attempt detected (${action})`);
+      }
     };
     document.addEventListener('copy', copyHandler);
     document.addEventListener('cut', copyHandler);
 
     // ── Paste & selection blocked silently ──────────────────────
     const pasteHandler = e => {
-      if (!e.target.matches('input, textarea')) {
+      const editable = this._isEditableTarget(e.target);
+      const viaShortcut = this._consumeRecentClipboardShortcut('paste');
+      if (!editable) {
         e.preventDefault();
+      }
+      if (!viaShortcut) {
         this._recordActivity('paste_attempt', 'Paste attempt detected');
       }
     };
     document.addEventListener('paste', pasteHandler);
 
     const selectHandler = e => {
-      if (!e.target.matches('input, textarea')) e.preventDefault();
+      if (!this._isEditableTarget(e.target)) e.preventDefault();
     };
     document.addEventListener('selectstart', selectHandler);
 
@@ -1289,15 +1477,21 @@ const ExamApp = {
         }
       }
       if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(e.key.toLowerCase())) {
-        if (!e.target.matches('input, textarea')) {
+        const key = e.key.toLowerCase();
+        const editable = this._isEditableTarget(e.target);
+
+        if (key === 'c') {
+          this._markClipboardShortcut('copy');
+          this._recordActivity('ctrl_c_attempt', 'Ctrl+C shortcut attempt detected');
+        } else if (key === 'v') {
+          this._markClipboardShortcut('paste');
+          this._recordActivity('ctrl_v_attempt', 'Ctrl+V shortcut attempt detected');
+        } else if (key === 'x') {
+          this._markClipboardShortcut('cut');
+        }
+
+        if (!editable) {
           e.preventDefault();
-          const key = e.key.toLowerCase();
-          if (key === 'c') {
-            this._recordActivity('ctrl_c_attempt', 'Ctrl+C shortcut attempt detected');
-            this.issueWarning('copy_attempt', 'Copying content detected');
-          } else if (key === 'v') {
-            this._recordActivity('ctrl_v_attempt', 'Ctrl+V shortcut attempt detected');
-          }
         }
       }
     };
