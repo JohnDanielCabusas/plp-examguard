@@ -440,7 +440,7 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div className="reports-toolbar-actions">
-                  <button className="btn btn-secondary" onClick={() => window.generatePDF()} id="btn-generate-pdf" disabled>Export PDF</button>
+                  <button className="btn btn-secondary" onClick={() => window.exportExamReportPdf()} id="btn-generate-pdf">Export PDF</button>
                   <button className="btn btn-success" onClick={() => window.releaseScores()} id="btn-release-scores" disabled>Release Scores to Students</button>
                 </div>
               </div>

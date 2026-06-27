@@ -40,6 +40,136 @@ const DB = {
     this._cache = {};
   },
 
+  _getCurrentAdminId() {
+    try {
+      return window.Auth?.getAdminSession?.()?.id || null;
+    } catch {
+      return null;
+    }
+  },
+
+  _getPrimaryAdminId() {
+    const admins = this._read(this.KEYS.admins, []);
+    return admins[0]?.id || null;
+  },
+
+  _getPrimaryAdmin() {
+    const admins = this._read(this.KEYS.admins, []);
+    return admins[0] || null;
+  },
+
+  _getLegacyPlaceholderOwnerId() {
+    const admins = this._read(this.KEYS.admins, []);
+    if (admins.length <= 1) return null;
+    const primaryAdmin = admins[0];
+    if (!primaryAdmin) return null;
+
+    const username = String(primaryAdmin.username || '').trim().toLowerCase();
+    const email = String(primaryAdmin.email || '').trim().toLowerCase();
+    const name = String(primaryAdmin.name || '').trim().toLowerCase();
+    const isDefaultSeedAdmin = username === 'admin'
+      && email === 'admin@school.edu'
+      && name === 'administrator';
+
+    return isDefaultSeedAdmin ? primaryAdmin.id : null;
+  },
+
+  _shouldClaimLegacyOwner(ownerAdminId, currentAdminId = this._getCurrentAdminId()) {
+    if (!currentAdminId) return false;
+    const normalizedOwnerId = String(ownerAdminId || '').trim();
+    if (!normalizedOwnerId) return true;
+    const placeholderOwnerId = this._getLegacyPlaceholderOwnerId();
+    if (!placeholderOwnerId) return false;
+    return normalizedOwnerId === placeholderOwnerId && currentAdminId !== placeholderOwnerId;
+  },
+
+  _getDefaultOwnerAdminId() {
+    return this._getCurrentAdminId() || this._getPrimaryAdminId() || null;
+  },
+
+  _withOwner(data, ownerAdminId = this._getDefaultOwnerAdminId()) {
+    return ownerAdminId ? { ...data, ownerAdminId } : { ...data };
+  },
+
+  _filterByOwner(records, ownerAdminId = this._getCurrentAdminId()) {
+    if (!ownerAdminId) return records;
+    return records.filter(record => record?.ownerAdminId === ownerAdminId);
+  },
+
+  _deriveStudentOwner(student, subjects, fallbackOwnerId) {
+    const matchedSubject = (student?.enrolledSubjects || [])
+      .map(subjectId => subjects.find(subject => subject.id === subjectId))
+      .find(Boolean);
+    const matchedSubjectOwnerId = matchedSubject?.ownerAdminId;
+    if (matchedSubjectOwnerId && !this._shouldClaimLegacyOwner(matchedSubjectOwnerId, fallbackOwnerId)) {
+      return matchedSubjectOwnerId;
+    }
+    if (student?.ownerAdminId && !this._shouldClaimLegacyOwner(student.ownerAdminId, fallbackOwnerId)) {
+      return student.ownerAdminId;
+    }
+    return fallbackOwnerId || null;
+  },
+
+  _migrateOwnerScope() {
+    const currentAdminId = this._getCurrentAdminId();
+    if (!currentAdminId) return;
+
+    const syncMigrated = (table, next, prev) => {
+      if (JSON.stringify(next) === JSON.stringify(prev)) return;
+      this._write(this.KEYS[table], next);
+      next.forEach((record, index) => {
+        if (!prev[index] || prev[index].ownerAdminId === record.ownerAdminId) return;
+        SupabaseSync.syncDoc(table, record);
+      });
+    };
+
+    const rawSubjects = this._read(this.KEYS.subjects, []);
+    const subjects = rawSubjects.map(subject => (
+      this._shouldClaimLegacyOwner(subject.ownerAdminId, currentAdminId)
+        ? { ...subject, ownerAdminId: currentAdminId }
+        : subject
+    ));
+    syncMigrated('subjects', subjects, rawSubjects);
+
+    const rawStudents = this._read(this.KEYS.students, []);
+    const students = rawStudents.map(student => {
+      if (!this._shouldClaimLegacyOwner(student.ownerAdminId, currentAdminId)) return student;
+      return {
+        ...student,
+        ownerAdminId: this._deriveStudentOwner(student, subjects, currentAdminId),
+      };
+    });
+    syncMigrated('students', students, rawStudents);
+
+    const rawExams = this._read(this.KEYS.exams, []);
+    const exams = rawExams.map(exam => {
+      if (!this._shouldClaimLegacyOwner(exam.ownerAdminId, currentAdminId)) return exam;
+      const subject = subjects.find(entry => entry.id === exam.subjectId);
+      return { ...exam, ownerAdminId: subject?.ownerAdminId || currentAdminId };
+    });
+    syncMigrated('exams', exams, rawExams);
+
+    const rawSessions = this._read(this.KEYS.sessions, []);
+    const sessions = rawSessions.map(session => {
+      if (!this._shouldClaimLegacyOwner(session.ownerAdminId, currentAdminId)) return session;
+      const exam = exams.find(entry => entry.id === session.examId);
+      return { ...session, ownerAdminId: exam?.ownerAdminId || currentAdminId };
+    });
+    syncMigrated('sessions', sessions, rawSessions);
+
+    const rawLogs = this._read(this.KEYS.logs, []);
+    const logs = rawLogs.map(log => {
+      if (!this._shouldClaimLegacyOwner(log.ownerAdminId, currentAdminId)) return log;
+      const session = sessions.find(entry => entry.id === log.sessionId);
+      const exam = exams.find(entry => entry.id === log.examId);
+      return {
+        ...log,
+        ownerAdminId: session?.ownerAdminId || exam?.ownerAdminId || currentAdminId,
+      };
+    });
+    syncMigrated('logs', logs, rawLogs);
+  },
+
   _getSupabaseClient() {
     return window.SupabaseBridge?.client || window.supabase || null;
   },
@@ -58,6 +188,7 @@ const DB = {
       department: row.department || '',
       program: row.program || '',
       enrolledSubjects: Array.isArray(row.enrolled_subjects) ? row.enrolled_subjects : [],
+      ownerAdminId: row.owner_admin_id || '',
       archived: !!row.archived,
       archivedAt: row.archived_at || null,
       createdAt: row.created_at || null,
@@ -78,6 +209,7 @@ const DB = {
       department: student.department || null,
       program: student.program || null,
       enrolled_subjects: Array.isArray(student.enrolledSubjects) ? student.enrolledSubjects : [],
+      owner_admin_id: student.ownerAdminId || null,
       archived: !!student.archived,
       archived_at: student.archivedAt || null,
     };
@@ -268,9 +400,9 @@ const DB = {
     // Students - seed demo students
     if (!localStorage.getItem(this.KEYS.students)) {
       localStorage.setItem(this.KEYS.students, JSON.stringify([
-        { id: this.generateId(), studentId: '26-00001', name: 'Alice Santos', yearLevel: '3rd Year', section: 'Section A', email: 'alice@school.edu' },
-        { id: this.generateId(), studentId: '26-00002', name: 'Bob Reyes', yearLevel: '3rd Year', section: 'Section A', email: 'bob@school.edu' },
-        { id: this.generateId(), studentId: '26-00003', name: 'Carlos Mendoza', yearLevel: '2nd Year', section: 'Section B', email: 'carlos@school.edu' },
+        this._withOwner({ id: this.generateId(), studentId: '26-00001', name: 'Alice Santos', yearLevel: '3rd Year', section: 'Section A', email: 'alice@school.edu' }),
+        this._withOwner({ id: this.generateId(), studentId: '26-00002', name: 'Bob Reyes', yearLevel: '3rd Year', section: 'Section A', email: 'bob@school.edu' }),
+        this._withOwner({ id: this.generateId(), studentId: '26-00003', name: 'Carlos Mendoza', yearLevel: '2nd Year', section: 'Section B', email: 'carlos@school.edu' }),
       ]));
     } else {
       // Migration: replace old STU### format with new YY-NNNNN format
@@ -291,8 +423,8 @@ const DB = {
       const subId1 = 'subj1';
       const subId2 = 'subj2';
       localStorage.setItem(this.KEYS.subjects, JSON.stringify([
-        { id: subId1, code: 'CS101', name: 'Introduction to Computing', description: 'Fundamentals of computer science', createdAt: new Date().toISOString() },
-        { id: subId2, code: 'MATH201', name: 'Discrete Mathematics', description: 'Logic, sets, graphs and combinatorics', createdAt: new Date().toISOString() },
+        this._withOwner({ id: subId1, code: 'CS101', name: 'Introduction to Computing', description: 'Fundamentals of computer science', createdAt: new Date().toISOString() }),
+        this._withOwner({ id: subId2, code: 'MATH201', name: 'Discrete Mathematics', description: 'Logic, sets, graphs and combinatorics', createdAt: new Date().toISOString() }),
       ]));
     }
 
@@ -362,6 +494,7 @@ const DB = {
           startedAt: null,
           closedAt: null,
           scoringReleased: false,
+          ownerAdminId: this._getDefaultOwnerAdminId(),
         }
       ]));
     }
@@ -408,6 +541,9 @@ const DB = {
   addProfessor(data) {
     const admins = this.getAdmins();
     if (admins.find(a => a.username === data.username)) return { success: false, message: 'Username already exists.' };
+    if (data.email && admins.find(a => (a.email || '').toLowerCase() === data.email.toLowerCase())) {
+      return { success: false, message: 'Email already exists.' };
+    }
     const newProf = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
     admins.push(newProf);
     this._write(this.KEYS.admins, admins);
@@ -434,23 +570,89 @@ const DB = {
 
   // ---- Students ----
   getStudents() {
-    return this.getAllStudentsRaw().filter(s => !s.archived);
+    this._migrateOwnerScope();
+    return this._filterByOwner(this.getAllStudentsRaw()).filter(s => !s.archived);
   },
   getAllStudentsRaw() {
+    this._migrateOwnerScope();
     return this._read(this.KEYS.students, []);
   },
   getArchivedStudents() {
-    return this.getAllStudentsRaw().filter(s => s.archived);
+    return this._filterByOwner(this.getAllStudentsRaw()).filter(s => s.archived);
   },
   getStudent(studentId) {
-    return this.getStudents().find(s => s.studentId === studentId) || null;
+    return this.getAllStudentsRaw().find(s => s.studentId === studentId) || null;
   },
   getStudentById(id) {
     return this.getAllStudentsRaw().find(s => s.id === id) || null;
   },
+  _normalizeStudentIdValue(studentId) {
+    return String(studentId || '').trim().toUpperCase();
+  },
+  _normalizeStudentEmailValue(email) {
+    return String(email || '').trim().toLowerCase();
+  },
+  findStudentConflict({ studentId, email, excludeId = null } = {}) {
+    const normalizedStudentId = this._normalizeStudentIdValue(studentId);
+    const normalizedEmail = this._normalizeStudentEmailValue(email);
+    const students = this._filterByOwner(this.getAllStudentsRaw());
+
+    const studentIdMatch = normalizedStudentId
+      ? students.find(student =>
+          student.id !== excludeId &&
+          this._normalizeStudentIdValue(student.studentId) === normalizedStudentId
+        ) || null
+      : null;
+
+    const emailMatch = normalizedEmail
+      ? students.find(student =>
+          student.id !== excludeId &&
+          this._normalizeStudentEmailValue(student.email) === normalizedEmail
+        ) || null
+      : null;
+
+    return { studentIdMatch, emailMatch };
+  },
+  _buildStudentConflictMessage(conflict) {
+    const hasStudentIdConflict = !!conflict?.studentIdMatch;
+    const hasEmailConflict = !!conflict?.emailMatch;
+    const hasArchivedConflict = !!(conflict?.studentIdMatch?.archived || conflict?.emailMatch?.archived);
+
+    if (hasArchivedConflict) {
+      if (hasStudentIdConflict && hasEmailConflict) {
+        return 'A student with this Student ID or email already exists in the archive. Restore that record instead of creating a duplicate.';
+      }
+      if (hasStudentIdConflict) {
+        return 'This Student ID already exists in the archive. Restore that student instead of creating a duplicate.';
+      }
+      return 'This email already exists in the archive. Restore that student instead of creating a duplicate.';
+    }
+
+    if (hasStudentIdConflict && hasEmailConflict) {
+      return 'A student with this Student ID or email already exists.';
+    }
+    if (hasStudentIdConflict) {
+      return 'This Student ID already exists.';
+    }
+    return 'This email already exists.';
+  },
+  _assertUniqueStudent({ studentId, email, excludeId = null } = {}) {
+    const conflict = this.findStudentConflict({ studentId, email, excludeId });
+    if (!conflict.studentIdMatch && !conflict.emailMatch) return;
+    const error = new Error(this._buildStudentConflictMessage(conflict));
+    error.code = 'DUPLICATE_STUDENT';
+    error.conflict = conflict;
+    throw error;
+  },
   addStudent(data) {
     const students = [...this.getAllStudentsRaw()];
-    const newStudent = { id: this.generateId(), ...data };
+    const newStudent = this._withOwner({
+      id: this.generateId(),
+      ...data,
+      studentId: this._normalizeStudentIdValue(data.studentId),
+      email: this._normalizeStudentEmailValue(data.email),
+    });
+    this._assertUniqueStudent({ studentId: newStudent.studentId, email: newStudent.email });
     students.push(newStudent);
     this._write(this.KEYS.students, students);
     SupabaseSync.syncDoc('students', newStudent);
@@ -460,7 +662,23 @@ const DB = {
     return newStudent;
   },
   updateStudent(id, updates) {
-    const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...updates } : s);
+    const current = this.getStudentById(id);
+    if (!current) return;
+
+    const nextStudentId = Object.prototype.hasOwnProperty.call(updates, 'studentId')
+      ? this._normalizeStudentIdValue(updates.studentId)
+      : this._normalizeStudentIdValue(current.studentId);
+    const nextEmail = Object.prototype.hasOwnProperty.call(updates, 'email')
+      ? this._normalizeStudentEmailValue(updates.email)
+      : this._normalizeStudentEmailValue(current.email);
+
+    this._assertUniqueStudent({ studentId: nextStudentId, email: nextEmail, excludeId: id });
+
+    const normalizedUpdates = { ...updates };
+    if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'studentId')) normalizedUpdates.studentId = nextStudentId;
+    if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'email')) normalizedUpdates.email = nextEmail;
+
+    const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...normalizedUpdates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
     this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
     if (updated) SupabaseSync.syncDoc('students', updated);
@@ -516,62 +734,82 @@ const DB = {
     SupabaseSync.deleteDoc('students', id);
   },
   studentExists(studentId) {
-    return this.getStudents().some(s => s.studentId === studentId);
+    return !!this.findStudentConflict({ studentId }).studentIdMatch;
   },
 
   // ---- Subjects ----
   getSubjects() {
-    return this._read(this.KEYS.subjects, []);
+    this._migrateOwnerScope();
+    return this._filterByOwner(this._read(this.KEYS.subjects, []));
   },
   getSubject(id) {
-    return this.getSubjects().find(s => s.id === id) || null;
+    const subjects = this._read(this.KEYS.subjects, []);
+    const subject = subjects.find(s => s.id === id) || null;
+    const ownerAdminId = this._getCurrentAdminId();
+    if (ownerAdminId && subject?.ownerAdminId !== ownerAdminId) return null;
+    return subject;
   },
   addSubject(data) {
-    const subjects = [...this.getSubjects()];
-    const newSubject = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
+    const subjects = [...this._read(this.KEYS.subjects, [])];
+    const newSubject = this._withOwner({ id: this.generateId(), createdAt: new Date().toISOString(), ...data });
     subjects.push(newSubject);
     this._write(this.KEYS.subjects, subjects);
     SupabaseSync.syncDoc('subjects', newSubject);
     return newSubject;
   },
   updateSubject(id, updates) {
-    const subjects = this.getSubjects().map(s => s.id === id ? { ...s, ...updates } : s);
+    const subjects = this._read(this.KEYS.subjects, []).map(s => s.id === id ? { ...s, ...updates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
     this._write(this.KEYS.subjects, subjects);
     const updated = subjects.find(s => s.id === id);
     if (updated) SupabaseSync.syncDoc('subjects', updated);
   },
   deleteSubject(id) {
-    const subjects = this.getSubjects().filter(s => s.id !== id);
+    const subjects = this._read(this.KEYS.subjects, []).filter(s => s.id !== id);
     this._write(this.KEYS.subjects, subjects);
     SupabaseSync.deleteDoc('subjects', id);
   },
 
   // ---- Exams ----
   getExams() {
-    return this._read(this.KEYS.exams, []);
+    this._migrateOwnerScope();
+    return this._filterByOwner(this._read(this.KEYS.exams, []));
   },
   getExam(id) {
-    return this.getExams().find(e => e.id === id) || null;
+    const exams = this._read(this.KEYS.exams, []);
+    const exam = exams.find(e => e.id === id) || null;
+    const ownerAdminId = this._getCurrentAdminId();
+    if (ownerAdminId && exam?.ownerAdminId !== ownerAdminId) return null;
+    return exam;
   },
   getExamByCode(code) {
-    return this.getExams().find(e => e.code === code.toUpperCase()) || null;
+    return this._read(this.KEYS.exams, []).find(e => e.code === code.toUpperCase()) || null;
   },
   addExam(data) {
-    const exams = [...this.getExams()];
-    const newExam = { id: this.generateId(), createdAt: new Date().toISOString(), questions: [], ...data };
+    const exams = [...this._read(this.KEYS.exams, [])];
+    const subject = data.subjectId ? this._read(this.KEYS.subjects, []).find(s => s.id === data.subjectId) : null;
+    const newExam = this._withOwner({ id: this.generateId(), createdAt: new Date().toISOString(), questions: [], ...data }, subject?.ownerAdminId || this._getDefaultOwnerAdminId());
     exams.push(newExam);
     this._write(this.KEYS.exams, exams);
     SupabaseSync.syncDoc('exams', newExam);
     return newExam;
   },
   updateExam(id, updates) {
-    const exams = this.getExams().map(e => e.id === id ? { ...e, ...updates } : e);
+    const subjects = this._read(this.KEYS.subjects, []);
+    const exams = this._read(this.KEYS.exams, []).map(e => {
+      if (e.id !== id) return e;
+      const nextSubject = updates.subjectId ? subjects.find(s => s.id === updates.subjectId) : null;
+      return {
+        ...e,
+        ...updates,
+        ownerAdminId: nextSubject?.ownerAdminId || e.ownerAdminId || this._getDefaultOwnerAdminId(),
+      };
+    });
     this._write(this.KEYS.exams, exams);
     const updated = exams.find(e => e.id === id);
     if (updated) SupabaseSync.syncDoc('exams', updated);
   },
   deleteExam(id) {
-    const exams = this.getExams().filter(e => e.id !== id);
+    const exams = this._read(this.KEYS.exams, []).filter(e => e.id !== id);
     this._write(this.KEYS.exams, exams);
     SupabaseSync.deleteDoc('exams', id);
   },
@@ -581,10 +819,15 @@ const DB = {
 
   // ---- Sessions ----
   getSessions() {
-    return this._read(this.KEYS.sessions, []);
+    this._migrateOwnerScope();
+    return this._filterByOwner(this._read(this.KEYS.sessions, []));
   },
   getSession(id) {
-    return this.getSessions().find(s => s.id === id) || null;
+    const sessions = this._read(this.KEYS.sessions, []);
+    const session = sessions.find(s => s.id === id) || null;
+    const ownerAdminId = this._getCurrentAdminId();
+    if (ownerAdminId && session?.ownerAdminId !== ownerAdminId) return null;
+    return session;
   },
   getSessionsByExam(examId) {
     return this.getSessions().filter(s => s.examId === examId);
@@ -593,15 +836,16 @@ const DB = {
     return this.getSessions().find(s => s.examId === examId && s.studentId === studentId) || null;
   },
   addSession(data) {
-    const sessions = [...this.getSessions()];
-    const newSession = { id: this.generateId(), ...data };
+    const sessions = [...this._read(this.KEYS.sessions, [])];
+    const exam = data.examId ? this._read(this.KEYS.exams, []).find(entry => entry.id === data.examId) : null;
+    const newSession = this._withOwner({ id: this.generateId(), ...data }, exam?.ownerAdminId || this._getDefaultOwnerAdminId());
     sessions.push(newSession);
     this._write(this.KEYS.sessions, sessions);
     SupabaseSync.syncDoc('sessions', newSession);
     return newSession;
   },
   updateSession(id, updates) {
-    const sessions = this.getSessions().map(s => s.id === id ? { ...s, ...updates } : s);
+    const sessions = this._read(this.KEYS.sessions, []).map(s => s.id === id ? { ...s, ...updates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
     this._write(this.KEYS.sessions, sessions);
     const updated = sessions.find(s => s.id === id);
     if (updated) SupabaseSync.syncDoc('sessions', updated);
@@ -609,11 +853,14 @@ const DB = {
 
   // ---- Logs ----
   getLogs() {
-    return this._read(this.KEYS.logs, []);
+    this._migrateOwnerScope();
+    return this._filterByOwner(this._read(this.KEYS.logs, []));
   },
   addLog(data) {
-    const logs = [...this.getLogs()];
-    const newLog = { id: this.generateId(), timestamp: new Date().toISOString(), ...data };
+    const logs = [...this._read(this.KEYS.logs, [])];
+    const session = data.sessionId ? this._read(this.KEYS.sessions, []).find(entry => entry.id === data.sessionId) : null;
+    const exam = data.examId ? this._read(this.KEYS.exams, []).find(entry => entry.id === data.examId) : null;
+    const newLog = this._withOwner({ id: this.generateId(), timestamp: new Date().toISOString(), ...data }, session?.ownerAdminId || exam?.ownerAdminId || this._getDefaultOwnerAdminId());
     logs.push(newLog);
     this._write(this.KEYS.logs, logs);
     SupabaseSync.syncDoc('logs', newLog);

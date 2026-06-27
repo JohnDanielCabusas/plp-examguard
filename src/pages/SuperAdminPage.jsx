@@ -52,11 +52,69 @@ function Toast({ message, type, onDone }) {
     const t = setTimeout(onDone, 3000);
     return () => clearTimeout(t);
   }, [onDone]);
-  const bg =
-    type === "error" ? "#dc2626" : type === "warning" ? "#d97706" : "#16a34a";
+  const icons = {
+    success: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      >
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    ),
+    error: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      >
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    ),
+    warning: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    ),
+    info: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+    ),
+  };
   return (
-    <div className="sa-toast" style={{ background: bg }}>
-      {message}
+    <div className={`sa-toast sa-toast-${type}`}>
+      <span className="sa-toast-icon">{icons[type] || icons.info}</span>
+      <span className="sa-toast-message">{message}</span>
     </div>
   );
 }
@@ -194,17 +252,63 @@ function StatCard({ label, value, icon, color }) {
 }
 
 // ── confirm dialog ──────────────────────────────────────────────
-function ConfirmDialog({ message, onConfirm, onCancel }) {
+function ConfirmDialog({
+  title = "Confirm Action",
+  message,
+  confirmLabel = "Confirm",
+  confirmClassName = "btn btn-danger",
+  icon = "warning",
+  onConfirm,
+  onCancel,
+}) {
+  const iconStroke =
+    icon === "signout" ? "#0f5132" : icon === "danger" ? "#dc2626" : "#d97706";
+  const iconBg =
+    icon === "signout" ? "#e8f5ec" : icon === "danger" ? "#fee2e2" : "#fef3c7";
   return (
     <div className="sa-modal-overlay">
       <div className="sa-modal sa-modal-sm">
+        <div className="sa-confirm-icon" style={{ background: iconBg }}>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={iconStroke}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {icon === "signout" ? (
+              <>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </>
+            ) : icon === "danger" ? (
+              <>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </>
+            ) : (
+              <>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </>
+            )}
+          </svg>
+        </div>
+        <div className="sa-confirm-title">{title}</div>
         <div className="sa-confirm-message">{message}</div>
         <div className="sa-modal-actions">
           <button className="btn btn-secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-danger" onClick={onConfirm}>
-            Delete
+          <button className={confirmClassName} onClick={onConfirm}>
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -252,7 +356,10 @@ function ProfessorModal({ professor, onSave, onClose }) {
 
     const data = { name, username, email };
     if (password) data.password = password;
-    onSave(data);
+    const result = onSave(data);
+    if (result?.success === false) {
+      setError(result.message || "Unable to save professor.");
+    }
   };
 
   return (
@@ -364,6 +471,7 @@ export default function SuperAdminPage() {
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState("dashboard");
   const [professors, setProfessors] = useState([]);
+  const [professorSearch, setProfessorSearch] = useState("");
   const [stats, setStats] = useState({
     professors: 0,
     students: 0,
@@ -461,7 +569,12 @@ export default function SuperAdminPage() {
 
   const doLogout = async () => {
     setConfirm({
-      message: "Sign out of ExamGuard Admin?",
+      title: "Sign Out",
+      message:
+        "Sign out of your system admin panel? You will need to log in again to continue.",
+      confirmLabel: "Sign Out",
+      confirmClassName: "btn btn-primary",
+      icon: "signout",
       onConfirm: () => {
         setConfirm(null);
         window.Auth?.clearSysAdminSession?.();
@@ -481,6 +594,32 @@ export default function SuperAdminPage() {
 
   const saveProfessor = (data) => {
     const existing = profModal?.professor;
+    const normalizedEmail = (data.email || "").trim().toLowerCase();
+    const duplicateEmail = normalizedEmail
+      ? professors.find(
+          (prof) =>
+            (prof.email || "").trim().toLowerCase() === normalizedEmail &&
+            prof.id !== existing?.id,
+        )
+      : null;
+    if (duplicateEmail) {
+      const message =
+        "That email is already assigned to another professor. Duplicate emails are not allowed.";
+      showToast(message, "error");
+      return { success: false, message };
+    }
+
+    const duplicateUsername = professors.find(
+      (prof) =>
+        (prof.username || "").trim().toLowerCase() === data.username &&
+        prof.id !== existing?.id,
+    );
+    if (duplicateUsername) {
+      const message = "Username already exists.";
+      showToast(message, "error");
+      return { success: false, message };
+    }
+
     if (existing) {
       window.DB.updateAdmin(existing.id, data);
       showToast("Professor updated successfully.");
@@ -488,17 +627,30 @@ export default function SuperAdminPage() {
       const result = window.DB.addProfessor(data);
       if (!result.success) {
         showToast(result.message, "error");
-        return;
+        return { success: false, message: result.message };
       }
       showToast("Professor added successfully.");
     }
     setProfModal(null);
     loadData();
+    return { success: true };
   };
+
+  const filteredProfessors = professors.filter((prof) => {
+    const query = professorSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [prof.name, prof.username, prof.email]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(query));
+  });
 
   const confirmDeleteProfessor = (prof) => {
     setConfirm({
+      title: "Delete Professor?",
       message: `Delete professor "${prof.name}" (@${prof.username})? This cannot be undone.`,
+      confirmLabel: "Delete",
+      confirmClassName: "btn btn-danger",
+      icon: "danger",
       onConfirm: () => {
         window.DB.deleteProfessor(prof.id);
         setConfirm(null);
@@ -694,7 +846,11 @@ export default function SuperAdminPage() {
       )}
       {confirm && (
         <ConfirmDialog
+          title={confirm.title}
           message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
+          confirmClassName={confirm.confirmClassName}
+          icon={confirm.icon}
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
         />
@@ -911,10 +1067,39 @@ export default function SuperAdminPage() {
               {section === "professors" && (
                 <div>
                   <div className="section-header">
-                    <div>
-                      <div className="section-title">Professors</div>
-                      <div className="section-subtitle">
-                        Manage professor accounts for the exam management panel
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div>
+                        <div className="section-title">Professors</div>
+                        <div className="section-subtitle">
+                          Manage professor accounts for the exam management panel
+                        </div>
+                      </div>
+                      <div
+                        className="search-input"
+                        style={{ marginTop: "14px", maxWidth: "360px" }}
+                      >
+                        <span className="search-icon">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Search professors"
+                          value={professorSearch}
+                          onChange={(e) => setProfessorSearch(e.target.value)}
+                        />
                       </div>
                     </div>
                     <button
@@ -937,6 +1122,15 @@ export default function SuperAdminPage() {
                             manage exams.
                           </div>
                         </div>
+                      ) : filteredProfessors.length === 0 ? (
+                        <div className="dash-empty" style={{ padding: "48px" }}>
+                          <div className="dash-empty-title">
+                            No matching professors
+                          </div>
+                          <div className="dash-empty-sub">
+                            Try a different name, username, or email.
+                          </div>
+                        </div>
                       ) : (
                         <div className="table-wrapper">
                           <table>
@@ -950,7 +1144,7 @@ export default function SuperAdminPage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {professors.map((p) => (
+                              {filteredProfessors.map((p) => (
                                 <tr key={p.id}>
                                   <td data-label="Name">
                                     <div className="sa-person-cell">

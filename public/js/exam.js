@@ -814,6 +814,22 @@ const ExamApp = {
   },
 
   dashSignOut() {
+    const modal = document.getElementById('confirm-logout-modal');
+    if (modal) {
+      modal.classList.remove('hidden');
+      return;
+    }
+    if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    Auth.clearStudentSession();
+    window.location.href = 'index.html';
+  },
+
+  cancelLogout() {
+    document.getElementById('confirm-logout-modal')?.classList.add('hidden');
+  },
+
+  confirmLogout() {
+    this.cancelLogout();
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     Auth.clearStudentSession();
     window.location.href = 'index.html';

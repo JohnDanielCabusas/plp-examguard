@@ -463,6 +463,26 @@ export default function ExamPage() {
           </div>
         </div>
       </div>
+
+      <div id="confirm-logout-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog">
+            <div className="confirm-icon" style={{ background: '#e8f5ec' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </div>
+            <div className="confirm-title">Sign Out</div>
+            <div className="confirm-message">Sign out of your student portal? You will need to log in again to continue.</div>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={() => window.ExamApp.cancelLogout()}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => window.ExamApp.confirmLogout()}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

@@ -204,7 +204,13 @@ function closeSidebar() {
 }
 
 async function doLogout() {
-  const ok = await showConfirm('Sign out of PLP ExamGuard?');
+  const ok = await showConfirm({
+    title: 'Sign Out',
+    message: 'Sign out of your professor admin panel? You will need to log in again to continue.',
+    confirmLabel: 'Sign Out',
+    confirmClass: 'btn btn-primary',
+    icon: 'signout',
+  });
   if (!ok) return;
   stopMonitoring();
   Auth.clearAdminSession();
@@ -834,11 +840,125 @@ function computeYearLevel(studentId) {
   return ordinals[Math.max(0, Math.min(yr, 3))];
 }
 
+function yearNumberToLabel(value) {
+  const normalized = String(value || '').trim();
+  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+  return map[normalized] || normalized;
+}
+
+function yearLabelToNumber(value) {
+  const normalized = String(value || '').trim();
+  if (/^[1-4]$/.test(normalized)) return normalized;
+  const match = normalized.match(/^([1-4])(st|nd|rd|th)\s+year$/i);
+  return match ? match[1] : '';
+}
+
+function normalizeSectionValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^section\s+/i, '')
+    .toUpperCase();
+}
+
+function getStudentYearSectionParts(student) {
+  const storedYearSection = String(student?.yearSection || '').trim().toUpperCase();
+  const yearSectionMatch = storedYearSection.match(/^([1-4])-(.+)$/);
+  if (yearSectionMatch) {
+    return {
+      year: yearSectionMatch[1],
+      section: yearSectionMatch[2].trim(),
+      yearSection: storedYearSection,
+    };
+  }
+
+  const section = normalizeSectionValue(student?.section || '');
+  const year = yearLabelToNumber(student?.yearLevel || '');
+  if (year || section) {
+    return {
+      year,
+      section,
+      yearSection: year && section ? `${year}-${section}` : '',
+    };
+  }
+
+  const computedYear = yearLabelToNumber(computeYearLevel(student?.studentId || ''));
+  return {
+    year: computedYear,
+    section: '',
+    yearSection: '',
+  };
+}
+
+function getStudentYearLevelLabel(student) {
+  const parts = getStudentYearSectionParts(student);
+  if (parts.year) return yearNumberToLabel(parts.year);
+  const stored = String(student?.yearLevel || '').trim();
+  return stored || computeYearLevel(student?.studentId || '');
+}
+
+function getStudentYearLevelDisplay(student) {
+  const parts = getStudentYearSectionParts(student);
+  if (parts.year) return parts.year;
+  const label = getStudentYearLevelLabel(student);
+  return yearLabelToNumber(label) || label;
+}
+
+function getStudentSectionDisplay(student) {
+  const parts = getStudentYearSectionParts(student);
+  return parts.section || normalizeSectionValue(student?.section || '');
+}
+
+function ensureStudentModalForm() {
+  const yearField = document.getElementById('stu-year');
+  if (yearField && yearField.tagName === 'SELECT') {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.id = 'stu-year';
+    input.placeholder = 'e.g. 3';
+    yearField.replaceWith(input);
+  } else if (!yearField) {
+    return;
+  }
+
+  const sectionField = document.getElementById('stu-section');
+  if (sectionField && sectionField.tagName === 'SELECT') {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.id = 'stu-section';
+    input.placeholder = 'e.g. B';
+    sectionField.replaceWith(input);
+  }
+
+  if (!document.getElementById('stu-program')) {
+    const emailGroup = document.getElementById('stu-email')?.closest('.form-group');
+    if (!emailGroup) return;
+    const emailRow = emailGroup.parentElement;
+    if (emailRow?.classList.contains('form-row')) {
+      const programGroup = document.createElement('div');
+      programGroup.className = 'form-group';
+      programGroup.innerHTML = '<label>Program</label><input type="text" class="form-control" id="stu-program" placeholder="e.g. BSCS" />';
+      emailRow.appendChild(programGroup);
+    } else {
+      const row = document.createElement('div');
+      row.className = 'form-row cols-2';
+      const detachedEmailGroup = emailGroup.cloneNode(true);
+      row.appendChild(detachedEmailGroup);
+      emailGroup.replaceWith(row);
+      const programGroup = document.createElement('div');
+      programGroup.className = 'form-group';
+      programGroup.innerHTML = '<label>Program</label><input type="text" class="form-control" id="stu-program" placeholder="e.g. BSCS" />';
+      row.appendChild(programGroup);
+    }
+  }
+}
+
 function renderStudents(filter) {
   let students = DB.getStudents();
 
   // Populate section filter dropdown
-  const sections = [...new Set(students.map(s => s.section).filter(Boolean))].sort();
+  const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
   const secSel = document.getElementById('filter-section');
   const prevSec = secSel.value;
   secSel.innerHTML = '<option value="">All Sections</option>' +
@@ -860,12 +980,13 @@ function renderStudents(filter) {
       s.name.toLowerCase().includes(q) ||
       s.studentId.toLowerCase().includes(q) ||
       (s.program || '').toLowerCase().includes(q) ||
-      (s.section || '').toLowerCase().includes(q) ||
-      computeYearLevel(s.studentId).toLowerCase().includes(q)
+      getStudentSectionDisplay(s).toLowerCase().includes(q) ||
+      getStudentYearLevelLabel(s).toLowerCase().includes(q) ||
+      (s.yearSection || '').toLowerCase().includes(q)
     );
   }
-  if (yearFilter) students = students.filter(s => computeYearLevel(s.studentId) === yearFilter);
-  if (sectionFilter) students = students.filter(s => s.section === sectionFilter);
+  if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
+  if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
   if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
 
   const tbody = document.getElementById('students-tbody');
@@ -875,7 +996,9 @@ function renderStudents(filter) {
   }
   const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
   tbody.innerHTML = students.map(s => {
-    const yl = computeYearLevel(s.studentId);
+    const yl = getStudentYearLevelLabel(s);
+    const ylDisplay = getStudentYearLevelDisplay(s) || 'â€”';
+    const sectionDisplay = getStudentSectionDisplay(s) || 'â€”';
     const initials = (s.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const ylClass = ylColors[yl] || 'yl-1';
     return `
@@ -970,11 +1093,11 @@ function openStudentModal(id) {
 
 function saveStudent() {
   const id = document.getElementById('stu-id').value;
-  const studentId = document.getElementById('stu-student-id').value.trim();
+  const studentId = document.getElementById('stu-student-id').value.trim().toUpperCase();
   const name = document.getElementById('stu-name').value.trim();
   const yearLevel = document.getElementById('stu-year').value.trim();
   const section = document.getElementById('stu-section').value.trim();
-  const email = document.getElementById('stu-email').value.trim();
+  const email = document.getElementById('stu-email').value.trim().toLowerCase();
 
   if (!studentId || !name) { showToast('Student ID and name are required.', 'error'); return; }
   const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
@@ -982,16 +1105,319 @@ function saveStudent() {
   const yr = parseInt(idMatch[1]);
   if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
 
-  if (id) {
-    DB.updateStudent(id, { name, yearLevel, section, email });
-    showToast('Student updated.', 'success');
-  } else {
-    if (DB.studentExists(studentId)) { showToast('Student ID already exists.', 'error'); return; }
-    DB.addStudent({ studentId, name, yearLevel, section, email });
-    showToast('Student added.', 'success');
+  try {
+    if (id) {
+      DB.updateStudent(id, { name, yearLevel, section, email });
+      showToast('Student updated.', 'success');
+    } else {
+      DB.addStudent({ studentId, name, yearLevel, section, email });
+      showToast('Student added.', 'success');
+    }
+  } catch (error) {
+    showToast(error?.message || 'Unable to save student right now.', 'error');
+    return;
   }
   closeModal('modal-student');
   renderStudents();
+}
+
+function yearNumberToLabel(value) {
+  const normalized = String(value || '').trim();
+  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+  return map[normalized] || normalized;
+}
+
+function yearLabelToNumber(value) {
+  const normalized = String(value || '').trim();
+  if (/^[1-4]$/.test(normalized)) return normalized;
+  const match = normalized.match(/^([1-4])(st|nd|rd|th)\s+year$/i);
+  return match ? match[1] : '';
+}
+
+function normalizeSectionValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^section\s+/i, '')
+    .toUpperCase();
+}
+
+function getStudentYearSectionParts(student) {
+  const storedYearSection = String(student?.yearSection || '').trim().toUpperCase();
+  const yearSectionMatch = storedYearSection.match(/^([1-4])-(.+)$/);
+  if (yearSectionMatch) {
+    return {
+      year: yearSectionMatch[1],
+      section: yearSectionMatch[2].trim(),
+      yearSection: storedYearSection,
+    };
+  }
+
+  const section = normalizeSectionValue(student?.section || '');
+  const year = yearLabelToNumber(student?.yearLevel || '');
+  if (year || section) {
+    return {
+      year,
+      section,
+      yearSection: year && section ? `${year}-${section}` : '',
+    };
+  }
+
+  const computedYear = yearLabelToNumber(computeYearLevel(student?.studentId || ''));
+  return {
+    year: computedYear,
+    section: '',
+    yearSection: '',
+  };
+}
+
+function getStudentYearLevelLabel(student) {
+  const parts = getStudentYearSectionParts(student);
+  if (parts.year) return yearNumberToLabel(parts.year);
+  const stored = String(student?.yearLevel || '').trim();
+  return stored || computeYearLevel(student?.studentId || '');
+}
+
+function getStudentYearLevelDisplay(student) {
+  const parts = getStudentYearSectionParts(student);
+  if (parts.year) return parts.year;
+  const label = getStudentYearLevelLabel(student);
+  return yearLabelToNumber(label) || label;
+}
+
+function getStudentSectionDisplay(student) {
+  const parts = getStudentYearSectionParts(student);
+  return parts.section || normalizeSectionValue(student?.section || '');
+}
+
+function renderStudents(filter) {
+  let students = DB.getStudents();
+
+  const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
+  const secSel = document.getElementById('filter-section');
+  const prevSec = secSel.value;
+  secSel.innerHTML = '<option value="">All Sections</option>' +
+    sections.map(s => `<option value="${escHtml(s)}" ${s === prevSec ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
+
+  const programs = [...new Set(students.map(s => s.program).filter(Boolean))].sort();
+  const programSel = document.getElementById('filter-program');
+  const prevProgram = programSel.value;
+  programSel.innerHTML = '<option value="">All Programs</option>' +
+    programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
+
+  const q = (filter || '').toLowerCase();
+  const yearFilter = document.getElementById('filter-year-level').value;
+  const sectionFilter = secSel.value;
+  const programFilter = programSel.value;
+
+  if (q) {
+    students = students.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.studentId.toLowerCase().includes(q) ||
+      (s.program || '').toLowerCase().includes(q) ||
+      getStudentSectionDisplay(s).toLowerCase().includes(q) ||
+      getStudentYearLevelLabel(s).toLowerCase().includes(q) ||
+      (s.yearSection || '').toLowerCase().includes(q)
+    );
+  }
+  if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
+  if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
+  if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
+
+  const tbody = document.getElementById('students-tbody');
+  if (!students.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
+    return;
+  }
+
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
+  tbody.innerHTML = students.map(s => {
+    const yl = getStudentYearLevelLabel(s);
+    const ylDisplay = getStudentYearLevelDisplay(s) || '-';
+    const sectionDisplay = getStudentSectionDisplay(s) || '-';
+    const initials = (s.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const ylClass = ylColors[yl] || 'yl-1';
+    return `
+    <tr>
+      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
+      <td data-label="Name">
+        <div class="student-name-cell">
+          <div class="student-avatar">${initials}</div>
+          <span class="student-name-text">${escHtml(s.name)}</span>
+        </div>
+      </td>
+      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(ylDisplay)}</span></td>
+      <td data-label="Section"><span class="section-text">${escHtml(sectionDisplay)}</span></td>
+      <td data-label="Email" class="email-cell">${escHtml(s.email || 'â€”')}</td>
+      <td data-label="Program"><span class="section-text">${escHtml(s.program || 'â€”')}</span></td>
+      <td data-label="">
+        <div class="table-actions">
+          <button class="tbl-btn tbl-btn-edit" onclick="openStudentModal('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+          </button>
+          <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Archive
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openStudentModal(id) {
+  ensureStudentModalForm();
+  document.getElementById('stu-id').value = '';
+  document.getElementById('stu-student-id').value = '';
+  document.getElementById('stu-name').value = '';
+  document.getElementById('stu-year').value = '';
+  document.getElementById('stu-section').value = '';
+  document.getElementById('stu-email').value = '';
+  document.getElementById('stu-program').value = '';
+  document.getElementById('modal-student-title').textContent = 'Add Student';
+
+  if (id) {
+    const s = DB.getStudentById(id);
+    if (!s) return;
+    document.getElementById('modal-student-title').textContent = 'Edit Student';
+    document.getElementById('stu-id').value = s.id;
+    document.getElementById('stu-student-id').value = s.studentId;
+    document.getElementById('stu-name').value = s.name;
+    document.getElementById('stu-year').value = getStudentYearLevelDisplay(s) || '';
+    document.getElementById('stu-section').value = getStudentSectionDisplay(s) || '';
+    document.getElementById('stu-email').value = s.email || '';
+    document.getElementById('stu-program').value = s.program || '';
+  }
+  openModal('modal-student');
+}
+
+function saveStudent() {
+  ensureStudentModalForm();
+  const id = document.getElementById('stu-id').value;
+  const studentId = document.getElementById('stu-student-id').value.trim().toUpperCase();
+  const name = document.getElementById('stu-name').value.trim();
+  const yearInput = document.getElementById('stu-year').value.trim();
+  const sectionInput = document.getElementById('stu-section').value.trim();
+  const email = document.getElementById('stu-email').value.trim().toLowerCase();
+  const program = document.getElementById('stu-program').value.trim().toUpperCase();
+
+  if (!studentId || !name) { showToast('Student ID and name are required.', 'error'); return; }
+  const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
+  if (!idMatch) { showToast('Student ID must be in YY-NNNNN format (e.g. 23-00218).', 'error'); return; }
+  const yr = parseInt(idMatch[1]);
+  if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
+
+  const normalizedYear = yearLabelToNumber(yearInput);
+  const normalizedSection = normalizeSectionValue(sectionInput);
+  const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : yearInput;
+  const section = normalizedSection || sectionInput;
+  const yearSection = normalizedYear && normalizedSection ? `${normalizedYear}-${normalizedSection}` : '';
+  const existingStudent = id ? DB.getStudentById(id) : null;
+
+  try {
+    if (id) {
+      DB.updateStudent(id, { studentId, name, yearLevel, section, yearSection, email, program });
+      if (existingStudent) {
+        DB.syncStudentReferences(existingStudent.studentId, {
+          ...existingStudent,
+          studentId,
+          name,
+          yearLevel,
+          section,
+          yearSection,
+          email,
+          program,
+        });
+      }
+      showToast('Student updated.', 'success');
+    } else {
+      DB.addStudent({ studentId, name, yearLevel, section, yearSection, email, program });
+      showToast('Student added.', 'success');
+    }
+  } catch (error) {
+    showToast(error?.message || 'Unable to save student right now.', 'error');
+    return;
+  }
+  closeModal('modal-student');
+  renderStudents();
+}
+
+function renderStudents(filter) {
+  let students = DB.getStudents();
+
+  const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
+  const secSel = document.getElementById('filter-section');
+  const prevSec = secSel.value;
+  secSel.innerHTML = '<option value="">All Sections</option>' +
+    sections.map(s => `<option value="${escHtml(s)}" ${s === prevSec ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
+
+  const programs = [...new Set(students.map(s => s.program).filter(Boolean))].sort();
+  const programSel = document.getElementById('filter-program');
+  const prevProgram = programSel.value;
+  programSel.innerHTML = '<option value="">All Programs</option>' +
+    programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
+
+  const q = (filter || '').toLowerCase();
+  const yearFilter = document.getElementById('filter-year-level').value;
+  const sectionFilter = secSel.value;
+  const programFilter = programSel.value;
+
+  if (q) {
+    students = students.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.studentId.toLowerCase().includes(q) ||
+      (s.program || '').toLowerCase().includes(q) ||
+      getStudentSectionDisplay(s).toLowerCase().includes(q) ||
+      getStudentYearLevelLabel(s).toLowerCase().includes(q) ||
+      (s.yearSection || '').toLowerCase().includes(q)
+    );
+  }
+  if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
+  if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
+  if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
+
+  const tbody = document.getElementById('students-tbody');
+  if (!students.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
+    return;
+  }
+
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
+  tbody.innerHTML = students.map(s => {
+    const yl = getStudentYearLevelLabel(s);
+    const ylDisplay = getStudentYearLevelDisplay(s) || '-';
+    const sectionDisplay = getStudentSectionDisplay(s) || '-';
+    const emailDisplay = s.email || '-';
+    const programDisplay = s.program || '-';
+    const initials = (s.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const ylClass = ylColors[yl] || 'yl-1';
+    return `
+    <tr>
+      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
+      <td data-label="Name">
+        <div class="student-name-cell">
+          <div class="student-avatar">${initials}</div>
+          <span class="student-name-text">${escHtml(s.name)}</span>
+        </div>
+      </td>
+      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(ylDisplay)}</span></td>
+      <td data-label="Section"><span class="section-text">${escHtml(sectionDisplay)}</span></td>
+      <td data-label="Email" class="email-cell">${escHtml(emailDisplay)}</td>
+      <td data-label="Program"><span class="section-text">${escHtml(programDisplay)}</span></td>
+      <td data-label="">
+        <div class="table-actions">
+          <button class="tbl-btn tbl-btn-edit" onclick="openStudentModal('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+          </button>
+          <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Archive
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 async function archiveStudent(id) {
@@ -2819,13 +3245,14 @@ function loadReportExams() {
   const sel = document.getElementById('report-exam-select');
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +
     exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
+  renderReportTable();
 }
 
 function renderReportTable() {
   const examId = document.getElementById('report-exam-select').value;
   const pdfBtn = document.getElementById('btn-generate-pdf');
   const releaseBtn = document.getElementById('btn-release-scores');
-  pdfBtn.disabled = !examId;
+  pdfBtn.disabled = false;
   releaseBtn.disabled = !examId;
 
   if (!examId) {
@@ -2971,6 +3398,253 @@ function generatePDF() {
   showToast('PDF exported successfully.', 'success');
 }
 
+let reportHeaderImagePromise = null;
+
+function formatReportDateTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function slugifyReportName(value) {
+  return String(value || 'exam_report')
+    .trim()
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '') || 'exam_report';
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getReportHeaderImage() {
+  if (!reportHeaderImagePromise) {
+    reportHeaderImagePromise = fetch('/plpasig_header.png')
+      .then(response => {
+        if (!response.ok) throw new Error('Header image not found.');
+        return response.blob();
+      })
+      .then(blobToDataUrl)
+      .catch(error => {
+        console.warn('[PDF] Unable to load report header image:', error.message || error);
+        return null;
+      });
+  }
+  return reportHeaderImagePromise;
+}
+
+function drawPdfPageHeader(doc, examTitle, headerImage) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 14;
+  let cursorY = 10;
+
+  if (headerImage) {
+    const headerWidth = pageWidth - (marginLeft * 2);
+    const headerProps = doc.getImageProperties(headerImage);
+    const headerHeight = Math.min(26, (headerProps.height * headerWidth) / headerProps.width);
+    doc.addImage(headerImage, 'PNG', marginLeft, cursorY, headerWidth, headerHeight);
+    cursorY += headerHeight + 4;
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(22, 62, 34);
+    doc.text('Pamantasan ng Lungsod ng Pasig', marginLeft, cursorY + 5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text('PLP ExamGuard Official Report', marginLeft, cursorY + 11);
+    cursorY += 16;
+  }
+
+  doc.setDrawColor(22, 62, 34);
+  doc.setLineWidth(0.5);
+  doc.line(marginLeft, cursorY, pageWidth - marginLeft, cursorY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(22, 62, 34);
+  doc.text(examTitle, marginLeft, cursorY + 6);
+
+  return cursorY + 10;
+}
+
+function drawPdfPageFooter(doc, settings) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginLeft = 14;
+  const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+  const totalPages = doc.internal.getNumberOfPages();
+
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.25);
+  doc.line(marginLeft, pageHeight - 14, pageWidth - marginLeft, pageHeight - 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', marginLeft, pageHeight - 9);
+  doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - marginLeft, pageHeight - 9, { align: 'right' });
+}
+
+function drawPdfSummaryCard(doc, x, y, width, label, value, accentColor) {
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(x, y, width, 18, 2.5, 2.5, 'FD');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(label, x + 4, y + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.text(String(value), x + 4, y + 13);
+}
+
+async function exportExamReportPdf() {
+  const examId = document.getElementById('report-exam-select').value;
+  if (!examId) {
+    window.alert('Please select an exam before exporting the PDF report.');
+    return;
+  }
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+
+  const { jsPDF } = window.jspdf;
+  if (!jsPDF) {
+    showToast('PDF library not loaded. Check internet connection.', 'error');
+    return;
+  }
+
+  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sorted = [...sessions].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const settings = DB.getSettings();
+  const adminSession = Auth.getAdminSession();
+  const subject = DB.getSubject(exam.subjectId);
+  const now = new Date();
+  const headerImage = await getReportHeaderImage();
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const averagePercent = sorted.length
+    ? Math.round(sorted.reduce((sum, session) => sum + (session.maxScore ? (session.score / session.maxScore) * 100 : 0), 0) / sorted.length)
+    : 0;
+  const passCount = sorted.filter(session => session.maxScore && (session.score / session.maxScore) >= 0.75).length;
+  const topPerformer = sorted[0] || null;
+  const generatedBy = adminSession?.name || 'Professor';
+  const reportStamp = formatReportDateTime(now);
+  const pageHeaderBottomY = drawPdfPageHeader(doc, exam.title, headerImage);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Examination Results Report', 105, pageHeaderBottomY + 2, { align: 'center' });
+
+  const examTitleLines = doc.splitTextToSize(exam.title, 178);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(22, 62, 34);
+  doc.text(examTitleLines, 14, pageHeaderBottomY + 12);
+
+  let detailY = pageHeaderBottomY + 12 + (examTitleLines.length * 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Course: ${subject?.name || 'N/A'}`, 14, detailY);
+  doc.text(`Time Limit: ${exam.timeLimit || 0} minutes`, 105, detailY, { align: 'center' });
+  doc.text(`Generated: ${reportStamp}`, 196, detailY, { align: 'right' });
+  detailY += 6;
+  doc.text(`Prepared by: ${generatedBy}`, 14, detailY);
+  doc.text(`Submitted Records: ${sorted.length}`, 105, detailY, { align: 'center' });
+  doc.text(`School: ${settings.schoolName || 'Pamantasan ng Lungsod ng Pasig'}`, 196, detailY, { align: 'right' });
+  detailY += 8;
+
+  drawPdfSummaryCard(doc, 14, detailY, 42, 'Average Score', `${averagePercent}%`, [22, 101, 52]);
+  drawPdfSummaryCard(doc, 61, detailY, 42, 'Passing Students', `${passCount}`, [21, 128, 61]);
+  drawPdfSummaryCard(doc, 108, detailY, 42, 'Needs Review', `${Math.max(sorted.length - passCount, 0)}`, [180, 83, 9]);
+  drawPdfSummaryCard(
+    doc,
+    155,
+    detailY,
+    41,
+    'Highest Mark',
+    topPerformer ? `${topPerformer.maxScore ? Math.round((topPerformer.score / topPerformer.maxScore) * 100) : 0}%` : 'N/A',
+    [30, 64, 175]
+  );
+
+  const tableStartY = detailY + 24;
+  if (sorted.length === 0) {
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text('No submissions have been recorded for this examination as of the report date.', 14, tableStartY);
+    drawPdfPageFooter(doc, settings);
+    doc.save(`${slugifyReportName(exam.title)}_report.pdf`);
+    showToast('PDF exported.', 'success');
+    return;
+  }
+
+  const tableData = sorted.map((s, i) => {
+    const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
+    return [
+      i + 1,
+      s.studentName,
+      s.studentId,
+      `${s.yearLevel || 'N/A'} / ${s.section || 'N/A'}`,
+      `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
+      `${pct}%`,
+      s.scoreReleased ? 'Released' : 'Pending',
+    ];
+  });
+
+  doc.autoTable({
+    startY: tableStartY,
+    margin: { top: 36, right: 14, bottom: 20, left: 14 },
+    head: [['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Status']],
+    body: tableData,
+    styles: {
+      fontSize: 8.5,
+      cellPadding: 3,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [22, 62, 34],
+      textColor: 255,
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    bodyStyles: {
+      minCellHeight: 8,
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 12 },
+      3: { halign: 'center', cellWidth: 28 },
+      4: { halign: 'center', cellWidth: 22 },
+      5: { halign: 'center', cellWidth: 20 },
+      6: { halign: 'center', cellWidth: 20 },
+    },
+    didDrawPage: () => {
+      if (doc.internal.getCurrentPageInfo().pageNumber > 1) {
+        drawPdfPageHeader(doc, exam.title, headerImage);
+      }
+      drawPdfPageFooter(doc, settings);
+    },
+  });
+
+  doc.save(`${slugifyReportName(exam.title)}_report.pdf`);
+  showToast('PDF exported successfully.', 'success');
+}
+
 async function releaseScores() {
   const examId = document.getElementById('report-exam-select').value;
   if (!examId) return;
@@ -3064,11 +3738,11 @@ function saveSettings() {
   const adminUsername = adminUsernameEl ? adminUsernameEl.value.trim().toLowerCase() : '';
   const session = Auth.getAdminSession();
 
-  if (schoolNameEl && !schoolName) { showToast('School name is required.', 'error'); return; }
-  if (adminUsernameEl && !adminUsername) { showToast('Professor username is required.', 'error'); return; }
+  if (schoolNameEl && !schoolName) { showToast('School name is required.', 'error', { variant: 'settings' }); return; }
+  if (adminUsernameEl && !adminUsername) { showToast('Professor username is required.', 'error', { variant: 'settings' }); return; }
   if (session && adminUsernameEl) {
     const duplicate = DB.getAdmins().find(a => a.username === adminUsername && a.id !== session.id);
-    if (duplicate) { showToast('Username already exists.', 'error'); return; }
+    if (duplicate) { showToast('Username already exists.', 'error', { variant: 'settings' }); return; }
   }
 
   if (schoolNameEl) {
@@ -3102,17 +3776,17 @@ function saveSettings() {
   const dashboardDeptTitle = document.getElementById('dashboard-department-title');
   if (dashboardDeptTitle) dashboardDeptTitle.textContent = department || '';
   document.title = 'PLP ExamGuard - Admin Panel';
-  showToast('Settings saved.', 'success');
+  showToast('Settings saved.', 'success', { variant: 'settings' });
 }
 
 function saveClaudeApiKey() {
   // Strip all whitespace/non-printable chars that can sneak in from copy-paste
   const key = document.getElementById('set-claude-api-key').value.replace(/\s/g, '');
-  if (!key) { showToast('Please enter an API key.', 'error'); return; }
-  if (!key.startsWith('gsk_')) { showToast('Groq API keys start with "gsk_". Please check your key.', 'error'); return; }
+  if (!key) { showToast('Please enter an API key.', 'error', { variant: 'settings' }); return; }
+  if (!key.startsWith('gsk_')) { showToast('Groq API keys start with "gsk_". Please check your key.', 'error', { variant: 'settings' }); return; }
   DB.updateSettings({ claudeApiKey: key });
   document.getElementById('groq-test-result').textContent = '';
-  showToast('Groq API key saved successfully.', 'success');
+  showToast('Groq API key saved successfully.', 'success', { variant: 'settings' });
 }
 
 async function testGroqKey() {
@@ -3147,7 +3821,7 @@ async function testGroqKey() {
 
 function handleLogoUpload(file) {
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { showToast('Logo must be less than 5MB.', 'error'); return; }
+  if (file.size > 5 * 1024 * 1024) { showToast('Logo must be less than 5MB.', 'error', { variant: 'settings' }); return; }
   const reader = new FileReader();
   reader.onload = e => {
     const base64 = e.target.result;
@@ -3156,7 +3830,7 @@ function handleLogoUpload(file) {
     document.getElementById('logo-preview-wrap').classList.remove('hidden');
     document.getElementById('btn-remove-logo').style.display = 'inline-flex';
     document.getElementById('sb-logo-wrap').innerHTML = `<img src="${base64}" style="width:38px;height:38px;object-fit:contain;border-radius:8px;" />`;
-    showToast('Logo uploaded.', 'success');
+    showToast('Logo uploaded.', 'success', { variant: 'settings' });
   };
   reader.readAsDataURL(file);
 }
@@ -3167,27 +3841,27 @@ function removeLogo() {
   document.getElementById('btn-remove-logo').style.display = 'none';
   const PLP_LOGO_URL = 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png';
   document.getElementById('sb-logo-wrap').innerHTML = `<img src="${PLP_LOGO_URL}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
-  showToast('Logo removed.', 'success');
+  showToast('Logo removed.', 'success', { variant: 'settings' });
 }
 
 function changePassword() {
   const curPass = document.getElementById('set-cur-pass').value;
   const newPass = document.getElementById('set-new-pass').value;
   const confirmPass = document.getElementById('set-confirm-pass').value;
-  if (!curPass || !newPass || !confirmPass) { showToast('All password fields are required.', 'error'); return; }
-  if (newPass !== confirmPass) { showToast('New passwords do not match.', 'error'); return; }
-  if (newPass.length < 6) { showToast('Password must be at least 6 characters.', 'error'); return; }
+  if (!curPass || !newPass || !confirmPass) { showToast('All password fields are required.', 'error', { variant: 'settings' }); return; }
+  if (newPass !== confirmPass) { showToast('New passwords do not match.', 'error', { variant: 'settings' }); return; }
+  if (newPass.length < 6) { showToast('Password must be at least 6 characters.', 'error', { variant: 'settings' }); return; }
 
   const session = Auth.getAdminSession();
   const admins = DB.getAdmins();
   const admin = admins.find(a => a.id === session.id);
-  if (!admin || admin.password !== curPass) { showToast('Current password is incorrect.', 'error'); return; }
+  if (!admin || admin.password !== curPass) { showToast('Current password is incorrect.', 'error', { variant: 'settings' }); return; }
 
   DB.updateAdmin(session.id, { password: newPass });
   document.getElementById('set-cur-pass').value = '';
   document.getElementById('set-new-pass').value = '';
   document.getElementById('set-confirm-pass').value = '';
-  showToast('Password changed successfully.', 'success');
+  showToast('Password changed successfully.', 'success', { variant: 'settings' });
 }
 
 // ============================================================
@@ -3216,16 +3890,36 @@ document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
 // ============================================================
 // CONFIRM DIALOG
 // ============================================================
-function showConfirm(message) {
+function showConfirm(options) {
   return new Promise(resolve => {
+    const config = typeof options === 'string'
+      ? {
+          title: 'Confirm Action',
+          message: options,
+          confirmLabel: 'Confirm',
+          confirmClass: 'btn btn-danger',
+          icon: 'warning',
+        }
+      : {
+          title: options?.title || 'Confirm Action',
+          message: options?.message || '',
+          confirmLabel: options?.confirmLabel || 'Confirm',
+          confirmClass: options?.confirmClass || 'btn btn-danger',
+          icon: options?.icon || 'warning',
+        };
+    const iconSvg = config.icon === 'signout'
+      ? '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>'
+      : '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+    const iconBg = config.icon === 'signout' ? '#e8f5ec' : '#fef3c7';
+    const iconStroke = config.icon === 'signout' ? '#0f5132' : '#d97706';
     confirmResolve = resolve;
     document.getElementById('confirm-body').innerHTML = `
-      <div class="confirm-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-      <div class="confirm-title">Confirm Action</div>
-      <div class="confirm-message">${escHtml(message)}</div>
+      <div class="confirm-icon" style="background:${iconBg};"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${iconStroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconSvg}</svg></div>
+      <div class="confirm-title">${escHtml(config.title)}</div>
+      <div class="confirm-message">${escHtml(config.message)}</div>
       <div class="confirm-actions">
         <button class="btn btn-secondary" onclick="resolveConfirm(false)">Cancel</button>
-        <button class="btn btn-danger" onclick="resolveConfirm(true)">Confirm</button>
+        <button class="${config.confirmClass}" onclick="resolveConfirm(true)">${escHtml(config.confirmLabel)}</button>
       </div>
     `;
     openModal('modal-confirm');
@@ -3240,7 +3934,7 @@ function resolveConfirm(result) {
 // ============================================================
 // TOAST
 // ============================================================
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', options = {}) {
   const icons = {
     success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>',
     error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
@@ -3249,8 +3943,11 @@ function showToast(message, type = 'success') {
   };
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(message)}</span>`;
+  const variant = options.variant || 'default';
+  toast.className = `toast ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
+  toast.innerHTML = variant === 'settings'
+    ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(message)}</span>`
+    : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(message)}</span>`;
   container.appendChild(toast);
   setTimeout(() => {
     toast.classList.add('removing');

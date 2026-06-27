@@ -248,6 +248,7 @@ const SupabaseSync = {
       department: d.department || null,
       program: d.program || null,
       enrolled_subjects: Array.isArray(d.enrolledSubjects) ? d.enrolledSubjects : [],
+      owner_admin_id: d.ownerAdminId || null,
       archived: !!d.archived,
       archived_at: d.archivedAt || null,
     };
@@ -263,6 +264,7 @@ const SupabaseSync = {
       sections: Array.isArray(d.sections) ? d.sections : [],
       enrollment_code: d.enrollmentCode || null,
       color: d.color || null,
+      owner_admin_id: d.ownerAdminId || null,
       archived: !!d.archived,
       archived_at: d.archivedAt || null,
     };
@@ -286,6 +288,7 @@ const SupabaseSync = {
       questions: Array.isArray(d.questions) ? d.questions : [],
       target_year_levels: Array.isArray(d.targetYearLevels) ? d.targetYearLevels : [],
       target_sections: Array.isArray(d.targetSections) ? d.targetSections : [],
+      owner_admin_id: d.ownerAdminId || null,
       started_at: d.startedAt || null,
       closed_at: d.closedAt || null,
     };
@@ -314,6 +317,7 @@ const SupabaseSync = {
       auto_submitted: !!d.autoSubmitted,
       score_released: !!d.scoreReleased,
       camera_snapshots: Array.isArray(d.cameraSnapshots) ? d.cameraSnapshots : [],
+      owner_admin_id: d.ownerAdminId || null,
     };
   },
 
@@ -326,6 +330,7 @@ const SupabaseSync = {
       type: d.type,
       details: d.details || null,
       timestamp: d.timestamp || new Date().toISOString(),
+      owner_admin_id: d.ownerAdminId || null,
     };
   },
 
@@ -379,6 +384,7 @@ const SupabaseSync = {
       department: r.department || '',
       program: r.program || '',
       enrolledSubjects: Array.isArray(r.enrolled_subjects) ? r.enrolled_subjects : [],
+      ownerAdminId: r.owner_admin_id || '',
       archived: !!r.archived,
       archivedAt: r.archived_at || null,
       createdAt: r.created_at || null,
@@ -395,6 +401,7 @@ const SupabaseSync = {
       sections: Array.isArray(r.sections) ? r.sections : [],
       enrollmentCode: r.enrollment_code || '',
       color: r.color || '',
+      ownerAdminId: r.owner_admin_id || '',
       archived: !!r.archived,
       archivedAt: r.archived_at || null,
       createdAt: r.created_at || null,
@@ -419,6 +426,7 @@ const SupabaseSync = {
       questions: Array.isArray(r.questions) ? r.questions : [],
       targetYearLevels: Array.isArray(r.target_year_levels) ? r.target_year_levels : [],
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
+      ownerAdminId: r.owner_admin_id || '',
       startedAt: r.started_at || null,
       closedAt: r.closed_at || null,
       createdAt: r.created_at || null,
@@ -448,6 +456,7 @@ const SupabaseSync = {
       autoSubmitted: !!r.auto_submitted,
       scoreReleased: !!r.score_released,
       cameraSnapshots: Array.isArray(r.camera_snapshots) ? r.camera_snapshots : [],
+      ownerAdminId: r.owner_admin_id || '',
       createdAt: r.created_at || null,
     };
   },
@@ -461,6 +470,7 @@ const SupabaseSync = {
       type: r.type,
       details: r.details || '',
       timestamp: r.timestamp || r.created_at || null,
+      ownerAdminId: r.owner_admin_id || '',
     };
   },
 
