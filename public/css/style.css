@@ -4719,17 +4719,60 @@ input[type="password"]::-ms-clear {
 .log-type.tab_switch     { color: #f97316; }
 .log-type.fullscreen_exit{ color: #eab308; }
 .log-type.copy_attempt   { color: #8b5cf6; }
+.log-type.paste_attempt  { color: #0ea5e9; }
+.log-type.ctrl_c_attempt { color: #7c3aed; }
+.log-type.ctrl_v_attempt { color: #2563eb; }
 .log-type.camera_denied  { color: #7c3aed; }
 .log-type.force_submit   { color: #0f2d1a; }
 .log-type.auto_submit    { color: #ef4444; }
+.log-type.timeout        { color: #dc2626; }
 
 .log-item:has(.log-type.no_person),
 .log-item:has(.log-type.tab_switch),
 .log-item:has(.log-type.fullscreen_exit)  { border-left-color: #fca5a5; }
 .log-item:has(.log-type.window_blur)      { border-left-color: #fdba74; }
 .log-item:has(.log-type.copy_attempt)     { border-left-color: #c4b5fd; }
+.log-item:has(.log-type.paste_attempt)    { border-left-color: #7dd3fc; }
+.log-item:has(.log-type.ctrl_c_attempt)   { border-left-color: #c4b5fd; }
+.log-item:has(.log-type.ctrl_v_attempt)   { border-left-color: #93c5fd; }
 .log-item:has(.log-type.camera_denied)    { border-left-color: #c4b5fd; }
 .log-item:has(.log-type.auto_submit)      { border-left-color: #fca5a5; }
+.log-item:has(.log-type.timeout)          { border-left-color: #fca5a5; }
+
+.behavior-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.behavior-summary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  min-height: 78px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.behavior-summary-count {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 800;
+  color: #0f2d1a;
+  margin-bottom: 6px;
+}
+
+.behavior-summary-label {
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
 
 /* Progress bar */
 .monitor-progress-bar { height: 6px; background: #f0f0f0; border-radius: 99px; overflow: hidden; margin-bottom: 4px; }

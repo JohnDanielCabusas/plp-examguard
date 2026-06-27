@@ -13,6 +13,7 @@ const SupabaseSync = {
   _initPromise: null,
   _deferredHydrationPromise: null,
   _readyEmitted: false,
+  _sessionAiDetectionsSupported: true,
 
   _writeLocal(key, value) {
     window.DB?._write?.(key, value);
@@ -127,7 +128,13 @@ const SupabaseSync = {
     for (const [table, lsKey, normalizer] of seedings) {
       const items = this._localArray(lsKey);
       if (items.length) {
-        const { error } = await c.from(table).upsert(items.map(normalizer));
+        let rows = items.map(normalizer);
+        let { error } = await c.from(table).upsert(rows);
+        if (error && this._isMissingSessionAiDetectionsError(table, error)) {
+          this._sessionAiDetectionsSupported = false;
+          rows = rows.map(row => this._withoutSessionAiDetections(row));
+          ({ error } = await c.from(table).upsert(rows));
+        }
         if (error) console.warn(`[SupabaseSync] seed ${table}:`, error.message);
       }
     }
@@ -198,7 +205,15 @@ const SupabaseSync = {
     // onConflict:'id' ensures we always UPDATE existing rows by primary key,
     // avoiding false conflicts on unique columns like exams.code
     this._client.from(table).upsert(row, { onConflict: 'id' })
-      .then(({ error }) => {
+      .then(async ({ error }) => {
+        if (error && this._isMissingSessionAiDetectionsError(table, error)) {
+          this._sessionAiDetectionsSupported = false;
+          const fallbackRow = this._withoutSessionAiDetections(row);
+          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+          if (!retryError) return;
+          error = retryError;
+        }
+
         if (error) {
           console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
           // Surface sync failures as a visible warning
@@ -320,7 +335,7 @@ const SupabaseSync = {
   },
 
   _jsToDbSession(d) {
-    return {
+    const row = {
       id: d.id,
       exam_id: d.examId,
       exam_code: d.examCode || null,
@@ -341,10 +356,13 @@ const SupabaseSync = {
       submitted: !!d.submitted,
       auto_submitted: !!d.autoSubmitted,
       score_released: !!d.scoreReleased,
-      ai_detections: d.aiDetections || {},
       camera_snapshots: Array.isArray(d.cameraSnapshots) ? d.cameraSnapshots : [],
       owner_admin_id: d.ownerAdminId || null,
     };
+    if (this._sessionAiDetectionsSupported !== false) {
+      row.ai_detections = d.aiDetections || {};
+    }
+    return row;
   },
 
   _jsToDbLog(d) {
@@ -509,6 +527,17 @@ const SupabaseSync = {
   _localArray(key) {
     const value = window.DB?._read?.(key, []);
     return Array.isArray(value) ? value : [];
+  },
+
+  _isMissingSessionAiDetectionsError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'sessions' && message.includes(`Could not find the 'ai_detections' column`);
+  },
+
+  _withoutSessionAiDetections(row) {
+    const next = { ...row };
+    delete next.ai_detections;
+    return next;
   },
 
   _emitReady() {

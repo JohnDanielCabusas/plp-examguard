@@ -36,6 +36,7 @@ const ExamApp = {
   _dashInterval: null,      // dashboard poll interval
   _fullscreenInteractionGraceUntil: 0,
   _pendingFullscreenRecovery: null,
+  _fullscreenVerifyTimer: null,
   _intentionalFullscreenExit: false,
 
   _repairStudentEmail(studentSession) {
@@ -46,6 +47,71 @@ const ExamApp = {
     }).catch(error => {
       console.warn('[Supabase] Unable to repair student email:', error.message || error);
     });
+  },
+
+  _recordActivity(type, detail) {
+    if (!this.session) return null;
+    const session = DB.getSession(this.session.id);
+    if (!session) return null;
+
+    const activity = {
+      type,
+      detail,
+      timestamp: new Date().toISOString(),
+    };
+    const activities = [...(session.activities || []), activity];
+    DB.updateSession(this.session.id, { activities });
+
+    if (this.exam?.id) {
+      DB.addLog({
+        sessionId: this.session.id,
+        studentId: this.session.studentId,
+        examId: this.exam.id,
+        type,
+        details: detail,
+      });
+    }
+
+    return activity;
+  },
+
+  _isFullscreenActive() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  },
+
+  _scheduleFullscreenEnforcement(delayMs = 350) {
+    if (this._fullscreenVerifyTimer) clearTimeout(this._fullscreenVerifyTimer);
+    this._fullscreenVerifyTimer = setTimeout(() => {
+      this._fullscreenVerifyTimer = null;
+      if (!this._isFullscreenActive()) this._showFullscreenLock();
+    }, delayMs);
+  },
+
+  _portalIcon(name, options = {}) {
+    const size = options.size || 14;
+    const stroke = options.stroke || 'currentColor';
+    const icons = {
+      arrowLeft: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/><path d="M21 12H9"/></svg>`,
+      arrowRight: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h12"/><path d="m15 6 6 6-6 6"/></svg>`,
+      camera: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`,
+      users: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      clipboard: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`,
+      check: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+      x: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+      checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>`,
+    };
+    const svg = icons[name] || '';
+    return `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;flex:0 0 ${size}px;">${svg}</span>`;
+  },
+
+  _portalLabel(iconName, label, options = {}) {
+    const icon = this._portalIcon(iconName, options);
+    const safeLabel = _esc(String(label || ''));
+    const gap = options.gap || 6;
+
+    return options.trailing
+      ? `<span style="display:inline-flex;align-items:center;gap:${gap}px;"><span>${safeLabel}</span>${icon}</span>`
+      : `<span style="display:inline-flex;align-items:center;gap:${gap}px;">${icon}<span>${safeLabel}</span></span>`;
   },
 
   // ============================================================
@@ -465,7 +531,9 @@ const ExamApp = {
           `<span class="course-meta-chip">${e.questions.length} questions</span>`,
           `<span class="course-meta-chip">${e.timeLimit} min</span>`,
         ];
-        if (e.requireCamera) chips.push(`<span class="course-meta-chip chip-camera">📷 Camera</span>`);
+        if (e.requireCamera) {
+          chips.push(`<span class="course-meta-chip chip-camera">${this._portalLabel('camera', 'Camera', { size: 13, gap: 5 })}</span>`);
+        }
 
         if (dbSess && dbSess.submitted) {
           const pct = dbSess.maxScore ? Math.round(dbSess.score / dbSess.maxScore * 100) : 0;
@@ -473,7 +541,7 @@ const ExamApp = {
             ? `<span style="font-weight:700;color:#0f2d1a;">${dbSess.score}/${dbSess.maxScore}</span> <span style="color:#9ca3af;">(${pct}%)</span>`
             : `<span style="color:#9ca3af;font-size:12px;">Awaiting result</span>`;
           rightHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-            <span class="badge badge-secondary" style="font-size:10px;">✓ Submitted</span>
+            <span class="badge badge-secondary" style="font-size:10px;display:inline-flex;align-items:center;gap:4px;">${this._portalIcon('checkCircle', { size: 11, stroke: '#4b5563' })}<span>Submitted</span></span>
             <div style="font-size:13px;">${scoreHtml}</div>
             <button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">View</button>
           </div>`;
@@ -482,7 +550,7 @@ const ExamApp = {
             <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:#15803d;">
               <span style="width:7px;height:7px;border-radius:50%;background:#15803d;animation:pulse 1.2s infinite;display:inline-block;"></span>Live
             </span>
-            <button class="btn-course-take" onclick="ExamApp.dashSelectExam('${e.code}')">Take Exam →</button>
+            <button class="btn-course-take" onclick="ExamApp.dashSelectExam('${e.code}')">${this._portalLabel('arrowRight', 'Take Exam', { trailing: true, gap: 8 })}</button>
           </div>`;
         } else if (e.status === 'ready') {
           rightHtml = `<div style="display:flex;align-items:center;gap:10px;">
@@ -670,7 +738,9 @@ const ExamApp = {
     if (activeExams.length) {
       html += `<div class="dash-section-label">Active Now</div>`;
       activeExams.forEach(({ exam: e, subject: subj }) => {
-        const camTag = e.requireCamera ? '<span style="color:rgba(255,255,255,0.7);font-weight:600;">📷 Camera required</span>' : '';
+        const camTag = e.requireCamera
+          ? `<span style="color:rgba(255,255,255,0.7);font-weight:600;">${this._portalLabel('camera', 'Camera required', { size: 13, gap: 5, stroke: 'rgba(255,255,255,0.8)' })}</span>`
+          : '';
         html += `
           <div class="dash-active-banner">
             <div class="dash-active-banner-left">
@@ -678,7 +748,7 @@ const ExamApp = {
               <div class="dash-active-exam-title">${_esc(e.title)}</div>
               <div class="dash-active-exam-meta">${_esc(subj.name)} &nbsp;·&nbsp; ${e.questions.length} questions &nbsp;·&nbsp; ${e.timeLimit} min ${camTag ? '&nbsp;·&nbsp;' + camTag : ''}</div>
             </div>
-            <button class="btn-take-exam" onclick="ExamApp.dashSelectExam('${e.code}')">Take Exam →</button>
+            <button class="btn-take-exam" onclick="ExamApp.dashSelectExam('${e.code}')">${this._portalLabel('arrowRight', 'Take Exam', { trailing: true, gap: 8, stroke: '#ffffff' })}</button>
           </div>`;
       });
     }
@@ -707,7 +777,7 @@ const ExamApp = {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Submitted</span>`;
           actionHtml = `<button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">View Result</button>`;
         } else if (e.status === 'active') {
-          statusHtml = `<span class="badge badge-success" style="font-size:10px;animation:pulse 1.5s infinite;">● Active</span>`;
+          statusHtml = `<span class="badge badge-success" style="font-size:10px;display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite;display:inline-block;"></span><span>Active</span></span>`;
           actionHtml = `<button class="btn btn-primary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">Take Exam</button>`;
         } else if (e.status === 'ready') {
           statusHtml = `<span class="badge badge-info" style="font-size:10px;">Waiting</span>`;
@@ -717,20 +787,23 @@ const ExamApp = {
           actionHtml = `<button class="btn btn-secondary btn-sm" style="opacity:0.5;cursor:not-allowed;" disabled>Closed</button>`;
         }
 
-        const metaParts = [`${e.questions.length} questions`, `${e.timeLimit} min`];
-        if (e.requireCamera) metaParts.push('📷 Camera');
+        const metaParts = [
+          `<span>${_esc(`${e.questions.length} questions`)}</span>`,
+          `<span>${_esc(`${e.timeLimit} min`)}</span>`,
+        ];
+        if (e.requireCamera) metaParts.push(this._portalLabel('camera', 'Camera', { size: 13, gap: 5 }));
         if ((e.targetYearLevels||[]).length || (e.targetSections||[]).length) {
           const abbr = { '1st Year':'Y1','2nd Year':'Y2','3rd Year':'Y3','4th Year':'Y4' };
           const yrs = (e.targetYearLevels||[]).map(y => abbr[y]||y).join('/');
           const secs = (e.targetSections||[]).join('/');
-          metaParts.push('👥 ' + [yrs, secs].filter(Boolean).join(' · '));
+          metaParts.push(this._portalLabel('users', [yrs, secs].filter(Boolean).join(' · '), { size: 13, gap: 5 }));
         }
 
         return `<div class="dash-exam-row">
           <div style="min-width:0;flex:1;">
             <div class="dash-exam-title">${_esc(e.title)}</div>
             <div class="dash-exam-meta">
-              ${metaParts.map((p, i) => i === 0 ? `<span>${_esc(p)}</span>` : `<span class="dash-exam-meta-dot"></span><span>${_esc(p)}</span>`).join('')}
+              ${metaParts.map((p, i) => i === 0 ? p : `<span class="dash-exam-meta-dot"></span>${p}`).join('')}
             </div>
           </div>
           <div class="dash-exam-actions">
@@ -986,6 +1059,7 @@ const ExamApp = {
     this.startTimer();
     this.renderQuestions();
     this.showState('exam');
+    this._scheduleFullscreenEnforcement();
 
     // Initialize camera if exam requires it
     if (this.exam && this.exam.requireCamera) {
@@ -1013,13 +1087,20 @@ const ExamApp = {
   // FULLSCREEN
   // ============================================================
   requestFullscreen() {
+    const el = document.documentElement;
     try {
-      if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      } else if (document.documentElement.webkitRequestFullscreen) {
-        document.documentElement.webkitRequestFullscreen();
+      if (this._isFullscreenActive()) return Promise.resolve(true);
+      if (el.requestFullscreen) {
+        return Promise.resolve(el.requestFullscreen())
+          .then(() => this._isFullscreenActive())
+          .catch(() => false);
+      }
+      if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+        return Promise.resolve(this._isFullscreenActive());
       }
     } catch (e) { /* silently fail */ }
+    return Promise.resolve(false);
   },
 
   _rememberTrustedInteraction(durationMs = 1400) {
@@ -1037,7 +1118,7 @@ const ExamApp = {
     if (this._pendingFullscreenRecovery) clearTimeout(this._pendingFullscreenRecovery);
     this._pendingFullscreenRecovery = setTimeout(() => {
       this._pendingFullscreenRecovery = null;
-      if (!document.fullscreenElement && !document.webkitFullscreenElement && !this._intentionalFullscreenExit) {
+      if (!this._isFullscreenActive() && !this._intentionalFullscreenExit) {
         this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
         this._showFullscreenLock();
       }
@@ -1049,9 +1130,9 @@ const ExamApp = {
 
     const doReturn = () => {
       if (overlay && overlay._cdTimer) clearInterval(overlay._cdTimer);
-      const el = document.documentElement;
-      const req = el.requestFullscreen || el.webkitRequestFullscreen;
-      if (req) req.call(el).then(() => { if (overlay) overlay.style.display = 'none'; }).catch(() => {});
+      this.requestFullscreen().then(() => {
+        if (overlay && this._isFullscreenActive()) overlay.style.display = 'none';
+      });
     };
 
     if (!overlay) {
@@ -1073,11 +1154,11 @@ const ExamApp = {
         </div>`;
       overlay.style.cssText = 'position:fixed;inset:0;background:#060e08;z-index:999999;display:flex;align-items:center;justify-content:center;';
       document.body.appendChild(overlay);
-      document.getElementById('fs-return-btn').addEventListener('click', doReturn);
+      document.getElementById('fs-return-btn').onclick = doReturn;
     } else {
       overlay.style.display = 'flex';
       const btn = document.getElementById('fs-return-btn');
-      if (btn) { btn.onclick = null; btn.addEventListener('click', doReturn); }
+      if (btn) btn.onclick = doReturn;
     }
 
     // Attempt immediate fullscreen re-entry; button is fallback if browser blocks it
@@ -1153,7 +1234,10 @@ const ExamApp = {
 
     // ── Paste & selection blocked silently ──────────────────────
     const pasteHandler = e => {
-      if (!e.target.matches('input, textarea')) e.preventDefault();
+      if (!e.target.matches('input, textarea')) {
+        e.preventDefault();
+        this._recordActivity('paste_attempt', 'Paste attempt detected');
+      }
     };
     document.addEventListener('paste', pasteHandler);
 
@@ -1169,7 +1253,7 @@ const ExamApp = {
     // ── Fullscreen change ────────────────────────────────────────
     // ── Fullscreen change ────────────────────────────────────────
     const fsHandler = () => {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (!this._isFullscreenActive()) {
         // Always issue a violation — issueWarning handles _cancelReadCountdown internally
         this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
         this._showFullscreenLock();
@@ -1200,12 +1284,21 @@ const ExamApp = {
       if (e.key === 'F11') { e.preventDefault(); } // block fullscreen toggle
       if (e.key === 'Escape') {
         // If exam is running and fullscreen is active, prevent escape from exiting
-        if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (this._isFullscreenActive()) {
           e.preventDefault();
         }
       }
       if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(e.key.toLowerCase())) {
-        if (!e.target.matches('input, textarea')) e.preventDefault();
+        if (!e.target.matches('input, textarea')) {
+          e.preventDefault();
+          const key = e.key.toLowerCase();
+          if (key === 'c') {
+            this._recordActivity('ctrl_c_attempt', 'Ctrl+C shortcut attempt detected');
+            this.issueWarning('copy_attempt', 'Copying content detected');
+          } else if (key === 'v') {
+            this._recordActivity('ctrl_v_attempt', 'Ctrl+V shortcut attempt detected');
+          }
+        }
       }
     };
     document.addEventListener('keydown', keyHandler);
@@ -1245,18 +1338,18 @@ const ExamApp = {
       this._cameraPrompting = false;
       this._cameraStream = stream;
       video.srcObject = stream;
-      if (statusText) statusText.textContent = '● Monitoring';
+      if (statusText) statusText.textContent = 'Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
 
       // Wait for video to be ready then check for presence before starting
       video.onloadeddata = () => {
-        if (statusText) statusText.textContent = '⏳ Loading face detection…';
+        if (statusText) statusText.textContent = 'Loading face detection...';
         // Load BlazeFace model if available, then start detection
         if (window.blazeface) {
           window.blazeface.load().then(model => {
             this._faceModel = model;
             this._faceModelReady = true;
-            if (statusText) statusText.textContent = '● Face detection ready';
+            if (statusText) statusText.textContent = 'Face detection ready';
           }).catch(() => {
             this._faceModelReady = false;
           }).finally(() => {
@@ -1270,13 +1363,7 @@ const ExamApp = {
       this._cameraPrompting = false;
       if (statusText) statusText.textContent = 'Camera denied';
       if (blockedMsg) blockedMsg.style.display = 'flex';
-      if (this.session) {
-        const session = DB.getSession(this.session.id);
-        if (session) {
-          const activities = [...(session.activities||[]), { type:'camera_denied', detail:'Camera permission denied: '+err.message, timestamp:new Date().toISOString() }];
-          DB.updateSession(this.session.id, { activities });
-        }
-      }
+      this._recordActivity('camera_denied', 'Camera permission denied: ' + err.message);
     }
   },
 
@@ -1366,13 +1453,13 @@ const ExamApp = {
       // Motion/presence detected — reset timer
       this._noMotionSec = 0;
       this._motionBlocked = false;
-      if (statusText) statusText.textContent = `● Person detected`;
+      if (statusText) statusText.textContent = 'Person detected';
       this._clearMotionWarning();
     } else {
       // No significant motion
       this._noMotionSec += 0.5;
       const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
-      if (statusText) statusText.textContent = `⚠ No person (${Math.ceil(remaining)}s)`;
+      if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
 
       if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
         this._handleNoMotion();
@@ -1411,12 +1498,12 @@ const ExamApp = {
       if (predictions.length > 0) {
         this._noMotionSec = 0;
         this._motionBlocked = false;
-        if (statusText) statusText.textContent = `● Person detected`;
+        if (statusText) statusText.textContent = 'Person detected';
         this._clearMotionWarning();
       } else {
         this._noMotionSec += 0.6;
         const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
-        if (statusText) statusText.textContent = `⚠ No person (${Math.ceil(remaining)}s)`;
+        if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
         if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
           this._handleNoMotion();
         }
@@ -1430,15 +1517,6 @@ const ExamApp = {
   _handleNoMotion() {
     if (this._motionBlocked) return;
     this._motionBlocked = true;
-
-    // Do NOT block the exam — just issue 1 warning
-    if (this.session) {
-      const session = DB.getSession(this.session.id);
-      if (session) {
-        const activities = [...(session.activities||[]), { type:'no_person', detail:'No person detected in camera frame', timestamp:new Date().toISOString() }];
-        DB.updateSession(this.session.id, { activities });
-      }
-    }
 
     // Issue 1 warning (no blocking overlay — 3 warnings auto-submit)
     this.issueWarning('no_person', 'No person detected in camera frame');
@@ -1652,18 +1730,8 @@ const ExamApp = {
 
     this.warnings++;
 
-    const session = DB.getSession(this.session.id);
-    if (!session) return;
-    const activities = [...(session.activities || []), { type, detail, timestamp: new Date().toISOString() }];
-    DB.updateSession(this.session.id, { warnings: this.warnings, activities });
-
-    DB.addLog({
-      sessionId: this.session.id,
-      studentId: this.session.studentId,
-      examId: this.exam.id,
-      type,
-      details: detail,
-    });
+    this._recordActivity(type, detail);
+    DB.updateSession(this.session.id, { warnings: this.warnings });
 
     // Update warning badge in header
     const warningNumEl = document.getElementById('warning-num');
@@ -1925,7 +1993,7 @@ const ExamApp = {
       ${pairs.map((p,pi)=>`
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;">
           <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;">${_esc(p.term)}</div>
-          <div style="color:#9ca3af;font-size:16px;">→</div>
+          <div style="color:#9ca3af;font-size:16px;display:flex;align-items:center;justify-content:center;">${this._portalIcon('arrowRight', { size: 14, stroke: '#9ca3af' })}</div>
           <select class="form-control" id="match-${q.id}-${pi}" data-exam-control="true"
             onchange="ExamApp.handleMatchInput(event,'${q.id}',${pairs.length})"
             style="font-size:13px;">
@@ -2263,7 +2331,7 @@ const ExamApp = {
             ${expected.map((e,i) => {
               const got = studentItems.includes(e.toUpperCase());
               return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
-                <span style="color:${got?'#15803d':'#dc2626'};font-size:16px;">${got?'✓':'✗'}</span>
+                <span style="color:${got?'#15803d':'#dc2626'};font-size:16px;display:inline-flex;align-items:center;justify-content:center;">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
                 <span>${_esc(e)}</span>
                 ${!got && studentItems[i] ? `<span style="color:#9ca3af;font-size:12px;">(you wrote: ${_esc(studentItems[i]||'—')})</span>`:''}
               </div>`;
@@ -2279,10 +2347,10 @@ const ExamApp = {
               const correct = (studentAns[pi]||'').toUpperCase() === p.match.toUpperCase();
               return `<div style="display:grid;grid-template-columns:1fr 24px 1fr;gap:8px;align-items:center;font-size:13px;">
                 <div style="background:#f9fafb;border-radius:6px;padding:6px 10px;">${_esc(p.term)}</div>
-                <div style="text-align:center;color:${correct?'#15803d':'#dc2626'};font-weight:700;">${correct?'✓':'✗'}</div>
+                <div style="text-align:center;color:${correct?'#15803d':'#dc2626'};font-weight:700;display:flex;align-items:center;justify-content:center;">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</div>
                 <div style="background:${correct?'#f0fdf4':'#fef2f2'};border-radius:6px;padding:6px 10px;border:1px solid ${correct?'#bbf7d0':'#fecaca'};">
                   ${_esc(studentAns[pi]||'(no answer)')}
-                  ${!correct?`<span style="color:#9ca3af;font-size:11px;"> → ${_esc(p.match)}</span>`:''}
+                  ${!correct ? `<span style="color:#9ca3af;font-size:11px;display:inline-flex;align-items:center;gap:4px;">${this._portalIcon('arrowRight', { size: 11, stroke: '#9ca3af' })}<span>${_esc(p.match)}</span></span>` : ''}
                 </div>
               </div>`;
             }).join('')}
@@ -2295,7 +2363,7 @@ const ExamApp = {
             <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
               <span style="font-weight:700;color:#6b7280;min-width:90px;">Your answer:</span>
               <span style="color:${color};font-weight:600;">${_esc(ans||'(no answer)')}</span>
-              ${ans ? `<span style="font-size:16px;">${correct?'✓':'✗'}</span>` : ''}
+              ${ans ? `<span style="font-size:16px;display:inline-flex;align-items:center;justify-content:center;">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</span>` : ''}
             </div>
             ${!correct ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
               <span style="font-weight:700;color:#6b7280;min-width:90px;">Correct:</span>

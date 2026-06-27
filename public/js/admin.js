@@ -53,6 +53,53 @@ function getSubmissionStatusBadge(session) {
   return `<span class="badge badge-warning">${escHtml(text)}</span>`;
 }
 
+const BEHAVIOR_LABELS = {
+  no_person: 'No Person Detected',
+  window_blur: 'Window Blur',
+  tab_switch: 'Tab Switch',
+  fullscreen_exit: 'Fullscreen Exit',
+  copy_attempt: 'Copy/Cut Attempt',
+  paste_attempt: 'Paste Attempt',
+  ctrl_c_attempt: 'Ctrl+C Attempt',
+  ctrl_v_attempt: 'Ctrl+V Attempt',
+  camera_denied: 'Camera Denied',
+  auto_submit: 'Auto-Submitted',
+  force_submit: 'Force Submitted',
+  timeout: 'Time Expired',
+};
+
+function getBehaviorLabel(type) {
+  return BEHAVIOR_LABELS[type] || String(type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function summarizeActivities(activities) {
+  const counts = new Map();
+  (activities || []).forEach(activity => {
+    const type = activity?.type || 'unknown';
+    counts.set(type, (counts.get(type) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .map(([type, count]) => ({ type, count, label: getBehaviorLabel(type) }))
+    .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
+}
+
+function renderBehaviorSummary(activities) {
+  const summary = summarizeActivities(activities);
+  if (!summary.length) return '';
+
+  return `
+    <div class="behavior-summary">
+      ${summary.map(item => `
+        <div class="behavior-summary-card behavior-${item.type}">
+          <div class="behavior-summary-count">${item.count}</div>
+          <div class="behavior-summary-label">${escHtml(item.label)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 // Surface Supabase sync failures visibly
 document.addEventListener('supabaseSyncError', (e) => {
   const msg = e.detail?.message || 'Unknown error';
@@ -2827,9 +2874,11 @@ function viewStudentAnswers(sessionId) {
 
   // Activity log
   if (session.activities && session.activities.length) {
-    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Anti-Cheat Activity Log</div>`;
+    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>`;
+    html += renderBehaviorSummary(session.activities);
+    html += `<div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Anti-Cheat Activity Timeline</div>`;
     session.activities.forEach(a => {
-      html += `<div class="log-item"><div class="log-type ${a.type}">${a.type.replace(/_/g,' ')}</div><div class="log-detail">${escHtml(a.detail)}</div><div class="log-time">${formatDateTime(a.timestamp)}</div></div>`;
+      html += `<div class="log-item"><div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div><div class="log-detail">${escHtml(a.detail)}</div><div class="log-time">${formatDateTime(a.timestamp)}</div></div>`;
     });
   }
 
@@ -3122,13 +3171,18 @@ function showStudentLog(sessionId) {
     document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>No suspicious activity recorded.</p></div>`;
     return;
   }
-  document.getElementById('log-body').innerHTML = activities.map(a => `
-    <div class="log-item">
-      <div class="log-type ${a.type}">${a.type.replace(/_/g,' ')}</div>
-      <div class="log-detail">${escHtml(a.detail)}</div>
-      <div class="log-time">${formatDateTime(a.timestamp)}</div>
-    </div>
-  `).join('');
+  document.getElementById('log-body').innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>
+    ${renderBehaviorSummary(activities)}
+    <div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Activity Timeline</div>
+    ${activities.map(a => `
+      <div class="log-item">
+        <div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div>
+        <div class="log-detail">${escHtml(a.detail)}</div>
+        <div class="log-time">${formatDateTime(a.timestamp)}</div>
+      </div>
+    `).join('')}
+  `;
 }
 
 async function forceSubmitStudent(sessionId) {

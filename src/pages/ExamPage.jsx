@@ -2,6 +2,39 @@ import React, { useEffect, useRef } from 'react';
 
 export default function ExamPage() {
   const booted = useRef(false);
+  const inlineLabelStyle = { display: 'inline-flex', alignItems: 'center', gap: '8px' };
+
+  const BackLabel = ({ text }) => (
+    <span style={inlineLabelStyle}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m15 18-6-6 6-6" />
+        <path d="M21 12H9" />
+      </svg>
+      <span>{text}</span>
+    </span>
+  );
+
+  const ReviewLabel = () => (
+    <span style={inlineLabelStyle}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+        <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+        <path d="M9 12h6" />
+        <path d="M9 16h6" />
+      </svg>
+      <span>Review My Answers</span>
+    </span>
+  );
+
+  const NextLabel = ({ text }) => (
+    <span style={inlineLabelStyle}>
+      <span>{text}</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 12h12" />
+        <path d="m15 6 6 6-6 6" />
+      </svg>
+    </span>
+  );
 
   useEffect(() => {
     if (booted.current) return;
@@ -252,7 +285,7 @@ export default function ExamPage() {
         </div>
         <div style={{ maxWidth: '760px', margin: '0 auto', padding: '24px 16px 60px' }} id="review-container" />
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', padding: '14px 24px', textAlign: 'center' }}>
-          <button className="btn btn-primary" onClick={() => window.ExamApp.returnToLogin()} style={{ minWidth: '160px' }}>← Back</button>
+          <button className="btn btn-primary" onClick={() => window.ExamApp.returnToLogin()} style={{ minWidth: '160px' }}><BackLabel text="Back" /></button>
         </div>
       </div>
 
@@ -284,7 +317,7 @@ export default function ExamPage() {
           <p>The exam has not started yet. Please wait for your instructor to activate the exam.</p>
           <div className="student-info-box" id="waiting-info-box" />
           <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>This page refreshes automatically every 3 seconds.</div>
-          <a href="#" onClick={(e) => { e.preventDefault(); window.ExamApp.returnToLogin(); }} style={{ display: 'block', marginTop: '16px', fontSize: '13px' }}>← Back to Dashboard</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); window.ExamApp.returnToLogin(); }} style={{ display: 'inline-flex', alignItems: 'center', marginTop: '16px', fontSize: '13px' }}><BackLabel text="Back to Dashboard" /></a>
         </div>
       </div>
 
@@ -378,11 +411,11 @@ export default function ExamPage() {
               <div style={{ display:'flex', gap:'10px' }}>
                 <button type="button" data-exam-control="true" id="btn-prev" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.prevQuestion()}
                   style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px' }}>
-                  ← Previous
+                  <BackLabel text="Previous" />
                 </button>
                 <button type="button" data-exam-control="true" id="btn-next" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.nextQuestion()}
                   style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px', background:'#1a4d2a', color:'#fff', border:'none' }}>
-                  Next →
+                  <NextLabel text="Next" />
                 </button>
               </div>
             </div>
@@ -412,9 +445,9 @@ export default function ExamPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
             <button type="button" id="btn-review-answers" data-exam-control="true" className="btn btn-secondary btn-block examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
-              📋 Review My Answers
+              <ReviewLabel />
             </button>
-            <button type="button" data-exam-control="true" className="btn btn-primary btn-block examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>← Back</button>
+            <button type="button" data-exam-control="true" className="btn btn-primary btn-block examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}><BackLabel text="Back" /></button>
           </div>
         </div>
       </div>

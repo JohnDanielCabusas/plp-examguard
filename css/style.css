@@ -5693,12 +5693,57 @@ body.exam-page {
 .log-type.copy_attempt {
   color: #d97706 !important;
 }
+.log-type.paste_attempt {
+  color: #0ea5e9 !important;
+}
+.log-type.ctrl_c_attempt {
+  color: #7c3aed !important;
+}
+.log-type.ctrl_v_attempt {
+  color: #2563eb !important;
+}
 .log-type.camera_denied {
   color: #7c3aed !important;
 }
 .log-type.force_submit,
-.log-type.auto_submit {
+.log-type.auto_submit,
+.log-type.timeout {
   color: #0f2d1a !important;
+}
+
+.behavior-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.behavior-summary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  min-height: 78px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.behavior-summary-count {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 800;
+  color: #0f2d1a;
+  margin-bottom: 6px;
+}
+
+.behavior-summary-label {
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 /* ── Section headers ───────────────────────────────────── */
