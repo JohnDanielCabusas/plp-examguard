@@ -10,33 +10,42 @@
 const SupabaseSync = {
   _client: null,
   _channel: null,
+  _initPromise: null,
+  _deferredHydrationPromise: null,
   _readyEmitted: false,
 
   _writeLocal(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-    window.DB?.clearCacheKey?.(key);
+    window.DB?._write?.(key, value);
   },
 
   // ── Public: call once per page load (from React useEffect) ──
   async init() {
-    this._emitReady();
+    if (this._initPromise) return this._initPromise;
 
-    const client = window.supabase;
-    if (!client) {
-      console.warn('[SupabaseSync] Supabase client not available. Running in localStorage-only mode.');
-      return;
-    }
-    this._client = client;
+    this._initPromise = (async () => {
+      const client = window.supabase;
+      if (!client) {
+        console.warn('[SupabaseSync] Supabase client not available. Running with in-memory defaults only.');
+        this._emitReady();
+        return;
+      }
+      this._client = client;
 
-    try {
-      await this._pullFromSupabase();
-      this._setupListeners();
-    } catch (e) {
-      console.warn('[SupabaseSync] Error loading data from Supabase:', e.message || e);
-    }
+      try {
+        await this._pullFromSupabase();
+        this._setupListeners();
+      } catch (e) {
+        console.warn('[SupabaseSync] Error loading data from Supabase:', e.message || e);
+      } finally {
+        this._emitReady();
+        this._hydrateDeferredTables();
+      }
+    })();
+
+    return this._initPromise;
   },
 
-  // ── Pull all tables into localStorage ──────────────────────
+  // ── Pull all tables into the in-memory cache ───────────────
   async _pullFromSupabase() {
     const c = this._client;
     const [
@@ -47,7 +56,6 @@ const SupabaseSync = {
       { data: subjects },
       { data: exams },
       { data: sessions },
-      { data: logs },
     ] = await Promise.all([
       c.from('settings').select('*').eq('id', 'main').maybeSingle(),
       c.from('superadmin').select('*').eq('id', 'main').maybeSingle(),
@@ -56,7 +64,6 @@ const SupabaseSync = {
       c.from('subjects').select('*').order('created_at'),
       c.from('exams').select('*').order('created_at'),
       c.from('sessions').select('*').order('created_at'),
-      c.from('logs').select('*').order('created_at'),
     ]);
 
     // First-run: if Supabase is empty, push local seeds up instead of wiping them
@@ -66,18 +73,34 @@ const SupabaseSync = {
       return;
     }
 
-    // Supabase has data — overwrite localStorage with it
+    // Supabase has data — overwrite the in-memory cache with it
     if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
-    if (superadmin)       this._writeLocal('acs_sysadmin',    this._dbToJsSysAdmin(superadmin));
-    if (admins?.length)   this._writeLocal('acs_professors',  admins.map(r => this._dbToJsAdmin(r)));
-    if (students?.length) this._writeLocal('acs_students',    students.map(r => this._dbToJsStudent(r)));
-    if (subjects?.length) this._writeLocal('acs_subjects',    subjects.map(r => this._dbToJsSubject(r)));
-    if (exams?.length)    this._writeLocal('acs_exams',       exams.map(r => this._dbToJsExam(r)));
-    if (sessions?.length) this._writeLocal('acs_sessions',    sessions.map(r => this._dbToJsSession(r)));
-    if (logs?.length)     this._writeLocal('acs_logs',        logs.map(r => this._dbToJsLog(r)));
+    if (superadmin) this._writeLocal('acs_sysadmin', this._dbToJsSysAdmin(superadmin));
+    this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
+    this._writeLocal('acs_students', (students || []).map(r => this._dbToJsStudent(r)));
+    this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
+    this._writeLocal('acs_exams', (exams || []).map(r => this._dbToJsExam(r)));
+    this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+  },
+  async _hydrateDeferredTables() {
+    if (this._deferredHydrationPromise || !this._client) return this._deferredHydrationPromise;
+
+    this._deferredHydrationPromise = (async () => {
+      try {
+        const { data: logs } = await this._client
+          .from('logs')
+          .select('*')
+          .order('created_at');
+        this._writeLocal('acs_logs', (logs || []).map(r => this._dbToJsLog(r)));
+      } catch (e) {
+        console.warn('[SupabaseSync] Error hydrating deferred tables:', e.message || e);
+      }
+    })();
+
+    return this._deferredHydrationPromise;
   },
 
-  // ── Seed Supabase from localStorage on first run ────────────
+  // ── Seed Supabase from in-memory defaults on first run ─────
   async _seedToSupabase() {
     const c = this._client;
 
@@ -113,10 +136,12 @@ const SupabaseSync = {
   // ── Realtime listeners ─────────────────────────────────────
   _setupListeners() {
     const c = this._client;
+    if (this._channel) return;
 
     const applyChange = (table, lsKey, normalizer) => (payload) => {
       const { eventType, new: row, old } = payload;
-      const current = (() => { try { return JSON.parse(localStorage.getItem(lsKey)) || []; } catch { return []; } })();
+      const currentValue = window.DB?._read?.(lsKey, []);
+      const current = Array.isArray(currentValue) ? [...currentValue] : [];
 
       if (table === 'settings') {
         if (row) this._writeLocal(lsKey, normalizer(row));
@@ -316,6 +341,7 @@ const SupabaseSync = {
       submitted: !!d.submitted,
       auto_submitted: !!d.autoSubmitted,
       score_released: !!d.scoreReleased,
+      ai_detections: d.aiDetections || {},
       camera_snapshots: Array.isArray(d.cameraSnapshots) ? d.cameraSnapshots : [],
       owner_admin_id: d.ownerAdminId || null,
     };
@@ -455,6 +481,7 @@ const SupabaseSync = {
       submitted: !!r.submitted,
       autoSubmitted: !!r.auto_submitted,
       scoreReleased: !!r.score_released,
+      aiDetections: r.ai_detections || {},
       cameraSnapshots: Array.isArray(r.camera_snapshots) ? r.camera_snapshots : [],
       ownerAdminId: r.owner_admin_id || '',
       createdAt: r.created_at || null,
@@ -477,10 +504,11 @@ const SupabaseSync = {
   // ── Utils ───────────────────────────────────────────────────
 
   _local(key) {
-    try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+    return window.DB?._read?.(key, null) ?? null;
   },
   _localArray(key) {
-    try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
+    const value = window.DB?._read?.(key, []);
+    return Array.isArray(value) ? value : [];
   },
 
   _emitReady() {

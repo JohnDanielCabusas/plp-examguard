@@ -8,11 +8,19 @@ let monitorInterval = null;
 let monitorExamId = null;
 let currentQBuilderExamId = null;
 let confirmResolve = null;
+let adminBootstrapped = false;
+let passwordPromptResolve = null;
+
+function getCurrentAdminRecord() {
+  const session = Auth.getAdminSession();
+  if (!session?.id) return session || null;
+  return DB.getAdmins().find(a => a.id === session.id) || session;
+}
 
 function refreshAdminIdentity() {
-  const session = Auth.getAdminSession();
-  if (!session) return;
-  const displayName = session.name || 'Administrator';
+  const admin = getCurrentAdminRecord();
+  if (!admin) return;
+  const displayName = admin.name || 'Administrator';
   const initial = displayName.charAt(0).toUpperCase() || 'A';
 
   const sidebarName = document.getElementById('sb-user-name');
@@ -26,6 +34,25 @@ function refreshAdminIdentity() {
   if (topbarAvatar) topbarAvatar.textContent = initial;
 }
 
+function getSubmissionStatusText(session) {
+  if (!session) return 'Pending';
+  if (!session.submitted) return 'Pending';
+
+  if (session.autoSubmitted) {
+    if (session.warnings >= 3) return 'Auto-Submitted (Warnings)';
+    return 'Auto-Submitted (Time Limit)';
+  }
+
+  return 'Submitted';
+}
+
+function getSubmissionStatusBadge(session) {
+  const text = getSubmissionStatusText(session);
+  if (text === 'Submitted') return '<span class="badge badge-success">Submitted</span>';
+  if (text === 'Pending') return '<span class="badge badge-secondary">Pending</span>';
+  return `<span class="badge badge-warning">${escHtml(text)}</span>`;
+}
+
 // Surface Supabase sync failures visibly
 document.addEventListener('supabaseSyncError', (e) => {
   const msg = e.detail?.message || 'Unknown error';
@@ -35,6 +62,12 @@ document.addEventListener('supabaseSyncError', (e) => {
 // ---- Bootstrap ----
 document.addEventListener('dbReady', function init() {
   if (!Auth.requireAdmin()) return;
+  if (adminBootstrapped) {
+    refreshAdminIdentity();
+    loadSettings();
+    return;
+  }
+  adminBootstrapped = true;
 
   const session = Auth.getAdminSession();
   const settings = DB.getSettings();
@@ -54,10 +87,14 @@ document.addEventListener('dbReady', function init() {
   // Date in topbar
   document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' });
 
-  showSection('dashboard');
+  requestAnimationFrame(() => {
+    showSection('dashboard');
 
   // Student ID modal: digits only, auto-insert dash after 2nd digit (YY-NNNNN)
-  document.getElementById('stu-student-id').addEventListener('input', function() {
+  const studentIdInput = document.getElementById('stu-student-id');
+  if (studentIdInput && !studentIdInput.dataset.boundFormat) {
+    studentIdInput.dataset.boundFormat = 'true';
+    studentIdInput.addEventListener('input', function() {
     if (this.disabled) return;
     const cursor = this.selectionStart;
     const prev = this.value;
@@ -68,6 +105,8 @@ document.addEventListener('dbReady', function init() {
     // Auto-fill year level
     const yl = computeYearLevel(this.value);
     if (yl !== '—') document.getElementById('stu-year').value = yl;
+    });
+  }
   });
 });
 
@@ -3308,7 +3347,7 @@ function renderReportTable() {
 
   document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
-    const scoreRel = s.scoreReleased ? '<span class="badge badge-success">Released</span>' : '<span class="badge badge-secondary">Pending</span>';
+    const submissionStatus = getSubmissionStatusBadge(s);
     return `<tr>
       <td><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
       <td><strong>${escHtml(s.studentName)}</strong></td>
@@ -3321,7 +3360,7 @@ function renderReportTable() {
         </div>
       </td>
       <td>${pct}%</td>
-      <td>${scoreRel}</td>
+      <td>${submissionStatus}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary btn-sm" onclick="viewStudentAnswers('${s.id}')">Review</button>
         <button class="btn btn-warning btn-sm" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake</button>
@@ -3616,7 +3655,7 @@ async function exportExamReportPdf() {
       `${s.yearLevel || 'N/A'} / ${s.section || 'N/A'}`,
       `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
       `${pct}%`,
-      s.scoreReleased ? 'Released' : 'Pending',
+      getSubmissionStatusText(s),
     ];
   });
 
@@ -3705,6 +3744,7 @@ async function allowStudentRetake(sessionId) {
     score:         null,
     scoreReleased: false,
     answers:       {},
+    aiDetections:  {},
     warnings:      0,
     activities:    [],
   });
@@ -3717,7 +3757,7 @@ async function allowStudentRetake(sessionId) {
 // ============================================================
 function loadSettings() {
   const s = DB.getSettings();
-  const session = Auth.getAdminSession() || {};
+  const admin = getCurrentAdminRecord() || {};
   const schoolNameEl = document.getElementById('set-school-name');
   const deptEl = document.getElementById('set-department');
   const nameEl = document.getElementById('set-admin-name');
@@ -3729,11 +3769,10 @@ function loadSettings() {
   const removeLogoBtn = document.getElementById('btn-remove-logo');
 
   if (schoolNameEl) schoolNameEl.value = s.schoolName || '';
-  if (deptEl) deptEl.value = s.department || '';
-  if (nameEl) nameEl.value = session.name || s.adminName || '';
-  if (emailEl) emailEl.value = session.email || s.adminEmail || '';
-  if (usernameEl) usernameEl.value = session.username || '';
-  if (deptEl && session.department) deptEl.value = session.department;
+  if (deptEl) deptEl.value = admin.department || s.department || '';
+  if (nameEl) nameEl.value = admin.name || s.adminName || '';
+  if (emailEl) emailEl.value = admin.email || s.adminEmail || '';
+  if (usernameEl) usernameEl.value = admin.username || '';
   if (apiKeyEl) apiKeyEl.value = s.claudeApiKey || '';
 
   if (s.logoUrl && logoImg && logoWrap && removeLogoBtn) {
@@ -3786,6 +3825,7 @@ function saveSettings() {
       department: department || session.department || '',
     }));
     refreshAdminIdentity();
+    loadSettings();
   }
 
   if (schoolNameEl) document.getElementById('sb-school-name').textContent = schoolName;
@@ -3860,6 +3900,71 @@ function removeLogo() {
   const PLP_LOGO_URL = 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png';
   document.getElementById('sb-logo-wrap').innerHTML = `<img src="${PLP_LOGO_URL}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
   showToast('Logo removed.', 'success', { variant: 'settings' });
+}
+
+function showPasswordVerificationPrompt() {
+  return new Promise(resolve => {
+    passwordPromptResolve = resolve;
+    document.getElementById('confirm-body').innerHTML = `
+      <div class="confirm-icon" style="background:#e8f5ec;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17a2 2 0 0 0 2-2c0-.74-.4-1.39-1-1.73V11a1 1 0 1 0-2 0v2.27A2 2 0 0 0 10 15a2 2 0 0 0 2 2z"/><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/></svg></div>
+      <div class="confirm-title">Verify Password</div>
+      <div class="confirm-message">Enter your account password to reveal the saved Groq API key.</div>
+      <div class="form-group confirm-input-wrap">
+        <input type="password" class="form-control" id="verify-account-password" placeholder="Current account password" autocomplete="current-password" />
+      </div>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" onclick="resolvePasswordPrompt(null)">Cancel</button>
+        <button class="btn btn-primary" onclick="resolvePasswordPrompt(document.getElementById('verify-account-password')?.value || '')">Verify</button>
+      </div>
+    `;
+    openModal('modal-confirm');
+
+    requestAnimationFrame(() => {
+      const input = document.getElementById('verify-account-password');
+      input?.focus();
+      input?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          resolvePasswordPrompt(input.value || '');
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          resolvePasswordPrompt(null);
+        }
+      });
+    });
+  });
+}
+
+function resolvePasswordPrompt(value) {
+  closeModal('modal-confirm');
+  if (passwordPromptResolve) {
+    passwordPromptResolve(value);
+    passwordPromptResolve = null;
+  }
+}
+
+async function togglePassword(fieldId, button) {
+  const input = document.getElementById(fieldId);
+  if (!input) return;
+
+  const shouldReveal = input.type === 'password';
+  if (shouldReveal) {
+    const password = await showPasswordVerificationPrompt();
+    if (password === null) return;
+
+    const admin = getCurrentAdminRecord();
+    if (!admin || admin.password !== password) {
+      showToast('Password verification failed.', 'error', { variant: 'settings' });
+      return;
+    }
+  }
+
+  input.type = shouldReveal ? 'text' : 'password';
+  if (button) {
+    button.style.color = shouldReveal ? '#1a4d2a' : '#666';
+    button.setAttribute('aria-label', shouldReveal ? 'Hide API key' : 'Show API key');
+    button.setAttribute('title', shouldReveal ? 'Hide API key' : 'Show API key');
+  }
 }
 
 function changePassword() {
@@ -4054,18 +4159,8 @@ function viewCameraSnapshot(sessionId) {
 // ============================================================
 // AI CONTENT DETECTION (with visual gauge)
 // ============================================================
-const AI_DETECTION_CACHE_KEY = 'acs_ai_detection_cache';
-
-function getAIDetectionCache() {
-  try {
-    return JSON.parse(localStorage.getItem(AI_DETECTION_CACHE_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-
-function setAIDetectionCache(cache) {
-  localStorage.setItem(AI_DETECTION_CACHE_KEY, JSON.stringify(cache));
+function getAIDetectionCache(sessionId) {
+  return DB.getSession(sessionId)?.aiDetections || {};
 }
 
 function getEssayDetectionSignature(text) {
@@ -4083,7 +4178,7 @@ function getEssayDetectionCacheKey(sessionId, questionId) {
 
 function getCachedEssayAIDetection(sessionId, questionId, text) {
   if (!sessionId || !questionId || !text) return null;
-  const cache = getAIDetectionCache();
+  const cache = getAIDetectionCache(sessionId);
   const cached = cache[getEssayDetectionCacheKey(sessionId, questionId)];
   if (!cached) return null;
   return cached.signature === getEssayDetectionSignature(text) ? cached.result : null;
@@ -4091,13 +4186,15 @@ function getCachedEssayAIDetection(sessionId, questionId, text) {
 
 function cacheEssayAIDetection(sessionId, questionId, text, result) {
   if (!sessionId || !questionId || !text || !result) return;
-  const cache = getAIDetectionCache();
+  const session = DB.getSession(sessionId);
+  if (!session) return;
+  const cache = { ...(session.aiDetections || {}) };
   cache[getEssayDetectionCacheKey(sessionId, questionId)] = {
     signature: getEssayDetectionSignature(text),
     result,
     updatedAt: new Date().toISOString(),
   };
-  setAIDetectionCache(cache);
+  DB.updateSession(sessionId, { aiDetections: cache });
 }
 
 function getAIDetectionBarColor(label) {

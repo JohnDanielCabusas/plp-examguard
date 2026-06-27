@@ -13,6 +13,9 @@ alter table if exists public.superadmin
 alter table if exists public.superadmin
   alter column email drop not null;
 
+alter table if exists public.sessions
+  add column if not exists ai_detections jsonb not null default '{}'::jsonb;
+
 insert into public.superadmin (id, username, password, name, email, department)
 values (
   'main',

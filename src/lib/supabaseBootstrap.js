@@ -14,6 +14,9 @@ const bridge = {
     hasPublishableKey: Boolean(supabaseKey),
   },
   status: { ...initialStatus },
+  dispatchStatus() {
+    document.dispatchEvent(new CustomEvent('supabaseReady', { detail: this.status }));
+  },
   async smokeTest() {
     if (!supabase) {
       const error = 'Supabase env vars are missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.';
@@ -24,7 +27,7 @@ const bridge = {
         error,
       };
       console.warn('[Supabase] ' + error);
-      document.dispatchEvent(new CustomEvent('supabaseReady', { detail: this.status }));
+      this.dispatchStatus();
       return this.status;
     }
 
@@ -47,23 +50,19 @@ const bridge = {
       console.info('[Supabase] Connection smoke test passed.');
     }
 
-    document.dispatchEvent(new CustomEvent('supabaseReady', { detail: this.status }));
+    this.dispatchStatus();
     return this.status;
   },
 };
 
 window.supabase = supabase;
 window.SupabaseBridge = bridge;
-
-bridge.smokeTest().catch(err => {
-  bridge.status = {
-    ...bridge.status,
-    checkedAt: new Date().toISOString(),
-    connected: false,
-    error: err instanceof Error ? err.message : String(err),
-  };
-  console.error('[Supabase] Unexpected bootstrap error:', bridge.status.error);
-  document.dispatchEvent(new CustomEvent('supabaseReady', { detail: bridge.status }));
-});
+bridge.status = {
+  ...bridge.status,
+  checkedAt: new Date().toISOString(),
+  connected: Boolean(supabase),
+  error: supabase ? null : 'Supabase env vars are missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.',
+};
+bridge.dispatchStatus();
 
 export default bridge;

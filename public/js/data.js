@@ -1,5 +1,5 @@
 // ============================================================
-// DATA LAYER - localStorage cache + Firestore sync
+// DATA LAYER - in-memory cache + Supabase sync
 // ============================================================
 
 const DB = {
@@ -11,24 +11,18 @@ const DB = {
     exams: 'acs_exams',
     sessions: 'acs_sessions',
     logs: 'acs_logs',
+    sysadmin: 'acs_sysadmin',
   },
   _cache: {},
 
   _read(key, fallback) {
     if (Object.prototype.hasOwnProperty.call(this._cache, key)) return this._cache[key];
-    try {
-      const raw = localStorage.getItem(key);
-      const value = raw ? JSON.parse(raw) : fallback;
-      this._cache[key] = value ?? fallback;
-    } catch {
-      this._cache[key] = fallback;
-    }
+    this._cache[key] = fallback;
     return this._cache[key];
   },
 
   _write(key, value) {
     this._cache[key] = value;
-    localStorage.setItem(key, JSON.stringify(value));
     return value;
   },
 
@@ -367,80 +361,46 @@ const DB = {
     return localStudent;
   },
 
-  init() {
-    // Settings
-    if (!localStorage.getItem(this.KEYS.settings)) {
-      localStorage.setItem(this.KEYS.settings, JSON.stringify({
+  _buildSeedData() {
+    const seedAdminId = 'admin1';
+    const createdAt = new Date().toISOString();
+    const q1 = this.generateId();
+    const q2 = this.generateId();
+    const q3 = this.generateId();
+    const q4 = this.generateId();
+    const q5 = this.generateId();
+
+    return {
+      [this.KEYS.settings]: {
         schoolName: 'Pamantasan ng Lungsod ng Pasig',
         logoUrl: '/plp-logo.png',
         department: '',
         adminName: 'Administrator',
         adminEmail: 'admin@school.edu',
-      }));
-    }
-
-    // Professors
-    if (!localStorage.getItem(this.KEYS.admins)) {
-      localStorage.setItem(this.KEYS.admins, JSON.stringify([
-        { id: 'admin1', username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu', department: '' }
-      ]));
-    }
-
-    // System admin credentials
-    if (!localStorage.getItem('acs_sysadmin')) {
-      localStorage.setItem('acs_sysadmin', JSON.stringify({
+      },
+      [this.KEYS.admins]: [
+        { id: seedAdminId, username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu', department: '' },
+      ],
+      [this.KEYS.sysadmin]: {
         username: 'sysadmin',
         password: 'admin123',
         name: 'System Administrator',
         email: 'sysadmin@school.edu',
         department: '',
-      }));
-    }
-
-    // Students - seed demo students
-    if (!localStorage.getItem(this.KEYS.students)) {
-      localStorage.setItem(this.KEYS.students, JSON.stringify([
-        this._withOwner({ id: this.generateId(), studentId: '26-00001', name: 'Alice Santos', yearLevel: '3rd Year', section: 'Section A', email: 'alice@school.edu' }),
-        this._withOwner({ id: this.generateId(), studentId: '26-00002', name: 'Bob Reyes', yearLevel: '3rd Year', section: 'Section A', email: 'bob@school.edu' }),
-        this._withOwner({ id: this.generateId(), studentId: '26-00003', name: 'Carlos Mendoza', yearLevel: '2nd Year', section: 'Section B', email: 'carlos@school.edu' }),
-      ]));
-    } else {
-      // Migration: replace old STU### format with new YY-NNNNN format
-      const students = JSON.parse(localStorage.getItem(this.KEYS.students));
-      const oldFmt = /^STU(\d+)$/i;
-      const migrated = students.map((s, i) => {
-        if (oldFmt.test(s.studentId)) {
-          const num = String(i + 1).padStart(5, '0');
-          return { ...s, studentId: '26-' + num };
-        }
-        return s;
-      });
-      localStorage.setItem(this.KEYS.students, JSON.stringify(migrated));
-    }
-
-    // Subjects - seed demo subjects
-    if (!localStorage.getItem(this.KEYS.subjects)) {
-      const subId1 = 'subj1';
-      const subId2 = 'subj2';
-      localStorage.setItem(this.KEYS.subjects, JSON.stringify([
-        this._withOwner({ id: subId1, code: 'CS101', name: 'Introduction to Computing', description: 'Fundamentals of computer science', createdAt: new Date().toISOString() }),
-        this._withOwner({ id: subId2, code: 'MATH201', name: 'Discrete Mathematics', description: 'Logic, sets, graphs and combinatorics', createdAt: new Date().toISOString() }),
-      ]));
-    }
-
-    // Exams - seed one complete demo exam
-    if (!localStorage.getItem(this.KEYS.exams)) {
-      const subjects = this.getSubjects();
-      const subId = subjects.length > 0 ? subjects[0].id : 'subj1';
-      const q1 = this.generateId();
-      const q2 = this.generateId();
-      const q3 = this.generateId();
-      const q4 = this.generateId();
-      const q5 = this.generateId();
-      localStorage.setItem(this.KEYS.exams, JSON.stringify([
+      },
+      [this.KEYS.students]: [
+        { id: this.generateId(), studentId: '26-00001', name: 'Alice Santos', yearLevel: '3rd Year', section: 'Section A', email: 'alice@school.edu', ownerAdminId: seedAdminId },
+        { id: this.generateId(), studentId: '26-00002', name: 'Bob Reyes', yearLevel: '3rd Year', section: 'Section A', email: 'bob@school.edu', ownerAdminId: seedAdminId },
+        { id: this.generateId(), studentId: '26-00003', name: 'Carlos Mendoza', yearLevel: '2nd Year', section: 'Section B', email: 'carlos@school.edu', ownerAdminId: seedAdminId },
+      ],
+      [this.KEYS.subjects]: [
+        { id: 'subj1', code: 'CS101', name: 'Introduction to Computing', description: 'Fundamentals of computer science', createdAt, ownerAdminId: seedAdminId },
+        { id: 'subj2', code: 'MATH201', name: 'Discrete Mathematics', description: 'Logic, sets, graphs and combinatorics', createdAt, ownerAdminId: seedAdminId },
+      ],
+      [this.KEYS.exams]: [
         {
           id: 'exam_demo1',
-          subjectId: subId,
+          subjectId: 'subj1',
           title: 'CS101 Midterm Examination',
           description: 'Covers topics from Week 1 to Week 8.',
           timeLimit: 30,
@@ -490,24 +450,25 @@ const DB = {
               points: 2,
             },
           ],
-          createdAt: new Date().toISOString(),
+          createdAt,
           startedAt: null,
           closedAt: null,
           scoringReleased: false,
-          ownerAdminId: this._getDefaultOwnerAdminId(),
-        }
-      ]));
-    }
+          ownerAdminId: seedAdminId,
+        },
+      ],
+      [this.KEYS.sessions]: [],
+      [this.KEYS.logs]: [],
+    };
+  },
 
-    // Sessions
-    if (!localStorage.getItem(this.KEYS.sessions)) {
-      localStorage.setItem(this.KEYS.sessions, JSON.stringify([]));
-    }
-
-    // Logs
-    if (!localStorage.getItem(this.KEYS.logs)) {
-      localStorage.setItem(this.KEYS.logs, JSON.stringify([]));
-    }
+  init() {
+    const seeded = this._buildSeedData();
+    Object.entries(seeded).forEach(([key, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(this._cache, key)) {
+        this._cache[key] = value;
+      }
+    });
   },
 
   generateId() {
@@ -557,13 +518,13 @@ const DB = {
 
   // ---- System Admin ----
   getSysAdmin() {
-    const stored = this._read('acs_sysadmin', null);
+    const stored = this._read(this.KEYS.sysadmin, null);
     return stored || { username: 'sysadmin', password: 'admin123', name: 'System Administrator', email: 'sysadmin@school.edu', department: '' };
   },
   updateSysAdmin(updates) {
     const current = this.getSysAdmin();
     const updated = { ...current, ...updates };
-    this._write('acs_sysadmin', updated);
+    this._write(this.KEYS.sysadmin, updated);
     SupabaseSync.syncSysAdmin(updated);
     return updated;
   },
@@ -870,12 +831,8 @@ const DB = {
   },
 };
 
-// Auto-initialize on load (seeds localStorage defaults; Supabase data overwrites on dbReady)
+// Auto-initialize on load with in-memory defaults; Supabase data overwrites them once loaded.
 DB.init();
-window.addEventListener('storage', e => {
-  if (e.key) DB.clearCacheKey(e.key);
-  else DB.clearCache();
-});
 
 // Expose as global for ES-module consumers (React)
 window.DB = DB;

@@ -316,7 +316,19 @@ const Auth = {
   },
 
   getAdminSession() {
-    try { return JSON.parse(sessionStorage.getItem('acs_admin_session')); } catch { return null; }
+    try {
+      const session = JSON.parse(sessionStorage.getItem('acs_admin_session'));
+      if (!session) return null;
+      const admin = session.id ? DB.getAdmins().find(a => a.id === session.id) : null;
+      if (!admin) return session;
+      return {
+        ...session,
+        username: admin.username || session.username,
+        name: admin.name || session.name,
+        email: admin.email || session.email || '',
+        department: admin.department || session.department || '',
+      };
+    } catch { return null; }
   },
 
   getStudentSession() {

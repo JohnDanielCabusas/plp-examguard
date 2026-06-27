@@ -24,12 +24,6 @@ export default function AdminPage() {
       });
     };
     document.addEventListener('dbReady', onReady);
-    setTimeout(() => {
-      if (fbEl && fbEl.style.display !== 'none') {
-        fbEl.style.display = 'none';
-        document.dispatchEvent(new Event('dbReady'));
-      }
-    }, 1200);
 
     // Desktop sidebar toggle handler
     window._adminToggleSidebar = () => {
@@ -52,7 +46,7 @@ export default function AdminPage() {
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
         <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
-        <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Connecting to server&hellip;</p>
+        <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
         <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
 
@@ -503,6 +497,7 @@ export default function AdminPage() {
                           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
                       </div>
+                      <div className="text-muted" style={{ fontSize: '12px', marginTop: '6px' }}>Reveal requires your professor account password.</div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <button className="btn btn-primary" onClick={() => window.saveClaudeApiKey()}>Save API Key</button>
@@ -513,7 +508,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="settings-main-grid">
-                <div className="card">
+                <div className="card settings-account-card">
                   <div className="card-header"><span className="card-title">Account Information</span></div>
                   <div className="card-body">
                     <div className="form-group"><label>Professor Name</label><input type="text" className="form-control" id="set-admin-name" /></div>
@@ -536,8 +531,8 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-                <div className="card">
-                  <div className="card-header"><span className="card-title">Change Admin Password</span></div>
+                <div className="card settings-password-card">
+                  <div className="card-header"><span className="card-title">Change Password</span></div>
                   <div className="card-body">
                     <div className="form-group"><label>Current Password</label><input type="password" className="form-control" id="set-cur-pass" /></div>
                     <div className="form-group"><label>New Password</label><input type="password" className="form-control" id="set-new-pass" /></div>

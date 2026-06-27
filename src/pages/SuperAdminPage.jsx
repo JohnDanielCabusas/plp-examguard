@@ -557,11 +557,6 @@ export default function SuperAdminPage() {
     };
 
     document.addEventListener("dbReady", boot);
-    setTimeout(() => {
-      if (!readyRef.current) {
-        document.dispatchEvent(new Event("dbReady"));
-      }
-    }, 1200);
     window.SupabaseSync?.init?.();
 
     return () => document.removeEventListener("dbReady", boot);
@@ -832,7 +827,7 @@ export default function SuperAdminPage() {
             margin: 0,
           }}
         >
-          Connecting to server&hellip;
+          Loading your workspace&hellip;
         </p>
       </div>
 
