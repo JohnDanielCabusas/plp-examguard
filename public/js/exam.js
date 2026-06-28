@@ -137,6 +137,15 @@ const ExamApp = {
     });
   },
 
+  _submittedDetailIcon(type) {
+    const icons = {
+      student: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+      exam: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+      date: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    };
+    return icons[type] || icons.exam;
+  },
+
   _isEditableTarget(target) {
     if (!target || typeof target.matches !== 'function') return false;
     return target.matches('input, textarea, [contenteditable="true"], [contenteditable=""], .essay-textarea');
@@ -738,10 +747,11 @@ const ExamApp = {
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               </div>
               <div class="course-exam-copy">
-                <div class="course-exam-kicker">${_esc(accentLabel)}</div>
-                <div class="course-exam-title">${_esc(e.title)}</div>
-                <div class="course-exam-meta">${chips.join('')}</div>
-              </div>
+              <div class="course-exam-kicker">${_esc(accentLabel)}</div>
+              <div class="course-exam-title">${_esc(e.title)}</div>
+              <div class="course-exam-meta">${chips.join('')}</div>
+              ${e.description ? `<div class="course-exam-desc">${_esc(e.description)}</div>` : ''}
+            </div>
             </div>
             <div class="course-exam-actions-pane">${panelHtml}</div>
           </div>
@@ -2508,6 +2518,119 @@ const ExamApp = {
     const container = document.getElementById('review-container');
     if (!container) return;
 
+    if (nameEl) nameEl.textContent = `${sess.studentName} - ${sess.studentId}`;
+    const totalScore = Number(sess.score || 0);
+    const maxScore = Number(sess.maxScore || 0);
+    const pct = maxScore ? Math.round(totalScore / maxScore * 100) : 0;
+    if (scoreEl) {
+      scoreEl.removeAttribute('style');
+      scoreEl.className = `review-score-chip ${pct >= 75 ? 'score-high' : pct >= 60 ? 'score-mid' : 'score-low'}`;
+      scoreEl.innerHTML = `
+        <div class="review-score-chip-stats">
+          <span id="review-score-value">${totalScore}/${maxScore}</span>
+          <span class="review-score-chip-divider"></span>
+          <span id="review-score-pct">${pct}%</span>
+        </div>
+        <div class="review-score-chip-label">Total Score</div>
+      `;
+    }
+
+    const typeLabel = { mcq: 'MCQ', tf: 'T/F', identification: 'ID', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay' };
+
+    container.innerHTML = exam.questions.map((q, idx) => {
+      const ans = (sess.answers || {})[q.id];
+      let resultHtml = '';
+
+      if (q.type === 'essay') {
+        resultHtml = `
+          <div class="review-answer-group">
+            <div class="review-answer-row review-answer-row-stack">
+              <div class="review-answer-label">Your answer</div>
+              <div class="review-answer-essay">${_esc(ans || '(no answer)')}</div>
+            </div>
+            <div class="review-answer-note">Essay responses are reviewed manually by your instructor.</div>
+          </div>`;
+      } else if (q.type === 'enumeration') {
+        const expected = q.answers || [];
+        const studentItemsRaw = (ans || '').split('\n').map((s) => s.trim()).filter(Boolean);
+        const studentItems = studentItemsRaw.map((s) => s.toUpperCase());
+        const matched = expected.filter((e) => studentItems.includes(e.toUpperCase()));
+        resultHtml = `
+          <div class="review-answer-group">
+            <div class="review-answer-row">
+              <div class="review-answer-label">Your answer</div>
+              <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
+            </div>
+            <div class="review-enum-list">
+              ${expected.map((e, i) => {
+                const got = studentItems.includes(e.toUpperCase());
+                const studentValue = studentItemsRaw[i] || '';
+                return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                  <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                  <div class="review-enum-copy">
+                    <div class="review-enum-expected">${_esc(e)}</div>
+                    ${!got && studentValue ? `<div class="review-enum-student">You wrote: ${_esc(studentValue)}</div>` : ''}
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+            <div class="review-answer-note">${matched.length}/${expected.length} correct item(s)</div>
+          </div>`;
+      } else if (q.type === 'matching') {
+        const pairs = q.pairs || [];
+        const studentAns = (() => { try { return JSON.parse(ans || '{}'); } catch { return {}; } })();
+        resultHtml = `
+          <div class="review-answer-group">
+            <div class="review-matching-list">
+              ${pairs.map((p, pi) => {
+                const studentValue = studentAns[pi] || '';
+                const correct = studentValue.toUpperCase() === p.match.toUpperCase();
+                return `<div class="review-matching-item ${correct ? 'is-correct' : 'is-wrong'}">
+                  <div class="review-matching-term">${_esc(p.term)}</div>
+                  <div class="review-matching-arrow">${this._portalIcon('arrowRight', { size: 14, stroke: '#8fa0b6' })}</div>
+                  <div class="review-matching-answer">
+                    <div class="review-matching-student">${_esc(studentValue || '(no answer)')}</div>
+                    ${!correct ? `<div class="review-matching-correct">Correct: ${_esc(p.match)}</div>` : ''}
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`;
+      } else {
+        const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
+        const answerClass = !ans ? 'is-empty' : correct ? 'is-correct' : 'is-wrong';
+        resultHtml = `
+          <div class="review-answer-group">
+            <div class="review-answer-row">
+              <div class="review-answer-label">Your answer</div>
+              <div class="review-answer-value ${answerClass}">
+                <span>${_esc(ans || '(no answer)')}</span>
+                ${ans ? `<span class="review-answer-status-icon">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</span>` : ''}
+              </div>
+            </div>
+            <div class="review-answer-row">
+              <div class="review-answer-label">Correct answer</div>
+              <div class="review-answer-value is-correct">${_esc(q.correctAnswer || '-')}</div>
+            </div>
+          </div>`;
+      }
+
+      return `<article class="review-question-card">
+        <div class="review-question-header">
+          <div class="review-question-number">${idx + 1}</div>
+          <div class="review-question-main">
+            <div class="review-question-topline">
+              <h3 class="review-question-title">${_esc(q.content)}</h3>
+              <span class="review-question-type">${_esc(typeLabel[q.type] || q.type)}</span>
+            </div>
+            ${q.imageUrl ? `<img src="${q.imageUrl}" alt="Question illustration" class="review-question-image" />` : ''}
+            ${resultHtml}
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+    return;
+
     container.innerHTML = exam.questions.map((q, idx) => {
       const ans = (sess.answers || {})[q.id];
       let resultHtml = '';
@@ -2651,6 +2774,7 @@ const ExamApp = {
     const titleEl  = document.getElementById('submitted-title');
     const msgEl    = document.getElementById('submitted-msg');
     const iconWrap = document.getElementById('submitted-icon-wrap');
+    const autoNote = document.getElementById('submitted-auto-note');
 
     if (freshSubmit) {
       // Immediately after submitting
@@ -2667,7 +2791,7 @@ const ExamApp = {
       }
     } else {
       // Returning student — already completed
-      iconWrap.innerHTML = _submittedIcon('done');
+      iconWrap.innerHTML = _submittedIcon('success');
       iconWrap.className = 'submitted-icon-wrap done';
       titleEl.textContent = 'Exam Already Completed';
       msgEl.textContent = 'You have already submitted your answers for this exam.';
@@ -2676,12 +2800,33 @@ const ExamApp = {
     // Student info box
     const box = document.getElementById('submitted-info-box');
     if (box && session) {
+      const submittedAt = formatDateTime(session.endTime);
       box.innerHTML = `
-        <div class="info-row"><span class="info-label">Student</span><span class="info-value">${_esc(session.studentName)}</span></div>
-        <div class="info-row"><span class="info-label">Exam</span><span class="info-value">${_esc(this.exam ? this.exam.title : '')}</span></div>
-        <div class="info-row"><span class="info-label">Submitted At</span><span class="info-value">${formatDateTime(session.endTime)}</span></div>
-        ${session.autoSubmitted ? '<div class="info-row"><span class="info-value badge badge-warning">Auto-Submitted</span></div>' : ''}
+        <div class="submitted-detail-row">
+          <div class="submitted-detail-label"><span class="submitted-detail-icon">${this._submittedDetailIcon('student')}</span><span>Student</span></div>
+          <div class="submitted-detail-value">${_esc(session.studentName)}</div>
+        </div>
+        <div class="submitted-detail-row">
+          <div class="submitted-detail-label"><span class="submitted-detail-icon">${this._submittedDetailIcon('exam')}</span><span>Exam</span></div>
+          <div class="submitted-detail-value">${_esc(this.exam ? this.exam.title : '')}</div>
+        </div>
+        <div class="submitted-detail-row">
+          <div class="submitted-detail-label"><span class="submitted-detail-icon">${this._submittedDetailIcon('date')}</span><span>Submitted At</span></div>
+          <div class="submitted-detail-value">${submittedAt}</div>
+        </div>
       `;
+    }
+    if (autoNote) {
+      if (session && session.autoSubmitted) {
+        autoNote.classList.remove('hidden');
+        autoNote.innerHTML = `
+          <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Auto-Submitted</span></span>
+          <span class="submitted-auto-text">Your answers were submitted automatically.</span>
+        `;
+      } else {
+        autoNote.classList.add('hidden');
+        autoNote.innerHTML = '';
+      }
     }
 
     // Score section

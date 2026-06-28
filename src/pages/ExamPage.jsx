@@ -221,7 +221,7 @@ export default function ExamPage() {
                     </div>
                     <div className="settings-field">
                       <div className="settings-field-label">Full Name</div>
-                      <input type="text" className="form-control" id="stg-name" style={{ fontSize: '14px' }} />
+                      <input type="text" className="form-control" id="stg-name" placeholder="e.g. Juan Dela Cruz" style={{ fontSize: '14px' }} />
                     </div>
                     <div className="settings-field">
                       <div className="settings-field-label">Email</div>
@@ -254,18 +254,22 @@ export default function ExamPage() {
                       </select>
                     </div>
                     <div id="stg-profile-msg" style={{ fontSize: '12px', marginBottom: '10px', minHeight: '16px' }} />
-                    <button className="btn btn-primary" onClick={() => window.ExamApp.saveStudentProfile()}>Save Profile</button>
+                    <div className="settings-actions">
+                      <button className="btn btn-primary" onClick={() => window.ExamApp.saveStudentProfile()}>Save Profile</button>
+                    </div>
                   </div>
                   <div className="settings-card">
                     <div className="settings-card-title">
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                       Change Password
                     </div>
-                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label><input type="password" className="form-control" id="stg-cur-pass" placeholder="Enter current password" /></div>
-                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label><input type="password" className="form-control" id="stg-new-pass" placeholder="Minimum 6 characters" /></div>
-                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label><input type="password" className="form-control" id="stg-confirm-pass" placeholder="Re-enter new password" /></div>
+                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label><input type="password" className="form-control" id="stg-cur-pass" placeholder="Enter your current account password" /></div>
+                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label><input type="password" className="form-control" id="stg-new-pass" placeholder="e.g. At least 6 characters" /></div>
+                    <div className="form-group"><label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label><input type="password" className="form-control" id="stg-confirm-pass" placeholder="Re-enter the new password exactly" /></div>
                     <div id="stg-pass-msg" style={{ fontSize: '12px', marginBottom: '10px', minHeight: '16px' }} />
-                    <button className="btn btn-primary" onClick={() => window.ExamApp.saveStudentPassword()}>Change Password</button>
+                    <div className="settings-actions">
+                      <button className="btn btn-primary" onClick={() => window.ExamApp.saveStudentPassword()}>Change Password</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -275,17 +279,40 @@ export default function ExamPage() {
       </div>
 
       {/* STATE: REVIEW */}
-      <div id="state-review" className="hidden" style={{ background: '#f0f2f5', minHeight: '100vh' }}>
-        <div style={{ background: '#0f2d1a', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }} id="review-exam-title">Exam Review</div>
-            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }} id="review-student-name" />
+      <div id="state-review" className="hidden review-page">
+        <div className="review-topbar">
+          <div className="review-topbar-inner">
+            <div className="review-topbar-copy">
+              <div className="review-topbar-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="15" y2="17" />
+                </svg>
+              </div>
+              <div>
+                <div className="review-topbar-title" id="review-exam-title">Exam Review</div>
+                <div className="review-topbar-meta" id="review-student-name" />
+              </div>
+            </div>
+            <div id="review-score-chip" className="review-score-chip">
+              <div className="review-score-chip-stats">
+                <span id="review-score-value">0/0</span>
+                <span className="review-score-chip-divider" />
+                <span id="review-score-pct">0%</span>
+              </div>
+              <div className="review-score-chip-label">Total Score</div>
+            </div>
           </div>
-          <div id="review-score-chip" style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', padding: '8px 18px', fontSize: '15px', fontWeight: 800, color: '#fff' }} />
         </div>
-        <div style={{ maxWidth: '760px', margin: '0 auto', padding: '24px 16px 60px' }} id="review-container" />
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', padding: '14px 24px', textAlign: 'center' }}>
-          <button className="btn btn-primary" onClick={() => window.ExamApp.returnToLogin()} style={{ minWidth: '160px' }}><BackLabel text="Back" /></button>
+        <div className="review-body">
+          <div className="review-list" id="review-container" />
+        </div>
+        <div className="review-footer">
+          <button type="button" className="review-back-btn examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
+            <BackLabel text="Back" />
+          </button>
         </div>
       </div>
 
@@ -426,28 +453,42 @@ export default function ExamPage() {
 
       {/* STATE: SUBMITTED */}
       <div id="state-submitted" className="state-center hidden">
-        <div className="state-card">
-          <div className="submitted-icon-wrap" id="submitted-icon-wrap" />
-          <h2 id="submitted-title">Exam Submitted!</h2>
-          <p id="submitted-msg">Your answers have been submitted successfully.</p>
-          <div className="student-info-box" id="submitted-info-box" />
-          <div id="score-display" className="hidden">
-            <div className="score-released-label">Your Score</div>
-            <div className="score-released-value" id="score-value" />
-            <div className="score-released-pct" id="score-pct" />
-            <div className="score-released-bar-wrap"><div className="score-released-bar-fill" id="score-bar-fill" /></div>
-          </div>
-          <div id="score-pending" className="hidden">
-            <div className="score-pending-box">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12"/><path d="M12 16h.01"/></svg>
-              <span>Your score will be available once your instructor releases the results.</span>
+        <div className="submitted-shell">
+          <div className="submitted-card">
+            <div className="submitted-hero">
+              <div className="submitted-icon-wrap" id="submitted-icon-wrap" />
+              <h2 id="submitted-title">Exam Submitted!</h2>
+              <p id="submitted-msg">Your answers have been submitted successfully.</p>
             </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
-            <button type="button" id="btn-review-answers" data-exam-control="true" className="btn btn-secondary btn-block examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
-              <ReviewLabel />
-            </button>
-            <button type="button" data-exam-control="true" className="btn btn-primary btn-block examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}><BackLabel text="Back" /></button>
+
+            <div className="submitted-details-card">
+              <div className="submitted-details-title">Submission Details</div>
+              <div className="submitted-details-list" id="submitted-info-box" />
+              <div id="submitted-auto-note" className="submitted-auto-note hidden" />
+            </div>
+
+            <div id="score-display" className="hidden submitted-score-card">
+              <div className="score-released-label">Your Score</div>
+              <div className="score-released-value" id="score-value" />
+              <div className="score-released-pct" id="score-pct" />
+              <div className="score-released-bar-wrap"><div className="score-released-bar-fill" id="score-bar-fill" /></div>
+            </div>
+
+            <div id="score-pending" className="hidden">
+              <div className="score-pending-box">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12"/><path d="M12 16h.01"/></svg>
+                <span>Your score will be available once your instructor releases the results.</span>
+              </div>
+            </div>
+
+            <div className="submitted-actions">
+              <button type="button" id="btn-review-answers" data-exam-control="true" className="course-exam-cta course-exam-cta-secondary examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
+                <ReviewLabel />
+              </button>
+              <button type="button" data-exam-control="true" className="course-exam-cta course-exam-cta-primary examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
+                <BackLabel text="Back" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
