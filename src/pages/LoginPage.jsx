@@ -61,6 +61,7 @@ export default function LoginPage() {
   const [studentStep, setStudentStep] = useState(1); // 1 | 'verify' | '2a' | '2b'
   const [studentEmail, setStudentEmail] = useState('');
   const [studentVerifyMessage, setStudentVerifyMessage] = useState('');
+  const [studentResetMessage, setStudentResetMessage] = useState('');
   const [adminError, setAdminError] = useState('');
   const [adminResetEmail, setAdminResetEmail] = useState('');
   const [adminResetMessage, setAdminResetMessage] = useState('');
@@ -69,6 +70,8 @@ export default function LoginPage() {
   const [step2bError, setStep2bError] = useState('');
   const [showAdminPass, setShowAdminPass] = useState(false);
   const [showStudentPass, setShowStudentPass] = useState(false);
+  const [showStudentResetPass, setShowStudentResetPass] = useState(false);
+  const [showStudentResetConfirmPass, setShowStudentResetConfirmPass] = useState(false);
   const [showSetupPass, setShowSetupPass] = useState(false);
   const [showSetupConfirmPass, setShowSetupConfirmPass] = useState(false);
   const [showAdminResetPass, setShowAdminResetPass] = useState(false);
@@ -78,6 +81,8 @@ export default function LoginPage() {
   const [studentEmailSendBusy, setStudentEmailSendBusy] = useState(false);
   const [adminEmailSendBusy, setAdminEmailSendBusy] = useState(false);
   const [studentResendCooldown, setStudentResendCooldown] = useState(0);
+  const [studentResetBusy, setStudentResetBusy] = useState(false);
+  const [studentResetCooldown, setStudentResetCooldown] = useState(0);
   const [adminResendCooldown, setAdminResendCooldown] = useState(0);
   const [settings, setSettings] = useState({
     schoolName: 'Pamantasan ng Lungsod ng Pasig',
@@ -93,6 +98,9 @@ export default function LoginPage() {
   const studentEmailRef = useRef();
   const studentVerifyCodeRef = useRef();
   const studentPasswordRef = useRef();
+  const studentResetCodeRef = useRef();
+  const studentResetPasswordRef = useRef();
+  const studentResetConfirmRef = useRef();
   const setupIdRef = useRef();
   const setupNameRef = useRef();
   const setupYearSectionRef = useRef();
@@ -145,6 +153,14 @@ export default function LoginPage() {
   }, [studentResendCooldown]);
 
   useEffect(() => {
+    if (!studentResetCooldown) return undefined;
+    const timer = window.setInterval(() => {
+      setStudentResetCooldown(value => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [studentResetCooldown]);
+
+  useEffect(() => {
     if (!adminResendCooldown) return undefined;
     const timer = window.setInterval(() => {
       setAdminResendCooldown(value => (value > 0 ? value - 1 : 0));
@@ -164,7 +180,11 @@ export default function LoginPage() {
     setStep2bError('');
     setStudentVerifyMessage('');
     setStudentResendCooldown(0);
+    setStudentResetMessage('');
+    setStudentResetCooldown(0);
+    setStudentResetBusy(false);
     window.Auth?.clearStudentEmailVerification?.();
+    window.Auth?.clearStudentPasswordReset?.();
     setStudentStep(1);
   };
 
@@ -286,8 +306,22 @@ export default function LoginPage() {
     setStep2bError('');
     setStudentVerifyMessage('');
     setStudentResendCooldown(0);
+    setStudentResetMessage('');
+    setStudentResetCooldown(0);
+    setStudentResetBusy(false);
     window.Auth?.clearStudentEmailVerification?.();
+    window.Auth?.clearStudentPasswordReset?.();
     requestAnimationFrame(() => studentEmailRef.current?.focus());
+  };
+
+  const studentResetBackToSignIn = () => {
+    setStudentStep('2a');
+    setStep2aError('');
+    setStudentResetMessage('');
+    setStudentResetCooldown(0);
+    setStudentResetBusy(false);
+    window.Auth?.clearStudentPasswordReset?.();
+    requestAnimationFrame(() => studentPasswordRef.current?.focus());
   };
 
   const resolveStudentEmailStatus = async (email, options = {}) => {
@@ -384,6 +418,119 @@ export default function LoginPage() {
     }
     if (result.success) { window.location.href = 'exam.html'; }
     else { setStep2aError(result.message); }
+  };
+
+  const startStudentReset = async () => {
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    setStep2aError('');
+    setStudentResetMessage('');
+    if (!email) {
+      setStep2aError('Student email is missing. Please start again.');
+      return;
+    }
+
+    setStudentResetBusy(true);
+    try {
+      const result = await window.Auth.beginStudentPasswordReset(email);
+      if (!result.success) {
+        setStep2aError(result.message);
+        return;
+      }
+      await sendVerificationEmail({
+        email,
+        code: result.previewCode,
+        type: 'student-reset',
+      });
+      setStudentResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+      setStudentResetCooldown(60);
+      setStudentStep('reset-code');
+      requestAnimationFrame(() => studentResetCodeRef.current?.focus());
+    } catch (error) {
+      setStep2aError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');
+    } finally {
+      setStudentResetBusy(false);
+    }
+  };
+
+  const resendStudentResetCode = async () => {
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    setStep2aError('');
+    if (!email) {
+      setStep2aError('Student email is missing. Please start again.');
+      return;
+    }
+
+    setStudentResetBusy(true);
+    try {
+      const result = await window.Auth.beginStudentPasswordReset(email);
+      if (!result.success) {
+        setStep2aError(result.message);
+        return;
+      }
+      await sendVerificationEmail({
+        email,
+        code: result.previewCode,
+        type: 'student-reset',
+      });
+      setStudentResetMessage('A new verification code was sent to your email.');
+      setStudentResetCooldown(60);
+    } catch (error) {
+      setStep2aError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');
+    } finally {
+      setStudentResetBusy(false);
+    }
+  };
+
+  const verifyStudentResetCode = () => {
+    const code = (studentResetCodeRef.current?.value || '').trim();
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    setStep2aError('');
+    if (!/^\d{6}$/.test(code)) {
+      setStep2aError('Please enter the 6-digit verification code.');
+      return;
+    }
+    const result = window.Auth.verifyStudentResetCode(email, code);
+    if (!result.success) {
+      setStep2aError(result.message);
+      return;
+    }
+    setStudentResetMessage('Code verified. You can now create a new password.');
+    setStudentStep('reset-password');
+    requestAnimationFrame(() => studentResetPasswordRef.current?.focus());
+  };
+
+  const saveStudentNewPassword = async () => {
+    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const password = studentResetPasswordRef.current?.value || '';
+    const confirm = studentResetConfirmRef.current?.value || '';
+    setStep2aError('');
+    if (password.length < 6) {
+      setStep2aError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setStep2aError('Passwords do not match.');
+      return;
+    }
+
+    setStudentResetBusy(true);
+    try {
+      const result = await window.Auth.completeStudentPasswordReset(email, password);
+      if (!result.success) {
+        setStep2aError(result.message);
+        return;
+      }
+      setStudentResetMessage('Password updated successfully. Sign in with your new password.');
+      setStudentStep('2a');
+      requestAnimationFrame(() => {
+        if (studentPasswordRef.current) studentPasswordRef.current.value = '';
+        studentPasswordRef.current?.focus();
+      });
+    } catch (error) {
+      setStep2aError(error instanceof Error ? error.message : 'Unable to update your password right now. Please try again.');
+    } finally {
+      setStudentResetBusy(false);
+    }
   };
 
   const doFirstSetup = async () => {
@@ -652,9 +799,70 @@ export default function LoginPage() {
                       <EyeToggle show={showStudentPass} onToggle={() => setShowStudentPass(v => !v)} />
                     </div>
                   </div>
+                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
                   {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={doPasswordLogin}>Sign In</button>
-                  <p className="text-center text-muted mt-8" style={{ fontSize: '11px' }}>Forgot your password? Contact your instructor to reset it.</p>
+                  <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                    <button type="button" onClick={startStudentReset} disabled={studentResetBusy} style={{ background: 'none', border: 'none', cursor: studentResetBusy ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentResetBusy ? 0.6 : 1 }}>
+                      {studentResetBusy ? 'Sending Code...' : 'Forgot Password?'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {studentStep === 'reset-code' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="student-reset-code">6-Digit Verification Code</label>
+                    <input type="text" className="form-control" id="student-reset-code" ref={studentResetCodeRef}
+                      placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                      onKeyDown={(e) => { if (e.key === 'Enter') verifyStudentResetCode(); }} />
+                  </div>
+                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
+                  {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
+                  <div style={{ marginTop: '-2px', marginBottom: '12px', textAlign: 'right' }}>
+                    <button type="button" onClick={resendStudentResetCode} disabled={studentResetBusy || studentResetCooldown > 0} style={{ background: 'none', border: 'none', cursor: studentResetBusy || studentResetCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentResetBusy || studentResetCooldown > 0 ? 0.6 : 1 }}>
+                      {studentResetBusy ? 'Sending...' : studentResetCooldown > 0 ? `Send Code Again in ${studentResetCooldown}s` : 'Send Code Again'}
+                    </button>
+                  </div>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentResetCode}>Verify Code</button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={studentResetBackToSignIn}>Back to Sign In</button>
+                </div>
+              )}
+
+              {studentStep === 'reset-password' && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#ecfdf5', borderRadius: '8px', padding: '8px 12px', border: '1px solid #bbf7d0' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#166534' }}>Code verified for {studentEmail}</span>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="student-reset-password">New Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showStudentResetPass ? 'text' : 'password'} className="form-control" id="student-reset-password" ref={studentResetPasswordRef}
+                        placeholder="Minimum 6 characters" autoComplete="new-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') studentResetConfirmRef.current?.focus(); }} />
+                      <EyeToggle show={showStudentResetPass} onToggle={() => setShowStudentResetPass(v => !v)} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="student-reset-confirm">Confirm New Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showStudentResetConfirmPass ? 'text' : 'password'} className="form-control" id="student-reset-confirm" ref={studentResetConfirmRef}
+                        placeholder="Re-enter new password" autoComplete="new-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveStudentNewPassword(); }} />
+                      <EyeToggle show={showStudentResetConfirmPass} onToggle={() => setShowStudentResetConfirmPass(v => !v)} />
+                    </div>
+                  </div>
+                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
+                  {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
+                  <button className="btn btn-primary btn-block btn-lg" onClick={saveStudentNewPassword} disabled={studentResetBusy}>Update Password</button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={studentResetBackToSignIn}>Cancel</button>
                 </div>
               )}
 

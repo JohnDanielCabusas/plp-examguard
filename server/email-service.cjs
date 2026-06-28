@@ -1,10 +1,12 @@
 const nodemailer = require('nodemailer');
 
 let transporter = null;
-let transporterReadyPromise = null;
 
 function normalizeEmailType(type) {
-  if (type === 'student-verification' || type === 'admin-reset') return type;
+  const normalized = String(type || '').trim().toLowerCase();
+  if (normalized === 'student-verification') return 'student-verification';
+  if (normalized === 'student-reset' || normalized === 'student-password-reset' || normalized === 'student-forgot-password') return 'student-reset';
+  if (normalized === 'admin-reset' || normalized === 'professor-reset' || normalized === 'admin-password-reset') return 'admin-reset';
   return null;
 }
 
@@ -12,16 +14,23 @@ function buildEmailPayload({ type, code, to, fromEmail }) {
   const emailType = normalizeEmailType(type);
   if (!emailType) throw new Error('Unsupported email type.');
 
-  const isStudent = emailType === 'student-verification';
-  const subject = isStudent
+  const isStudentVerification = emailType === 'student-verification';
+  const isStudentReset = emailType === 'student-reset';
+  const subject = isStudentVerification
     ? 'PLP ExamGuard Student Verification Code'
-    : 'PLP ExamGuard Professor Password Reset Code';
-  const intro = isStudent
+    : isStudentReset
+      ? 'PLP ExamGuard Student Password Reset Code'
+      : 'PLP ExamGuard Professor Password Reset Code';
+  const intro = isStudentVerification
     ? 'You requested a verification code to continue signing in to PLP ExamGuard.'
-    : 'You requested a verification code to continue resetting your PLP ExamGuard professor password.';
-  const instruction = isStudent
+    : isStudentReset
+      ? 'You requested a verification code to continue resetting your PLP ExamGuard student password.'
+      : 'You requested a verification code to continue resetting your PLP ExamGuard professor password.';
+  const instruction = isStudentVerification
     ? 'Enter the code below on the student login screen to verify your email address.'
-    : 'Enter the code below on the professor reset screen to continue updating your password.';
+    : isStudentReset
+      ? 'Enter the code below on the student reset screen to continue updating your password.'
+      : 'Enter the code below on the professor reset screen to continue updating your password.';
   const text = [
     'PLP ExamGuard',
     '',
@@ -90,18 +99,10 @@ function createTransport({ host, port, secure, user, pass }) {
   });
 }
 
-async function getReadyTransport(smtpConfig) {
+function getReadyTransport(smtpConfig) {
   if (!transporter) {
     transporter = createTransport(smtpConfig);
   }
-  if (!transporterReadyPromise) {
-    transporterReadyPromise = transporter.verify().catch(error => {
-      transporterReadyPromise = null;
-      transporter = null;
-      throw error;
-    });
-  }
-  await transporterReadyPromise;
   return transporter;
 }
 
@@ -113,15 +114,20 @@ async function sendVerificationEmail({ smtpConfig, fromEmail, to, code, type }) 
   if (!to) throw new Error('Missing recipient email.');
   if (!code) throw new Error('Missing verification code.');
 
-  const readyTransporter = await getReadyTransport(smtpConfig);
+  const readyTransporter = getReadyTransport(smtpConfig);
   const payload = buildEmailPayload({ type, code, to, fromEmail });
-  return readyTransporter.sendMail({
-    ...payload,
-    headers: {
-      'X-Priority': '1',
-      'X-Mailer': 'PLP ExamGuard SMTP',
-    },
-  });
+  try {
+    return await readyTransporter.sendMail({
+      ...payload,
+      headers: {
+        'X-Priority': '1',
+        'X-Mailer': 'PLP ExamGuard SMTP',
+      },
+    });
+  } catch (error) {
+    transporter = null;
+    throw error;
+  }
 }
 
 module.exports = {

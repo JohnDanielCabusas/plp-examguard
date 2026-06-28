@@ -295,12 +295,13 @@ const SupabaseSync = {
   },
 
   _jsToDbSubject(d) {
+    const yearLevels = Array.isArray(d.yearLevels) ? d.yearLevels.filter(Boolean) : [];
     return {
       id: d.id,
       code: d.code,
       name: d.name,
       description: d.description || null,
-      year_level: d.yearLevel || null,
+      year_level: yearLevels.length ? yearLevels.join(', ') : (d.yearLevel || null),
       sections: Array.isArray(d.sections) ? d.sections : [],
       enrollment_code: d.enrollmentCode || null,
       color: d.color || null,
@@ -436,12 +437,17 @@ const SupabaseSync = {
   },
 
   _dbToJsSubject(r) {
+    const parsedYearLevels = String(r.year_level || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
     return {
       id: r.id,
       code: r.code,
       name: r.name,
       description: r.description || '',
-      yearLevel: r.year_level || '',
+      yearLevel: parsedYearLevels[0] || r.year_level || '',
+      yearLevels: parsedYearLevels,
       sections: Array.isArray(r.sections) ? r.sections : [],
       enrollmentCode: r.enrollment_code || '',
       color: r.color || '',

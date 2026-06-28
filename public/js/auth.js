@@ -5,6 +5,7 @@
 const Auth = {
   ADMIN_RESET_KEY: 'acs_admin_reset',
   STUDENT_VERIFY_KEY: 'acs_student_email_verify',
+  STUDENT_RESET_KEY: 'acs_student_reset',
 
   adminLogin(username, password) {
     const admin = DB.getAdmin(username);
@@ -164,6 +165,91 @@ const Auth = {
 
   clearStudentEmailVerification() {
     sessionStorage.removeItem(this.STUDENT_VERIFY_KEY);
+  },
+
+  async beginStudentPasswordReset(email) {
+    const e = email.trim().toLowerCase();
+    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
+    if (!student || !student.password) {
+      return { success: false, message: 'No existing student account found with that email address.' };
+    }
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const payload = {
+      studentId: student.id,
+      email: e,
+      code,
+      verified: false,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (10 * 60 * 1000),
+    };
+    sessionStorage.setItem(this.STUDENT_RESET_KEY, JSON.stringify(payload));
+    return {
+      success: true,
+      email: e,
+      previewCode: code,
+      message: 'Verification code generated. Enter the 6-digit code to continue.',
+    };
+  },
+
+  verifyStudentResetCode(email, code) {
+    const pending = this.getStudentPasswordReset();
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedCode = String(code || '').trim();
+    if (!pending || pending.email !== normalizedEmail) {
+      return { success: false, message: 'Reset session not found. Please request a new code.' };
+    }
+    if (Date.now() > pending.expiresAt) {
+      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
+      return { success: false, message: 'That verification code has expired. Please request a new one.' };
+    }
+    if (pending.code !== normalizedCode) {
+      return { success: false, message: 'Incorrect verification code. Please try again.' };
+    }
+
+    sessionStorage.setItem(this.STUDENT_RESET_KEY, JSON.stringify({
+      ...pending,
+      verified: true,
+      verifiedAt: Date.now(),
+    }));
+    return { success: true };
+  },
+
+  async completeStudentPasswordReset(email, password) {
+    const pending = this.getStudentPasswordReset();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!pending || pending.email !== normalizedEmail) {
+      return { success: false, message: 'Reset session not found. Please request a new code.' };
+    }
+    if (Date.now() > pending.expiresAt) {
+      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
+      return { success: false, message: 'That verification code has expired. Please request a new one.' };
+    }
+    if (!pending.verified) {
+      return { success: false, message: 'Please verify the 6-digit code first.' };
+    }
+    if (!password || password.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters.' };
+    }
+
+    const student = await DB.getStudentByEmailAsync(normalizedEmail, { fallbackLocal: false });
+    if (!student) {
+      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
+      return { success: false, message: 'Student account not found.' };
+    }
+
+    const updatedStudent = await DB._saveStudentToSupabase({ ...student, password });
+    if (updatedStudent?.id) DB.updateStudent(updatedStudent.id, { password });
+    sessionStorage.removeItem(this.STUDENT_RESET_KEY);
+    return { success: true };
+  },
+
+  getStudentPasswordReset() {
+    try { return JSON.parse(sessionStorage.getItem(this.STUDENT_RESET_KEY)); } catch { return null; }
+  },
+
+  clearStudentPasswordReset() {
+    sessionStorage.removeItem(this.STUDENT_RESET_KEY);
   },
 
   async studentLoginWithPassword(email, password) {

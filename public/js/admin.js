@@ -769,7 +769,7 @@ function renderSubjects() {
   grid.innerHTML = subjects.map(s => {
     const [c1, c2] = courseCardColor(s);
     const letter = (s.code || s.name || '?').charAt(0).toUpperCase();
-    const years    = s.yearLevels || [];
+    const years    = (Array.isArray(s.yearLevels) && s.yearLevels.length) ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     const sections = s.sections   || [];
 
     const examCount    = allExams.filter(e => e.subjectId === s.id && e.status !== 'archived').length;
@@ -868,14 +868,85 @@ function copyEnrollCode(code, subjectName) {
   }
 }
 
+function normalizeCourseYearLevelsInput(rawValue) {
+  const seen = new Set();
+  return String(rawValue || '')
+    .split(/[,\n]/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .filter(value => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeCourseSectionsInput(rawValue) {
+  const seen = new Set();
+  return String(rawValue || '')
+    .split(/[,\n]/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(value => {
+      if (/^section\s+/i.test(value)) {
+        const suffix = value.replace(/^section\s+/i, '').trim();
+        return suffix ? `Section ${suffix.toUpperCase()}` : '';
+      }
+      if (/^[A-Za-z]$/.test(value)) return `Section ${value.toUpperCase()}`;
+      return value;
+    })
+    .filter(Boolean)
+    .filter(value => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function formatCourseSectionsInputValue(sections) {
+  return (Array.isArray(sections) ? sections : [])
+    .map(value => String(value || '').replace(/^section\s+/i, '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function ensureSubjectModalTextFields() {
+  const yearField = document.getElementById('subj-year-level');
+  if (yearField && yearField.tagName === 'SELECT') {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.id = 'subj-year-level';
+    input.placeholder = 'e.g. 1st Year, 2nd Year';
+    yearField.replaceWith(input);
+  }
+
+  if (!document.getElementById('subj-section')) {
+    const sectionLabel = [...document.querySelectorAll('#modal-subject .form-group > label')]
+      .find(label => label.textContent.trim() === 'Section');
+    const sectionField = sectionLabel ? sectionLabel.nextElementSibling : null;
+    if (sectionField) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-control';
+      input.id = 'subj-section';
+      input.placeholder = 'e.g. A, B, C or Section A';
+      sectionField.replaceWith(input);
+    }
+  }
+}
+
 function openSubjectModal(id) {
+  ensureSubjectModalTextFields();
   document.getElementById('subj-id').value = '';
   document.getElementById('subj-code').value = '';
   document.getElementById('subj-name').value = '';
   document.getElementById('subj-desc').value = '';
   document.getElementById('subj-year-level').value = '';
+  document.getElementById('subj-section').value = '';
   document.getElementById('subj-enroll-code').value = generateEnrollmentCode();
-  document.querySelectorAll('.subj-section-cb').forEach(cb => cb.checked = false);
   document.getElementById('modal-subject-title').textContent = 'Add Course';
 
   if (id) {
@@ -887,13 +958,9 @@ function openSubjectModal(id) {
     document.getElementById('subj-name').value = s.name;
     document.getElementById('subj-desc').value = s.description || '';
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
-    // Restore year level (take first value from yearLevels array)
-    const savedYear = (s.yearLevels || [])[0] || s.yearLevel || '';
-    document.getElementById('subj-year-level').value = savedYear;
-    // Restore section checkboxes
-    document.querySelectorAll('.subj-section-cb').forEach(cb => {
-      cb.checked = (s.sections || []).includes(cb.value);
-    });
+    const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
+    document.getElementById('subj-year-level').value = savedYears.join(', ');
+    document.getElementById('subj-section').value = formatCourseSectionsInputValue(s.sections || []);
   }
   openModal('modal-subject');
 }
@@ -904,17 +971,17 @@ function saveSubject() {
   const name = document.getElementById('subj-name').value.trim();
   const description = document.getElementById('subj-desc').value.trim();
   const enrollmentCode = document.getElementById('subj-enroll-code').value.trim().toUpperCase() || generateEnrollmentCode();
-  const selectedYear = document.getElementById('subj-year-level').value;
-  const yearLevels = selectedYear ? [selectedYear] : [];
-  const sections = [...document.querySelectorAll('.subj-section-cb:checked')].map(cb => cb.value);
+  const yearLevels = normalizeCourseYearLevelsInput(document.getElementById('subj-year-level').value);
+  const sections = normalizeCourseSectionsInput(document.getElementById('subj-section').value);
+  const yearLevel = yearLevels[0] || '';
 
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
   if (id) {
-    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevels, sections });
+    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections });
     showToast('Course updated successfully.', 'success');
   } else {
-    DB.addSubject({ code, name, description, enrollmentCode, yearLevels, sections });
+    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections });
     showToast('Course added successfully.', 'success');
   }
   closeModal('modal-subject');
