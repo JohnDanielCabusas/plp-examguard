@@ -16,6 +16,12 @@ alter table if exists public.superadmin
 alter table if exists public.sessions
   add column if not exists ai_detections jsonb not null default '{}'::jsonb;
 
+alter table if exists public.subjects
+  drop constraint if exists subjects_code_key;
+
+create unique index if not exists subjects_owner_admin_id_code_key
+  on public.subjects (owner_admin_id, code);
+
 insert into public.superadmin (id, username, password, name, email, department)
 values (
   'main',

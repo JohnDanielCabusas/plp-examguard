@@ -485,7 +485,7 @@ function renderAnalytics(exams, sessions, students) {
         const init = (s.name || '?').charAt(0).toUpperCase();
         return `<div class="risk-item-dark">
           <div class="risk-avatar-dark" style="background:${riskColors[i % riskColors.length]}22;color:${riskColors[i % riskColors.length]};border:1px solid ${riskColors[i % riskColors.length]}44;">${init}</div>
-          <span class="risk-name-dark">${escHtml(s.name)}</span>
+          <span class="risk-name-dark">${escHtml(formatCourseNameDisplay(s.name))}</span>
           ${s.avgScore !== null ? `<span class="risk-score-dark">${Math.round(s.avgScore)}%</span>` : ''}
           <span class="risk-badge-dark risk-badge-${s.risk}">${s.risk === 'high' ? 'High Risk' : 'Watch'}</span>
         </div>`;
@@ -679,7 +679,7 @@ function viewEnrolledStudents(subjectId) {
   const students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjectId));
   const exams    = DB.getExams().filter(e => e.subjectId === subjectId);
 
-  document.getElementById('modal-enrolled-title').textContent = subj.name;
+  document.getElementById('modal-enrolled-title').textContent = formatCourseNameDisplay(subj.name);
   document.getElementById('modal-enrolled-sub').textContent =
     `${subj.code} · ${students.length} student${students.length !== 1 ? 's' : ''} · ${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
 
@@ -771,6 +771,8 @@ function renderSubjects() {
     const letter = (s.code || s.name || '?').charAt(0).toUpperCase();
     const years    = (Array.isArray(s.yearLevels) && s.yearLevels.length) ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     const sections = s.sections   || [];
+    const courseName = formatCourseNameDisplay(s.name);
+    const yearSectionMeta = buildCourseYearSectionMeta(years, sections, c2);
 
     const examCount    = allExams.filter(e => e.subjectId === s.id && e.status !== 'archived').length;
     const studentCount = allStudents.filter(st => (st.enrolledSubjects || []).includes(s.id)).length;
@@ -797,11 +799,10 @@ function renderSubjects() {
           </button>
           <div style="position:relative;z-index:1;">
             <div class="course-card-code-label">${escHtml(s.code)}</div>
-            <div class="course-card-name">${escHtml(s.name)}</div>
+            <div class="course-card-name">${escHtml(courseName)}</div>
           </div>
         </div>
         <div style="padding:14px 18px 0;">
-          <div class="course-card-meta">${yearPills}${sectionPills}</div>
           <div class="course-card-stats">
             <div class="course-stat-cell">
               <div class="course-stat-num">${examCount}</div>
@@ -817,8 +818,11 @@ function renderSubjects() {
       <!-- Non-clickable zone: enroll code + actions -->
       <div class="course-card-body" style="padding-top:12px;">
         <div class="course-card-enroll">
-          <span class="course-enroll-label">Enroll Code</span>
-          ${enrollHtml}
+          <div class="course-card-enroll-group">
+            <span class="course-enroll-label">Enroll Code</span>
+            ${enrollHtml}
+          </div>
+          ${yearSectionMeta}
         </div>
         <div class="course-card-actions">
           <button class="btn btn-secondary btn-sm" onclick="openSubjectModal('${s.id}')">
@@ -831,6 +835,62 @@ function renderSubjects() {
       </div>
     </div>`;
   }).join('');
+}
+
+function buildCourseYearSectionMeta(years, sections, accentColor) {
+  const normalizedYears = (Array.isArray(years) ? years : [])
+    .map(year => yearLabelToNumber(year))
+    .map(year => String(year || '').trim())
+    .filter(Boolean);
+  const normalizedSections = (Array.isArray(sections) ? sections : [])
+    .map(section => normalizeSectionValue(section))
+    .map(section => String(section || '').trim())
+    .filter(Boolean);
+
+  let values = [];
+  if (normalizedYears.length && normalizedSections.length) {
+    if (normalizedYears.length === normalizedSections.length) {
+      values = normalizedYears.map((year, index) => `${year}-${normalizedSections[index]}`);
+    } else if (normalizedYears.length === 1) {
+      values = normalizedSections.map(section => `${normalizedYears[0]}-${section}`);
+    } else if (normalizedSections.length === 1) {
+      values = normalizedYears.map(year => `${year}-${normalizedSections[0]}`);
+    } else {
+      values = normalizedYears.flatMap(year => normalizedSections.map(section => `${year}-${section}`));
+    }
+  } else if (normalizedYears.length) {
+    values = normalizedYears;
+  } else {
+    values = normalizedSections;
+  }
+
+  const seen = new Set();
+  const items = values
+    .filter(value => {
+      const key = value.toUpperCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(value => `<span class="course-meta-pill year-section" style="color:${accentColor};border-color:${accentColor}22;background:${accentColor}12;">${escHtml(value)}</span>`)
+    .join('');
+
+  if (!items) return '';
+
+  return `
+    <div class="course-year-section-wrap">
+      <span class="course-enroll-divider" aria-hidden="true"></span>
+      <span class="course-year-section-icon" style="color:${accentColor};">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </span>
+      <span class="course-year-section-pills">${items}</span>
+    </div>
+  `;
 }
 
 function copyEnrollCode(code, subjectName) {
@@ -880,6 +940,27 @@ function normalizeCourseYearLevelsInput(rawValue) {
       seen.add(key);
       return true;
     });
+}
+
+function normalizeCourseNameInput(rawValue) {
+  const value = String(rawValue || '').trim().replace(/\s+/g, ' ');
+  return formatCourseNameDisplay(value);
+}
+
+function formatCourseNameDisplay(rawValue) {
+  const value = String(rawValue || '').trim().replace(/\s+/g, ' ');
+  if (!/[A-Z]/.test(value) || value !== value.toUpperCase()) return value;
+
+  const smallWords = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'per', 'the', 'to', 'vs', 'via']);
+  return value
+    .toLowerCase()
+    .split(' ')
+    .map((word, index) => {
+      const bareWord = word.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+      if (index > 0 && smallWords.has(bareWord)) return word;
+      return word.replace(/[a-z]/, char => char.toUpperCase());
+    })
+    .join(' ');
 }
 
 function normalizeCourseSectionsInput(rawValue) {
@@ -955,7 +1036,7 @@ function openSubjectModal(id) {
     document.getElementById('modal-subject-title').textContent = 'Edit Course';
     document.getElementById('subj-id').value = s.id;
     document.getElementById('subj-code').value = s.code;
-    document.getElementById('subj-name').value = s.name;
+    document.getElementById('subj-name').value = formatCourseNameDisplay(s.name);
     document.getElementById('subj-desc').value = s.description || '';
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
@@ -968,7 +1049,7 @@ function openSubjectModal(id) {
 function saveSubject() {
   const id = document.getElementById('subj-id').value;
   const code = document.getElementById('subj-code').value.trim().toUpperCase();
-  const name = document.getElementById('subj-name').value.trim();
+  const name = normalizeCourseNameInput(document.getElementById('subj-name').value);
   const description = document.getElementById('subj-desc').value.trim();
   const enrollmentCode = document.getElementById('subj-enroll-code').value.trim().toUpperCase() || generateEnrollmentCode();
   const yearLevels = normalizeCourseYearLevelsInput(document.getElementById('subj-year-level').value);
@@ -1617,7 +1698,7 @@ function renderExams() {
   const statusBorderColor = { draft:'#9ca3af', ready:'#2563eb', active:'#16a34a', closed:'#dc2626' };
   container.innerHTML = active.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
-    const subjectName = subject ? escHtml(subject.name) : '<span class="text-muted">No subject</span>';
+    const subjectName = subject ? escHtml(formatCourseNameDisplay(subject.name)) : '<span class="text-muted">No subject</span>';
     const borderColor = statusBorderColor[e.status] || '#9ca3af';
     const qCount = (e.questions || []).length;
     const audienceTags = buildAudienceTag(e);
@@ -1755,7 +1836,7 @@ function renderArchivedExams() {
     return `
       <tr>
         <td data-label="Title"><strong>${escHtml(e.title)}</strong><br/><span class="text-muted" style="font-size:11px;">${formatDate(e.createdAt)}</span></td>
-        <td data-label="Subject">${subject ? escHtml(subject.name) : '<span class="text-muted">N/A</span>'}</td>
+        <td data-label="Subject">${subject ? escHtml(formatCourseNameDisplay(subject.name)) : '<span class="text-muted">N/A</span>'}</td>
         <td data-label="Code" style="text-align:center;">${e.code ? `<span class="code-tag">${e.code}</span>` : '—'}</td>
         <td data-label="Questions" style="text-align:center;">${e.questions.length}</td>
         <td data-label="Time" style="text-align:center;">${e.timeLimit} min</td>
@@ -1789,7 +1870,7 @@ function renderArchivedStudents() {
   tbody.innerHTML = students.map(s => `
     <tr>
       <td data-label="Student ID"><span class="code-tag">${escHtml(s.studentId)}</span></td>
-      <td data-label="Name"><strong>${escHtml(s.name)}</strong></td>
+      <td data-label="Name"><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
       <td data-label="Year Level" style="text-align:center;">${escHtml(s.yearLevel || '—')}</td>
       <td data-label="Section" style="text-align:center;">${escHtml(s.section || '—')}</td>
       <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt)}</span></td>
@@ -1842,7 +1923,7 @@ function renderArchivedCourses() {
     return `
       <tr>
         <td><span class="code-tag">${escHtml(s.code)}</span></td>
-        <td><strong>${escHtml(s.name)}</strong></td>
+        <td><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
         <td>${escHtml(years)}</td>
         <td>${escHtml(sections)}</td>
         <td style="text-align:center;" class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt || s.createdAt)}</td>
@@ -1915,7 +1996,7 @@ async function permanentDeleteStudent(id) {
 function openExamEditor(id) {
   const subjects = DB.getSubjects();
   const sel = document.getElementById('exam-subject-field');
-  sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(s.name)}</option>`).join('');
+  sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(formatCourseNameDisplay(s.name))}</option>`).join('');
 
   // Wire subject change → repopulate audience
   if (!sel._audienceWired) {
@@ -3546,7 +3627,7 @@ function generatePDF() {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text(`Subject: ${subject ? subject.name : 'N/A'} | Time Limit: ${exam.timeLimit} mins | Total Submissions: ${sorted.length}`, 14, 48);
+  doc.text(`Subject: ${subject ? formatCourseNameDisplay(subject.name) : 'N/A'} | Time Limit: ${exam.timeLimit} mins | Total Submissions: ${sorted.length}`, 14, 48);
 
   if (sorted.length === 0) {
     doc.setFontSize(10);

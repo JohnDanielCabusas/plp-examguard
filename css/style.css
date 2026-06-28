@@ -6063,8 +6063,11 @@ tr:hover td {
   color: #fff;
   line-height: 1.25;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  min-height: 40px;
   position: relative;
   z-index: 1;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
@@ -6103,6 +6106,11 @@ tr:hover td {
 .course-meta-pill.section {
   background: #f0f9ff;
   color: #0369a1;
+}
+.course-meta-pill.year-section {
+  background: linear-gradient(135deg, #dcfce7 0%, #e0f2fe 100%);
+  color: #0f172a;
+  border: 1px solid #bfdbfe;
 }
 .course-meta-pill.all {
   background: #f3f4f6;
@@ -6144,9 +6152,17 @@ tr:hover td {
 .course-card-enroll {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 14px;
   font-size: 12px;
   color: #6b7280;
+  padding: 2px 2px 10px;
+}
+.course-card-enroll-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 .course-enroll-label {
   font-weight: 600;
@@ -6155,12 +6171,39 @@ tr:hover td {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+.course-enroll-divider {
+  width: 1px;
+  height: 32px;
+  background: #e5e7eb;
+  flex: 0 0 auto;
+}
+.course-year-section-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.course-year-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.course-year-section-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 /* Actions */
 .course-card-actions {
   display: flex;
   gap: 8px;
   margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid #eef2f7;
 }
 .course-card-actions .btn {
   flex: 1;
@@ -6241,6 +6284,21 @@ tr:hover td {
 @media (max-width: 768px) {
   .course-cards-grid {
     grid-template-columns: 1fr;
+  }
+  .course-card-enroll {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .course-card-enroll-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .course-year-section-wrap {
+    width: 100%;
+    margin-left: 0;
+  }
+  .course-year-section-pills {
+    justify-content: flex-start;
   }
 }
 
