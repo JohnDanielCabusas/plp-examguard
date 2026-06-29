@@ -4841,14 +4841,15 @@ async function runAIGenerate() {
 
   const schemaRules = `Return ONLY a valid JSON array with no other text, explanation, or markdown.
 Each question object schema:
-  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
+  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
 - For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
 - For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
 - For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
 - For "identification": options = []; correctAnswer = expected answer string (1-4 words).
 - For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.
 - For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.
-- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.`;
+- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
+- For "coding": options = []; correctAnswer = ""; language = "python"|"javascript"|"java"|"cpp"|"c"; starterCode = starter code string; expectedOutput = expected output string; rubric = grading notes; points = 20.`;
 
   let prompt;
   if (mode === 'custom') {

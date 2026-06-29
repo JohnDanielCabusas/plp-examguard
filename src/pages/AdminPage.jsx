@@ -799,7 +799,7 @@ export default function AdminPage() {
                   <div>
                     <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Question Types</div>
                     <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                      {[['mcq','Multiple Choice',true],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false]].map(([val,label,checked]) => (
+                      {[['mcq','Multiple Choice',true],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false],['coding','Coding',false]].map(([val,label,checked]) => (
                         <label key={val} style={{ cursor:'pointer', userSelect:'none' }}>
                           <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display:'none' }} />
                           <span style={{ display:'inline-block', padding:'8px 16px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:'1.5px solid #1a4d2a', color:checked?'#fff':'#1a4d2a', background:checked?'#1a4d2a':'#fff', transition:'all 0.15s', userSelect:'none' }}
