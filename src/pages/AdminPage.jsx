@@ -738,13 +738,13 @@ export default function AdminPage() {
           <input id="ai-count" type="number" value={aiCount} onChange={(e) => setAiCount(Math.max(1,Math.min(100,parseInt(e.target.value)||1)))} style={{ display:'none' }} />
           <input id="ai-mode" type="hidden" value={aiMode} readOnly />
           <div id="ai-drop-zone" style={{ display:'none' }} />
-          <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" style={{ display:'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files[0])} />
+          <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" multiple style={{ display:'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files)} />
 
           {/* ── Unified scrollable content (#ai-chat-body scrolled by admin.js) ── */}
           <div id="ai-chat-body" style={{ flex:1, overflowY:'auto' }}
             onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-drag-over'); }}
             onDragLeave={(e) => e.currentTarget.classList.remove('ai-drag-over')}
-            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}
+            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-drag-over'); window.handleAIFileDrop(e.dataTransfer.files); }}
             onClick={() => setDiffOpen(false)}>
 
             {/* ── Mode-specific content (animated on switch) ── */}
@@ -800,7 +800,7 @@ export default function AdminPage() {
                     <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
                   </div>
                   <div style={{ background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'13px 17px', maxWidth:'82%', fontSize:'13px', color:'#374151', lineHeight:1.55 }}>
-                    Attach your course material, then describe exactly what you want — how many questions, types, and difficulty.
+                    Attach your course materials, then describe exactly what you want — how many questions, types, and difficulty.
                   </div>
                 </div>
               )}
@@ -881,7 +881,7 @@ export default function AdminPage() {
               <div style={{ padding:'12px 18px 16px' }}
                 onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-file-drop-hover'); }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('ai-file-drop-hover')}
-                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-file-drop-hover'); window.handleAIFileDrop(e.dataTransfer.files[0]); }}>
+                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-file-drop-hover'); window.handleAIFileDrop(e.dataTransfer.files); }}>
                 <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
                   {/* File zone — expands to show chip when file attached */}
                   <div id="ai-file-info" style={{ display:'none', flex:1, alignItems:'center', gap:'8px', background:'#e8f5ec', border:'1.5px solid #a3c4a8', borderRadius:'12px', padding:'10px 14px' }}>
@@ -895,7 +895,7 @@ export default function AdminPage() {
                     onMouseEnter={(e) => { e.currentTarget.style.background='#f0f7f2'; e.currentTarget.style.borderColor='#1a4d2a'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background='#fafffe'; e.currentTarget.style.borderColor='#a3c4a8'; }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                    Attach or drop a file
+                    Attach or drop files
                   </label>
                   <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate"
                     style={{ width:'42px', height:'42px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
@@ -905,6 +905,9 @@ export default function AdminPage() {
                     style={{ display:'none', height:'42px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
+                </div>
+                <div style={{ marginTop:'8px', fontSize:'11px', color:'#6b7280' }}>
+                  Supports multiple PDF, DOCX, PPTX, and TXT files up to 100MB each.
                 </div>
               </div>
             ) : (
@@ -918,7 +921,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div style={{ padding:'8px 18px 14px', display:'flex', gap:'10px', alignItems:'flex-end' }}>
-                  <label htmlFor="ai-file-input" title="Attach file"
+                  <label htmlFor="ai-file-input" title="Attach files"
                     style={{ width:'38px', height:'38px', background:'#f3f4f6', border:'1.5px solid #e5e7eb', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'all 0.15s' }}
                     onMouseEnter={(e) => { e.currentTarget.style.background='#f0f7f2'; e.currentTarget.style.borderColor='#a3c4a8'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background='#f3f4f6'; e.currentTarget.style.borderColor='#e5e7eb'; }}>

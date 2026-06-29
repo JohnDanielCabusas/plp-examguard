@@ -4539,7 +4539,15 @@ async function detectAIContent(text, btnEl, badgeId) {
 // AI EXAM GENERATOR
 // ============================================================
 let aiGeneratedQuestions = [];
-let aiSelectedFile = null;
+let aiSelectedFiles = [];
+const AI_MAX_FILE_SIZE = 100 * 1024 * 1024;
+const AI_ALLOWED_FILE_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+];
+const AI_ALLOWED_FILE_EXTENSIONS = /\.(pdf|docx|pptx|txt)$/i;
 
 function _aiSD(id, v) { var el = document.getElementById(id); if (el) el.style.display = v; }
 
@@ -4569,31 +4577,82 @@ function scrollAIChat() {
   if (body) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
 }
 
-function handleAIFileSelect(file) {
-  if (file) setAIFile(file);
+function handleAIFileSelect(files) {
+  setAIFiles(files);
 }
 
-function handleAIFileDrop(file) {
-  if (file) setAIFile(file);
+function handleAIFileDrop(files) {
+  setAIFiles(files);
 }
 
-function setAIFile(file) {
-  const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'text/plain'];
-  const extOk = /\.(pdf|docx|pptx|txt)$/i.test(file.name);
-  if (!allowed.includes(file.type) && !extOk) { showToast('Unsupported file type. Use PDF, DOCX, PPTX, or TXT.', 'error'); return; }
-  if (file.size > 10 * 1024 * 1024) { showToast('File too large. Max 10MB.', 'error'); return; }
-  aiSelectedFile = file;
+function normalizeAIFiles(files) {
+  if (!files) return [];
+  return Array.from(files).filter(Boolean);
+}
+
+function dedupeAIFiles(files) {
+  const seen = new Set();
+  return files.filter(file => {
+    const key = [file.name, file.size, file.lastModified].join('::');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatAIFileSize(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function getAIFileSummary(files) {
+  if (!files.length) return '';
+  if (files.length === 1) return `${files[0].name} (${formatAIFileSize(files[0].size)})`;
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const previewNames = files.slice(0, 2).map(file => file.name).join(', ');
+  const extraCount = files.length - 2;
+  const extraLabel = extraCount > 0 ? `, +${extraCount} more` : '';
+  return `${files.length} files (${formatAIFileSize(totalBytes)} total): ${previewNames}${extraLabel}`;
+}
+
+function setAIFiles(files) {
+  const incomingFiles = normalizeAIFiles(files);
+  if (!incomingFiles.length) return;
+
+  const acceptedFiles = [];
+  let validationError = '';
+
+  incomingFiles.forEach(file => {
+    const extOk = AI_ALLOWED_FILE_EXTENSIONS.test(file.name);
+    if (!AI_ALLOWED_FILE_TYPES.includes(file.type) && !extOk) {
+      validationError = validationError || `Unsupported file type: ${file.name}. Use PDF, DOCX, PPTX, or TXT.`;
+      return;
+    }
+    if (file.size > AI_MAX_FILE_SIZE) {
+      validationError = validationError || `File too large: ${file.name}. Max 100MB per file.`;
+      return;
+    }
+    acceptedFiles.push(file);
+  });
+
+  const input = document.getElementById('ai-file-input');
+  if (!acceptedFiles.length) {
+    showToast(validationError || 'Please attach at least one valid file.', 'error');
+    if (input) input.value = '';
+    return;
+  }
+
+  aiSelectedFiles = dedupeAIFiles([...aiSelectedFiles, ...acceptedFiles]);
   const fileInfo = document.getElementById('ai-file-info');
-  const attachBtn = document.getElementById('ai-attach-btn');
   if (fileInfo) fileInfo.style.display = 'flex';
-  if (attachBtn) attachBtn.style.display = 'none';
-  document.getElementById('ai-file-name').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+  document.getElementById('ai-file-name').textContent = getAIFileSummary(aiSelectedFiles);
+  if (input) input.value = '';
+  if (validationError) showToast(validationError, 'error');
   scrollAIChat();
 }
 
 function clearAIFile() {
-  aiSelectedFile = null;
+  aiSelectedFiles = [];
   const fileInfo = document.getElementById('ai-file-info');
   const attachBtn = document.getElementById('ai-attach-btn');
   if (fileInfo) fileInfo.style.display = 'none';
@@ -4654,8 +4713,19 @@ async function extractTextPPTX(file) {
   return text;
 }
 
+async function extractTextFromFiles(files, onProgress) {
+  const sections = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (typeof onProgress === 'function') onProgress({ index: i + 1, total: files.length, file });
+    const text = await extractTextFromFile(file);
+    sections.push(`=== ${file.name} ===\n${text}`);
+  }
+  return sections.join('\n\n');
+}
+
 async function runAIGenerate() {
-  if (!aiSelectedFile) { showToast('Please attach a file first using the 📎 button.', 'error'); return; }
+  if (!aiSelectedFiles.length) { showToast('Please attach at least one file first using the paperclip button.', 'error'); return; }
 
   const apiKey = DB.getSettings().claudeApiKey;
   const mode = document.getElementById('ai-mode')?.value || 'quick';
@@ -4670,7 +4740,7 @@ async function runAIGenerate() {
   }
 
   // Promote pending file chip → user chat bubble
-  const pendingName = document.getElementById('ai-file-name')?.textContent || '';
+  const pendingName = getAIFileSummary(aiSelectedFiles);
   const userBubble = document.getElementById('ai-user-bubble');
   if (userBubble && pendingName) {
     const nameEl = document.getElementById('ai-user-bubble-file');
@@ -4681,15 +4751,17 @@ async function runAIGenerate() {
   }
   _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none');
   _aiSD('ai-preview', 'none'); _aiSD('ai-status', 'flex');
-  const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting file content...';
+  const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting learning materials...';
   scrollAIChat();
 
   let rawText;
   try {
-    rawText = await extractTextFromFile(aiSelectedFile);
+    rawText = await extractTextFromFiles(aiSelectedFiles, ({ index, total, file }) => {
+      if (stEl) stEl.textContent = `Extracting file ${index} of ${total}: ${file.name}`;
+    });
   } catch (err) {
     _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
-    showToast('Failed to read file: ' + err.message, 'error');
+    showToast('Failed to read learning materials: ' + err.message, 'error');
     return;
   }
 
@@ -4714,7 +4786,7 @@ Each question object schema:
 Rules:
 - ${schemaRules}
 
-Course material:
+Course materials:
 ${rawText}`;
   } else {
     const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq', 'tf', 'identification'];
@@ -4723,14 +4795,14 @@ ${rawText}`;
       : `Use a mix of these types: ${typeList.join(', ')}.`;
     const customInstruction = customPrompt ? `\nAdditional topic/instructions: ${customPrompt}` : '';
 
-    prompt = `Generate exactly ${count} exam questions based on the course material below.
+    prompt = `Generate exactly ${count} exam questions based on the course materials below.
 
 Rules:
 - ${typeInstruction}
 - Difficulty: ${difficulty}${customInstruction}
 - ${schemaRules}
 
-Course material:
+Course materials:
 ${rawText}`;
   }
 
