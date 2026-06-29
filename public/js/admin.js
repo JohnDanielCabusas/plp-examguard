@@ -4660,6 +4660,10 @@ function clearAIFile() {
   document.getElementById('ai-file-input').value = '';
 }
 
+function normalizeAIQuestionCount(value) {
+  return Math.min(100, Math.max(1, parseInt(value, 10) || 1));
+}
+
 async function extractTextFromFile(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.txt')) return extractTextTXT(file);
@@ -4729,7 +4733,7 @@ async function runAIGenerate() {
 
   const apiKey = DB.getSettings().claudeApiKey;
   const mode = document.getElementById('ai-mode')?.value || 'quick';
-  const count = Math.min(100, Math.max(1, parseInt(document.getElementById('ai-count')?.value) || 10));
+  const count = normalizeAIQuestionCount(document.getElementById('ai-count')?.value);
   const selectedTypes = [...document.querySelectorAll('.ai-type-cb:checked')].map(cb => cb.value);
   const difficulty = document.getElementById('ai-difficulty')?.value || 'mixed';
   const customPrompt = (document.getElementById('ai-custom-prompt')?.value || '').trim();
@@ -4798,6 +4802,7 @@ ${rawText}`;
     prompt = `Generate exactly ${count} exam questions based on the course materials below.
 
 Rules:
+- Return exactly ${count} question objects in the JSON array. Do not return more or fewer.
 - ${typeInstruction}
 - Difficulty: ${difficulty}${customInstruction}
 - ${schemaRules}
@@ -4861,6 +4866,10 @@ ${rawText}`;
   // Sort: MCQ → True/False → Identification
   const typeOrder = { mcq: 0, tf: 1, identification: 2 };
   questions.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3));
+
+  if (mode === 'quick' && questions.length > count) {
+    questions = questions.slice(0, count);
+  }
 
   aiGeneratedQuestions = questions;
   _aiSD('ai-status', 'none');

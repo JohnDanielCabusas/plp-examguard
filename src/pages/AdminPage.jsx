@@ -5,7 +5,29 @@ export default function AdminPage() {
   const [aiDiff, setAiDiff] = useState('mixed');
   const [diffOpen, setDiffOpen] = useState(false);
   const [aiMode, setAiMode] = useState('quick');
-  const [aiCount, setAiCount] = useState(10);
+  const [aiCountInput, setAiCountInput] = useState('10');
+
+  const parseAiCountInput = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '').slice(0, 3);
+    if (!digits) return null;
+    return Math.min(100, Math.max(1, parseInt(digits, 10)));
+  };
+
+  const aiCountValue = parseAiCountInput(aiCountInput) ?? 1;
+
+  const handleAiCountChange = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '').slice(0, 3);
+    if (!digits) {
+      setAiCountInput('');
+      return;
+    }
+    const parsed = parseAiCountInput(digits);
+    setAiCountInput(parsed === null ? '' : String(parsed));
+  };
+
+  const normalizeAiCountInput = () => {
+    setAiCountInput(String(parseAiCountInput(aiCountInput) ?? 1));
+  };
 
   useEffect(() => {
     if (booted.current) return;
@@ -735,7 +757,7 @@ export default function AdminPage() {
 
           {/* Hidden sync inputs for admin.js */}
           <select id="ai-difficulty" value={aiDiff} onChange={(e) => setAiDiff(e.target.value)} style={{ display:'none' }} />
-          <input id="ai-count" type="number" value={aiCount} onChange={(e) => setAiCount(Math.max(1,Math.min(100,parseInt(e.target.value)||1)))} style={{ display:'none' }} />
+          <input id="ai-count" type="number" value={aiCountValue} readOnly style={{ display:'none' }} />
           <input id="ai-mode" type="hidden" value={aiMode} readOnly />
           <div id="ai-drop-zone" style={{ display:'none' }} />
           <input type="file" id="ai-file-input" accept=".pdf,.docx,.pptx,.txt" multiple style={{ display:'none' }} onChange={(e) => window.handleAIFileSelect(e.target.files)} />
@@ -755,10 +777,10 @@ export default function AdminPage() {
                   <div>
                     <div style={{ fontSize:'11px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Number of Questions</div>
                     <div style={{ display:'flex', alignItems:'center', background:'#fff', border:'1.5px solid #a3c4a8', borderRadius:'12px', padding:'10px 16px', width:'fit-content' }}>
-                      <button type="button" onClick={() => setAiCount(v => Math.max(1,v-1))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 8px 0 0' }}>−</button>
-                      <input type="number" min="1" max="100" value={aiCount} onChange={(e) => setAiCount(Math.max(1,Math.min(100,parseInt(e.target.value)||1)))}
+                      <button type="button" onClick={() => setAiCountInput(String(Math.max(1, aiCountValue - 1)))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 8px 0 0' }}>−</button>
+                      <input type="number" min="1" max="100" value={aiCountInput} onChange={(e) => handleAiCountChange(e.target.value)} onBlur={normalizeAiCountInput}
                         style={{ width:'52px', border:'none', outline:'none', fontWeight:800, fontSize:'22px', textAlign:'center', background:'transparent', color:'#0f2d1a' }} />
-                      <button type="button" onClick={() => setAiCount(v => Math.min(100,v+1))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 0 0 8px' }}>+</button>
+                      <button type="button" onClick={() => setAiCountInput(String(Math.min(100, aiCountValue + 1)))} style={{ background:'none', border:'none', cursor:'pointer', color:'#1a4d2a', fontWeight:700, fontSize:'18px', lineHeight:1, padding:'0 0 0 8px' }}>+</button>
                       <span style={{ fontSize:'12px', color:'#1a4d2a', fontWeight:700, marginLeft:'10px', paddingLeft:'10px', borderLeft:'1px solid #d1fae5' }}>questions</span>
                     </div>
                   </div>
