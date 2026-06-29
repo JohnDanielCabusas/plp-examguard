@@ -4862,9 +4862,20 @@ Course materials:
 ${rawText}`;
   } else {
     const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq', 'tf', 'identification'];
-    const typeInstruction = typeList.length === 1
-      ? `Use only "${typeList[0]}" type.`
-      : `Use a mix of these types: ${typeList.join(', ')}.`;
+    const hasCoding = typeList.includes('coding');
+    const nonCodingTypes = typeList.filter(t => t !== 'coding');
+
+    let typeInstruction;
+    if (typeList.length === 1 && hasCoding) {
+      typeInstruction = `All ${count} questions MUST be "coding" type. Every question must be a programming/coding challenge.`;
+    } else if (hasCoding) {
+      const codingCount = Math.max(1, Math.round(count * (1 / typeList.length)));
+      typeInstruction = `Use a mix of these types: ${typeList.join(', ')}. IMPORTANT: You MUST include exactly ${codingCount} "coding" type question${codingCount > 1 ? 's' : ''} — do not skip the coding type.`;
+    } else if (typeList.length === 1) {
+      typeInstruction = `Use only "${typeList[0]}" type.`;
+    } else {
+      typeInstruction = `Use a mix of these types: ${typeList.join(', ')}.`;
+    }
     const customInstruction = customPrompt ? `\nAdditional topic/instructions: ${customPrompt}` : '';
 
     prompt = `Generate exactly ${count} exam questions based on the course materials below.
@@ -4945,8 +4956,8 @@ ${rawText}`;
 }
 
 function renderAIPreview(questions) {
-  const typeLabel = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification' };
-  const sectionColors = { mcq: '#0f2d1a', tf: '#0f2d1a', identification: '#0f2d1a' };
+  const typeLabel = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay', coding: 'Coding', checkbox: 'Checkboxes' };
+  const sectionColors = { mcq: '#0f2d1a', tf: '#0f2d1a', identification: '#0f2d1a', enumeration: '#0f2d1a', matching: '#0f2d1a', essay: '#0f2d1a', coding: '#0f2d1a', checkbox: '#0f2d1a' };
   const previewTitle = document.getElementById('ai-preview-title');
   if (previewTitle) previewTitle.textContent = `${questions.length} questions generated — select which to import`;
   const selectAll = document.getElementById('ai-select-all');
