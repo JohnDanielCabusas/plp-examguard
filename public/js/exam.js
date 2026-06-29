@@ -1751,12 +1751,12 @@ const ExamApp = {
 
     const statusText = document.getElementById('camera-status-text');
 
-    if (avgLuminance < 18) {  // very dark threshold
+    if (avgLuminance < 75) {  // < 29% brightness threshold
       this._darkSeconds += 0.6;
-      if (statusText && this._darkSeconds < 20) {
-        statusText.textContent = `⚠ Low brightness (${Math.ceil(20 - this._darkSeconds)}s)`;
+      if (statusText && this._darkSeconds < 10) {
+        statusText.textContent = `⚠ Low brightness (${Math.ceil(10 - this._darkSeconds)}s)`;
       }
-      if (this._darkSeconds >= 20 && !this._brightnessWarningIssued) {
+      if (this._darkSeconds >= 10 && !this._brightnessWarningIssued) {
         this._brightnessWarningIssued = true;
         this.issueWarning('low_brightness', 'Screen or environment brightness is too low');
       }
