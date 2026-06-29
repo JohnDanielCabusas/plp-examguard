@@ -33,7 +33,8 @@ const ExamApp = {
   _faceModel: null,
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
-  _darkSeconds: 0,          // consecutive seconds of low ambient brightness
+  _brightnessBaseline: null, // luminance baseline recorded at exam start
+  _darkSeconds: 0,           // consecutive seconds below brightness threshold
   _brightnessWarningIssued: false, // prevent repeated brightness warnings
   _dashInterval: null,      // dashboard poll interval
   _fullscreenInteractionGraceUntil: 0,
@@ -1590,6 +1591,9 @@ const ExamApp = {
   _startMotionDetection(video) {
     if (this._motionInterval) clearInterval(this._motionInterval);
     this._noMotionSec = 0;
+    this._brightnessBaseline = null; // reset baseline so first frames calibrate it
+    this._darkSeconds = 0;
+    this._brightnessWarningIssued = false;
     this._motionInterval = setInterval(() => {
       if (this._faceModelReady && this._faceModel) {
         this._detectFace(video);
@@ -1737,11 +1741,10 @@ const ExamApp = {
     this._motionBlocked = false;
   },
 
-  // ── Ambient brightness check ─────────────────────────────────
-  // Called every 0.6 s from the motion detection loop.
-  // Uses the average luminance of the camera frame as a proxy for
-  // ambient/screen brightness. Very dark frames for 20+ seconds
-  // may indicate the student dimmed their screen or covered camera.
+  // ── Relative brightness detection ────────────────────────────
+  // Establishes a luminance baseline at exam start, then flags when
+  // brightness drops below 75% of that baseline. This detects the
+  // student dimming their screen regardless of room lighting conditions.
   _checkAmbientBrightness(frameData, pixelCount) {
     let lum = 0;
     for (let i = 0; i < frameData.length; i += 4) {
@@ -1749,19 +1752,35 @@ const ExamApp = {
     }
     const avgLuminance = lum / pixelCount; // 0–255
 
+    // First reading: record baseline (needs > 20 luminance to be useful)
+    if (this._brightnessBaseline === null) {
+      if (avgLuminance > 20) this._brightnessBaseline = avgLuminance;
+      return;
+    }
+
+    // Slowly update baseline upward only (room gets brighter = new normal)
+    if (avgLuminance > this._brightnessBaseline) {
+      this._brightnessBaseline = avgLuminance * 0.05 + this._brightnessBaseline * 0.95;
+    }
+
+    // Only run check if baseline is meaningful (> 20 = camera can see something)
+    if (this._brightnessBaseline < 20) return;
+
+    // Flag when current brightness drops below 75% of the baseline
+    const ratio = avgLuminance / this._brightnessBaseline;
     const statusText = document.getElementById('camera-status-text');
 
-    if (avgLuminance < 75) {  // < 29% brightness threshold
+    if (ratio < 0.75) {
       this._darkSeconds += 0.6;
       if (statusText && this._darkSeconds < 10) {
-        statusText.textContent = `⚠ Low brightness (${Math.ceil(10 - this._darkSeconds)}s)`;
+        const pct = Math.round(ratio * 100);
+        statusText.textContent = `⚠ Brightness ${pct}% (${Math.ceil(10 - this._darkSeconds)}s)`;
       }
       if (this._darkSeconds >= 10 && !this._brightnessWarningIssued) {
         this._brightnessWarningIssued = true;
-        this.issueWarning('low_brightness', 'Screen or environment brightness is too low');
+        this.issueWarning('low_brightness', 'Screen brightness dropped below 75% — please restore your display brightness');
       }
     } else {
-      // Brightness recovered — reset counters
       if (this._darkSeconds > 0) {
         this._darkSeconds = 0;
         this._brightnessWarningIssued = false;
