@@ -361,6 +361,7 @@ export default function AdminPage() {
                         ['enumeration',    'Enumeration'],
                         ['matching',       'Matching Type'],
                         ['essay',          'Essay'],
+                        ['coding',         'Coding'],
                       ].map(([type, label]) => (
                         <button key={type} className="add-q-btn" onClick={() => window.addQuestion(type)}>
                           {label}

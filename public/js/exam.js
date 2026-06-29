@@ -33,6 +33,8 @@ const ExamApp = {
   _faceModel: null,
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
+  _darkSeconds: 0,          // consecutive seconds of low ambient brightness
+  _brightnessWarningIssued: false, // prevent repeated brightness warnings
   _dashInterval: null,      // dashboard poll interval
   _fullscreenInteractionGraceUntil: 0,
   _pendingFullscreenRecovery: null,
@@ -1647,6 +1649,9 @@ const ExamApp = {
       this._slowFrameCount = 0;
     }
 
+    // Ambient brightness check (runs every frame)
+    this._checkAmbientBrightness(frame, pixelCount);
+
     // Person detected if EITHER clear movement OR subtle change vs 10s-ago frame
     const avgDiff = Math.max(fastAvg, slowAvg);
 
@@ -1730,6 +1735,39 @@ const ExamApp = {
     const overlay = document.getElementById('motion-warning-overlay');
     if (overlay) overlay.style.display = 'none';
     this._motionBlocked = false;
+  },
+
+  // ── Ambient brightness check ─────────────────────────────────
+  // Called every 0.6 s from the motion detection loop.
+  // Uses the average luminance of the camera frame as a proxy for
+  // ambient/screen brightness. Very dark frames for 20+ seconds
+  // may indicate the student dimmed their screen or covered camera.
+  _checkAmbientBrightness(frameData, pixelCount) {
+    let lum = 0;
+    for (let i = 0; i < frameData.length; i += 4) {
+      lum += 0.299 * frameData[i] + 0.587 * frameData[i + 1] + 0.114 * frameData[i + 2];
+    }
+    const avgLuminance = lum / pixelCount; // 0–255
+
+    const statusText = document.getElementById('camera-status-text');
+
+    if (avgLuminance < 18) {  // very dark threshold
+      this._darkSeconds += 0.6;
+      if (statusText && this._darkSeconds < 20) {
+        statusText.textContent = `⚠ Low brightness (${Math.ceil(20 - this._darkSeconds)}s)`;
+      }
+      if (this._darkSeconds >= 20 && !this._brightnessWarningIssued) {
+        this._brightnessWarningIssued = true;
+        this.issueWarning('low_brightness', 'Screen or environment brightness is too low');
+      }
+    } else {
+      // Brightness recovered — reset counters
+      if (this._darkSeconds > 0) {
+        this._darkSeconds = 0;
+        this._brightnessWarningIssued = false;
+        if (statusText) statusText.textContent = '● Monitoring';
+      }
+    }
   },
 
   // Keep captureSnapshot for admin monitoring thumbnails (less frequent)
@@ -1969,11 +2007,13 @@ const ExamApp = {
     if (!overlay) return;
 
     const messages = {
-      tab_switch:     'You switched to another tab or window.',
-      window_blur:    'Another application was detected in front of the exam.',
-      copy_attempt:   'Copying or cutting content is not allowed.',
-      fullscreen_exit:'You exited fullscreen mode.',
-      screenshot:     'Screenshot attempt detected.',
+      tab_switch:      'You switched to another tab or window.',
+      window_blur:     'Another application was detected in front of the exam.',
+      copy_attempt:    'Copying or cutting content is not allowed.',
+      fullscreen_exit: 'You exited fullscreen mode.',
+      screenshot:      'Screenshot attempt detected.',
+      no_person:       'No person detected in the camera frame.',
+      low_brightness:  'Your camera feed is too dark — please ensure adequate lighting.',
     };
 
     msgEl.textContent  = messages[type] || detail;
@@ -2108,13 +2148,15 @@ const ExamApp = {
       answerHtml = this._renderIdentification(q, idx);
     } else if (q.type === 'essay') {
       answerHtml = this._renderEssay(q, idx);
+    } else if (q.type === 'coding') {
+      answerHtml = this._renderCoding(q, idx);
     } else if (q.type === 'enumeration') {
       answerHtml = this._renderEnumeration(q, idx);
     } else if (q.type === 'matching') {
       answerHtml = this._renderMatching(q, idx);
     }
 
-    const typeLabels = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', essay:'Essay', enumeration:'Enumeration', matching:'Matching Type' };
+    const typeLabels = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', essay:'Essay', enumeration:'Enumeration', matching:'Matching Type', coding:'Coding' };
 
     const imgHtml = q.imageUrl
       ? `<div class="question-img-wrap"><img src="${_escAttr(q.imageUrl)}" alt="Question image" class="question-img" onerror="this.parentElement.style.display='none'" /></div>`
@@ -2222,6 +2264,67 @@ const ExamApp = {
       </div>`;
   },
 
+  _renderCoding(q, idx) {
+    const langLabels = { python:'Python', javascript:'JavaScript', java:'Java', cpp:'C++', c:'C', php:'PHP' };
+    const lang = q.language || 'python';
+    const starter = q.starterCode || '';
+    const expectedHtml = q.expectedOutput
+      ? `<div class="coding-expected-wrap">
+          <div class="coding-section-label">Expected Output</div>
+          <pre class="coding-expected-pre">${_escText(q.expectedOutput)}</pre>
+        </div>` : '';
+    return `
+      ${expectedHtml}
+      <div class="coding-editor-shell">
+        <div class="coding-editor-header">
+          <span class="coding-lang-badge">${_escText(langLabels[lang] || lang)}</span>
+          <span class="coding-editor-hint">Write your solution — use Shift+Enter for new lines</span>
+        </div>
+        <textarea id="coding-textarea-${q.id}" class="coding-cm-source" style="display:none;">${_escText(starter)}</textarea>
+        <div id="coding-cm-${q.id}" class="coding-cm-wrap"></div>
+      </div>`;
+  },
+
+  _initCodeEditors() {
+    const LANG_MODE = { python:'python', javascript:'javascript', java:'clike', cpp:'clike', c:'clike', php:'php' };
+    this.questionOrder.forEach(q => {
+      if (q.type !== 'coding') return;
+      const wrap = document.getElementById('coding-cm-' + q.id);
+      const src  = document.getElementById('coding-textarea-' + q.id);
+      if (!wrap || !src || wrap.dataset.cmInit) return;
+      wrap.dataset.cmInit = '1';
+
+      if (!window.CodeMirror) {
+        // Fallback: plain textarea if CodeMirror not loaded
+        src.style.display = '';
+        src.style.cssText = 'width:100%;min-height:200px;font-family:monospace;font-size:13px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#1e1e2e;color:#cdd6f4;';
+        src.oninput = () => ExamApp.selectAnswer(q.id, src.value);
+        if (this.answers[q.id]) src.value = this.answers[q.id];
+        return;
+      }
+
+      const cm = window.CodeMirror(wrap, {
+        value: (this.answers[q.id] !== undefined ? this.answers[q.id] : src.value) || '',
+        mode: LANG_MODE[q.language || 'python'] || 'python',
+        theme: 'dracula',
+        lineNumbers: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: q.language === 'python' ? false : true,
+        lineWrapping: false,
+        autofocus: false,
+        extraKeys: {
+          'Tab': (cm) => cm.replaceSelection('    '),
+          'Shift-Tab': 'indentLess',
+        },
+      });
+      cm.on('change', () => {
+        ExamApp.selectAnswer(q.id, cm.getValue());
+      });
+      wrap._cm = cm;
+    });
+  },
+
   // ============================================================
   // RESTORE ANSWERS (on resume)
   // ============================================================
@@ -2249,6 +2352,12 @@ const ExamApp = {
         const countEl = document.getElementById('essay-count-' + q.id);
         if (countEl) countEl.textContent = wordCount + ' word' + (wordCount !== 1 ? 's' : '');
       }
+    } else if (q.type === 'coding') {
+      // CodeMirror restore is handled in _initCodeEditors; just set the textarea backup
+      const ta = document.getElementById(`coding-textarea-${q.id}`);
+      if (ta) ta.value = value;
+      const cmWrap = document.getElementById(`coding-cm-${q.id}`);
+      if (cmWrap?._cm) cmWrap._cm.setValue(value);
     }
     const card = document.getElementById(`qcard-${q.id}`);
     if (card) card.classList.add('answered');
@@ -2361,6 +2470,9 @@ const ExamApp = {
 
     const wrap = document.querySelector('.examv2-main');
     if (wrap) wrap.scrollTop = 0;
+
+    // Initialize CodeMirror for any coding questions now visible
+    requestAnimationFrame(() => this._initCodeEditors());
 
     this._updateNavGrid();
   },
