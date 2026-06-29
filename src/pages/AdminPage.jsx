@@ -866,8 +866,14 @@ export default function AdminPage() {
                 <div style={{ flex:1, background:'#f3f4f6', borderRadius:'16px 16px 16px 4px', padding:'14px 16px', overflow:'hidden' }}>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
                     <span id="ai-preview-title" style={{ fontWeight:700, fontSize:'13px', color:'#0f2d1a' }} />
-                    <label style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', cursor:'pointer', color:'#6b7280', fontWeight:600 }}>
-                      <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} /> Select All
+                    <label style={{ display:'flex', alignItems:'center', gap:'7px', fontSize:'12px', cursor:'pointer', color:'#374151', fontWeight:600, userSelect:'none' }}>
+                      <div className="checkbox-wrapper-30">
+                        <div className="checkbox" style={{'--size':'0.9','--stroke':'#1a6b35'}}>
+                          <input type="checkbox" id="ai-select-all" defaultChecked onChange={(e) => window.toggleAllAIQuestions(e.target.checked)} />
+                          <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg>
+                        </div>
+                      </div>
+                      Select All
                     </label>
                   </div>
                   <div id="ai-questions-preview" style={{ display:'flex', flexDirection:'column', gap:'8px', maxHeight:'260px', overflowY:'auto', paddingRight:'4px' }} />
