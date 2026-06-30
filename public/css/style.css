@@ -7110,51 +7110,35 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .tbl-btn svg { flex-shrink: 0; }
 
 .tbl-btn-edit {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  gap: 6px;
   background: #fff;
   color: #0f2d1a;
   border: 1.5px solid #e5e7eb !important;
-  padding: 0 18px;
+  padding: 0 14px;
   height: 32px;
   min-width: 72px;
   border-radius: 8px;
-  /* Same 3D lift as course Edit button */
-  box-shadow: 0 4px 0 #c5c5c5;
-  transform: translateY(-3px);
-  transition: color 0.3s, background 0.3s, border-color 0.3s,
-              box-shadow 600ms cubic-bezier(.3,.7,.4,1),
-              transform 600ms cubic-bezier(.3,.7,.4,1);
-  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
   font-weight: 600;
   font-size: 12px;
   cursor: pointer;
 }
 .tbl-btn-edit svg.edit-icon {
   width: 12px; height: 12px;
-  position: absolute;
-  right: 0; margin-right: 14px;
   fill: #0f2d1a;
-  transition: right 0.3s, margin 0.3s, fill 0.3s;
+  flex-shrink: 0;
+  transition: fill 0.2s;
 }
 .tbl-btn-edit:hover {
   background: #1a4d2a;
   color: #fff;
   border-color: #1a4d2a !important;
-  box-shadow: 0 6px 0 #0a2316;
-  transform: translateY(-5px);
-  transition: color 0.3s, background 0.3s, border-color 0.3s,
-              box-shadow 250ms cubic-bezier(.3,.7,.4,1.5),
-              transform 250ms cubic-bezier(.3,.7,.4,1.5);
 }
 .tbl-btn-edit:hover svg.edit-icon { fill: #fff; }
-.tbl-btn-edit:active {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 0 #0a2316;
-  transition: transform 34ms, box-shadow 34ms;
-}
+.tbl-btn-edit:active { opacity: 0.85; }
 
 .tbl-btn-archive {
   position: relative;
