@@ -1770,7 +1770,7 @@ function buildExamActions(e) {
     btns += `<button class="btn-action btn-action-ghost" onclick="openExamModal('${e.id}')">Edit${icEditFill}</button>`;
   }
   if (['ready','active','closed'].includes(e.status)) {
-    btns += pb('Archive', icArchiveFill, `setExamStatus('${e.id}','archived')`, 'white');
+    btns += `<button class="tbl-btn tbl-btn-archive" onclick="setExamStatus('${e.id}','archived')">Archive${icArchiveFill}</button>`;
   }
   btns += pb('More', icMore, `openMoreModal('${e.id}')`, 'white');
   return btns;
