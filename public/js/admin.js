@@ -1677,33 +1677,44 @@ function renderExams() {
     container.innerHTML = `<div class="empty-state"><p>No exams yet. Click "+ Create Exam" to get started.</p></div>`;
     return;
   }
-  const statusBorderColor = { draft:'#9ca3af', ready:'#2563eb', active:'#16a34a', closed:'#dc2626' };
+  const statusHeaderColor = {
+    draft:  { bg:'linear-gradient(135deg,#6b7280,#9ca3af)', text:'rgba(255,255,255,0.7)' },
+    ready:  { bg:'linear-gradient(135deg,#1d4ed8,#3b82f6)', text:'rgba(255,255,255,0.7)' },
+    active: { bg:'linear-gradient(135deg,#15803d,#22c55e)', text:'rgba(255,255,255,0.7)' },
+    closed: { bg:'linear-gradient(135deg,#991b1b,#ef4444)', text:'rgba(255,255,255,0.7)' },
+  };
   container.innerHTML = active.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
-    const subjectName = subject ? escHtml(formatCourseNameDisplay(subject.name)) : '<span class="text-muted">No subject</span>';
-    const borderColor = statusBorderColor[e.status] || '#9ca3af';
+    const subjectName = subject ? escHtml(formatCourseNameDisplay(subject.name)) : 'No subject';
+    const hdr = statusHeaderColor[e.status] || statusHeaderColor.draft;
     const qCount = (e.questions || []).length;
-    const audienceTags = buildAudienceTag(e);
     const actions = buildExamActions(e);
     return `
-    <div class="exam-card" style="--exam-status-color:${borderColor}" onclick="openExamModal('${e.id}')">
-      <div class="exam-card-body">
-        <div class="exam-card-top-row">
-          ${statusBadge(e.status)}
-          ${e.code ? `<span class="exam-code-pill">${escHtml(e.code)}</span>` : ''}
+    <div class="exam-card" onclick="openExamModal('${e.id}')">
+      <!-- Colored header like course card -->
+      <div class="exam-card-header" style="background:${hdr.bg};">
+        <div class="exam-card-header-deco"></div>
+        <div class="exam-card-letter">${(e.title||'?').charAt(0).toUpperCase()}</div>
+        <div style="position:relative;z-index:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            ${statusBadge(e.status)}
+            ${e.code ? `<span style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:20px;letter-spacing:1px;">${escHtml(e.code)}</span>` : ''}
+          </div>
+          <div class="exam-card-title">${escHtml(e.title)}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">${subjectName}</div>
         </div>
-        <div class="exam-card-title">${escHtml(e.title)}</div>
-        <div class="exam-card-subject">${subjectName}</div>
-        ${audienceTags ? `<div class="exam-card-audience">${audienceTags}</div>` : ''}
-        <div class="exam-card-stats">
-          <span class="exam-stat">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            ${qCount} question${qCount !== 1 ? 's' : ''}
-          </span>
-          <span class="exam-stat">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            ${e.timeLimit} min
-          </span>
+      </div>
+      <!-- Stats cells -->
+      <div class="exam-card-body">
+        <div class="exam-card-stats-cells">
+          <div class="exam-stat-cell">
+            <div class="exam-stat-num">${qCount}</div>
+            <div class="exam-stat-lab">Questions</div>
+          </div>
+          <div class="exam-stat-cell">
+            <div class="exam-stat-num">${e.timeLimit}</div>
+            <div class="exam-stat-lab">Minutes</div>
+          </div>
         </div>
         <div class="exam-card-date">${formatDate(e.createdAt)}</div>
       </div>
