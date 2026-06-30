@@ -1002,6 +1002,81 @@ tr:hover td { background: #F8FDF8; }
 .btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
 .btn-action-ghost:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 #0a2316; }
 
+/* ── 3D Pushable buttons (exam cards) ── */
+.pushable {
+  position: relative;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  outline-offset: 4px;
+  transition: filter 250ms;
+  user-select: none;
+  touch-action: manipulation;
+  display: inline-block;
+}
+.pushable-shadow {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  border-radius: 10px;
+  background: hsl(0deg 0% 0% / 0.22);
+  will-change: transform;
+  transform: translateY(2px);
+  transition: transform 600ms cubic-bezier(.3,.7,.4,1);
+}
+.pushable-edge {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  border-radius: 10px;
+}
+.pushable-front {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  padding: 7px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  will-change: transform;
+  transform: translateY(-3px);
+  transition: transform 600ms cubic-bezier(.3,.7,.4,1);
+  white-space: nowrap;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.pushable:hover { filter: brightness(108%); }
+.pushable:hover .pushable-front {
+  transform: translateY(-5px);
+  transition: transform 250ms cubic-bezier(.3,.7,.4,1.5);
+}
+.pushable:active .pushable-front { transform: translateY(-1px); transition: transform 34ms; }
+.pushable:hover .pushable-shadow {
+  transform: translateY(4px);
+  transition: transform 250ms cubic-bezier(.3,.7,.4,1.5);
+}
+.pushable:active .pushable-shadow { transform: translateY(1px); transition: transform 34ms; }
+
+/* Green variant (Edit) */
+.pushable-green .pushable-edge {
+  background: linear-gradient(to left, #0a2316 0%, #133a22 8%, #133a22 92%, #0a2316 100%);
+}
+.pushable-green .pushable-front {
+  background: #1a4d2a;
+  color: #fff;
+}
+.pushable-green .pushable-front svg { fill: #fff; }
+.pushable-green .pushable-front svg.edit-icon { fill: #fff; width: 11px; height: 11px; position: static; margin: 0; transform: none; }
+
+/* White/neutral variant (Archive, More) */
+.pushable-white .pushable-edge {
+  background: linear-gradient(to left, #9ca3af 0%, #d1d5db 8%, #d1d5db 92%, #9ca3af 100%);
+}
+.pushable-white .pushable-front {
+  background: #fff;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
 /* Card-scoped edit button: hover uses the card's own color */
 .btn-edit-card:hover {
   background: var(--card-color, #1a4d2a) !important;

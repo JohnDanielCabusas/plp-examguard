@@ -1767,14 +1767,21 @@ function buildExamActions(e) {
   const icArchive = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
   const icMore    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>`;
 
+  const pb = (label, icon, onclick, variant = 'white') =>
+    `<button class="pushable pushable-${variant}" onclick="${onclick}">
+      <span class="pushable-shadow"></span>
+      <span class="pushable-edge"></span>
+      <span class="pushable-front">${icon} ${label}</span>
+    </button>`;
+
   let btns = '';
   if (['draft','ready','active','closed'].includes(e.status)) {
-    btns += `<button class="btn-action btn-action-ghost" onclick="openExamModal('${e.id}')">${icEdit} Edit</button>`;
+    btns += pb('Edit', icEditFill, `openExamModal('${e.id}')`, 'green');
   }
   if (['ready','active','closed'].includes(e.status)) {
-    btns += `<button class="btn-action btn-action-ghost" onclick="setExamStatus('${e.id}','archived')">${icArchive} Archive</button>`;
+    btns += pb('Archive', icArchive, `setExamStatus('${e.id}','archived')`, 'white');
   }
-  btns += `<button class="btn-action btn-action-ghost" onclick="openMoreModal('${e.id}')">${icMore} More</button>`;
+  btns += pb('More', icMore, `openMoreModal('${e.id}')`, 'white');
   return btns;
 }
 
