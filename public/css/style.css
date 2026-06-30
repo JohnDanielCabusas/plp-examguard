@@ -4706,15 +4706,57 @@ body.exam-page {
 }
 .course-exam-cta-primary {
   background: #0f2d1a;
-  color: #fff;
+  color: transparent; /* text hidden — content via ::before / ::after */
   border: none;
-  box-shadow: 0 4px 12px rgba(15,45,26,0.18);
+  box-shadow: 0 6px 20px rgba(15,45,26,0.25);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  height: 50px;
+  padding: 0 18px;
 }
+/* Default label — "Take Exam →" slides out on hover */
+.course-exam-cta-primary::after {
+  content: "Take Exam →";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  background: transparent;
+  transform: translateY(0%);
+  transform-origin: top;
+  transition: all 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+}
+/* Reveal label — "Good luck!" slides up on hover */
+.course-exam-cta-primary::before {
+  content: "Good luck! 🍀";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #2d8a50 0%, #0f2d1a 100%);
+  transform: translateY(100%);
+  transform-origin: bottom;
+  transition: all 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: 1;
+}
+.course-exam-cta-primary:hover::before { transform: translateY(0%); }
+.course-exam-cta-primary:hover::after  { transform: translateY(-110%); }
 .course-exam-cta-primary:hover {
-  background: #1a4d2a;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(15,45,26,0.22);
+  box-shadow: 0 10px 28px rgba(15,45,26,0.35);
+  transform: translateY(-2px);
 }
+.course-exam-cta-primary:active { transform: scale(0.97); }
 .course-exam-cta-secondary {
   background: #fff;
   color: #355a35;
