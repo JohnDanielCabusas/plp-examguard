@@ -7526,27 +7526,53 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .coding-cm-wrap .CodeMirror { height: 260px; font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace; font-size: 13.5px; line-height: 1.6; }
 .coding-cm-wrap .CodeMirror-scroll { min-height: 260px; }
 
-/* Return button on submitted exam screen — plain green, no animation */
+/* Return button — sliding green arrow panel */
 .btn-submitted-return {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 52px;
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f2d1a;
+  overflow: hidden;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.btn-submitted-return:hover { border-color: #1a4d2a; box-shadow: 0 4px 14px rgba(26,77,42,0.18); }
+.btn-submitted-return:active { transform: scale(0.99); }
+
+.bsr-slider {
+  position: absolute;
+  left: 4px; top: 4px;
+  height: calc(100% - 8px);
+  width: 44px;
+  background: #1a4d2a;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  padding: 14px 24px;
-  background: #1a4d2a;
-  color: #fff !important;
-  border: none;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  box-shadow: 0 4px 14px rgba(26,77,42,0.3);
-  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-  gap: 8px;
+  z-index: 1;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
-.btn-submitted-return:hover { background: #0f2d1a; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(26,77,42,0.35); }
-.btn-submitted-return:active { transform: translateY(0); }
+.btn-submitted-return:hover .bsr-slider { width: calc(100% - 8px); }
+
+.bsr-text {
+  width: 100%;
+  text-align: center;
+  position: relative;
+  z-index: 0;
+  padding-left: 12px;
+  transition: color 0.3s;
+}
 
 /* Camera grid live pulse */
 @keyframes camPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
