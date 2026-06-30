@@ -535,7 +535,7 @@ export default function ExamPage() {
                 <ReviewLabel />
               </button>
               <button type="button" data-exam-control="true" className="course-exam-cta course-exam-cta-primary examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
-                <BackLabel text="Back" />
+                <BackLabel text="Return" />
               </button>
             </div>
           </div>
