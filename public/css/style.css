@@ -972,30 +972,34 @@ tr:hover td { background: #F8FDF8; }
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  background-color: #1a4d2a;
-  color: #fff;
-  border: none !important;
+  background: #fff;
+  color: #0f2d1a;
+  border: 1.5px solid #e5e7eb !important;
   padding: 0 20px;
   height: 34px;
-  width: auto;
   min-width: 80px;
   border-radius: 8px;
-  box-shadow: 4px 4px 0 #0a2316;
-  transition: color 0.25s, box-shadow 0.2s, transform 0.2s;
+  box-shadow: 3px 3px 0 #d1d5db;
+  transition: color 0.3s, background 0.3s, border-color 0.3s, box-shadow 0.2s, transform 0.2s;
   overflow: hidden;
   font-weight: 600;
   font-size: 12px;
+  cursor: pointer;
 }
 .btn-action-ghost svg.edit-icon {
   width: 12px; height: 12px;
   position: absolute;
-  right: 0;
-  margin-right: 16px;
-  fill: #fff;
-  transition: right 0.25s, margin 0.25s;
+  right: 0; margin-right: 16px;
+  fill: #0f2d1a;
+  transition: right 0.3s, margin 0.3s, fill 0.3s;
 }
-.btn-action-ghost:hover { color: transparent; box-shadow: 4px 4px 0 #0a2316; }
-.btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; }
+.btn-action-ghost:hover {
+  background: #1a4d2a;
+  color: transparent;
+  border-color: #1a4d2a !important;
+  box-shadow: 3px 3px 0 #0a2316;
+}
+.btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
 .btn-action-ghost:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 #0a2316; }
 .btn-action-primary {
   background: #0f2d1a;
@@ -6977,29 +6981,34 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  background-color: #1a4d2a;
-  color: #fff;
-  border: none !important;
+  background: #fff;
+  color: #0f2d1a;
+  border: 1.5px solid #e5e7eb !important;
   padding: 0 18px;
   height: 32px;
   min-width: 72px;
   border-radius: 8px;
-  box-shadow: 3px 3px 0 #0a2316;
-  transition: color 0.25s, box-shadow 0.2s, transform 0.2s;
+  box-shadow: 3px 3px 0 #d1d5db;
+  transition: color 0.3s, background 0.3s, border-color 0.3s, box-shadow 0.2s, transform 0.2s;
   overflow: hidden;
   font-weight: 600;
   font-size: 12px;
+  cursor: pointer;
 }
 .tbl-btn-edit svg.edit-icon {
   width: 12px; height: 12px;
   position: absolute;
-  right: 0;
-  margin-right: 14px;
-  fill: #fff;
-  transition: right 0.25s, margin 0.25s;
+  right: 0; margin-right: 14px;
+  fill: #0f2d1a;
+  transition: right 0.3s, margin 0.3s, fill 0.3s;
 }
-.tbl-btn-edit:hover { color: transparent; box-shadow: 3px 3px 0 #0a2316; }
-.tbl-btn-edit:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; }
+.tbl-btn-edit:hover {
+  background: #1a4d2a;
+  color: transparent;
+  border-color: #1a4d2a !important;
+  box-shadow: 3px 3px 0 #0a2316;
+}
+.tbl-btn-edit:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
 .tbl-btn-edit:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #0a2316; }
 
 .tbl-btn-archive {
