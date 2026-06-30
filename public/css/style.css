@@ -135,6 +135,99 @@
 [data-theme="dark"] .ac-card { background: var(--nm-bg) !important; border-color: var(--border) !important; }
 [data-theme="dark"] .ac-card * { color: var(--text) !important; }
 
+/* ── Comprehensive dark overrides ─────────────────────────── */
+
+/* All buttons become dark */
+[data-theme="dark"] .btn-action-ghost,
+[data-theme="dark"] .tbl-btn-edit {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 4px 0 #090d12 !important;
+  transform: translateY(-3px);
+}
+[data-theme="dark"] .btn-action-ghost:hover,
+[data-theme="dark"] .tbl-btn-edit:hover {
+  background: #22c55e !important;
+  color: #fff !important;
+  border-color: #22c55e !important;
+  box-shadow: 0 6px 0 #145229 !important;
+}
+[data-theme="dark"] .btn-action-ghost svg.edit-icon,
+[data-theme="dark"] .tbl-btn-edit svg.edit-icon { fill: var(--text) !important; }
+[data-theme="dark"] .btn-action-ghost:hover svg.edit-icon,
+[data-theme="dark"] .tbl-btn-edit:hover svg.edit-icon { fill: #fff !important; }
+
+[data-theme="dark"] .tbl-btn-archive {
+  background: var(--surface-2) !important;
+  color: #f87171 !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 4px 0 #090d12 !important;
+}
+[data-theme="dark"] .tbl-btn-archive:hover {
+  background: #f87171 !important;
+  color: #fff !important;
+  border-color: #f87171 !important;
+  box-shadow: 0 6px 0 #7f1d1d !important;
+}
+[data-theme="dark"] .tbl-btn-archive svg.archive-icon { stroke: #f87171 !important; }
+[data-theme="dark"] .tbl-btn-archive:hover svg.archive-icon { stroke: #fff !important; }
+
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .btn:not(.btn-primary):not(.btn-danger):not(.btn-success):not(.btn-warning) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Pushable More button */
+[data-theme="dark"] .pushable-white .pushable-edge {
+  background: linear-gradient(to left, #090d12 0%, #1a1f28 8%, #1a1f28 92%, #090d12 100%) !important;
+}
+[data-theme="dark"] .pushable-white .pushable-front {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Dropdowns / selects */
+[data-theme="dark"] select,
+[data-theme="dark"] .filter-select,
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .search-input,
+[data-theme="dark"] .search-input input {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .search-input { background: var(--surface-2) !important; border-color: var(--border) !important; }
+[data-theme="dark"] .search-input input { background: transparent !important; color: var(--text) !important; }
+[data-theme="dark"] .search-input input::placeholder { color: var(--text-muted) !important; }
+[data-theme="dark"] .search-icon { color: var(--text-muted) !important; }
+
+/* Student ID / year level chips */
+[data-theme="dark"] .student-id-chip,
+[data-theme="dark"] [class*="id-chip"],
+[data-theme="dark"] .badge { background: var(--surface-2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+
+/* Toolbar & filters */
+[data-theme="dark"] .toolbar { background: transparent !important; }
+
+/* Empty state */
+[data-theme="dark"] .empty-state { color: var(--text-muted) !important; }
+[data-theme="dark"] .empty-state p { color: var(--text-muted) !important; }
+
+/* Section headers */
+[data-theme="dark"] .section-header { background: transparent !important; }
+
+/* Sidebar active state */
+[data-theme="dark"] .nav-item.active { background: rgba(34,197,94,0.15) !important; }
+[data-theme="dark"] .nav-item:hover { background: rgba(255,255,255,0.05) !important; }
+
+/* Scrollbars */
+[data-theme="dark"] ::-webkit-scrollbar-track { background: var(--bg) !important; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: var(--border) !important; }
+
 /* ── Dark mode toggle button ─────────────────────────────── */
 .dm-toggle {
   position: relative;
