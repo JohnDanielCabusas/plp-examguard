@@ -4404,7 +4404,7 @@ body.exam-page {
   letter-spacing: 0.01em;
 }
 .course-tab-btn:hover { color: #374151; }
-.course-tab-btn.active { color: #0f2d1a; border-bottom-color: #0f2d1a; }
+.course-tab-btn.active { color: #0f2d1a !important; border-bottom-color: #0f2d1a !important; font-weight: 700 !important; }
 
 /* Exam section group */
 .course-exam-group { margin-bottom: 28px; }

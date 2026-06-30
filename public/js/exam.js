@@ -617,12 +617,23 @@ const ExamApp = {
   },
 
   showCourseTab(tab) {
-    ['exams','people'].forEach(t => {
-      const el = document.getElementById('course-tab-' + t);
-      if (el) el.classList.toggle('hidden', t !== tab);
-      const btn = document.getElementById('ctab-' + t);
-      if (btn) btn.classList.toggle('active', t === tab);
-    });
+    const _apply = () => {
+      ['exams','people'].forEach(t => {
+        const el = document.getElementById('course-tab-' + t);
+        if (el) el.classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById('ctab-' + t);
+        if (!btn) return;
+        btn.classList.toggle('active', t === tab);
+        // Inline style fallback — survives any CSS specificity issues
+        btn.style.color = t === tab ? '#0f2d1a' : '';
+        btn.style.borderBottomColor = t === tab ? '#0f2d1a' : 'transparent';
+        btn.style.fontWeight = t === tab ? '700' : '';
+      });
+    };
+    _apply();
+    // Re-apply after paint in case DOM wasn't fully settled on first call
+    requestAnimationFrame(_apply);
+
     if (tab === 'exams')  this._renderCourseExams();
     if (tab === 'people') this._renderCoursePeople();
     if (this._currentCourseId) {
