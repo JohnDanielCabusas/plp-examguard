@@ -4744,7 +4744,7 @@ body.exam-page {
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.3px;
-  background: linear-gradient(135deg, #2d8a50 0%, #0f2d1a 100%);
+  background: #1a4d2a;
   transform: translateY(100%);
   transform-origin: bottom;
   transition: all 0.55s cubic-bezier(0.23, 1, 0.32, 1);
