@@ -7119,8 +7119,12 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   height: 32px;
   min-width: 72px;
   border-radius: 8px;
-  box-shadow: 3px 3px 0 #d1d5db;
-  transition: color 0.3s, background 0.3s, border-color 0.3s, box-shadow 0.2s, transform 0.2s;
+  /* Same 3D lift as course Edit button */
+  box-shadow: 0 4px 0 #c5c5c5;
+  transform: translateY(-3px);
+  transition: color 0.3s, background 0.3s, border-color 0.3s,
+              box-shadow 600ms cubic-bezier(.3,.7,.4,1),
+              transform 600ms cubic-bezier(.3,.7,.4,1);
   overflow: hidden;
   font-weight: 600;
   font-size: 12px;
@@ -7137,10 +7141,18 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   background: #1a4d2a;
   color: transparent;
   border-color: #1a4d2a !important;
-  box-shadow: 3px 3px 0 #0a2316;
+  box-shadow: 0 6px 0 #0a2316;
+  transform: translateY(-5px);
+  transition: color 0.3s, background 0.3s, border-color 0.3s,
+              box-shadow 250ms cubic-bezier(.3,.7,.4,1.5),
+              transform 250ms cubic-bezier(.3,.7,.4,1.5);
 }
 .tbl-btn-edit:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
-.tbl-btn-edit:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #0a2316; }
+.tbl-btn-edit:active {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #0a2316;
+  transition: transform 34ms, box-shadow 34ms;
+}
 
 .tbl-btn-archive {
   background: #fff7ed;
