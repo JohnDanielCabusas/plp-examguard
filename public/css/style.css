@@ -4251,18 +4251,19 @@ body.exam-page {
   justify-content: space-between;
   width: 160px;
   height: 48px;
-  background: #1a4d2a;
+  background: #ffffff;
   border-radius: 40px;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(26,77,42,0.45);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   flex-shrink: 0;
   padding: 0;
   overflow: hidden;
-  transition: box-shadow 0.25s ease, transform 0.2s ease;
+  transition: box-shadow 0.25s ease, transform 0.2s ease, background 0.2s ease;
 }
 .btn-take-exam-pill:hover {
-  box-shadow: 0 6px 20px rgba(26,77,42,0.6);
+  background: #f0f7f2;
+  box-shadow: 0 6px 22px rgba(0,0,0,0.3);
   transform: translateY(-2px);
 }
 .btn-take-exam-pill:active { transform: translateY(0); }
@@ -4271,7 +4272,7 @@ body.exam-page {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: #0f2d1a;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.8px;
@@ -4280,9 +4281,9 @@ body.exam-page {
 .btep-icon {
   width: 42px;
   height: 42px;
-  background: #a3e3b0;
+  background: #1a4d2a;
   border-radius: 50%;
-  border: 3px solid #1a4d2a;
+  border: 3px solid #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4290,7 +4291,8 @@ body.exam-page {
   margin: 3px;
   transition: background 0.2s;
 }
-.btn-take-exam-pill:hover .btep-icon { background: #d1fae5; }
+.btn-take-exam-pill:hover .btep-icon { background: #2d7a46; }
+.btep-icon svg circle { fill: #fff; }
 .btep-icon svg { transition: transform 1.5s ease; }
 .btn-take-exam-pill:hover .btep-icon svg {
   animation: btep-arrow 0.8s linear infinite;
