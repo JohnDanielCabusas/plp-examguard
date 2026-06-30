@@ -1353,11 +1353,18 @@ const ExamApp = {
 
   _showFullscreenLock() {
     let overlay = document.getElementById('fs-lock-overlay');
+    const COUNTDOWN_SECS = 7;
+
+    const clearCountdown = () => {
+      if (overlay && overlay._cdTimer) { clearInterval(overlay._cdTimer); overlay._cdTimer = null; }
+    };
 
     const doReturn = () => {
-      if (overlay && overlay._cdTimer) clearInterval(overlay._cdTimer);
-      this.requestFullscreen().then(() => {
-        if (overlay && this._isFullscreenActive()) overlay.style.display = 'none';
+      clearCountdown();
+      this.requestFullscreen().then((ok) => {
+        if (ok && this._isFullscreenActive()) {
+          if (overlay) overlay.style.display = 'none';
+        }
       });
     };
 
@@ -1365,35 +1372,75 @@ const ExamApp = {
       overlay = document.createElement('div');
       overlay.id = 'fs-lock-overlay';
       overlay.innerHTML = `
-        <div style="text-align:center;padding:40px 32px;max-width:400px;">
+        <div style="text-align:center;padding:40px 32px;max-width:420px;">
           <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </div>
           <h2 style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px;">Fullscreen Required</h2>
-          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:24px;line-height:1.6;">
+          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:8px;line-height:1.6;">
             This exam must be taken in fullscreen mode.<br>
             Exiting fullscreen has been recorded as a violation.
           </p>
-          <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 32px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;">
+          <div id="fs-countdown-wrap" style="margin:18px auto 22px;width:90px;height:90px;position:relative;">
+            <svg viewBox="0 0 90 90" style="width:90px;height:90px;transform:rotate(-90deg);">
+              <circle cx="45" cy="45" r="38" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"/>
+              <circle id="fs-cd-ring" cx="45" cy="45" r="38" fill="none" stroke="#ef4444" stroke-width="6"
+                stroke-dasharray="238.76" stroke-dashoffset="0"
+                style="transition:stroke-dashoffset 1s linear,stroke 0.3s;"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <span id="fs-cd-num" style="font-size:28px;font-weight:900;color:#fff;line-height:1;">${COUNTDOWN_SECS}</span>
+              <span style="font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:1px;margin-top:2px;">SEC</span>
+            </div>
+          </div>
+          <p style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:20px;">
+            Exam will be <strong style="color:#ef4444;">auto-submitted</strong> if you don't return to fullscreen
+          </p>
+          <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 36px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,0.3);">
             Return to Fullscreen
           </button>
         </div>`;
       overlay.style.cssText = 'position:fixed;inset:0;background:#060e08;z-index:999999;display:flex;align-items:center;justify-content:center;';
       document.body.appendChild(overlay);
-      document.getElementById('fs-return-btn').onclick = doReturn;
     } else {
       overlay.style.display = 'flex';
-      const btn = document.getElementById('fs-return-btn');
-      if (btn) btn.onclick = doReturn;
     }
 
-    // Attempt immediate fullscreen re-entry; button is fallback if browser blocks it
-    if (this.warnings < 3) doReturn();
+    document.getElementById('fs-return-btn').onclick = doReturn;
+
+    // Start 7-second countdown — auto-submit if student doesn't return
+    clearCountdown();
+    if (this.warnings < 3) {
+      let remaining = COUNTDOWN_SECS;
+      const circumference = 238.76;
+      const ring = document.getElementById('fs-cd-ring');
+      const num  = document.getElementById('fs-cd-num');
+
+      const tick = () => {
+        remaining--;
+        if (num) num.textContent = remaining;
+        if (ring) {
+          const offset = circumference * (1 - remaining / COUNTDOWN_SECS);
+          ring.style.strokeDashoffset = String(offset);
+          ring.style.stroke = remaining <= 3 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e';
+        }
+        if (remaining <= 0) {
+          clearCountdown();
+          if (!this._isFullscreenActive()) this.submitExam('auto');
+        }
+      };
+
+      // Set initial ring color to green
+      if (ring) ring.style.stroke = '#22c55e';
+      overlay._cdTimer = setInterval(tick, 1000);
+    }
   },
 
   _hideFullscreenLock() {
     const overlay = document.getElementById('fs-lock-overlay');
-    if (overlay) overlay.style.display = 'none';
+    if (!overlay) return;
+    if (overlay._cdTimer) { clearInterval(overlay._cdTimer); overlay._cdTimer = null; }
+    overlay.style.display = 'none';
   },
 
   _reenterFullscreen() {
