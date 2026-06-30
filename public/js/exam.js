@@ -958,7 +958,23 @@ const ExamApp = {
               <div class="dash-active-exam-title">${_esc(e.title)}</div>
               <div class="dash-active-exam-meta">${_esc(subj.name)} &nbsp;·&nbsp; ${e.questions.length} questions &nbsp;·&nbsp; ${e.timeLimit} min ${camTag ? '&nbsp;·&nbsp;' + camTag : ''}</div>
             </div>
-            <button class="btn-take-exam" onclick="ExamApp.dashSelectExam('${e.code}')">${this._portalLabel('arrowRight', 'Take Exam', { trailing: true, gap: 8, stroke: '#ffffff' })}</button>
+            <button class="btn-take-exam-pill" onclick="ExamApp.dashSelectExam('${e.code}')">
+              <span class="btep-text">Take Exam</span>
+              <span class="btep-icon">
+                <svg width="16" height="19" viewBox="0 0 16 19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="1.61321" cy="1.61321" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="5.73583" cy="1.61321" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="5.73583" cy="5.5566" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="9.85851" cy="5.5566" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="9.85851" cy="9.5" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="13.9811" cy="9.5" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="5.73583" cy="13.4434" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="9.85851" cy="13.4434" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="1.61321" cy="17.3868" r="1.5" fill="#0f2d1a"/>
+                  <circle cx="5.73583" cy="17.3868" r="1.5" fill="#0f2d1a"/>
+                </svg>
+              </span>
+            </button>
           </div>`;
       });
     }
