@@ -828,7 +828,7 @@ function renderSubjects() {
           ${yearSectionMeta}
         </div>
         <div class="course-card-actions">
-          <button class="btn-action btn-action-ghost" onclick="openSubjectModal('${s.id}')">Edit${icEditFill}</button>
+          <button class="btn-action btn-action-ghost btn-edit-card" style="--card-color:${c1};--card-shadow:${c1}99;" onclick="openSubjectModal('${s.id}')">Edit${icEditFill}</button>
           <button class="btn btn-danger btn-sm" onclick="archiveCourse('${s.id}')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>Archive
           </button>

@@ -1001,6 +1001,13 @@ tr:hover td { background: #F8FDF8; }
 }
 .btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
 .btn-action-ghost:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 #0a2316; }
+
+/* Card-scoped edit button: hover uses the card's own color */
+.btn-edit-card:hover {
+  background: var(--card-color, #1a4d2a) !important;
+  border-color: var(--card-color, #1a4d2a) !important;
+  box-shadow: 3px 3px 0 var(--card-shadow, #0a2316) !important;
+}
 .btn-action-primary {
   background: #0f2d1a;
   border-color: #0f2d1a;
