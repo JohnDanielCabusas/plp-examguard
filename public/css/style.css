@@ -6900,19 +6900,19 @@ tr:hover td { background: #fafbfc !important; }
 }
 
 .exam-card {
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+  background: #e8ecef;
+  border-radius: 28px;
+  box-shadow: 12px 12px 24px #c8cdd1, -12px -12px 24px #ffffff;
   border-top: 3px solid var(--exam-status-color, #9ca3af);
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  transition: box-shadow 0.18s ease, transform 0.18s ease;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
   overflow: hidden;
 }
 .exam-card:hover {
-  box-shadow: 0 6px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
-  transform: translateY(-2px);
+  box-shadow: 16px 16px 32px #c0c5c9, -16px -16px 32px #ffffff;
+  transform: translateY(-3px);
 }
 
 .exam-card-body {
@@ -6983,12 +6983,12 @@ tr:hover td { background: #fafbfc !important; }
 
 .exam-card-footer {
   padding: 10px 18px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid rgba(0,0,0,0.06);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: #fafafa;
+  background: #e8ecef;
   flex-wrap: wrap;
 }
 
