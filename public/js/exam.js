@@ -2064,10 +2064,42 @@ const ExamApp = {
 
     overlay.style.display = '';
 
-    // Non-focus violations auto-hide after 4s (copy/screenshot — no return needed)
+    // Always show countdown — duration depends on violation type
     const focusLoss = ['window_blur', 'tab_switch', 'fullscreen_exit'];
-    if (!focusLoss.includes(type) && this.warnings < 3) {
-      setTimeout(() => { overlay.style.display = 'none'; }, 4000);
+    const isFocusLoss = focusLoss.includes(type);
+
+    if (this.warnings < 3) {
+      const secs = isFocusLoss ? 10 : 5;
+      const cdWrap = document.getElementById('warning-countdown-wrap');
+      const cdNum  = document.getElementById('cd-num');
+      const cdCircle = document.getElementById('cd-circle');
+      const cdMsg  = cdWrap ? cdWrap.querySelector('.warning-countdown-msg') : null;
+      const circumference = 163.36; // 2π × r(26)
+
+      if (cdWrap) {
+        if (cdMsg) cdMsg.textContent = isFocusLoss
+          ? 'Return to this window or your exam will be auto-submitted'
+          : 'This violation has been recorded. Returning to your exam…';
+        cdWrap.style.display = '';
+        if (cdNum) cdNum.textContent = secs;
+        if (cdCircle) cdCircle.style.strokeDashoffset = '0';
+      }
+
+      let remaining = secs;
+      if (overlay._countdownTimer) clearInterval(overlay._countdownTimer);
+      overlay._countdownTimer = setInterval(() => {
+        remaining--;
+        if (cdNum) cdNum.textContent = remaining;
+        if (cdCircle) cdCircle.style.strokeDashoffset = String(circumference * (1 - remaining / secs));
+        if (remaining <= 0) {
+          clearInterval(overlay._countdownTimer);
+          overlay._countdownTimer = null;
+          if (cdWrap) cdWrap.style.display = 'none';
+          // Focus-loss: startCountdown already handles auto-submit; just hide overlay
+          // Non-focus: simply dismiss the overlay
+          if (!isFocusLoss) overlay.style.display = 'none';
+        }
+      }, 1000);
     }
   },
 
