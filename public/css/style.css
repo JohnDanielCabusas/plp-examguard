@@ -4399,12 +4399,25 @@ body.exam-page {
   padding: 11px 22px; border: none; background: none; cursor: pointer;
   font-size: 14px; font-weight: 600; color: #9ca3af;
   border-bottom: 2.5px solid transparent; margin-bottom: -1.5px;
-  transition: color 0.15s, border-color 0.15s;
+  border-radius: 6px 6px 0 0;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
   font-family: 'Plus Jakarta Sans', sans-serif;
   letter-spacing: 0.01em;
+  position: relative;
 }
-.course-tab-btn:hover { color: #374151; }
-.course-tab-btn.active { color: #0f2d1a !important; border-bottom-color: #0f2d1a !important; font-weight: 700 !important; }
+.course-tab-btn:hover {
+  color: #1a4d2a;
+  background: rgba(26,77,42,0.06);
+  border-bottom-color: rgba(26,77,42,0.3);
+  transform: translateY(-1px);
+}
+.course-tab-btn:active { transform: translateY(0); }
+.course-tab-btn.active {
+  color: #0f2d1a !important;
+  border-bottom-color: #1a4d2a !important;
+  font-weight: 700 !important;
+  background: rgba(26,77,42,0.05) !important;
+}
 
 /* Exam section group */
 .course-exam-group { margin-bottom: 28px; }
