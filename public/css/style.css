@@ -1000,7 +1000,11 @@ tr:hover td { background: #F8FDF8; }
   box-shadow: 3px 3px 0 #0a2316;
 }
 .btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
-.btn-action-ghost:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 #0a2316; }
+.btn-action-ghost:active {
+  transform: translateY(2px);
+  box-shadow: 1px 1px 0 #d1d5db;
+  transition: transform 34ms, box-shadow 34ms;
+}
 
 /* ── 3D Pushable buttons (exam cards) ── */
 .pushable {
