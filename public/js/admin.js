@@ -2116,6 +2116,42 @@ function saveExamFromEditor() {
   if (statusBadgeEl && e2) statusBadgeEl.innerHTML = statusBadge(e2.status);
 }
 
+async function saveAndActivateExam() {
+  // Save first
+  saveExamFromEditor();
+  const examId = document.getElementById('exam-id').value;
+  if (!examId) return;
+
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+
+  // Generate code if missing
+  if (!exam.code) {
+    const code = Math.random().toString(36).substr(2, 6).toUpperCase();
+    DB.updateExam(examId, { code });
+    const codeField = document.getElementById('exam-code-field');
+    if (codeField) codeField.value = code;
+  }
+
+  // Require at least one question
+  if (!exam.questions || exam.questions.length === 0) {
+    showToast('Add at least one question before activating.', 'error');
+    return;
+  }
+
+  const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
+  if (!ok) return;
+
+  DB.updateExam(examId, { status: 'ready' });
+
+  // Update status badge in editor
+  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
+  if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('ready');
+
+  showToast('Exam is now Ready — students can join.', 'success');
+  renderExams();
+}
+
 function handleExamEditorStatusAction() {
   const btn = document.getElementById('exam-editor-status-btn');
   if (!btn) return;
