@@ -7160,14 +7160,15 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 0 !important;         /* override tbl-btn gap that breaks absolute icon */
   background: #fff;
-  color: #9a3412;
-  border: 1.5px solid #fed7aa !important;
-  padding: 0 18px;
+  color: #dc2626;
+  border: 1.5px solid #fca5a5 !important;
+  padding: 0 36px 0 14px;   /* right padding leaves room for icon */
   height: 32px;
-  min-width: 80px;
+  min-width: 90px;
   border-radius: 8px;
-  box-shadow: 0 4px 0 #fde8cc;
+  box-shadow: 0 4px 0 #fecaca;
   transform: translateY(-3px);
   transition: color 0.3s, background 0.3s, border-color 0.3s,
               box-shadow 600ms cubic-bezier(.3,.7,.4,1),
@@ -7180,24 +7181,28 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .tbl-btn-archive svg.archive-icon {
   width: 12px; height: 12px;
   position: absolute;
-  right: 0; margin-right: 14px;
-  stroke: #9a3412;
-  transition: right 0.3s, margin 0.3s, stroke 0.3s;
+  right: 14px;
+  stroke: #dc2626;
+  transition: right 0.3s, stroke 0.3s, transform 0.3s;
 }
 .tbl-btn-archive:hover {
-  background: #fff1e6;
-  color: #7c2d12;
-  border-color: #fb923c !important;
-  box-shadow: 0 6px 0 #fbbf7a;
+  background: #dc2626;
+  color: transparent;
+  border-color: #dc2626 !important;
+  box-shadow: 0 6px 0 #991b1b;
   transform: translateY(-5px);
   transition: color 0.3s, background 0.3s, border-color 0.3s,
               box-shadow 250ms cubic-bezier(.3,.7,.4,1.5),
               transform 250ms cubic-bezier(.3,.7,.4,1.5);
 }
-.tbl-btn-archive:hover svg.archive-icon { right: 50%; transform: translateX(50%); margin: 0; stroke: #7c2d12; }
+.tbl-btn-archive:hover svg.archive-icon {
+  right: 50%;
+  transform: translateX(50%);
+  stroke: #fff;
+}
 .tbl-btn-archive:active {
   transform: translateY(-1px);
-  box-shadow: 0 2px 0 #fbbf7a;
+  box-shadow: 0 2px 0 #991b1b;
   transition: transform 34ms, box-shadow 34ms;
 }
 
