@@ -26,7 +26,7 @@ insert into public.superadmin (id, username, password, name, email, department)
 values (
   'main',
   'sysadmin',
-  'admin123',
+  'pbkdf2_sha256$210000$RJXkCxVfJy2ylVAlFoVO5g==$UmOBzFrUOtuBsNnoOFBXaG9EIoRtoEZ0CiYodPNjYx0=',
   'System Administrator',
   'sysadmin@school.edu',
   null
@@ -35,5 +35,21 @@ on conflict (id) do update
 set
   email = coalesce(public.superadmin.email, excluded.email),
   department = coalesce(public.superadmin.department, excluded.department);
+
+insert into public.professors (id, username, password, name, email, department)
+select
+  'admin1',
+  'admin',
+  'pbkdf2_sha256$210000$RJXkCxVfJy2ylVAlFoVO5g==$UmOBzFrUOtuBsNnoOFBXaG9EIoRtoEZ0CiYodPNjYx0=',
+  'Administrator',
+  'admin@school.edu',
+  null
+where not exists (
+  select 1
+  from public.professors
+  where id = 'admin1'
+     or lower(username) = lower('admin')
+     or lower(email) = lower('admin@school.edu')
+);
 
 commit;

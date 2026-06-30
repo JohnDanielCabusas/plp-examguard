@@ -168,6 +168,24 @@ const DB = {
     return window.SupabaseBridge?.client || window.supabase || null;
   },
 
+  _sanitizeAdminRecord(admin) {
+    if (!admin) return admin;
+    const { password, ...safeAdmin } = admin;
+    return safeAdmin;
+  },
+
+  _sanitizeStudentRecord(student) {
+    if (!student) return student;
+    const { password, ...safeStudent } = student;
+    return safeStudent;
+  },
+
+  _sanitizeSysAdminRecord(sysAdmin) {
+    if (!sysAdmin) return sysAdmin;
+    const { password, ...safeSysAdmin } = sysAdmin;
+    return safeSysAdmin;
+  },
+
   _normalizeStudentFromSupabase(row) {
     if (!row) return null;
     return {
@@ -175,7 +193,6 @@ const DB = {
       studentId: row.student_id,
       name: row.name,
       email: row.email || '',
-      password: row.password || '',
       yearLevel: row.year_level || '',
       section: row.section || '',
       yearSection: row.year_section || '',
@@ -196,7 +213,6 @@ const DB = {
       student_id: student.studentId,
       name: student.name,
       email: student.email || null,
-      password: student.password || null,
       year_level: student.yearLevel || null,
       section: student.section || null,
       year_section: student.yearSection || null,
@@ -212,9 +228,10 @@ const DB = {
   _upsertStudentInLocalCache(student) {
     if (!student?.id) return null;
     const students = [...this.getAllStudentsRaw()];
+    const safeStudent = this._sanitizeStudentRecord(student);
     const index = students.findIndex(entry => entry.id === student.id);
-    if (index >= 0) students[index] = { ...students[index], ...student };
-    else students.push(student);
+    if (index >= 0) students[index] = { ...students[index], ...safeStudent };
+    else students.push(safeStudent);
     this._write(this.KEYS.students, students);
     return students[index >= 0 ? index : students.length - 1];
   },
@@ -226,7 +243,7 @@ const DB = {
     if (student.id) {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
         .eq('id', student.id)
         .limit(1)
         .maybeSingle();
@@ -237,7 +254,7 @@ const DB = {
     if (student.studentId) {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
         .eq('student_id', student.studentId)
         .limit(1)
         .maybeSingle();
@@ -248,7 +265,7 @@ const DB = {
     if (student.email) {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
         .eq('email', student.email)
         .limit(1)
         .maybeSingle();
@@ -306,7 +323,7 @@ const DB = {
     if (supabase) {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
         .eq('email', normalizedEmail)
         .limit(1)
         .maybeSingle();
@@ -338,7 +355,7 @@ const DB = {
     if (supabase) {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
         .eq('student_id', normalizedStudentId)
         .limit(1)
         .maybeSingle();
@@ -379,11 +396,10 @@ const DB = {
         adminEmail: 'admin@school.edu',
       },
       [this.KEYS.admins]: [
-        { id: seedAdminId, username: 'admin', password: 'admin123', name: 'Administrator', email: 'admin@school.edu', department: '' },
+        { id: seedAdminId, username: 'admin', name: 'Administrator', email: 'admin@school.edu', department: '' },
       ],
       [this.KEYS.sysadmin]: {
         username: 'sysadmin',
-        password: 'admin123',
         name: 'System Administrator',
         email: 'sysadmin@school.edu',
         department: '',
@@ -488,13 +504,32 @@ const DB = {
 
   // ---- Admins (professors) ----
   getAdmins() {
-    return this._read(this.KEYS.admins, []);
+    return this._read(this.KEYS.admins, []).map(admin => this._sanitizeAdminRecord(admin));
   },
   getAdmin(username) {
     return this.getAdmins().find(a => a.username === username) || null;
   },
+  async refreshAdminsFromSupabase() {
+    const supabase = this._getSupabaseClient();
+    if (!supabase) return this.getAdmins();
+    const { data, error } = await supabase
+      .from('professors')
+      .select('id, username, name, email, department, created_at');
+    if (error) throw error;
+    const admins = (data || []).map(row => this._sanitizeAdminRecord({
+      id: row.id,
+      username: row.username,
+      name: row.name,
+      email: row.email || '',
+      department: row.department || '',
+      createdAt: row.created_at || null,
+    }));
+    this._write(this.KEYS.admins, admins);
+    return admins;
+  },
   updateAdmin(id, updates) {
-    const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...updates } : a);
+    const safeUpdates = this._sanitizeAdminRecord(updates);
+    const admins = this.getAdmins().map(a => a.id === id ? { ...a, ...safeUpdates } : a);
     this._write(this.KEYS.admins, admins);
     const updated = admins.find(a => a.id === id);
     if (updated) SupabaseSync.syncDoc('professors',updated);
@@ -505,7 +540,7 @@ const DB = {
     if (data.email && admins.find(a => (a.email || '').toLowerCase() === data.email.toLowerCase())) {
       return { success: false, message: 'Email already exists.' };
     }
-    const newProf = { id: this.generateId(), createdAt: new Date().toISOString(), ...data };
+    const newProf = this._sanitizeAdminRecord({ id: this.generateId(), createdAt: new Date().toISOString(), ...data });
     admins.push(newProf);
     this._write(this.KEYS.admins, admins);
     SupabaseSync.syncDoc('professors',newProf);
@@ -519,11 +554,11 @@ const DB = {
   // ---- System Admin ----
   getSysAdmin() {
     const stored = this._read(this.KEYS.sysadmin, null);
-    return stored || { username: 'sysadmin', password: 'admin123', name: 'System Administrator', email: 'sysadmin@school.edu', department: '' };
+    return this._sanitizeSysAdminRecord(stored) || { username: 'sysadmin', name: 'System Administrator', email: 'sysadmin@school.edu', department: '' };
   },
   updateSysAdmin(updates) {
     const current = this.getSysAdmin();
-    const updated = { ...current, ...updates };
+    const updated = this._sanitizeSysAdminRecord({ ...current, ...updates });
     this._write(this.KEYS.sysadmin, updated);
     SupabaseSync.syncSysAdmin(updated);
     return updated;
@@ -536,7 +571,7 @@ const DB = {
   },
   getAllStudentsRaw() {
     this._migrateOwnerScope();
-    return this._read(this.KEYS.students, []);
+    return this._read(this.KEYS.students, []).map(student => this._sanitizeStudentRecord(student));
   },
   getArchivedStudents() {
     return this._filterByOwner(this.getAllStudentsRaw()).filter(s => s.archived);
@@ -607,12 +642,12 @@ const DB = {
   },
   addStudent(data) {
     const students = [...this.getAllStudentsRaw()];
-    const newStudent = this._withOwner({
+    const newStudent = this._sanitizeStudentRecord(this._withOwner({
       id: this.generateId(),
       ...data,
       studentId: this._normalizeStudentIdValue(data.studentId),
       email: this._normalizeStudentEmailValue(data.email),
-    });
+    }));
     this._assertUniqueStudent({ studentId: newStudent.studentId, email: newStudent.email });
     students.push(newStudent);
     this._write(this.KEYS.students, students);
@@ -635,7 +670,7 @@ const DB = {
 
     this._assertUniqueStudent({ studentId: nextStudentId, email: nextEmail, excludeId: id });
 
-    const normalizedUpdates = { ...updates };
+    const normalizedUpdates = this._sanitizeStudentRecord({ ...updates });
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'studentId')) normalizedUpdates.studentId = nextStudentId;
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'email')) normalizedUpdates.email = nextEmail;
 

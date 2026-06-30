@@ -345,7 +345,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
   const [showPass, setShowPass] = useState(false);
   const isEdit = !!professor;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = (nameRef.current?.value || "").trim();
     const username = (usernameRef.current?.value || "").trim().toLowerCase();
     const email = (emailRef.current?.value || "").trim().toLowerCase();
@@ -375,7 +375,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
 
     const data = { name, username, email };
     if (password) data.password = password;
-    const result = onSave(data);
+    const result = await onSave(data);
     if (result?.success === false) {
       setError(result.message || "Unable to save professor.");
     }
@@ -610,7 +610,7 @@ export default function SuperAdminPage() {
   const openAddProfessor = () => setProfModal({ professor: null });
   const openEditProfessor = (prof) => setProfModal({ professor: prof });
 
-  const saveProfessor = (data) => {
+  const saveProfessor = async (data) => {
     const existing = profModal?.professor;
     const normalizedEmail = (data.email || "").trim().toLowerCase();
     const duplicateEmail = normalizedEmail
@@ -638,17 +638,14 @@ export default function SuperAdminPage() {
       return { success: false, message };
     }
 
-    if (existing) {
-      window.DB.updateAdmin(existing.id, data);
-      showToast("Professor updated successfully.");
-    } else {
-      const result = window.DB.addProfessor(data);
-      if (!result.success) {
-        showToast(result.message, "error");
-        return { success: false, message: result.message };
-      }
-      showToast("Professor added successfully.");
+    const result = await window.Auth.saveProfessorAccount(existing?.id, data);
+    if (!result?.success) {
+      showToast(result?.message || "Unable to save professor.", "error");
+      return { success: false, message: result?.message || "Unable to save professor." };
     }
+
+    await window.Auth.refreshAdminsFromSupabase?.();
+    showToast(existing ? "Professor updated successfully." : "Professor added successfully.");
     setProfModal(null);
     loadData();
     return { success: true };
@@ -764,18 +761,13 @@ export default function SuperAdminPage() {
   };
 
   // ── Change password ─────────────────────────────────────────
-  const changePassword = () => {
+  const changePassword = async () => {
     const cur = curPassRef.current?.value || "";
     const next = newPassRef.current?.value || "";
     const confirm = confirmPassRef.current?.value || "";
     setSettingsError("");
     setSettingsSuccess("");
 
-    const sysAdmin = window.DB?.getSysAdmin?.();
-    if (!sysAdmin || sysAdmin.password !== cur) {
-      setSettingsError("Current password is incorrect.");
-      return;
-    }
     if (next.length < 6) {
       setSettingsError("New password must be at least 6 characters.");
       return;
@@ -784,8 +776,11 @@ export default function SuperAdminPage() {
       setSettingsError("Passwords do not match.");
       return;
     }
-
-    window.DB.updateSysAdmin({ password: next });
+    const result = await window.Auth.changeSysAdminPassword(cur, next);
+    if (!result?.success) {
+      setSettingsError(result?.message || "Unable to update the password right now.");
+      return;
+    }
     if (curPassRef.current) curPassRef.current.value = "";
     if (newPassRef.current) newPassRef.current.value = "";
     if (confirmPassRef.current) confirmPassRef.current.value = "";

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const { handleEmailRoute } = require('./server/email-route.cjs');
+const { handleAuthRoute } = require('./server/auth-route.cjs');
 
 // Serve from the Vite build output in production
 const rootDir = path.join(__dirname, 'dist');
@@ -53,6 +54,11 @@ function sendFile(res, filePath) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = decodeURIComponent(url.pathname);
+
+  if (pathname.startsWith('/api/auth/')) {
+    handleAuthRoute(req, res);
+    return;
+  }
 
   if (pathname === '/api/email/send-verification') {
     handleEmailRoute(req, res);

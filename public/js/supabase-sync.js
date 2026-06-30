@@ -59,9 +59,9 @@ const SupabaseSync = {
       { data: sessions },
     ] = await Promise.all([
       c.from('settings').select('*').eq('id', 'main').maybeSingle(),
-      c.from('superadmin').select('*').eq('id', 'main').maybeSingle(),
-      c.from('professors').select('*'),
-      c.from('students').select('*'),
+      c.from('superadmin').select('id, username, name, email, department').eq('id', 'main').maybeSingle(),
+      c.from('professors').select('id, username, name, email, department, created_at'),
+      c.from('students').select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at'),
       c.from('subjects').select('*').order('created_at'),
       c.from('exams').select('*').order('created_at'),
       c.from('sessions').select('*').order('created_at'),
@@ -167,12 +167,6 @@ const SupabaseSync = {
     this._channel = c.channel('acs-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' },
         applyChange('settings', 'acs_settings', r => this._dbToJsSettings(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'superadmin' },
-        applyChange('superadmin', 'acs_sysadmin', r => this._dbToJsSysAdmin(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professors' },
-        applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' },
-        applyChange('students', 'acs_students', r => this._dbToJsStudent(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' },
         applyChange('subjects', 'acs_subjects', r => this._dbToJsSubject(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' },
@@ -247,7 +241,6 @@ const SupabaseSync = {
     return {
       id: 'main',
       username: d.username,
-      password: d.password,
       name: d.name || 'System Administrator',
       email: d.email || null,
       department: d.department || null,
@@ -257,7 +250,6 @@ const SupabaseSync = {
   _dbToJsSysAdmin(r) {
     return {
       username: r.username,
-      password: r.password,
       name: r.name || 'System Administrator',
       email: r.email || '',
       department: r.department || '',
@@ -268,7 +260,6 @@ const SupabaseSync = {
     return {
       id: d.id,
       username: d.username,
-      password: d.password,
       name: d.name,
       email: d.email || null,
       department: d.department || null,
@@ -281,7 +272,6 @@ const SupabaseSync = {
       student_id: d.studentId,
       name: d.name,
       email: d.email || null,
-      password: d.password || null,
       year_level: d.yearLevel || null,
       section: d.section || null,
       year_section: d.yearSection || null,
@@ -408,7 +398,6 @@ const SupabaseSync = {
     return {
       id: r.id,
       username: r.username,
-      password: r.password,
       name: r.name,
       email: r.email || '',
       department: r.department || '',
@@ -422,7 +411,6 @@ const SupabaseSync = {
       studentId: r.student_id,
       name: r.name,
       email: r.email || '',
-      password: r.password || '',
       yearLevel: r.year_level || '',
       section: r.section || '',
       yearSection: r.year_section || '',

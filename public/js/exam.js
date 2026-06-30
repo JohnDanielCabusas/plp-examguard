@@ -515,20 +515,14 @@ const ExamApp = {
 
     const student = DB.getStudent(sess.studentId);
     if (!student) { this._showToast('Student record not found.', 'error', { variant: 'settings' }); return; }
-    if (student.password !== cur) { this._showToast('Current password is incorrect.', 'error', { variant: 'settings' }); return; }
-
-    const passwordUpdates = { password: next };
-    if (sess.email) passwordUpdates.email = sess.email;
-    DB.updateStudent(student.id, passwordUpdates);
+    const result = await Auth.changeStudentPassword(student.studentId, cur, next);
+    if (!result?.success) { this._showToast(result?.message || 'Unable to change password right now.', 'error', { variant: 'settings' }); return; }
     if (sess.email) {
-      await DB.ensureStudentEmailInSupabase({
-        id: student.id,
-        studentId: student.studentId,
-        email: sess.email,
-      }).catch(error => {
+      await Auth.refreshStudentEmail(student.id, student.studentId, sess.email).catch(error => {
         console.warn('[Supabase] Unable to persist student email from password save:', error.message || error);
       });
     }
+    await Auth.refreshStudentSessionFromRecord(student.studentId);
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { document.getElementById(id).value = ''; });
     this._showToast('Password changed successfully.', 'success', { variant: 'settings' });
   },

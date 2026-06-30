@@ -7,87 +7,67 @@ const Auth = {
   STUDENT_VERIFY_KEY: 'acs_student_email_verify',
   STUDENT_RESET_KEY: 'acs_student_reset',
 
-  adminLogin(username, password) {
-    const admin = DB.getAdmin(username);
-    if (!admin) return { success: false, message: 'Invalid username or password.' };
-    if (admin.password !== password) return { success: false, message: 'Invalid username or password.' };
-    const session = { id: admin.id, username: admin.username, name: admin.name, email: admin.email, department: admin.department || '', loginAt: new Date().toISOString() };
-    sessionStorage.setItem('acs_admin_session', JSON.stringify(session));
-    return { success: true, admin: session };
+  async _post(path, payload) {
+    let response;
+    try {
+      response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {}),
+      });
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Unable to reach the authentication server.' };
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.success === false) {
+      return {
+        success: false,
+        message: data?.message || 'Unable to complete the request right now.',
+      };
+    }
+    return data;
   },
 
-  beginAdminPasswordReset(email) {
-    const e = email.trim().toLowerCase();
-    const admin = DB.getAdmins().find(a => a.email && a.email.toLowerCase() === e);
-    if (!admin) return { success: false, message: 'No professor account found with that email address.' };
-
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const payload = {
-      adminId: admin.id,
-      email: e,
-      code,
-      verified: false,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (10 * 60 * 1000),
-    };
-    sessionStorage.setItem(this.ADMIN_RESET_KEY, JSON.stringify(payload));
-    return {
-      success: true,
-      email: e,
-      previewCode: code,
-      message: 'Verification code generated. Enter the 6-digit code to continue.',
-    };
+  async adminLogin(username, password) {
+    const result = await this._post('/api/auth/professor/login', { username, password });
+    if (!result.success) return result;
+    sessionStorage.setItem('acs_admin_session', JSON.stringify(result.admin));
+    return result;
   },
 
-  verifyAdminResetCode(email, code) {
-    const pending = this.getAdminPasswordReset();
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCode = String(code || '').trim();
-    if (!pending || pending.email !== normalizedEmail) {
-      return { success: false, message: 'Reset session not found. Please request a new code.' };
-    }
-    if (Date.now() > pending.expiresAt) {
-      sessionStorage.removeItem(this.ADMIN_RESET_KEY);
-      return { success: false, message: 'That verification code has expired. Please request a new one.' };
-    }
-    if (pending.code !== normalizedCode) {
-      return { success: false, message: 'Incorrect verification code. Please try again.' };
-    }
-
-    sessionStorage.setItem(this.ADMIN_RESET_KEY, JSON.stringify({
-      ...pending,
-      verified: true,
-      verifiedAt: Date.now(),
-    }));
-    return { success: true };
+  async beginAdminPasswordReset(email) {
+    return this._post('/api/auth/professor/reset/request', { email });
   },
 
-  completeAdminPasswordReset(email, password) {
-    const pending = this.getAdminPasswordReset();
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!pending || pending.email !== normalizedEmail) {
-      return { success: false, message: 'Reset session not found. Please request a new code.' };
-    }
-    if (Date.now() > pending.expiresAt) {
-      sessionStorage.removeItem(this.ADMIN_RESET_KEY);
-      return { success: false, message: 'That verification code has expired. Please request a new one.' };
-    }
-    if (!pending.verified) {
-      return { success: false, message: 'Please verify the 6-digit code first.' };
-    }
-    if (!password || password.length < 6) {
-      return { success: false, message: 'Password must be at least 6 characters.' };
-    }
+  async verifyAdminResetCode(email, code) {
+    return this._post('/api/auth/professor/reset/verify', { email, code });
+  },
 
-    const admin = DB.getAdmins().find(a => a.id === pending.adminId);
-    if (!admin) {
-      sessionStorage.removeItem(this.ADMIN_RESET_KEY);
-      return { success: false, message: 'Professor account not found.' };
-    }
+  async completeAdminPasswordReset(email, password) {
+    return this._post('/api/auth/professor/reset/complete', { email, password });
+  },
 
-    DB.updateAdmin(admin.id, { password });
-    sessionStorage.removeItem(this.ADMIN_RESET_KEY);
-    return { success: true, username: admin.username };
+  async verifyAdminPassword(admin, password) {
+    return !!(await this._post('/api/auth/professor/verify', {
+      id: admin?.id || null,
+      password,
+    }))?.success;
+  },
+
+  async changeProfessorPassword(id, currentPassword, newPassword) {
+    return this._post('/api/auth/professor/change-password', {
+      id,
+      currentPassword,
+      newPassword,
+    });
+  },
+
+  async saveProfessorAccount(id, data) {
+    return this._post('/api/auth/professor/save', {
+      id: id || null,
+      ...data,
+    });
   },
 
   getAdminPasswordReset() {
@@ -101,62 +81,19 @@ const Auth = {
   // --- New email-based student auth ---
 
   async checkStudentEmail(email) {
-    const e = email.trim().toLowerCase();
-    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
-    if (!student) return { exists: false };
-    if (!student.password) return { exists: true, needsSetup: true };
-    return { exists: true, hasPassword: true };
+    const result = await this._post('/api/auth/student/status', { email });
+    if (result && !Object.prototype.hasOwnProperty.call(result, 'success')) {
+      return { success: true, ...result };
+    }
+    return result;
   },
 
   async beginStudentEmailVerification(email) {
-    const e = email.trim().toLowerCase();
-    if (!e.endsWith('@plpasig.edu.ph')) {
-      return { success: false, message: 'Only @plpasig.edu.ph email addresses are allowed.' };
-    }
-
-    const studentStatus = await this.checkStudentEmail(e);
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const payload = {
-      email: e,
-      code,
-      verified: false,
-      hasPassword: !!studentStatus.hasPassword,
-      needsSetup: !!studentStatus.needsSetup || !studentStatus.exists,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (10 * 60 * 1000),
-    };
-    sessionStorage.setItem(this.STUDENT_VERIFY_KEY, JSON.stringify(payload));
-    return {
-      success: true,
-      email: e,
-      previewCode: code,
-      hasPassword: payload.hasPassword,
-      needsSetup: payload.needsSetup,
-      message: 'Verification code generated. Enter the 6-digit code to continue.',
-    };
+    return this._post('/api/auth/student/verification/request', { email });
   },
 
-  verifyStudentEmailCode(email, code) {
-    const pending = this.getStudentEmailVerification();
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCode = String(code || '').trim();
-    if (!pending || pending.email !== normalizedEmail) {
-      return { success: false, message: 'Verification session not found. Please request a new code.' };
-    }
-    if (Date.now() > pending.expiresAt) {
-      sessionStorage.removeItem(this.STUDENT_VERIFY_KEY);
-      return { success: false, message: 'That verification code has expired. Please request a new one.' };
-    }
-    if (pending.code !== normalizedCode) {
-      return { success: false, message: 'Incorrect verification code. Please try again.' };
-    }
-    const verified = { ...pending, verified: true, verifiedAt: Date.now() };
-    sessionStorage.setItem(this.STUDENT_VERIFY_KEY, JSON.stringify(verified));
-    return {
-      success: true,
-      hasPassword: !!verified.hasPassword,
-      needsSetup: !!verified.needsSetup,
-    };
+  async verifyStudentEmailCode(email, code) {
+    return this._post('/api/auth/student/verification/verify', { email, code });
   },
 
   getStudentEmailVerification() {
@@ -168,80 +105,30 @@ const Auth = {
   },
 
   async beginStudentPasswordReset(email) {
-    const e = email.trim().toLowerCase();
-    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
-    if (!student || !student.password) {
-      return { success: false, message: 'No existing student account found with that email address.' };
-    }
-
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const payload = {
-      studentId: student.id,
-      email: e,
-      code,
-      verified: false,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (10 * 60 * 1000),
-    };
-    sessionStorage.setItem(this.STUDENT_RESET_KEY, JSON.stringify(payload));
-    return {
-      success: true,
-      email: e,
-      previewCode: code,
-      message: 'Verification code generated. Enter the 6-digit code to continue.',
-    };
+    return this._post('/api/auth/student/reset/request', { email });
   },
 
-  verifyStudentResetCode(email, code) {
-    const pending = this.getStudentPasswordReset();
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCode = String(code || '').trim();
-    if (!pending || pending.email !== normalizedEmail) {
-      return { success: false, message: 'Reset session not found. Please request a new code.' };
-    }
-    if (Date.now() > pending.expiresAt) {
-      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
-      return { success: false, message: 'That verification code has expired. Please request a new one.' };
-    }
-    if (pending.code !== normalizedCode) {
-      return { success: false, message: 'Incorrect verification code. Please try again.' };
-    }
-
-    sessionStorage.setItem(this.STUDENT_RESET_KEY, JSON.stringify({
-      ...pending,
-      verified: true,
-      verifiedAt: Date.now(),
-    }));
-    return { success: true };
+  async verifyStudentResetCode(email, code) {
+    return this._post('/api/auth/student/reset/verify', { email, code });
   },
 
   async completeStudentPasswordReset(email, password) {
-    const pending = this.getStudentPasswordReset();
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!pending || pending.email !== normalizedEmail) {
-      return { success: false, message: 'Reset session not found. Please request a new code.' };
-    }
-    if (Date.now() > pending.expiresAt) {
-      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
-      return { success: false, message: 'That verification code has expired. Please request a new one.' };
-    }
-    if (!pending.verified) {
-      return { success: false, message: 'Please verify the 6-digit code first.' };
-    }
-    if (!password || password.length < 6) {
-      return { success: false, message: 'Password must be at least 6 characters.' };
-    }
+    return this._post('/api/auth/student/reset/complete', { email, password });
+  },
 
-    const student = await DB.getStudentByEmailAsync(normalizedEmail, { fallbackLocal: false });
-    if (!student) {
-      sessionStorage.removeItem(this.STUDENT_RESET_KEY);
-      return { success: false, message: 'Student account not found.' };
-    }
+  async verifyStudentPassword(student, password) {
+    return !!(await this._post('/api/auth/student/verify', {
+      studentId: student?.studentId || '',
+      password,
+    }))?.success;
+  },
 
-    const updatedStudent = await DB._saveStudentToSupabase({ ...student, password });
-    if (updatedStudent?.id) DB.updateStudent(updatedStudent.id, { password });
-    sessionStorage.removeItem(this.STUDENT_RESET_KEY);
-    return { success: true };
+  async changeStudentPassword(studentId, currentPassword, newPassword) {
+    return this._post('/api/auth/student/change-password', {
+      studentId,
+      currentPassword,
+      newPassword,
+    });
   },
 
   getStudentPasswordReset() {
@@ -253,106 +140,25 @@ const Auth = {
   },
 
   async studentLoginWithPassword(email, password) {
-    const e = email.trim().toLowerCase();
-    const student = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
-    if (!student) return { success: false, message: 'No account found with this email.' };
-    if (!student.password) return { success: false, message: 'Account setup incomplete. Please set up your account first.' };
-    if (student.password !== password) return { success: false, message: 'Incorrect password. Please try again.' };
-    const session = {
-      studentId: student.studentId,
-      studentName: student.name,
-      yearLevel: student.yearLevel || '',
-      section: student.section || '',
-      yearSection: student.yearSection || '',
-      department: student.department || '',
-      program: student.program || '',
-      email: student.email,
-      loginAt: new Date().toISOString(),
-    };
-    sessionStorage.setItem('acs_student_session', JSON.stringify(session));
-    return { success: true, session };
+    const result = await this._post('/api/auth/student/login', { email, password });
+    if (!result.success) return result;
+    sessionStorage.setItem('acs_student_session', JSON.stringify(result.session));
+    return result;
   },
 
   async studentFirstSetup(email, studentId, password, fullName, yearSection, department, program) {
-    const e = email.trim().toLowerCase();
-    const sid = studentId.trim().toUpperCase();
-    const displayName = (fullName || '').trim();
-    const normalizedYearSection = (yearSection || '').trim().toUpperCase();
-    const yearSectionMatch = normalizedYearSection.match(/^([1-4])-([A-Z])$/);
-    const selectedDepartment = (department || '').trim();
-    const selectedProgram = (program || '').trim().toUpperCase();
-
-    if (password.length < 6) return { success: false, message: 'Password must be at least 6 characters.' };
-    if (!yearSectionMatch) return { success: false, message: 'Year & section must use the format 3-B.' };
-    if (!selectedDepartment) return { success: false, message: 'Department is required.' };
-    if (!selectedProgram) return { success: false, message: 'Program is required.' };
-
-    const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
-    const parsedYearLevel = yearMap[yearSectionMatch[1]] || '';
-    const parsedSection = `Section ${yearSectionMatch[2]}`;
-
-    const byEmail = await DB.getStudentByEmailAsync(e, { fallbackLocal: false });
-    if (byEmail?.password) return { success: false, message: 'An account already exists with this email. Please sign in instead.' };
-
-    const byId = await DB.getStudentByStudentIdAsync(sid, { fallbackLocal: false });
-    const existingStudent = byId || byEmail;
-
-    let student;
-    if (existingStudent) {
-      const updates = {
-        email: e,
-        password,
-        yearLevel: parsedYearLevel,
-        section: parsedSection,
-        yearSection: normalizedYearSection,
-        department: selectedDepartment,
-        program: selectedProgram,
-      };
-      if (displayName && (existingStudent.name === existingStudent.studentId || !existingStudent.name)) updates.name = displayName;
-      if (!existingStudent.studentId) updates.studentId = sid;
-      student = await DB._saveStudentToSupabase({ ...existingStudent, ...updates });
-    } else {
-      const idMatch = sid.match(/^(\d{2})-\d{5}$/);
-      if (!idMatch) return { success: false, message: 'Invalid Student ID format (use YY-NNNNN, e.g. 23-00218).' };
-      const name = displayName || sid;
-      student = await DB._saveStudentToSupabase({
-        id: DB.generateId(),
-        studentId: sid,
-        name,
-        email: e,
-        password,
-        yearLevel: parsedYearLevel,
-        section: parsedSection,
-        yearSection: normalizedYearSection,
-        department: selectedDepartment,
-        program: selectedProgram,
-        enrolledSubjects: [],
-        archived: false,
-        archivedAt: null,
-      });
-    }
-
-    if ((!student?.email || student.email.toLowerCase() !== e) && e) {
-      student = await DB.ensureStudentEmailInSupabase({
-        id: student?.id || existingStudent?.id || null,
-        studentId: student?.studentId || sid,
-        email: e,
-      }) || { ...student, email: e };
-    }
-
-    const session = {
-      studentId: student.studentId,
-      studentName: student.name,
-      yearLevel: student.yearLevel || '',
-      section: student.section || '',
-      yearSection: student.yearSection || normalizedYearSection,
-      department: student.department || selectedDepartment,
-      program: student.program || selectedProgram,
-      email: e,
-      loginAt: new Date().toISOString(),
-    };
-    sessionStorage.setItem('acs_student_session', JSON.stringify(session));
-    return { success: true, session };
+    const result = await this._post('/api/auth/student/setup', {
+      email,
+      studentId,
+      password,
+      fullName,
+      yearSection,
+      department,
+      program,
+    });
+    if (!result.success) return result;
+    sessionStorage.setItem('acs_student_session', JSON.stringify(result.session));
+    return result;
   },
 
   // Legacy: studentSetup used by old exam.js entry form
@@ -452,13 +258,71 @@ const Auth = {
   },
 
   // ---- System Admin (sysadmin) ----
-  sysAdminLogin(username, password) {
+  async sysAdminLogin(username, password) {
+    const result = await this._post('/api/auth/sysadmin/login', { username, password });
+    if (!result.success) return result;
+    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(result.session));
+    return result;
+  },
+
+  async verifySysAdminPassword(password) {
+    return !!(await this._post('/api/auth/sysadmin/verify', {
+      password,
+    }))?.success;
+  },
+
+  async changeSysAdminPassword(currentPassword, newPassword) {
+    return this._post('/api/auth/sysadmin/change-password', {
+      currentPassword,
+      newPassword,
+    });
+  },
+
+  async refreshAdminsFromSupabase() {
+    return DB.refreshAdminsFromSupabase?.();
+  },
+
+  async refreshStudentRecord(studentId) {
+    return DB.getStudentByStudentIdAsync?.(studentId, { fallbackLocal: true });
+  },
+
+  async refreshStudentEmail(id, studentId, email) {
+    return DB.ensureStudentEmailInSupabase?.({ id, studentId, email });
+  },
+
+  async refreshStudentSessionFromRecord(studentId) {
+    const session = this.getStudentSession();
+    const student = await DB.getStudentByStudentIdAsync?.(studentId, { fallbackLocal: true });
+    if (!session || !student) return student || null;
+
+    const nextSession = {
+      ...session,
+      studentId: student.studentId,
+      studentName: student.name || session.studentName,
+      yearLevel: student.yearLevel || '',
+      section: student.section || '',
+      yearSection: student.yearSection || '',
+      department: student.department || '',
+      program: student.program || '',
+      email: student.email || session.email || '',
+    };
+    sessionStorage.setItem('acs_student_session', JSON.stringify(nextSession));
+    return student;
+  },
+
+  async refreshSysAdminSession() {
     const sysAdmin = DB.getSysAdmin();
-    if (!sysAdmin || sysAdmin.username !== username.trim()) return { success: false, message: 'Invalid username or password.' };
-    if (sysAdmin.password !== password) return { success: false, message: 'Invalid username or password.' };
-    const session = { username: sysAdmin.username, name: sysAdmin.name, email: sysAdmin.email || '', department: sysAdmin.department || '', loginAt: new Date().toISOString() };
-    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(session));
-    return { success: true, session };
+    const session = this.getSysAdminSession();
+    if (!session || !sysAdmin) return sysAdmin;
+    const nextSession = {
+      ...session,
+      username: sysAdmin.username || session.username,
+      name: sysAdmin.name || session.name,
+      email: sysAdmin.email || session.email || '',
+      department: sysAdmin.department || session.department || '',
+    };
+    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(nextSession));
+    return { success: true, session: nextSession };
   },
 
   getSysAdminSession() {

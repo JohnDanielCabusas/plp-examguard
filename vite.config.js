@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { handleEmailRoute } = require('./server/email-route.cjs');
+const { handleAuthRoute } = require('./server/auth-route.cjs');
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -23,6 +24,10 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
             const pathname = req.url ? new URL(req.url, 'http://localhost').pathname : '';
+            if (pathname.startsWith('/api/auth/')) {
+              handleAuthRoute(req, res);
+              return;
+            }
             if (pathname === '/api/email/send-verification') {
               handleEmailRoute(req, res);
               return;

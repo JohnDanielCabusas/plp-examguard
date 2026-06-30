@@ -4309,7 +4309,7 @@ async function togglePassword(fieldId, button) {
     if (password === null) return;
 
     const admin = getCurrentAdminRecord();
-    if (!admin || admin.password !== password) {
+    if (!admin || !(await Auth.verifyAdminPassword(admin, password))) {
       showToast('Password verification failed.', 'error', { variant: 'settings' });
       return;
     }
@@ -4323,7 +4323,7 @@ async function togglePassword(fieldId, button) {
   }
 }
 
-function changePassword() {
+async function changePassword() {
   const curPass = document.getElementById('set-cur-pass').value;
   const newPass = document.getElementById('set-new-pass').value;
   const confirmPass = document.getElementById('set-confirm-pass').value;
@@ -4332,11 +4332,9 @@ function changePassword() {
   if (newPass.length < 6) { showToast('Password must be at least 6 characters.', 'error', { variant: 'settings' }); return; }
 
   const session = Auth.getAdminSession();
-  const admins = DB.getAdmins();
-  const admin = admins.find(a => a.id === session.id);
-  if (!admin || admin.password !== curPass) { showToast('Current password is incorrect.', 'error', { variant: 'settings' }); return; }
-
-  DB.updateAdmin(session.id, { password: newPass });
+  if (!session?.id) { showToast('Professor session not found.', 'error', { variant: 'settings' }); return; }
+  const result = await Auth.changeProfessorPassword(session.id, curPass, newPass);
+  if (!result?.success) { showToast(result?.message || 'Unable to change password right now.', 'error', { variant: 'settings' }); return; }
   document.getElementById('set-cur-pass').value = '';
   document.getElementById('set-new-pass').value = '';
   document.getElementById('set-confirm-pass').value = '';

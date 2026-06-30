@@ -207,19 +207,6 @@ export default function LoginPage() {
     requestAnimationFrame(() => adminUsernameRef.current?.focus());
   };
 
-  const sendVerificationEmail = async ({ email, code, type }) => {
-    const response = await fetch('/api/email/send-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code, type }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || 'Unable to send the verification email.');
-    }
-  };
-
   const sendAdminResetCode = async () => {
     const email = (adminResetEmailRef.current?.value || '').trim().toLowerCase();
     setAdminError('');
@@ -228,24 +215,14 @@ export default function LoginPage() {
       setAdminError(message);
       return;
     }
-    const result = window.Auth.beginAdminPasswordReset(email);
+    setAdminEmailSendBusy(true);
+    const result = await window.Auth.beginAdminPasswordReset(email);
     if (!result.success) {
       setAdminError(result.message);
-      return;
-    }
-    setAdminEmailSendBusy(true);
-    try {
-      await sendVerificationEmail({
-        email,
-        code: result.previewCode,
-        type: 'admin-reset',
-      });
-    } catch (error) {
-      setAdminError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');
-      return;
-    } finally {
       setAdminEmailSendBusy(false);
+      return;
     }
+    setAdminEmailSendBusy(false);
     setAdminResetEmail(email);
     setAdminResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
     setAdminResendCooldown(60);
@@ -253,7 +230,7 @@ export default function LoginPage() {
     requestAnimationFrame(() => adminResetCodeRef.current?.focus());
   };
 
-  const verifyAdminResetCode = () => {
+  const verifyAdminResetCode = async () => {
     const code = (adminResetCodeRef.current?.value || '').trim();
     setAdminError('');
     if (!/^\d{6}$/.test(code)) {
@@ -261,7 +238,7 @@ export default function LoginPage() {
       setAdminError(message);
       return;
     }
-    const result = window.Auth.verifyAdminResetCode(adminResetEmail, code);
+    const result = await window.Auth.verifyAdminResetCode(adminResetEmail, code);
     if (!result.success) {
       setAdminError(result.message);
       return;
@@ -271,7 +248,7 @@ export default function LoginPage() {
     requestAnimationFrame(() => adminResetPasswordRef.current?.focus());
   };
 
-  const saveAdminNewPassword = () => {
+  const saveAdminNewPassword = async () => {
     const password = adminResetPasswordRef.current?.value || '';
     const confirm = adminResetConfirmRef.current?.value || '';
     setAdminError('');
@@ -285,7 +262,7 @@ export default function LoginPage() {
       setAdminError(message);
       return;
     }
-    const result = window.Auth.completeAdminPasswordReset(adminResetEmail, password);
+    const result = await window.Auth.completeAdminPasswordReset(adminResetEmail, password);
     if (!result.success) {
       setAdminError(result.message);
       return;
@@ -338,6 +315,10 @@ export default function LoginPage() {
     if (showLoading) setStudentEmailLookupBusy(true);
     try {
       const studentStatus = await window.Auth.checkStudentEmail(email);
+      if (!studentStatus?.success) {
+        if (showErrors) setStep1Error(studentStatus?.message || 'Unable to validate the student email right now. Please try again.');
+        return { success: false, reason: 'lookup-failed' };
+      }
       if (studentStatus?.hasPassword) {
         setStudentEmail(email);
         setStudentVerifyMessage('');
@@ -367,14 +348,9 @@ export default function LoginPage() {
       const lookup = await resolveStudentEmailStatus(email);
       if (!lookup.success) return;
       if (lookup.status === 'existing') return;
+      setStudentEmailSendBusy(true);
       const result = await window.Auth.beginStudentEmailVerification(email);
       if (!result.success) { setStep1Error(result.message); return; }
-      setStudentEmailSendBusy(true);
-      await sendVerificationEmail({
-        email,
-        code: result.previewCode,
-        type: 'student-verification',
-      });
     } catch (error) {
       setStep1Error(error instanceof Error ? error.message : 'Unable to continue right now. Please try again.');
       return;
@@ -388,11 +364,11 @@ export default function LoginPage() {
     requestAnimationFrame(() => studentVerifyCodeRef.current?.focus());
   };
 
-  const verifyStudentEmail = () => {
+  const verifyStudentEmail = async () => {
     const code = (studentVerifyCodeRef.current?.value || '').trim();
     setStep1Error('');
     if (!/^\d{6}$/.test(code)) { setStep1Error('Please enter the 6-digit verification code.'); return; }
-    const result = window.Auth.verifyStudentEmailCode(studentEmail, code);
+    const result = await window.Auth.verifyStudentEmailCode(studentEmail, code);
     if (!result.success) { setStep1Error(result.message); return; }
     setStudentVerifyMessage('Email verified successfully.');
     if (result.hasPassword) {
@@ -436,11 +412,6 @@ export default function LoginPage() {
         setStep2aError(result.message);
         return;
       }
-      await sendVerificationEmail({
-        email,
-        code: result.previewCode,
-        type: 'student-reset',
-      });
       setStudentResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
       setStudentResetCooldown(60);
       setStudentStep('reset-code');
@@ -467,11 +438,6 @@ export default function LoginPage() {
         setStep2aError(result.message);
         return;
       }
-      await sendVerificationEmail({
-        email,
-        code: result.previewCode,
-        type: 'student-reset',
-      });
       setStudentResetMessage('A new verification code was sent to your email.');
       setStudentResetCooldown(60);
     } catch (error) {
@@ -481,7 +447,7 @@ export default function LoginPage() {
     }
   };
 
-  const verifyStudentResetCode = () => {
+  const verifyStudentResetCode = async () => {
     const code = (studentResetCodeRef.current?.value || '').trim();
     const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
     setStep2aError('');
@@ -489,7 +455,7 @@ export default function LoginPage() {
       setStep2aError('Please enter the 6-digit verification code.');
       return;
     }
-    const result = window.Auth.verifyStudentResetCode(email, code);
+    const result = await window.Auth.verifyStudentResetCode(email, code);
     if (!result.success) {
       setStep2aError(result.message);
       return;
@@ -569,16 +535,16 @@ export default function LoginPage() {
     else { setStep2bError(result.message); }
   };
 
-  const doAdminLogin = () => {
+  const doAdminLogin = async () => {
     const username = (adminUsernameRef.current?.value || '').trim();
     const password = adminPasswordRef.current?.value || '';
     setAdminError('');
     if (!username || !password) { setAdminError('Please enter username and password.'); return; }
     // Check sysadmin credentials first
-    const sysResult = window.Auth?.sysAdminLogin?.(username, password);
+    const sysResult = await window.Auth?.sysAdminLogin?.(username, password);
     if (sysResult?.success) { window.location.href = 'super-admin.html'; return; }
     // Fall through to professor login
-    const result = window.Auth.adminLogin(username, password);
+    const result = await window.Auth.adminLogin(username, password);
     if (result.success) { window.location.href = 'admin.html'; }
     else { setAdminError(result.message); }
   };
