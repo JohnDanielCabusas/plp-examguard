@@ -412,7 +412,7 @@ export default function AdminPage() {
               </div>
               {/* Camera grid view */}
               <div id="camera-grid-view" style={{ display: 'none', padding: '0' }}>
-                <div id="camera-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '2px', background: '#111', minHeight: '300px', borderRadius: '0 0 12px 12px' }} />
+                <div id="camera-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '3px', background: '#0a0a0a', minHeight: '320px', borderRadius: '0 0 12px 12px', padding: '3px' }} />
                 <div id="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: '#9ca3af', background: '#111', borderRadius: '0 0 12px 12px' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: '#6b7280' }}>No camera feeds available</div>

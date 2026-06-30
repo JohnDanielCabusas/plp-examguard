@@ -3181,29 +3181,32 @@ function renderCameraGrid(examId) {
     return;
   }
 
-  const sessions = DB.getSessionsByExam(examId).filter(s => !s.submitted || s.cameraSnapshots?.length);
-  const withCamera = sessions.filter(s => s.cameraSnapshots?.length > 0);
+  // Only show ACTIVE (not yet submitted) students with camera snapshots
+  const sessions = DB.getSessionsByExam(examId).filter(s => !s.submitted && s.cameraSnapshots?.length > 0);
 
-  if (!withCamera.length) {
+  if (!sessions.length) {
     container.innerHTML = '';
     container.style.display = 'none';
-    if (empty) empty.style.display = '';
+    if (empty) {
+      empty.style.display = '';
+      empty.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">No active camera feeds</div>
+        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Feeds appear here for students currently taking the exam</div>`;
+    }
     return;
   }
 
   if (empty) empty.style.display = 'none';
   container.style.display = 'grid';
 
-  container.innerHTML = withCamera.map(s => {
+  container.innerHTML = sessions.map(s => {
     const snap = s.cameraSnapshots[0];
     const warnColor = s.warnings >= 3 ? '#dc2626' : s.warnings >= 2 ? '#f59e0b' : s.warnings >= 1 ? '#eab308' : '#22c55e';
-    const statusDot = s.submitted
-      ? `<span style="background:#6b7280;width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;"></span>Submitted`
-      : `<span style="background:#22c55e;width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;animation:camPulse 1.5s infinite;"></span>Live`;
 
     const warnBadge = s.warnings > 0
-      ? `<span style="position:absolute;top:8px;right:8px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;">⚠ ${s.warnings}/3</span>`
-      : '';
+      ? `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${s.warnings}/3</div>`
+      : `<div style="position:absolute;top:10px;left:10px;background:rgba(34,197,94,0.9);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#fff;animation:camPulse 1.5s infinite;display:inline-block;"></span>LIVE</div>`;
 
     const timeAgo = snap?.timestamp ? (() => {
       const secs = Math.floor((Date.now() - new Date(snap.timestamp).getTime()) / 1000);
@@ -3211,16 +3214,20 @@ function renderCameraGrid(examId) {
       return Math.floor(secs/60) + 'm ago';
     })() : '';
 
-    return `<div style="position:relative;aspect-ratio:4/3;background:#1a1a1a;overflow:hidden;">
+    const initial = (s.studentName || '?').charAt(0).toUpperCase();
+
+    return `<div style="position:relative;aspect-ratio:16/9;background:#111827;overflow:hidden;border-radius:4px;">
       <img src="${escHtml(snap.imageData)}" alt="${escHtml(s.studentName)}"
         style="width:100%;height:100%;object-fit:cover;display:block;"
         onerror="this.style.display='none'" />
       ${warnBadge}
-      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.85));padding:8px 10px;">
-        <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(s.studentName)}</div>
-        <div style="color:rgba(255,255,255,0.6);font-size:10px;display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
-          <span style="display:flex;align-items:center;font-size:10px;">${statusDot}</span>
-          <span>${escHtml(timeAgo)}</span>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:26px;height:26px;border-radius:50%;background:#1a4d2a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">${initial}</div>
+          <div style="min-width:0;">
+            <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(s.studentName)}</div>
+            <div style="color:rgba(255,255,255,0.5);font-size:10px;">${escHtml(s.studentId)} · ${escHtml(timeAgo)}</div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -3232,7 +3239,8 @@ function onMonitorExamChange() {
   document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   renderMonitoringTable(monitorExamId);
-  if (_monitorView === 'camera') renderCameraGrid(monitorExamId);
+  // Re-apply view mode (renderMonitoringTable may have re-shown the stats strip)
+  setMonitorView(_monitorView);
 }
 
 function startMonitoring() {
@@ -3241,7 +3249,12 @@ function startMonitoring() {
     loadMonitoringExams();
     if (monitorExamId) {
       renderMonitoringTable(monitorExamId);
-      if (_monitorView === 'camera') renderCameraGrid(monitorExamId);
+      if (_monitorView === 'camera') {
+        renderCameraGrid(monitorExamId);
+        // Re-hide stats strip after renderMonitoringTable re-shows it
+        const strip = document.getElementById('monitor-stats-strip');
+        if (strip) strip.style.display = 'none';
+      }
     }
   }, 3000);
   document.getElementById('monitor-live-badge').classList.remove('hidden');
