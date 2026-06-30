@@ -7526,6 +7526,28 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .coding-cm-wrap .CodeMirror { height: 260px; font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace; font-size: 13.5px; line-height: 1.6; }
 .coding-cm-wrap .CodeMirror-scroll { min-height: 260px; }
 
+/* Return button on submitted exam screen — plain green, no animation */
+.btn-submitted-return {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 24px;
+  background: #1a4d2a;
+  color: #fff !important;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  box-shadow: 0 4px 14px rgba(26,77,42,0.3);
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  gap: 8px;
+}
+.btn-submitted-return:hover { background: #0f2d1a; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(26,77,42,0.35); }
+.btn-submitted-return:active { transform: translateY(0); }
+
 /* Camera grid live pulse */
 @keyframes camPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 #camera-grid-container { transition: all 0.3s; }

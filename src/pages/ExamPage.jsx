@@ -534,7 +534,7 @@ export default function ExamPage() {
               <button type="button" id="btn-review-answers" data-exam-control="true" className="course-exam-cta course-exam-cta-secondary examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
                 <ReviewLabel />
               </button>
-              <button type="button" data-exam-control="true" className="course-exam-cta course-exam-cta-primary examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
+              <button type="button" data-exam-control="true" className="btn-submitted-return examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
                 <BackLabel text="Return" />
               </button>
             </div>
