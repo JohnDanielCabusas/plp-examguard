@@ -127,6 +127,28 @@ document.addEventListener('supabaseSyncError', (e) => {
   showToast('Sync error (' + e.detail?.table + '): ' + msg, 'error');
 });
 
+// ── Dark mode ────────────────────────────────────────────────
+window.toggleDarkMode = function() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const next = isDark ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('acs_theme', next);
+  const label = document.getElementById('dm-label');
+  if (label) label.textContent = next === 'dark' ? '☾' : '☼';
+};
+
+// Apply saved theme on load
+(function() {
+  const saved = localStorage.getItem('acs_theme') || 'light';
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    const cb = document.getElementById('dm-checkbox');
+    if (cb) cb.checked = true;
+    const label = document.getElementById('dm-label');
+    if (label) label.textContent = '☾';
+  }
+})();
+
 // ---- Bootstrap ----
 document.addEventListener('dbReady', function init() {
   if (!Auth.requireAdmin()) return;

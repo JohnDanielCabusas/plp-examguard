@@ -161,7 +161,15 @@ export default function AdminPage() {
             </div>
             <div className="topbar-actions">
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="topbar-date" />
-              {/* User chip — text filled by admin.js via sb-user-name / sb-avatar */}
+
+              {/* Dark mode toggle */}
+              <div className="dm-toggle" title="Toggle dark mode">
+                <input type="checkbox" id="dm-checkbox" onChange={() => window.toggleDarkMode()} />
+                <span className="dm-button"></span>
+                <span className="dm-label" id="dm-label">☼</span>
+              </div>
+
+              {/* User chip */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f3f4f6', borderRadius: '100px', padding: '4px 12px 4px 4px', cursor: 'default' }}>
                 <div id="topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>A</div>
                 <span id="topbar-admin-name" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', whiteSpace: 'nowrap' }}>Administrator</span>
