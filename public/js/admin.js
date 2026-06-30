@@ -1765,11 +1765,12 @@ function buildExamActions(e) {
     </button>`;
 
   let btns = '';
+  // Edit: same slide-icon animation as course/table edit buttons
   if (['draft','ready','active','closed'].includes(e.status)) {
-    btns += pb('Edit', icEditFill, `openExamModal('${e.id}')`, 'green');
+    btns += `<button class="btn-action btn-action-ghost" onclick="openExamModal('${e.id}')">Edit${icEditFill}</button>`;
   }
   if (['ready','active','closed'].includes(e.status)) {
-    btns += pb('Archive', icArchive, `setExamStatus('${e.id}','archived')`, 'white');
+    btns += pb('Archive', icArchiveFill, `setExamStatus('${e.id}','archived')`, 'white');
   }
   btns += pb('More', icMore, `openMoreModal('${e.id}')`, 'white');
   return btns;

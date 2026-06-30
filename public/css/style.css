@@ -1087,6 +1087,7 @@ tr:hover td { background: #F8FDF8; }
   color: #374151;
   border: 1px solid #e5e7eb;
 }
+.pushable-white .pushable-front svg { stroke: #374151; fill: none; }
 
 /* Card-scoped edit button: hover uses the card's own color */
 .btn-edit-card:hover {
@@ -7138,16 +7139,16 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   transition: right 0.3s, margin 0.3s, fill 0.3s;
 }
 .tbl-btn-edit:hover {
-  background: #e8f5ec;
-  color: #1a4d2a;
+  background: #1a4d2a;
+  color: transparent;
   border-color: #1a4d2a !important;
-  box-shadow: 0 6px 0 #a3c4a8;
+  box-shadow: 0 6px 0 #0a2316;
   transform: translateY(-5px);
   transition: color 0.3s, background 0.3s, border-color 0.3s,
               box-shadow 250ms cubic-bezier(.3,.7,.4,1.5),
               transform 250ms cubic-bezier(.3,.7,.4,1.5);
 }
-.tbl-btn-edit:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #1a4d2a; }
+.tbl-btn-edit:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
 .tbl-btn-edit:active {
   transform: translateY(-1px);
   box-shadow: 0 2px 0 #0a2316;
