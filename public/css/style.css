@@ -6039,7 +6039,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 
 /* Actions */
-.course-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid #eef2f7; }
+.course-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid #eef2f7; justify-content: center; }
 .course-card-actions .btn { flex: 1; font-size: 12px; padding: 7px 12px; }
 
 /* Color palette button on card header */
@@ -6986,6 +6986,7 @@ tr:hover td { background: #fafbfc !important; }
   border-top: 1px solid #f3f4f6;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   background: #fafafa;
   flex-wrap: wrap;
