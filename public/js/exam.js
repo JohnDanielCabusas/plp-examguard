@@ -379,6 +379,16 @@ const ExamApp = {
 
     this._writePortalRoute({ view: tab === 'settings' ? 'settings' : 'home' });
     if (tab === 'settings') this._loadSettingsForm();
+
+    // Restart dashboard poll when returning to home (was paused during course view)
+    if (tab === 'home') {
+      this._currentCourseId = null;
+      if (!this._dashInterval) {
+        const sess = Auth.getStudentSession();
+        this._renderDashboard(sess);
+        this._dashInterval = setInterval(() => this._renderDashboard(Auth.getStudentSession()), 5000);
+      }
+    }
   },
 
   _loadSettingsForm() {
@@ -549,11 +559,15 @@ const ExamApp = {
 
   // ── Course view ─────────────────────────────────────────
   _currentCourseId: null,
+  _currentCourseTab: 'exams',
 
   showCourseView(subjId) {
     const subj = DB.getSubjects().find(s => s.id === subjId);
     if (!subj) return;
     this._currentCourseId = subjId;
+    // Stop dashboard poll while in course view — it was re-rendering
+    // every 5 seconds and destroying the tab active state
+    if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
 
     // Switch all tabs to hidden, show course
     ['home','settings','course'].forEach(t => {
@@ -617,23 +631,17 @@ const ExamApp = {
   },
 
   showCourseTab(tab) {
-    const _apply = () => {
-      ['exams','people'].forEach(t => {
-        const el = document.getElementById('course-tab-' + t);
-        if (el) el.classList.toggle('hidden', t !== tab);
-        const btn = document.getElementById('ctab-' + t);
-        if (!btn) return;
-        btn.classList.toggle('active', t === tab);
-        // Inline style fallback — survives any CSS specificity issues
-        btn.style.color = t === tab ? '#0f2d1a' : '';
-        btn.style.borderBottomColor = t === tab ? '#0f2d1a' : 'transparent';
-        btn.style.fontWeight = t === tab ? '700' : '';
-      });
-    };
-    _apply();
-    // Re-apply after paint in case DOM wasn't fully settled on first call
-    requestAnimationFrame(_apply);
-
+    this._currentCourseTab = tab; // remember for any future re-renders
+    ['exams','people'].forEach(t => {
+      const el = document.getElementById('course-tab-' + t);
+      if (el) el.classList.toggle('hidden', t !== tab);
+      const btn = document.getElementById('ctab-' + t);
+      if (!btn) return;
+      btn.classList.toggle('active', t === tab);
+      btn.style.color = t === tab ? '#0f2d1a' : '';
+      btn.style.borderBottomColor = t === tab ? '#0f2d1a' : 'transparent';
+      btn.style.fontWeight = t === tab ? '700' : '';
+    });
     if (tab === 'exams')  this._renderCourseExams();
     if (tab === 'people') this._renderCoursePeople();
     if (this._currentCourseId) {
