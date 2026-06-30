@@ -5441,6 +5441,9 @@ body.exam-page {
 
 .settings-account-card {
   grid-column: 1;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
 }
 
 .settings-password-card {
@@ -5786,20 +5789,27 @@ body.exam-page {
 .enroll-code-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(2,83,10,0.07);
-  border: 1px solid rgba(2,83,10,0.18);
-  border-radius: 6px;
-  padding: 3px 9px;
+  gap: 6px;
+  border: 0;
+  background: rgba(15,45,26,0.08);
+  border-radius: 20px;
+  padding: 4px 10px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--primary);
   cursor: pointer;
   letter-spacing: 1px;
-  transition: background 0.15s;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.enroll-code-tag:hover { background: rgba(2,83,10,0.13); }
+.enroll-code-tag:hover {
+  background: rgba(15,45,26,0.14);
+  color: #0f2d1a;
+  transform: translateY(-1px);
+}
 
 /* Enrollment notice banner */
 .enroll-banner {
@@ -7378,6 +7388,28 @@ tr:hover td { background: #fafbfc !important; }
   letter-spacing: 0.5px;
 }
 
+.exam-card-code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.85);
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.exam-card-code-btn:hover {
+  background: rgba(255,255,255,0.24);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .exam-card-title {
   font-size: 15px;
   font-weight: 700;
@@ -7514,6 +7546,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .yl-2 { background: #d1fae5; color: #065f46; }
 .yl-3 { background: #ede9fe; color: #5b21b6; }
 .yl-4 { background: #fef3c7; color: #92400e; }
+.yl-5 { background: #fee2e2; color: #b91c1c; }
 
 /* Section text */
 .section-text {

@@ -237,6 +237,7 @@ export default function AdminPage() {
                       <option value="2nd Year">2nd Year</option>
                       <option value="3rd Year">3rd Year</option>
                       <option value="4th Year">4th Year</option>
+                      <option value="5th Year">5th Year</option>
                     </select>
                     <select id="filter-section" className="form-control filter-select" onChange={() => window.filterStudents()}>
                       <option value="">All Sections</option>
@@ -328,6 +329,19 @@ export default function AdminPage() {
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <input type="text" className="form-control" id="exam-code-field" placeholder="Auto-generated on Ready" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
                           <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate</button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => window.copyExamCodeFromField()}
+                            title="Copy exam code"
+                            aria-label="Copy exam code"
+                            style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '42px', paddingInline: '12px' }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                              <rect x="9" y="9" width="13" height="13" rx="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </div>

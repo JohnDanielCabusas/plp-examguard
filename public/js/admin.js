@@ -807,10 +807,10 @@ function renderSubjects() {
     const sectionPills = sections.map(sc => `<span class="course-meta-pill section">${escHtml(sc.replace('Section ','§'))}</span>`).join('');
 
     const enrollHtml = s.enrollmentCode
-      ? `<span class="enroll-code-tag" title="Click to copy enrollment code" onclick="copyEnrollCode('${s.enrollmentCode}','${escHtml(s.name)}')" style="cursor:pointer;">
+      ? `<button type="button" class="enroll-code-tag" title="Click to copy enrollment code" onclick="event.stopPropagation();copyEnrollCode('${s.enrollmentCode}','${escHtml(s.name)}')">
           ${s.enrollmentCode}
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </span>`
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>`
       : `<span class="text-muted">—</span>`;
 
     return `
@@ -922,9 +922,16 @@ function copyEnrollCode(code, subjectName) {
     return;
   }
 
+  copyTextToClipboard(cleanCode, `Enrollment code copied: ${cleanCode}`);
+}
+
+function copyTextToClipboard(text, successMessage) {
+  const cleanText = String(text || '').trim();
+  if (!cleanText) return false;
+
   const fallbackCopy = () => {
     const tmp = document.createElement('textarea');
-    tmp.value = cleanCode;
+    tmp.value = cleanText;
     tmp.setAttribute('readonly', '');
     tmp.style.position = 'fixed';
     tmp.style.opacity = '0';
@@ -932,36 +939,57 @@ function copyEnrollCode(code, subjectName) {
     document.body.appendChild(tmp);
     tmp.focus();
     tmp.select();
-    tmp.setSelectionRange(0, cleanCode.length);
+    tmp.setSelectionRange(0, cleanText.length);
     document.execCommand('copy');
     tmp.remove();
   };
 
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(cleanCode)
-      .then(() => showToast(`Enrollment code copied: ${cleanCode}`, 'success'))
+    navigator.clipboard.writeText(cleanText)
+      .then(() => showToast(successMessage, 'success'))
       .catch(() => {
         fallbackCopy();
-        showToast(`Enrollment code copied: ${cleanCode}`, 'success');
+        showToast(successMessage, 'success');
       });
   } else {
     fallbackCopy();
-    showToast(`Enrollment code copied: ${cleanCode}`, 'success');
+    showToast(successMessage, 'success');
   }
+  return true;
+}
+
+function copyExamCode(code) {
+  const cleanCode = String(code || '').trim().toUpperCase();
+  if (!cleanCode) {
+    showToast('No exam code available.', 'error');
+    return;
+  }
+  copyTextToClipboard(cleanCode, `Exam code copied: ${cleanCode}`);
+}
+
+function copyExamCodeFromField() {
+  const codeField = document.getElementById('exam-code-field');
+  copyExamCode(codeField ? codeField.value : '');
 }
 
 function normalizeCourseYearLevelsInput(rawValue) {
-  const seen = new Set();
-  return String(rawValue || '')
-    .split(/[,\n]/)
-    .map(part => part.trim())
-    .filter(Boolean)
-    .filter(value => {
-      const key = value.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+  const normalizedYear = yearLabelToNumber(rawValue);
+  return normalizedYear ? [yearNumberToLabel(normalizedYear)] : [];
+}
+
+function bindYearLevelInput(input) {
+  if (!input || input.dataset.yearLevelBound === 'true') return;
+  input.dataset.yearLevelBound = 'true';
+  input.inputMode = 'numeric';
+  input.maxLength = 1;
+  input.placeholder = 'Enter 1-5';
+  input.setAttribute('pattern', '[1-5]');
+
+  input.addEventListener('input', () => {
+    const digits = String(input.value || '').replace(/\D/g, '');
+    const nextValue = digits ? digits.charAt(0) : '';
+    input.value = /^[1-5]$/.test(nextValue) ? nextValue : '';
+  });
 }
 
 function normalizeCourseNameInput(rawValue) {
@@ -1022,8 +1050,10 @@ function ensureSubjectModalTextFields() {
     input.type = 'text';
     input.className = 'form-control';
     input.id = 'subj-year-level';
-    input.placeholder = 'e.g. 1st Year, 2nd Year';
     yearField.replaceWith(input);
+    bindYearLevelInput(input);
+  } else if (yearField) {
+    bindYearLevelInput(yearField);
   }
 
   if (!document.getElementById('subj-section')) {
@@ -1062,7 +1092,7 @@ function openSubjectModal(id) {
     document.getElementById('subj-desc').value = s.description || '';
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
-    document.getElementById('subj-year-level').value = savedYears.join(', ');
+    document.getElementById('subj-year-level').value = yearLabelToNumber(savedYears[0] || '');
     document.getElementById('subj-section').value = formatCourseSectionsInputValue(s.sections || []);
   }
   openModal('modal-subject');
@@ -1074,9 +1104,12 @@ function saveSubject() {
   const name = normalizeCourseNameInput(document.getElementById('subj-name').value);
   const description = document.getElementById('subj-desc').value.trim();
   const enrollmentCode = document.getElementById('subj-enroll-code').value.trim().toUpperCase() || generateEnrollmentCode();
-  const yearLevels = normalizeCourseYearLevelsInput(document.getElementById('subj-year-level').value);
+  const rawYearLevel = document.getElementById('subj-year-level').value.trim();
+  const normalizedYear = yearLabelToNumber(rawYearLevel);
+  if (rawYearLevel && !normalizedYear) { showToast('Year level must be a number from 1 to 5.', 'error'); return; }
+  const yearLevels = normalizeCourseYearLevelsInput(rawYearLevel);
   const sections = normalizeCourseSectionsInput(document.getElementById('subj-section').value);
-  const yearLevel = yearLevels[0] || '';
+  const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
 
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
@@ -1110,20 +1143,20 @@ function computeYearLevel(studentId) {
   const enrollYear = 2000 + parseInt(match[1]);
   const currentYear = new Date().getFullYear();
   const yr = currentYear - enrollYear;
-  const ordinals = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
-  return ordinals[Math.max(0, Math.min(yr, 3))];
+  const ordinals = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+  return ordinals[Math.max(0, Math.min(yr, 4))];
 }
 
 function yearNumberToLabel(value) {
   const normalized = String(value || '').trim();
-  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year', '5': '5th Year' };
   return map[normalized] || normalized;
 }
 
 function yearLabelToNumber(value) {
   const normalized = String(value || '').trim();
-  if (/^[1-4]$/.test(normalized)) return normalized;
-  const match = normalized.match(/^([1-4])(st|nd|rd|th)\s+year$/i);
+  if (/^[1-5]$/.test(normalized)) return normalized;
+  const match = normalized.match(/^([1-5])(st|nd|rd|th)\s+year$/i);
   return match ? match[1] : '';
 }
 
@@ -1136,7 +1169,7 @@ function normalizeSectionValue(value) {
 
 function getStudentYearSectionParts(student) {
   const storedYearSection = String(student?.yearSection || '').trim().toUpperCase();
-  const yearSectionMatch = storedYearSection.match(/^([1-4])-(.+)$/);
+  const yearSectionMatch = storedYearSection.match(/^([1-5])-(.+)$/);
   if (yearSectionMatch) {
     return {
       year: yearSectionMatch[1],
@@ -1189,10 +1222,12 @@ function ensureStudentModalForm() {
     input.type = 'text';
     input.className = 'form-control';
     input.id = 'stu-year';
-    input.placeholder = 'e.g. 3';
     yearField.replaceWith(input);
+    bindYearLevelInput(input);
   } else if (!yearField) {
     return;
+  } else {
+    bindYearLevelInput(yearField);
   }
 
   const sectionField = document.getElementById('stu-section');
@@ -1268,7 +1303,7 @@ function renderStudents(filter) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
     return;
   }
-  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4', '5th Year':'yl-5' };
   tbody.innerHTML = students.map(s => {
     const yl = getStudentYearLevelLabel(s);
     const ylDisplay = getStudentYearLevelDisplay(s) || 'â€”';
@@ -1310,7 +1345,7 @@ function filterStudents() {
 
 function populateStudentDropdowns(savedYear, savedSection) {
   const subjects = DB.getSubjects();
-  const yearOrder = ['1st Year','2nd Year','3rd Year','4th Year'];
+  const yearOrder = ['1st Year','2nd Year','3rd Year','4th Year','5th Year'];
 
   const allYears = [...new Set(subjects.flatMap(s => s.yearLevels || []))]
     .sort((a, b) => yearOrder.indexOf(a) - yearOrder.indexOf(b));
@@ -1391,14 +1426,14 @@ function saveStudent() {
 
 function yearNumberToLabel(value) {
   const normalized = String(value || '').trim();
-  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+  const map = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year', '5': '5th Year' };
   return map[normalized] || normalized;
 }
 
 function yearLabelToNumber(value) {
   const normalized = String(value || '').trim();
-  if (/^[1-4]$/.test(normalized)) return normalized;
-  const match = normalized.match(/^([1-4])(st|nd|rd|th)\s+year$/i);
+  if (/^[1-5]$/.test(normalized)) return normalized;
+  const match = normalized.match(/^([1-5])(st|nd|rd|th)\s+year$/i);
   return match ? match[1] : '';
 }
 
@@ -1411,7 +1446,7 @@ function normalizeSectionValue(value) {
 
 function getStudentYearSectionParts(student) {
   const storedYearSection = String(student?.yearSection || '').trim().toUpperCase();
-  const yearSectionMatch = storedYearSection.match(/^([1-4])-(.+)$/);
+  const yearSectionMatch = storedYearSection.match(/^([1-5])-(.+)$/);
   if (yearSectionMatch) {
     return {
       year: yearSectionMatch[1],
@@ -1497,7 +1532,7 @@ function renderStudents(filter) {
     return;
   }
 
-  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4', '5th Year':'yl-5' };
   tbody.innerHTML = students.map(s => {
     const yl = getStudentYearLevelLabel(s);
     const ylDisplay = getStudentYearLevelDisplay(s) || '-';
@@ -1570,8 +1605,9 @@ function saveStudent() {
   if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
 
   const normalizedYear = yearLabelToNumber(yearInput);
+  if (yearInput && !normalizedYear) { showToast('Year level must be a number from 1 to 5.', 'error'); return; }
   const normalizedSection = normalizeSectionValue(sectionInput);
-  const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : yearInput;
+  const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
   const section = normalizedSection || sectionInput;
   const yearSection = normalizedYear && normalizedSection ? `${normalizedYear}-${normalizedSection}` : '';
   const existingStudent = id ? DB.getStudentById(id) : null;
@@ -1644,7 +1680,7 @@ function renderStudents(filter) {
     return;
   }
 
-  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4' };
+  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4', '5th Year':'yl-5' };
   tbody.innerHTML = students.map(s => {
     const yl = getStudentYearLevelLabel(s);
     const ylDisplay = getStudentYearLevelDisplay(s) || '-';
@@ -1720,7 +1756,7 @@ function renderExams() {
         <div style="position:relative;z-index:1;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
             ${statusBadge(e.status)}
-            ${e.code ? `<span style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:20px;letter-spacing:1px;">${escHtml(e.code)}</span>` : ''}
+            ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy exam code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
           </div>
           <div class="exam-card-title">${escHtml(e.title)}</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">${subjectName}</div>
@@ -2265,7 +2301,7 @@ function populateAudienceSelectors(savedYears = [], savedSections = []) {
   const allYears = [...new Set(
     students.map(s => s.yearLevel).filter(Boolean)
   )].sort((a, b) => {
-    const order = ['1st Year','2nd Year','3rd Year','4th Year'];
+    const order = ['1st Year','2nd Year','3rd Year','4th Year','5th Year'];
     return order.indexOf(a) - order.indexOf(b);
   });
 
@@ -4409,7 +4445,7 @@ function buildAudienceTag(exam) {
   const parts = [];
   if (years.length) {
     // Abbreviate: "1st Year" → "Y1", etc.
-    const abbr = { '1st Year': 'Y1', '2nd Year': 'Y2', '3rd Year': 'Y3', '4th Year': 'Y4' };
+    const abbr = { '1st Year': 'Y1', '2nd Year': 'Y2', '3rd Year': 'Y3', '4th Year': 'Y4', '5th Year': 'Y5' };
     parts.push(years.map(y => abbr[y] || y).join(', '));
   }
   if (sections.length) parts.push(sections.join(', '));
