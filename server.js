@@ -85,7 +85,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`PLP ExamGuard running at http://localhost:${port}`);
+  console.log(`TUKLAS running at http://localhost:${port}`);
   console.log(`Serving from: ${rootDir}`);
   console.log(`Run "npm run build" first to generate the dist/ folder.`);
 });

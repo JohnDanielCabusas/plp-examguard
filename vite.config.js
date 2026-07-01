@@ -15,6 +15,17 @@ export default defineConfig(({ mode }) => {
   process.env.SMTP_USER = env.SMTP_USER || process.env.SMTP_USER;
   process.env.SMTP_PASS = env.SMTP_PASS || process.env.SMTP_PASS;
   process.env.SMTP_FROM_EMAIL = env.SMTP_FROM_EMAIL || process.env.SMTP_FROM_EMAIL;
+  process.env.SMTP_FALLBACK_MODE = env.SMTP_FALLBACK_MODE || process.env.SMTP_FALLBACK_MODE;
+  process.env.SUPABASE_DB_HOST = env.SUPABASE_DB_HOST || process.env.SUPABASE_DB_HOST;
+  process.env.SUPABASE_DB_PORT = env.SUPABASE_DB_PORT || process.env.SUPABASE_DB_PORT;
+  process.env.SUPABASE_DB_NAME = env.SUPABASE_DB_NAME || process.env.SUPABASE_DB_NAME;
+  process.env.SUPABASE_DB_USER = env.SUPABASE_DB_USER || process.env.SUPABASE_DB_USER;
+  process.env.SUPABASE_DB_PASSWORD = env.SUPABASE_DB_PASSWORD || process.env.SUPABASE_DB_PASSWORD;
+  process.env.SUPABASE_DB_SSL = env.SUPABASE_DB_SSL || process.env.SUPABASE_DB_SSL;
+  process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD = env.AUTH_DEFAULT_SYSADMIN_PASSWORD || process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD;
+  process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD = env.AUTH_DEFAULT_PROFESSOR_PASSWORD || process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD;
+  process.env.AUTH_DEFAULT_PROFESSOR_USERNAME = env.AUTH_DEFAULT_PROFESSOR_USERNAME || process.env.AUTH_DEFAULT_PROFESSOR_USERNAME;
+  process.env.AUTH_DEFAULT_PROFESSOR_EMAIL = env.AUTH_DEFAULT_PROFESSOR_EMAIL || process.env.AUTH_DEFAULT_PROFESSOR_EMAIL;
 
   return {
     plugins: [

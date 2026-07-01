@@ -48,7 +48,7 @@ async function handleEmailRoute(req, res, body) {
   }
 
   try {
-    await sendVerificationEmail({
+    const delivery = await sendVerificationEmail({
       smtpConfig: {
         host: process.env.SMTP_HOST,
         port: process.env.SMTP_PORT,
@@ -61,7 +61,15 @@ async function handleEmailRoute(req, res, body) {
       code,
       type,
     });
-    jsonResponse(res, 200, { success: true, message: 'Verification code sent successfully.' });
+    const deliveryMode = delivery?.delivery || 'smtp';
+    jsonResponse(res, 200, {
+      success: true,
+      delivery: deliveryMode,
+      ...(deliveryMode === 'console' ? { previewCode: code } : {}),
+      message: deliveryMode === 'console'
+        ? 'Verification code generated in fallback mode. Check the server console or use the preview code shown in the app.'
+        : 'Verification code sent successfully.',
+    });
   } catch (error) {
     jsonResponse(res, 500, {
       success: false,

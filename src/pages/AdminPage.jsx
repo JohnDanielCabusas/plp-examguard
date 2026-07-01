@@ -86,7 +86,7 @@ export default function AdminPage() {
               <img src="/plp-logo.png" alt="PLP" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
             </div>
             <div className="sidebar-brand-text">
-              <h2 id="sb-school-name">PLP ExamGuard</h2>
+              <h2 id="sb-school-name">TUKLAS</h2>
               <p>Admin Panel</p>
             </div>
           </div>
@@ -773,7 +773,7 @@ export default function AdminPage() {
               <img src="/plp-logo.png" alt="PLP" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f2d1a' }}>ExamGuard AI</div>
+              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f2d1a' }}>TUKLAS AI</div>
               <div style={{ fontSize: '11px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <span style={{ width: '6px', height: '6px', background: '#16a34a', borderRadius: '50%', display: 'inline-block', animation: 'aiBlink 2s ease-in-out infinite' }} />
                 Ready to generate

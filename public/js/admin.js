@@ -164,8 +164,8 @@ document.addEventListener('dbReady', function init() {
 
   // Sidebar and topbar user info
   refreshAdminIdentity();
-  document.getElementById('sb-school-name').textContent = settings.schoolName || 'PLP ExamGuard';
-  document.title = 'PLP ExamGuard - Admin Panel';
+  document.getElementById('sb-school-name').textContent = settings.schoolName || 'TUKLAS';
+  document.title = 'TUKLAS - Admin Panel';
   const dashboardDeptTitle = document.getElementById('dashboard-department-title');
   if (dashboardDeptTitle) dashboardDeptTitle.textContent = session.department || '';
 
@@ -3796,7 +3796,7 @@ function generatePDF() {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(150);
-    doc.text(`Page ${i} of ${pageCount} - ${settings.schoolName || 'Pamantasan ng Lungsod ng Pasig'} - PLP ExamGuard`, 14, 290);
+    doc.text(`Page ${i} of ${pageCount} - ${settings.schoolName || 'Pamantasan ng Lungsod ng Pasig'} - TUKLAS`, 14, 290);
   }
 
   doc.save(`${exam.title.replace(/[^a-z0-9]/gi,'_')}_report.pdf`);
@@ -3875,7 +3875,7 @@ function drawPdfPageHeader(doc, examTitle, headerImage) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
-    doc.text('PLP ExamGuard Official Report', marginLeft, cursorY + 11);
+    doc.text('TUKLAS Official Report', marginLeft, cursorY + 11);
     cursorY += 16;
   }
 
@@ -4189,7 +4189,7 @@ function saveSettings() {
   if (deptTitle) deptTitle.textContent = department || '';
   const dashboardDeptTitle = document.getElementById('dashboard-department-title');
   if (dashboardDeptTitle) dashboardDeptTitle.textContent = department || '';
-  document.title = 'PLP ExamGuard - Admin Panel';
+  document.title = 'TUKLAS - Admin Panel';
   showToast('Settings saved.', 'success', { variant: 'settings' });
 }
 

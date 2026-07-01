@@ -544,7 +544,7 @@ export default function SuperAdminPage() {
       subjects: subjects.length,
     });
     setSystemSettings({
-      schoolName: settings.schoolName || "PLP ExamGuard",
+      schoolName: settings.schoolName || "TUKLAS",
       logoUrl: settings.logoUrl || "",
     });
     setAdminProfile({
@@ -753,7 +753,7 @@ export default function SuperAdminPage() {
 
   const removeSystemLogo = () => {
     const schoolName =
-      (systemSettings.schoolName || "").trim() || "PLP ExamGuard";
+      (systemSettings.schoolName || "").trim() || "TUKLAS";
     const next = { ...systemSettings, schoolName, logoUrl: "" };
     setSystemSettings(next);
     window.DB?.updateSettings?.(next);
@@ -803,7 +803,7 @@ export default function SuperAdminPage() {
   const session = sessionRef.current;
   const hasCustomLogo = !!String(systemSettings.logoUrl || "").trim();
   const brandLogo = hasCustomLogo ? systemSettings.logoUrl : "";
-  const brandName = systemSettings.schoolName || "PLP ExamGuard";
+  const brandName = systemSettings.schoolName || "TUKLAS";
   const brandInitial = (brandName || "P").trim().charAt(0).toUpperCase() || "P";
   const adminDepartment = adminProfile.department || session?.department || "";
 

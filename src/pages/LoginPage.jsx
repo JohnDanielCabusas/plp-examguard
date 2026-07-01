@@ -198,6 +198,13 @@ export default function LoginPage() {
     requestAnimationFrame(() => adminResetEmailRef.current?.focus());
   };
 
+  const buildDeliveryMessage = (result, fallbackMessage) => {
+    if (result?.delivery === 'console' && result?.previewCode) {
+      return `${fallbackMessage} Dev code: ${result.previewCode}`;
+    }
+    return fallbackMessage;
+  };
+
   const adminResetBackToLogin = () => {
     setAdminStep('login');
     setAdminError('');
@@ -224,7 +231,7 @@ export default function LoginPage() {
     }
     setAdminEmailSendBusy(false);
     setAdminResetEmail(email);
-    setAdminResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+    setAdminResetMessage(buildDeliveryMessage(result, 'Verification code sent. Check your email inbox for the 6-digit code.'));
     setAdminResendCooldown(60);
     setAdminStep('code');
     requestAnimationFrame(() => adminResetCodeRef.current?.focus());
@@ -343,13 +350,14 @@ export default function LoginPage() {
 
   const doEmailContinue = async () => {
     const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
+    let result = null;
     setStep1Error('');
     try {
       const lookup = await resolveStudentEmailStatus(email);
       if (!lookup.success) return;
       if (lookup.status === 'existing') return;
       setStudentEmailSendBusy(true);
-      const result = await window.Auth.beginStudentEmailVerification(email);
+      result = await window.Auth.beginStudentEmailVerification(email);
       if (!result.success) { setStep1Error(result.message); return; }
     } catch (error) {
       setStep1Error(error instanceof Error ? error.message : 'Unable to continue right now. Please try again.');
@@ -358,7 +366,7 @@ export default function LoginPage() {
       setStudentEmailSendBusy(false);
     }
     setStudentEmail(email);
-    setStudentVerifyMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+    setStudentVerifyMessage(buildDeliveryMessage(result, 'Verification code sent. Check your email inbox for the 6-digit code.'));
     setStudentResendCooldown(60);
     setStudentStep('verify');
     requestAnimationFrame(() => studentVerifyCodeRef.current?.focus());
@@ -412,7 +420,7 @@ export default function LoginPage() {
         setStep2aError(result.message);
         return;
       }
-      setStudentResetMessage('Verification code sent. Check your email inbox for the 6-digit code.');
+      setStudentResetMessage(buildDeliveryMessage(result, 'Verification code sent. Check your email inbox for the 6-digit code.'));
       setStudentResetCooldown(60);
       setStudentStep('reset-code');
       requestAnimationFrame(() => studentResetCodeRef.current?.focus());
@@ -438,7 +446,7 @@ export default function LoginPage() {
         setStep2aError(result.message);
         return;
       }
-      setStudentResetMessage('A new verification code was sent to your email.');
+      setStudentResetMessage(buildDeliveryMessage(result, 'A new verification code was sent to your email.'));
       setStudentResetCooldown(60);
     } catch (error) {
       setStep2aError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');

@@ -69,7 +69,7 @@ function setVerification(flow, email, payload) {
 }
 
 async function sendCodeEmail({ email, code, type }) {
-  await sendVerificationEmail({
+  return sendVerificationEmail({
     smtpConfig: {
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT,
@@ -184,8 +184,17 @@ async function issueVerification(res, { flow, email, type, meta }) {
     expiresAt: Date.now() + TEN_MINUTES,
     meta,
   });
-  await sendCodeEmail({ email, code, type });
-  jsonResponse(res, 200, { success: true, ...meta, message: 'Verification code sent successfully.' });
+  const delivery = await sendCodeEmail({ email, code, type });
+  const deliveryMode = delivery?.delivery || 'smtp';
+  jsonResponse(res, 200, {
+    success: true,
+    ...meta,
+    delivery: deliveryMode,
+    ...(deliveryMode === 'console' ? { previewCode: code } : {}),
+    message: deliveryMode === 'console'
+      ? 'Verification code generated in fallback mode. Check the server console or use the preview code shown in the app.'
+      : 'Verification code sent successfully.',
+  });
 }
 
 async function handleProfessorResetRequest(res, body) {
