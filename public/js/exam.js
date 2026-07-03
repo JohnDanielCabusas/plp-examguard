@@ -360,7 +360,7 @@ const ExamApp = {
   // ============================================================
   // ── Portal UI helpers ──────────────────────────────────
   showPortalTab(tab) {
-    ['home','settings'].forEach(t => {
+    ['home','settings','archived'].forEach(t => {
       const el = document.getElementById('portal-tab-' + t);
       if (el) el.classList.toggle('hidden', t !== tab);
       const nav = document.getElementById('pnav-' + t);
@@ -373,12 +373,13 @@ const ExamApp = {
     const courseTab = document.getElementById('portal-tab-course');
     if (courseTab) courseTab.classList.add('hidden');
 
-    const titles = { home: 'Home', settings: 'Settings' };
+    const titles = { home: 'Home', settings: 'Settings', archived: 'Archived Courses' };
     const titleEl = document.getElementById('portal-topbar-title');
     if (titleEl) titleEl.textContent = titles[tab] || tab;
 
     this._writePortalRoute({ view: tab === 'settings' ? 'settings' : 'home' });
     if (tab === 'settings') this._loadSettingsForm();
+    if (tab === 'archived') this._renderArchivedCourses();
 
     // Restart dashboard poll when returning to home (was paused during course view)
     if (tab === 'home') {
@@ -557,19 +558,19 @@ const ExamApp = {
 
   showCourseView(subjId) {
     const subj = DB.getSubjects().find(s => s.id === subjId);
-    if (!subj) return;
+    if (!subj || subj.archived) return;
     this._currentCourseId = subjId;
     // Stop dashboard poll while in course view — it was re-rendering
     // every 5 seconds and destroying the tab active state
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
 
     // Switch all tabs to hidden, show course
-    ['home','settings','course'].forEach(t => {
+    ['home','settings','archived','course'].forEach(t => {
       const el = document.getElementById('portal-tab-' + t);
       if (el) el.classList.toggle('hidden', t !== 'course');
     });
     // Clear nav highlights, highlight sidebar item
-    ['pnav-home','pnav-settings'].forEach(id => {
+    ['pnav-home','pnav-settings','pnav-archived'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.remove('active');
     });
@@ -614,7 +615,8 @@ const ExamApp = {
             <div class="course-stat"><div class="course-stat-value">${activeCount}</div><div class="course-stat-label">Active</div></div>
             <div class="course-stat"><div class="course-stat-value">${submittedCount}</div><div class="course-stat-label">Submitted</div></div>
           </div>
-        </div>`;
+        </div>
+        `;
     }
 
     const route = this._readPortalRoute();
@@ -882,7 +884,8 @@ const ExamApp = {
     if (route.view === 'course') {
       const student = DB.getStudent(sess.studentId);
       const enrolled = student?.enrolledSubjects || [];
-      if (enrolled.includes(route.courseId)) {
+      const courseSubj = DB.getSubjects().find(s => s.id === route.courseId);
+      if (enrolled.includes(route.courseId) && courseSubj && !courseSubj.archived) {
         this.showCourseView(route.courseId);
         return;
       }
@@ -895,7 +898,7 @@ const ExamApp = {
     const student = DB.getStudent(sess.studentId);
     const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
     const allSubjects = DB.getSubjects();
-    const enrolledSubjects = allSubjects.filter(s => enrolledIds.includes(s.id));
+    const enrolledSubjects = allSubjects.filter(s => enrolledIds.includes(s.id) && !s.archived);
     const allExams = DB.getExams();
     const listEl = document.getElementById('dash-subjects-list');
     if (!listEl) return;
@@ -1043,7 +1046,7 @@ const ExamApp = {
           <div class="dash-subject-icon" style="background:linear-gradient(135deg,${chipColor},${chipColor}cc);">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
           </div>
-          <div>
+          <div style="flex:1;min-width:0;">
             <div class="dash-subject-name">${_esc(subj.name)}</div>
             <span class="dash-subject-code">${_esc(subj.code)}</span>
           </div>
@@ -1052,6 +1055,44 @@ const ExamApp = {
       </div>`;
     });
 
+    listEl.innerHTML = html;
+  },
+
+  _renderArchivedCourses() {
+    const sess = Auth.getStudentSession();
+    if (!sess) return;
+    const student = DB.getStudent(sess.studentId);
+    const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
+    const archivedSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && s.archived);
+    const listEl = document.getElementById('archived-subjects-list');
+    if (!listEl) return;
+
+    if (!archivedSubjects.length) {
+      listEl.innerHTML = `<div class="dash-empty">
+        <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
+        <div class="dash-empty-title">No Archived Courses</div>
+        <div class="dash-empty-sub">Courses archived by your professor will appear here.</div>
+      </div>`;
+      return;
+    }
+
+    let html = '';
+    archivedSubjects.forEach(subj => {
+      const chipColor = this._chipColor(subj.id);
+      html += `<div class="dash-subject-card" style="opacity:0.7;">
+        <div class="dash-subject-header">
+          <div class="dash-subject-icon" style="background:linear-gradient(135deg,#9ca3af,#d1d5db);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="dash-subject-name">${_esc(subj.name)}</div>
+            <span class="dash-subject-code">${_esc(subj.code)}</span>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
+        </div>
+        <div class="dash-no-exams" style="color:#9ca3af;">This course has been archived by your professor.</div>
+      </div>`;
+    });
     listEl.innerHTML = html;
   },
 
@@ -2144,6 +2185,9 @@ const ExamApp = {
     const focusLoss = ['window_blur', 'tab_switch', 'fullscreen_exit'];
     const isFocusLoss = focusLoss.includes(type);
 
+    // Kill any stale overlay countdown timer before starting a new one
+    if (overlay._countdownTimer) { clearInterval(overlay._countdownTimer); overlay._countdownTimer = null; }
+
     if (this.warnings < 3) {
       const secs = isFocusLoss ? 10 : 5;
       const cdWrap = document.getElementById('warning-countdown-wrap');
@@ -2161,21 +2205,23 @@ const ExamApp = {
         if (cdCircle) cdCircle.style.strokeDashoffset = '0';
       }
 
-      let remaining = secs;
-      if (overlay._countdownTimer) clearInterval(overlay._countdownTimer);
-      overlay._countdownTimer = setInterval(() => {
-        remaining--;
-        if (cdNum) cdNum.textContent = remaining;
-        if (cdCircle) cdCircle.style.strokeDashoffset = String(circumference * (1 - remaining / secs));
-        if (remaining <= 0) {
-          clearInterval(overlay._countdownTimer);
-          overlay._countdownTimer = null;
-          if (cdWrap) cdWrap.style.display = 'none';
-          // Focus-loss: startCountdown already handles auto-submit; just hide overlay
-          // Non-focus: simply dismiss the overlay
-          if (!isFocusLoss) overlay.style.display = 'none';
-        }
-      }, 1000);
+      // Focus-loss: issueWarning calls startCountdown() right after this — let it
+      // own the interval so only ONE timer updates #cd-num and #cd-circle.
+      // Non-focus: run a 5-second dismiss timer here (startCountdown is not called).
+      if (!isFocusLoss) {
+        let remaining = secs;
+        overlay._countdownTimer = setInterval(() => {
+          remaining--;
+          if (cdNum) cdNum.textContent = remaining;
+          if (cdCircle) cdCircle.style.strokeDashoffset = String(circumference * (1 - remaining / secs));
+          if (remaining <= 0) {
+            clearInterval(overlay._countdownTimer);
+            overlay._countdownTimer = null;
+            if (cdWrap) cdWrap.style.display = 'none';
+            overlay.style.display = 'none';
+          }
+        }, 1000);
+      }
     }
   },
 

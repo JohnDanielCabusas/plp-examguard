@@ -460,6 +460,10 @@ export default function AdminPage() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     Activity Log
                     <span id="log-student-name" style={{ fontWeight: 500, fontSize: '12px', color: '#9ca3af' }} />
+                    <button id="btn-export-log" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as CSV" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: 600, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Export CSV
+                    </button>
                   </div>
                   <div className="activity-log-body" id="log-body">
                     <div className="empty-state"><p>Select a student to view activity</p></div>

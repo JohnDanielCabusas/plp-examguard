@@ -7288,6 +7288,12 @@ tr:hover td { background: #fafbfc !important; }
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
+.exam-cards-grid:has(.empty-state) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12vh 0;
+}
 
 .exam-card {
   background: #e8ecef;

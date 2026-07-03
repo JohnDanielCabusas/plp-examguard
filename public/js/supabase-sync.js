@@ -151,7 +151,18 @@ const SupabaseSync = {
       const current = Array.isArray(currentValue) ? [...currentValue] : [];
 
       if (table === 'settings') {
-        if (row) this._writeLocal(lsKey, normalizer(row));
+        if (row) {
+          const normalized = normalizer(row);
+          // Preserve claudeApiKey from localStorage if DB doesn't have it yet
+          // (column may not exist in older schema deployments)
+          if (!normalized.claudeApiKey) {
+            const existing = window.DB?._read?.(lsKey, null);
+            if (existing && existing.claudeApiKey) {
+              normalized.claudeApiKey = existing.claudeApiKey;
+            }
+          }
+          this._writeLocal(lsKey, normalized);
+        }
         return;
       }
       if (eventType === 'DELETE') {
@@ -206,6 +217,29 @@ const SupabaseSync = {
           const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
           if (!retryError) return;
           error = retryError;
+        }
+
+        // Subjects: local ID diverged from Supabase (e.g. stale localStorage after DB reset).
+        // Fetch the real Supabase ID by the unique (owner_admin_id, code) pair, fix local cache,
+        // then retry the upsert with the correct ID.
+        if (error && table === 'subjects' && error.code === '23505') {
+          const { data: existing } = await this._client.from('subjects')
+            .select('id')
+            .eq('code', row.code)
+            .eq('owner_admin_id', row.owner_admin_id)
+            .maybeSingle();
+          if (existing && existing.id !== row.id) {
+            const subjects = window.DB?._read?.('acs_subjects', []);
+            const idx = subjects.findIndex(s => s.id === data.id);
+            if (idx >= 0) {
+              subjects[idx] = { ...subjects[idx], id: existing.id };
+              window.DB?._write?.('acs_subjects', subjects);
+            }
+            const { error: fixError } = await this._client.from('subjects')
+              .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
+            if (!fixError) return;
+            error = fixError;
+          }
         }
 
         if (error) {
@@ -294,7 +328,7 @@ const SupabaseSync = {
       year_level: yearLevels.length ? yearLevels.join(', ') : (d.yearLevel || null),
       sections: Array.isArray(d.sections) ? d.sections : [],
       enrollment_code: d.enrollmentCode || null,
-      color: d.color || null,
+      color: typeof d.courseColor === 'number' ? String(d.courseColor) : (d.color || null),
       owner_admin_id: d.ownerAdminId || null,
       archived: !!d.archived,
       archived_at: d.archivedAt || null,
@@ -438,7 +472,7 @@ const SupabaseSync = {
       yearLevels: parsedYearLevels,
       sections: Array.isArray(r.sections) ? r.sections : [],
       enrollmentCode: r.enrollment_code || '',
-      color: r.color || '',
+      courseColor: (r.color !== null && r.color !== '' && !isNaN(Number(r.color))) ? Number(r.color) : undefined,
       ownerAdminId: r.owner_admin_id || '',
       archived: !!r.archived,
       archivedAt: r.archived_at || null,

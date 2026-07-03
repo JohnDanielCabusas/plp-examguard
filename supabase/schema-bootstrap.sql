@@ -16,6 +16,9 @@ alter table if exists public.superadmin
 alter table if exists public.sessions
   add column if not exists ai_detections jsonb not null default '{}'::jsonb;
 
+alter table if exists public.settings
+  add column if not exists claude_api_key text;
+
 alter table if exists public.subjects
   drop constraint if exists subjects_code_key;
 

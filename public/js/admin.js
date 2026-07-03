@@ -1113,6 +1113,16 @@ function saveSubject() {
 
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
+  const existingWithCode = DB.getSubjects().find(s => s.code === code && s.id !== id);
+  if (existingWithCode) {
+    if (existingWithCode.archived) {
+      showToast(`Course code "${code}" is already used by an archived course. Please use a different code.`, 'error');
+    } else {
+      showToast(`Course code "${code}" is already in use. Please use a different code.`, 'error');
+    }
+    return;
+  }
+
   if (id) {
     DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections });
     showToast('Course updated successfully.', 'success');
@@ -3485,6 +3495,87 @@ function showStudentLog(sessionId) {
       </div>
     `).join('')}
   `;
+}
+
+function exportActivityLog() {
+  const examId = monitorExamId;
+  const exam   = examId ? DB.getExam(examId) : null;
+  const sessions = DB.getSessions().filter(s => (!examId || s.examId === examId));
+
+  if (!sessions.length) {
+    showToast('No sessions to export.', 'warning');
+    return;
+  }
+
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+  const rows = [];
+
+  // ── Header ──────────────────────────────────────────────────
+  rows.push(['=== PLP ExamGuard — Activity Log Export ===']);
+  rows.push([`Exam: ${exam ? exam.title : 'All Exams'}`, `Exported: ${fmtDate(new Date().toISOString())}`]);
+  rows.push([]);
+
+  // ── Summary table ────────────────────────────────────────────
+  rows.push(['--- STUDENT SUMMARY ---']);
+
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'low_brightness', 'copy_attempt', 'screenshot'];
+  const summaryHeader = [
+    'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
+    ...violationTypes.map(t => getBehaviorLabel(t)),
+    'Total Activities',
+  ];
+  rows.push(summaryHeader);
+
+  sessions.forEach(s => {
+    const activities = s.activities || [];
+    const counts = Object.fromEntries(violationTypes.map(t => [t, 0]));
+    activities.forEach(a => { if (a.type in counts) counts[a.type]++; });
+    const status = s.submitted ? (s.autoSubmitted ? 'Auto-Submitted' : 'Submitted') : 'In Progress';
+    const scoreStr = s.submitted && s.maxScore ? `${s.score ?? 0}` : '';
+    rows.push([
+      s.studentName || s.studentId,
+      s.studentId,
+      s.warnings ?? 0,
+      scoreStr,
+      s.maxScore ?? '',
+      status,
+      ...violationTypes.map(t => counts[t] || 0),
+      activities.length,
+    ]);
+  });
+
+  // ── Timeline ─────────────────────────────────────────────────
+  rows.push([]);
+  rows.push(['--- ACTIVITY TIMELINE ---']);
+  rows.push(['Timestamp', 'Student Name', 'Student ID', 'Violation Type', 'Detail']);
+
+  sessions.forEach(s => {
+    const activities = s.activities || [];
+    activities.forEach(a => {
+      rows.push([
+        fmtDate(a.timestamp),
+        s.studentName || s.studentId,
+        s.studentId,
+        getBehaviorLabel(a.type),
+        a.detail || '',
+      ]);
+    });
+  });
+
+  // ── Build CSV ────────────────────────────────────────────────
+  const csv = rows.map(r => Array.isArray(r) ? r.map(esc).join(',') : esc(r)).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const filename = `activity-log${exam ? '-' + exam.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : ''}-${new Date().toISOString().slice(0,10)}.csv`;
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast('Activity log exported.', 'success');
 }
 
 async function forceSubmitStudent(sessionId) {
