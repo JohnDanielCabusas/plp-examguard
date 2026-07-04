@@ -2132,6 +2132,7 @@ function openExamEditor(id) {
   const titleDisplay = document.getElementById('exam-editor-title-display');
   const statusBadgeEl = document.getElementById('exam-editor-status-badge');
   const statusBtn = document.getElementById('exam-editor-status-btn');
+  const readyBtn = document.getElementById('exam-editor-ready-btn');
   const qCard = document.getElementById('exam-editor-questions-card');
 
   if (id) {
@@ -2154,6 +2155,7 @@ function openExamEditor(id) {
     currentQBuilderExamId = id;
     updateQBadge(id);
     if (qCard) qCard.style.display = '';
+    if (readyBtn) readyBtn.style.display = '';
     // Status action button
     const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
     if (statusBtn && statusActions[e.status]) {
@@ -2168,6 +2170,7 @@ function openExamEditor(id) {
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
     if (qCard) qCard.style.display = 'none';
     if (statusBtn) statusBtn.style.display = 'none';
+    if (readyBtn) readyBtn.style.display = 'none';
   }
 
   // Switch views
@@ -2220,6 +2223,8 @@ function saveExamFromEditor() {
   currentQBuilderExamId = examId;
   const qCard = document.getElementById('exam-editor-questions-card');
   if (qCard) qCard.style.display = '';
+  const readyBtnSave = document.getElementById('exam-editor-ready-btn');
+  if (readyBtnSave) readyBtnSave.style.display = '';
   renderQuestionsList(examId);
   updateQBadge(examId);
   const titleDisplay = document.getElementById('exam-editor-title-display');
