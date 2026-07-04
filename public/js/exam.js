@@ -528,11 +528,36 @@ const ExamApp = {
     this._showToast('Password changed successfully.', 'success', { variant: 'settings' });
   },
 
-  _chipColors: ['#1d4ed8','#7c3aed','#d97706','#dc2626','#0d9488','#be185d','#ea580c','#0284c7'],
+  _COURSE_COLORS: [
+    { c1: '#0f2d1a', c2: '#1a4d2a' }, // Forest Green
+    { c1: '#1e3a8a', c2: '#2563eb' }, // Ocean Blue
+    { c1: '#4c1d95', c2: '#7c3aed' }, // Violet
+    { c1: '#7f1d1d', c2: '#dc2626' }, // Crimson
+    { c1: '#78350f', c2: '#d97706' }, // Amber
+    { c1: '#0f766e', c2: '#14b8a6' }, // Teal
+    { c1: '#881337', c2: '#e11d48' }, // Rose
+    { c1: '#1e293b', c2: '#475569' }, // Slate
+    { c1: '#312e81', c2: '#6366f1' }, // Indigo
+    { c1: '#064e3b', c2: '#059669' }, // Emerald
+    { c1: '#0c4a6e', c2: '#0284c7' }, // Sky
+    { c1: '#701a75', c2: '#c026d3' }, // Fuchsia
+  ],
+  // Returns {c1, c2} for a subject — uses professor-chosen courseColor if set, else hashes the id
+  _subjectColor(subj) {
+    if (typeof subj.courseColor === 'number' && this._COURSE_COLORS[subj.courseColor]) {
+      return this._COURSE_COLORS[subj.courseColor];
+    }
+    let h = 0;
+    const id = subj.id || '';
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffffff;
+    return this._COURSE_COLORS[Math.abs(h) % this._COURSE_COLORS.length];
+  },
   _chipColor(str) {
+    // Legacy: hash a string to a single hex color (used for student avatars)
+    const palette = ['#1d4ed8','#7c3aed','#d97706','#dc2626','#0d9488','#be185d','#ea580c','#0284c7'];
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
-    return this._chipColors[Math.abs(h) % this._chipColors.length];
+    return palette[Math.abs(h) % palette.length];
   },
 
   _renderSidebarCourses(enrolledSubjects) {
@@ -540,9 +565,9 @@ const ExamApp = {
     if (!container) return;
     container.innerHTML = enrolledSubjects.map(s => {
       const letter = (s.name || s.code || '?').charAt(0).toUpperCase();
-      const color  = this._chipColor(s.id);
+      const { c1, c2 } = this._subjectColor(s);
       return `<div class="portal-subject-item" id="psi-${s.id}" data-label="${_esc(s.name)}" onclick="ExamApp.scrollToCourse('${s.id}')">
-        <div class="portal-subject-chip" style="background:${color};">${letter}</div>
+        <div class="portal-subject-chip" style="background:linear-gradient(135deg,${c1},${c2});">${letter}</div>
         <span class="portal-subject-label">${_esc(s.name)}</span>
       </div>`;
     }).join('');
@@ -589,10 +614,10 @@ const ExamApp = {
     }
 
     // Build banner
-    const color = this._chipColor(subjId);
+    const { c1, c2 } = this._subjectColor(subj);
     const bannerEl = document.getElementById('course-banner');
     if (bannerEl) {
-      bannerEl.style.background = `linear-gradient(135deg, ${color} 0%, ${color}cc 60%, ${color}99 100%)`;
+      bannerEl.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
       const sess2 = Auth.getStudentSession();
       const allExamsForBanner = DB.getExams().filter(e => e.subjectId === subjId);
       const activeCount    = allExamsForBanner.filter(e => e.status === 'active').length;
@@ -624,6 +649,30 @@ const ExamApp = {
       ? route.courseTab || 'exams'
       : 'exams';
     this.showCourseTab(preferredTab);
+
+    // Refresh exams from Supabase to catch any deletions/changes missed by realtime
+    if (window.SupabaseSync?.refreshExams) {
+      window.SupabaseSync.refreshExams().then(() => {
+        if (this._currentCourseId !== subjId) return; // user navigated away
+        // Re-render banner stats
+        const sess2 = Auth.getStudentSession();
+        const allExamsForBanner = DB.getExams().filter(e => e.subjectId === subjId);
+        const activeCount    = allExamsForBanner.filter(e => e.status === 'active').length;
+        const submittedCount = allExamsForBanner.filter(e => {
+          const s = DB.getStudentSession(e.id, sess2.studentId);
+          return s && s.submitted;
+        }).length;
+        const totalVisible = allExamsForBanner.filter(e => e.status !== 'draft').length;
+        const statEls = bannerEl?.querySelectorAll('.course-stat-value');
+        if (statEls && statEls.length >= 3) {
+          statEls[0].textContent = totalVisible;
+          statEls[1].textContent = activeCount;
+          statEls[2].textContent = submittedCount;
+        }
+        // Re-render the active exam tab
+        if (this._currentCourseTab === 'exams') this._renderCourseExams();
+      }).catch(() => {});
+    }
   },
 
   showCourseTab(tab) {
@@ -1040,10 +1089,10 @@ const ExamApp = {
           No active exams for this course right now.
         </div>`;
 
-      const chipColor = this._chipColor(subj.id);
+      const { c1: sc1, c2: sc2 } = this._subjectColor(subj);
       html += `<div class="dash-subject-card" id="course-card-${subj.id}">
         <div class="dash-subject-header">
-          <div class="dash-subject-icon" style="background:linear-gradient(135deg,${chipColor},${chipColor}cc);">
+          <div class="dash-subject-icon" style="background:linear-gradient(135deg,${sc1},${sc2});">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
           </div>
           <div style="flex:1;min-width:0;">

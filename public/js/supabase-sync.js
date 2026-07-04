@@ -199,6 +199,14 @@ const SupabaseSync = {
     }
   },
 
+  async refreshExams() {
+    if (!this._client) return;
+    const { data: exams } = await this._client.from('exams').select('*');
+    if (exams) {
+      this._writeLocal('acs_exams', exams.map(r => this._dbToJsExam(r)));
+    }
+  },
+
   // ── Write helpers ───────────────────────────────────────────
 
   syncSettings(data) {
