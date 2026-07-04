@@ -1132,13 +1132,18 @@ const ExamApp = {
     this.dashSelectExam(code);
   },
 
-  dashEnrollCourse() {
+  async dashEnrollCourse() {
     const code = (document.getElementById('dash-enroll-code').value || '').trim().toUpperCase();
     const msgEl = document.getElementById('dash-enroll-msg');
     if (!code) { msgEl.textContent = 'Please enter an enrollment code.'; msgEl.style.color = '#dc2626'; return; }
 
+    msgEl.textContent = 'Checking code…'; msgEl.style.color = '#6b7280';
+
+    // Refresh subjects from Supabase first so newly-created courses are findable
+    if (window.SupabaseSync?.refreshSubjects) await window.SupabaseSync.refreshSubjects();
+
     const subjects = DB.getSubjects();
-    const subject = subjects.find(s => s.enrollmentCode === code);
+    const subject = subjects.find(s => s.enrollmentCode === code && !s.archived);
     if (!subject) { msgEl.textContent = 'Invalid code. Please check with your instructor.'; msgEl.style.color = '#dc2626'; return; }
 
     const sess = Auth.getStudentSession();
