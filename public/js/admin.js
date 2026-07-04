@@ -1113,9 +1113,15 @@ function saveSubject() {
 
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
-  const existingWithCode = DB.getSubjects().find(s => s.code === code && s.id !== id);
-  if (existingWithCode && !existingWithCode.archived) {
-    showToast(`Course code "${code}" is already in use. Please use a different code.`, 'error');
+  const activeWithCode = DB.getSubjects().filter(s => s.code === code && s.id !== id && !s.archived);
+  const yearsOverlap = (a, b) => !a.length || !b.length || a.some(y => b.includes(y));
+  const secsOverlap  = (a, b) => !a.length || !b.length || a.some(s => b.includes(s));
+  const conflict = activeWithCode.find(s =>
+    yearsOverlap(yearLevels, s.yearLevels || []) && secsOverlap(sections, Array.isArray(s.sections) ? s.sections : [])
+  );
+  if (conflict) {
+    const label = [conflict.yearLevels?.join('/'), (conflict.sections||[]).join('/')].filter(Boolean).join(' ');
+    showToast(`Course code "${code}" is already in use${label ? ` for ${label}` : ''}. Please use a different code or section.`, 'error');
     return;
   }
 
