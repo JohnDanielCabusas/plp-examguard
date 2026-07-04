@@ -245,6 +245,9 @@ export default function AdminPage() {
                     <select id="filter-program" className="form-control filter-select" onChange={() => window.filterStudents()}>
                       <option value="">All Programs</option>
                     </select>
+                    <select id="filter-course" className="form-control filter-select" onChange={() => window.filterStudents()}>
+                      <option value="">All Courses</option>
+                    </select>
                   </div>
                   <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
                 </div>

@@ -1295,10 +1295,19 @@ function renderStudents(filter) {
   programSel.innerHTML = '<option value="">All Programs</option>' +
     programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
 
+  const courseSel = document.getElementById('filter-course');
+  const prevCourse = courseSel ? courseSel.value : '';
+  const myCourses = DB.getSubjects().filter(s => !s.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (courseSel) {
+    courseSel.innerHTML = '<option value="">All Courses</option>' +
+      myCourses.map(c => `<option value="${escHtml(c.id)}" ${c.id === prevCourse ? 'selected' : ''}>${escHtml(c.name)}${c.code ? ' (' + escHtml(c.code) + ')' : ''}</option>`).join('');
+  }
+
   const q = (filter || '').toLowerCase();
   const yearFilter = document.getElementById('filter-year-level').value;
   const sectionFilter = secSel.value;
   const programFilter = programSel.value;
+  const courseFilter = courseSel ? courseSel.value : '';
 
   if (q) {
     students = students.filter(s =>
@@ -1313,6 +1322,7 @@ function renderStudents(filter) {
   if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
   if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
   if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
+  if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
 
   const tbody = document.getElementById('students-tbody');
   if (!students.length) {
@@ -1527,10 +1537,19 @@ function renderStudents(filter) {
   programSel.innerHTML = '<option value="">All Programs</option>' +
     programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
 
+  const courseSel = document.getElementById('filter-course');
+  const prevCourse = courseSel ? courseSel.value : '';
+  const myCourses = DB.getSubjects().filter(s => !s.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (courseSel) {
+    courseSel.innerHTML = '<option value="">All Courses</option>' +
+      myCourses.map(c => `<option value="${escHtml(c.id)}" ${c.id === prevCourse ? 'selected' : ''}>${escHtml(c.name)}${c.code ? ' (' + escHtml(c.code) + ')' : ''}</option>`).join('');
+  }
+
   const q = (filter || '').toLowerCase();
   const yearFilter = document.getElementById('filter-year-level').value;
   const sectionFilter = secSel.value;
   const programFilter = programSel.value;
+  const courseFilter = courseSel ? courseSel.value : '';
 
   if (q) {
     students = students.filter(s =>
@@ -1545,6 +1564,7 @@ function renderStudents(filter) {
   if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
   if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
   if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
+  if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
 
   const tbody = document.getElementById('students-tbody');
   if (!students.length) {
@@ -1679,10 +1699,19 @@ function renderStudents(filter) {
   programSel.innerHTML = '<option value="">All Programs</option>' +
     programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
 
+  const courseSel = document.getElementById('filter-course');
+  const prevCourse = courseSel ? courseSel.value : '';
+  const myCourses = DB.getSubjects().filter(s => !s.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (courseSel) {
+    courseSel.innerHTML = '<option value="">All Courses</option>' +
+      myCourses.map(c => `<option value="${escHtml(c.id)}" ${c.id === prevCourse ? 'selected' : ''}>${escHtml(c.name)}${c.code ? ' (' + escHtml(c.code) + ')' : ''}</option>`).join('');
+  }
+
   const q = (filter || '').toLowerCase();
   const yearFilter = document.getElementById('filter-year-level').value;
   const sectionFilter = secSel.value;
   const programFilter = programSel.value;
+  const courseFilter = courseSel ? courseSel.value : '';
 
   if (q) {
     students = students.filter(s =>
@@ -1697,6 +1726,7 @@ function renderStudents(filter) {
   if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
   if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
   if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
+  if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
 
   const tbody = document.getElementById('students-tbody');
   if (!students.length) {
