@@ -230,37 +230,25 @@ const SupabaseSync = {
         }
 
         // Subjects: (owner_admin_id, code) conflict on upsert.
-        // Two cases:
-        //   a) Existing record is archived → professor is reusing the code for a new course.
-        //      Delete the old archived record then insert fresh with the new ID.
-        //   b) Existing record is active → local ID diverged from Supabase (stale localStorage).
-        //      Fix local cache with the real Supabase ID and retry.
+        // Fetch the existing record and overwrite it with the new data using its real ID,
+        // then fix local cache. Works for both ID divergence and archived-code-reuse.
         if (error && table === 'subjects' && error.code === '23505') {
           const { data: existing } = await this._client.from('subjects')
-            .select('id, archived')
+            .select('id')
             .eq('code', row.code)
             .eq('owner_admin_id', row.owner_admin_id)
             .maybeSingle();
           if (existing && existing.id !== row.id) {
-            if (existing.archived) {
-              // Case a: delete stale archived record, insert fresh
-              await this._client.from('subjects').delete().eq('id', existing.id);
-              const { error: insertError } = await this._client.from('subjects').insert(row);
-              if (!insertError) return;
-              error = insertError;
-            } else {
-              // Case b: ID divergence — fix local cache, retry with real Supabase ID
-              const subjects = window.DB?._read?.('acs_subjects', []);
-              const idx = subjects.findIndex(s => s.id === data.id);
-              if (idx >= 0) {
-                subjects[idx] = { ...subjects[idx], id: existing.id };
-                window.DB?._write?.('acs_subjects', subjects);
-              }
-              const { error: fixError } = await this._client.from('subjects')
-                .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
-              if (!fixError) return;
-              error = fixError;
+            const subjects = window.DB?._read?.('acs_subjects', []);
+            const idx = subjects.findIndex(s => s.id === data.id);
+            if (idx >= 0) {
+              subjects[idx] = { ...subjects[idx], id: existing.id };
+              window.DB?._write?.('acs_subjects', subjects);
             }
+            const { error: fixError } = await this._client.from('subjects')
+              .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
+            if (!fixError) return;
+            error = fixError;
           }
         }
 
