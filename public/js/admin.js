@@ -2168,7 +2168,7 @@ function openExamEditor(id) {
     populateAudienceSelectors();
     if (titleDisplay) titleDisplay.textContent = 'New Exam';
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
-    if (qCard) qCard.style.display = 'none';
+    if (qCard) qCard.style.display = '';
     if (statusBtn) statusBtn.style.display = 'none';
     if (readyBtn) readyBtn.style.display = 'none';
   }
@@ -2982,6 +2982,10 @@ function toggleCheckboxAnswer(qIdx, optIdx) {
 }
 
 function addQuestion(type) {
+  if (!currentQBuilderExamId) {
+    saveExamFromEditor();
+    if (!currentQBuilderExamId) return; // validation failed
+  }
   const exam = DB.getExam(currentQBuilderExamId);
   if (!exam) return;
   const defaults = {
@@ -4865,7 +4869,10 @@ const AI_ALLOWED_FILE_EXTENSIONS = /\.(pdf|docx|pptx|txt)$/i;
 function _aiSD(id, v) { var el = document.getElementById(id); if (el) el.style.display = v; }
 
 function openAIGen() {
-  if (!currentQBuilderExamId) { showToast('Save the exam details first.', 'error'); return; }
+  if (!currentQBuilderExamId) {
+    saveExamFromEditor();
+    if (!currentQBuilderExamId) return;
+  }
   const apiKey = DB.getSettings().claudeApiKey;
   if (!apiKey) {
     showToast('Groq API key not set. Go to Settings → Groq AI Integration.', 'error');
