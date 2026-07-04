@@ -1139,11 +1139,26 @@ const ExamApp = {
 
     msgEl.textContent = 'Checking code…'; msgEl.style.color = '#6b7280';
 
-    // Refresh subjects from Supabase first so newly-created courses are findable
-    if (window.SupabaseSync?.refreshSubjects) await window.SupabaseSync.refreshSubjects();
+    // Refresh local cache from Supabase first
+    if (window.SupabaseSync?.refreshSubjects) {
+      await window.SupabaseSync.refreshSubjects().catch(() => {});
+    }
 
-    const subjects = DB.getSubjects();
-    const subject = subjects.find(s => s.enrollmentCode === code && !s.archived);
+    let subject = DB.getSubjects().find(s => s.enrollmentCode === code && !s.archived);
+
+    // Fallback: direct Supabase query by enrollment code (handles sync failures)
+    if (!subject && window.SupabaseSync?._client) {
+      const { data } = await window.SupabaseSync._client
+        .from('subjects').select('*').eq('enrollment_code', code).maybeSingle();
+      if (data && !data.archived) {
+        subject = window.SupabaseSync._dbToJsSubject(data);
+        const cached = window.DB._read('acs_subjects', []);
+        const idx = cached.findIndex(s => s.id === subject.id);
+        if (idx >= 0) cached[idx] = subject; else cached.push(subject);
+        window.DB._write('acs_subjects', cached);
+      }
+    }
+
     if (!subject) { msgEl.textContent = 'Invalid code. Please check with your instructor.'; msgEl.style.color = '#dc2626'; return; }
 
     const sess = Auth.getStudentSession();
