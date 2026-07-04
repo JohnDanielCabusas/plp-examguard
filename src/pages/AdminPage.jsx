@@ -57,6 +57,8 @@ export default function AdminPage() {
         const main = document.querySelector('.main-content');
         sidebar.classList.toggle('collapsed');
         main.classList.toggle('sidebar-collapsed');
+        const newW = sidebar.classList.contains('collapsed') ? 72 : 260;
+        document.documentElement.style.setProperty('--sidebar-current-width', newW + 'px');
       }
     };
 
@@ -771,7 +773,7 @@ export default function AdminPage() {
       </div>
 
       {/* AI Exam Generator */}
-      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center', left: 'var(--sidebar-width, 260px)', padding: '12px' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
+      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center', left: 'var(--sidebar-current-width, 260px)', padding: '12px' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
         <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '100%', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
 
           {/* Header */}

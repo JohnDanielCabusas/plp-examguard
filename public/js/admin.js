@@ -4883,7 +4883,14 @@ function openAIGen() {
   if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
   _aiSD('ai-status', 'none'); _aiSD('ai-preview', 'none'); _aiSD('ai-user-bubble', 'none');
   _aiSD('ai-gen-btn', 'flex'); _aiSD('ai-import-btn', 'none');
-  document.getElementById('modal-ai-gen').classList.remove('hidden');
+  const aiBackdrop = document.getElementById('modal-ai-gen');
+  const aiBox = document.getElementById('ai-gen-modal-box');
+  if (aiBox) {
+    aiBox.style.width = '100%'; aiBox.style.maxWidth = '100%';
+    aiBox.style.height = '100%'; aiBox.style.borderRadius = '16px';
+    aiBox.dataset.fullscreen = '0';
+  }
+  if (aiBackdrop) aiBackdrop.classList.remove('hidden');
   scrollAIChat();
   requestAnimationFrame(() => document.getElementById('ai-custom-prompt')?.focus());
 }
@@ -4892,7 +4899,7 @@ function closeAIGen() {
   const box = document.getElementById('ai-gen-modal-box');
   if (box) { box.style.maxWidth = ''; box.style.height = ''; box.style.borderRadius = ''; box.style.width = ''; box.dataset.fullscreen = '0'; }
   const backdrop = document.getElementById('modal-ai-gen');
-  if (backdrop) { backdrop.style.left = ''; backdrop.style.padding = ''; }
+  if (backdrop) { backdrop.style.padding = ''; }
   const icon = document.getElementById('ai-gen-expand-icon');
   if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   document.getElementById('modal-ai-gen').classList.add('hidden');
@@ -4910,7 +4917,7 @@ function toggleAIGenFullscreen() {
     box.style.width = '100%';
     box.dataset.fullscreen = '0';
     const backdrop = document.getElementById('modal-ai-gen');
-    if (backdrop) { backdrop.style.left = 'var(--sidebar-width, 260px)'; backdrop.style.padding = '12px'; }
+    if (backdrop) { backdrop.style.left = 'var(--sidebar-current-width, 260px)'; backdrop.style.padding = '12px'; }
     if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   } else {
     box.style.maxWidth = '100%';
