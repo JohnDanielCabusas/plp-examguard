@@ -771,8 +771,8 @@ export default function AdminPage() {
       </div>
 
       {/* AI Exam Generator */}
-      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
-        <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '1200px', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.18)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center', left: 'var(--sidebar-width, 260px)' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
+        <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '16px', width: '96%', maxWidth: '1100px', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
 
           {/* Header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
@@ -869,13 +869,16 @@ export default function AdminPage() {
             <div style={{ padding:'16px 24px', display:'flex', flexDirection:'column', gap:'14px' }}>
 
               {/* User bubble — only meaningful in Custom mode */}
-              <div id="ai-user-bubble" style={{ display:'none', justifyContent:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
-                <div style={{ background:'#1a4d2a', borderRadius:'16px 16px 4px 16px', padding:'11px 15px', maxWidth:'78%' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                    <span id="ai-user-bubble-file" style={{ color:'#d1fae5', fontWeight:600, fontSize:'12px', wordBreak:'break-all' }} />
+              <div id="ai-user-bubble" style={{ display:'none', animation:'aiBubbleIn 0.3s ease' }}>
+                <div style={{ background:'#0f2d1a', borderRadius:'14px', padding:'16px 20px', width:'100%' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'8px' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    <span id="ai-user-bubble-file" style={{ color:'#d1fae5', fontWeight:600, fontSize:'13px', wordBreak:'break-all' }} />
                   </div>
-                  <div id="ai-user-bubble-prompt" style={{ display:'none', color:'#fff', fontSize:'13px', marginTop:'7px', lineHeight:1.45 }} />
+                  <div id="ai-user-bubble-prompt" style={{ display:'none', color:'rgba(255,255,255,0.85)', fontSize:'13px', lineHeight:1.5, display:'flex', alignItems:'center', gap:'10px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a7f3d0" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    <span id="ai-user-bubble-prompt-text" />
+                  </div>
                 </div>
               </div>
 
@@ -920,16 +923,14 @@ export default function AdminPage() {
           </div>
 
           {/* ── Mode toggle bar ── */}
-          <div style={{ padding:'10px 20px', background:'#f8fdf9', borderTop:'1px solid #e8f5ec', display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+          <div style={{ padding:'10px 20px', background:'#f8fdf9', borderTop:'1px solid #e8f5ec', display:'flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
             {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
               <button key={m} type="button" onClick={() => { setAiMode(m); setDiffOpen(false); }}
-                style={{ padding:'6px 18px', borderRadius:'20px', fontSize:'12px', fontWeight:700, border:'1.5px solid #1a4d2a', cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? '#1a4d2a' : 'transparent', color: aiMode===m ? '#fff' : '#1a4d2a' }}>
+                style={{ padding:'7px 20px', borderRadius:'20px', fontSize:'12px', fontWeight:700, border:'1.5px solid #1a4d2a', cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? '#1a4d2a' : 'transparent', color: aiMode===m ? '#fff' : '#1a4d2a' }}>
                 {l}
               </button>
             ))}
-            <span style={{ fontSize:'11px', color:'#9ca3af' }}>
-              {aiMode==='quick' ? 'Structured options' : 'Free-form instructions'}
-            </span>
+            <span style={{ fontSize:'12px', color:'#9ca3af', marginLeft:'4px' }}>Free-form instructions</span>
           </div>
 
           {/* ── Input bar ── */}
@@ -962,12 +963,13 @@ export default function AdminPage() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a4d2a" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     Attach or drop files
                   </label>
-                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate"
-                    style={{ width:'42px', height:'42px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
+                    style={{ height:'42px', padding:'0 20px', background:'#0f2d1a', border:'none', borderRadius:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:'#fff', fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    Generate with AI
                   </button>
                   <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                    style={{ display:'none', height:'42px', padding:'0 18px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
+                    style={{ display:'none', height:'42px', padding:'0 18px', background:'#0f2d1a', border:'none', borderRadius:'12px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
                 </div>
@@ -1000,12 +1002,13 @@ export default function AdminPage() {
                     onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,72)+'px'; const hidden=document.getElementById('ai-custom-prompt'); if(hidden) hidden.value=e.target.value; }}
                     onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
                   />
-                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} title="Generate (Enter)"
-                    style={{ width:'38px', height:'38px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'opacity 0.15s' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
+                    style={{ height:'38px', padding:'0 20px', background:'#0f2d1a', border:'none', borderRadius:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:'#fff', fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    Generate with AI
                   </button>
                   <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                    style={{ display:'none', height:'38px', padding:'0 16px', background:'#1a4d2a', border:'none', borderRadius:'10px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
+                    style={{ display:'none', height:'38px', padding:'0 16px', background:'#0f2d1a', border:'none', borderRadius:'12px', cursor:'pointer', color:'#fff', fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
                 </div>

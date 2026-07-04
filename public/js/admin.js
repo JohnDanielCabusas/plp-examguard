@@ -4902,11 +4902,13 @@ function toggleAIGenFullscreen() {
   if (!box) return;
   const isFs = box.dataset.fullscreen === '1';
   if (isFs) {
-    box.style.maxWidth = '1200px';
+    box.style.maxWidth = '1100px';
     box.style.height = '92vh';
-    box.style.borderRadius = '20px';
+    box.style.borderRadius = '16px';
     box.style.width = '96%';
     box.dataset.fullscreen = '0';
+    const backdrop = document.getElementById('modal-ai-gen');
+    if (backdrop) backdrop.style.left = 'var(--sidebar-width, 260px)';
     if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   } else {
     box.style.maxWidth = '100%';
@@ -4914,6 +4916,9 @@ function toggleAIGenFullscreen() {
     box.style.borderRadius = '0';
     box.style.width = '100%';
     box.dataset.fullscreen = '1';
+    // Also remove sidebar offset for true fullscreen
+    const backdrop = document.getElementById('modal-ai-gen');
+    if (backdrop) backdrop.style.left = '0';
     if (icon) icon.innerHTML = '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>';
   }
 }
@@ -5095,9 +5100,11 @@ async function runAIGenerate() {
   if (userBubble && pendingName) {
     const nameEl = document.getElementById('ai-user-bubble-file');
     const promptEl = document.getElementById('ai-user-bubble-prompt');
+    const promptTextEl = document.getElementById('ai-user-bubble-prompt-text');
     if (nameEl) nameEl.textContent = pendingName;
-    if (promptEl) { promptEl.textContent = customPrompt; promptEl.style.display = customPrompt ? '' : 'none'; }
-    userBubble.style.display = 'flex';
+    if (promptTextEl) promptTextEl.textContent = customPrompt;
+    if (promptEl) promptEl.style.display = customPrompt ? 'flex' : 'none';
+    userBubble.style.display = 'block';
   }
   _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none');
   _aiSD('ai-preview', 'none'); _aiSD('ai-status', 'flex');
