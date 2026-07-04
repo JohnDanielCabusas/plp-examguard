@@ -771,8 +771,8 @@ export default function AdminPage() {
       </div>
 
       {/* AI Exam Generator */}
-      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center', left: 'var(--sidebar-width, 260px)' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
-        <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '16px', width: '96%', maxWidth: '1100px', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+      <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center', left: 'var(--sidebar-width, 260px)', padding: '12px' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
+        <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '100%', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.22)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
 
           {/* Header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>

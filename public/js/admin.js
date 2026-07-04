@@ -4890,7 +4890,9 @@ function openAIGen() {
 
 function closeAIGen() {
   const box = document.getElementById('ai-gen-modal-box');
-  if (box) { box.style.maxWidth = ''; box.style.height = ''; box.style.borderRadius = ''; box.style.width = ''; }
+  if (box) { box.style.maxWidth = ''; box.style.height = ''; box.style.borderRadius = ''; box.style.width = ''; box.dataset.fullscreen = '0'; }
+  const backdrop = document.getElementById('modal-ai-gen');
+  if (backdrop) { backdrop.style.left = ''; backdrop.style.padding = ''; }
   const icon = document.getElementById('ai-gen-expand-icon');
   if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   document.getElementById('modal-ai-gen').classList.add('hidden');
@@ -4902,23 +4904,22 @@ function toggleAIGenFullscreen() {
   if (!box) return;
   const isFs = box.dataset.fullscreen === '1';
   if (isFs) {
-    box.style.maxWidth = '1100px';
-    box.style.height = '92vh';
+    box.style.maxWidth = '100%';
+    box.style.height = '100%';
     box.style.borderRadius = '16px';
-    box.style.width = '96%';
+    box.style.width = '100%';
     box.dataset.fullscreen = '0';
     const backdrop = document.getElementById('modal-ai-gen');
-    if (backdrop) backdrop.style.left = 'var(--sidebar-width, 260px)';
+    if (backdrop) { backdrop.style.left = 'var(--sidebar-width, 260px)'; backdrop.style.padding = '12px'; }
     if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   } else {
     box.style.maxWidth = '100%';
-    box.style.height = '100vh';
+    box.style.height = '100%';
     box.style.borderRadius = '0';
     box.style.width = '100%';
     box.dataset.fullscreen = '1';
-    // Also remove sidebar offset for true fullscreen
     const backdrop = document.getElementById('modal-ai-gen');
-    if (backdrop) backdrop.style.left = '0';
+    if (backdrop) { backdrop.style.left = '0'; backdrop.style.padding = '0'; }
     if (icon) icon.innerHTML = '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>';
   }
 }
