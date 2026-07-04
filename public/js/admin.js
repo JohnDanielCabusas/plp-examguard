@@ -1276,7 +1276,11 @@ function ensureStudentModalForm() {
 }
 
 function renderStudents(filter) {
-  let students = DB.getStudents();
+  // Only show students enrolled in at least one of this professor's courses
+  const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
+  let students = DB.getStudents().filter(s =>
+    (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
+  );
 
   // Populate section filter dropdown
   const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
@@ -1505,7 +1509,11 @@ function getStudentSectionDisplay(student) {
 }
 
 function renderStudents(filter) {
-  let students = DB.getStudents();
+  // Only show students enrolled in at least one of this professor's courses
+  const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
+  let students = DB.getStudents().filter(s =>
+    (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
+  );
 
   const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
   const secSel = document.getElementById('filter-section');
@@ -1653,7 +1661,11 @@ function saveStudent() {
 }
 
 function renderStudents(filter) {
-  let students = DB.getStudents();
+  // Only show students enrolled in at least one of this professor's courses
+  const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
+  let students = DB.getStudents().filter(s =>
+    (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
+  );
 
   const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
   const secSel = document.getElementById('filter-section');
