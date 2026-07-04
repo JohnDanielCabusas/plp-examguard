@@ -772,7 +772,7 @@ export default function AdminPage() {
 
       {/* AI Exam Generator */}
       <div className="modal-backdrop hidden" id="modal-ai-gen" style={{ alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { if (e.target === e.currentTarget) setDiffOpen(false); }}>
-        <div style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '780px', height: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.18)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+        <div id="ai-gen-modal-box" style={{ background: '#fff', borderRadius: '20px', width: '96%', maxWidth: '1200px', height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.18)', overflow: 'hidden', animation: 'aiModalIn 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
 
           {/* Header */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
@@ -786,6 +786,9 @@ export default function AdminPage() {
                 Ready to generate
               </div>
             </div>
+            <button onClick={() => window.toggleAIGenFullscreen()} title="Fullscreen" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '4px 8px', lineHeight: 1 }}>
+              <svg id="ai-gen-expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
             <button onClick={() => window.closeAIGen()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '20px', lineHeight: 1, padding: '4px' }}>&#10005;</button>
           </div>
 
