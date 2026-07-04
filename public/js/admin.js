@@ -1114,12 +1114,8 @@ function saveSubject() {
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
   const existingWithCode = DB.getSubjects().find(s => s.code === code && s.id !== id);
-  if (existingWithCode) {
-    if (existingWithCode.archived) {
-      showToast(`Course code "${code}" is already used by an archived course. Please use a different code.`, 'error');
-    } else {
-      showToast(`Course code "${code}" is already in use. Please use a different code.`, 'error');
-    }
+  if (existingWithCode && !existingWithCode.archived) {
+    showToast(`Course code "${code}" is already in use. Please use a different code.`, 'error');
     return;
   }
 
