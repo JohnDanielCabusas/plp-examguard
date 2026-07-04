@@ -189,6 +189,16 @@ const SupabaseSync = {
       .subscribe();
   },
 
+  // ── Refresh helpers ─────────────────────────────────────────
+
+  async refreshSubjects() {
+    if (!this._client) return;
+    const { data: subjects } = await this._client.from('subjects').select('*');
+    if (subjects) {
+      this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
+    }
+  },
+
   // ── Write helpers ───────────────────────────────────────────
 
   syncSettings(data) {

@@ -1059,41 +1059,52 @@ const ExamApp = {
   },
 
   _renderArchivedCourses() {
-    const sess = Auth.getStudentSession();
-    if (!sess) return;
-    const student = DB.getStudent(sess.studentId);
-    const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
-    const archivedSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && s.archived);
+    const render = () => {
+      const sess = Auth.getStudentSession();
+      if (!sess) return;
+      const student = DB.getStudent(sess.studentId);
+      const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
+      const archivedSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && s.archived);
+      const listEl = document.getElementById('archived-subjects-list');
+      if (!listEl) return;
+
+      if (!archivedSubjects.length) {
+        listEl.innerHTML = `<div class="dash-empty">
+          <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
+          <div class="dash-empty-title">No Archived Courses</div>
+          <div class="dash-empty-sub">Courses archived by your professor will appear here.</div>
+        </div>`;
+        return;
+      }
+
+      let html = '';
+      archivedSubjects.forEach(subj => {
+        html += `<div class="dash-subject-card" style="opacity:0.7;">
+          <div class="dash-subject-header">
+            <div class="dash-subject-icon" style="background:linear-gradient(135deg,#9ca3af,#d1d5db);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div class="dash-subject-name">${_esc(subj.name)}</div>
+              <span class="dash-subject-code">${_esc(subj.code)}</span>
+            </div>
+            <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
+          </div>
+          <div class="dash-no-exams" style="color:#9ca3af;">This course has been archived by your professor.</div>
+        </div>`;
+      });
+      listEl.innerHTML = html;
+    };
+
+    // Show spinner immediately, then re-render after fresh Supabase fetch
     const listEl = document.getElementById('archived-subjects-list');
-    if (!listEl) return;
+    if (listEl) listEl.innerHTML = `<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">Loading…</div>`;
 
-    if (!archivedSubjects.length) {
-      listEl.innerHTML = `<div class="dash-empty">
-        <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
-        <div class="dash-empty-title">No Archived Courses</div>
-        <div class="dash-empty-sub">Courses archived by your professor will appear here.</div>
-      </div>`;
-      return;
+    if (window.SupabaseSync?.refreshSubjects) {
+      window.SupabaseSync.refreshSubjects().then(render);
+    } else {
+      render();
     }
-
-    let html = '';
-    archivedSubjects.forEach(subj => {
-      const chipColor = this._chipColor(subj.id);
-      html += `<div class="dash-subject-card" style="opacity:0.7;">
-        <div class="dash-subject-header">
-          <div class="dash-subject-icon" style="background:linear-gradient(135deg,#9ca3af,#d1d5db);">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div class="dash-subject-name">${_esc(subj.name)}</div>
-            <span class="dash-subject-code">${_esc(subj.code)}</span>
-          </div>
-          <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
-        </div>
-        <div class="dash-no-exams" style="color:#9ca3af;">This course has been archived by your professor.</div>
-      </div>`;
-    });
-    listEl.innerHTML = html;
   },
 
   dashSelectExam(examCode) {
