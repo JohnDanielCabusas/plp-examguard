@@ -1088,7 +1088,7 @@ const ExamApp = {
               <div class="dash-subject-name">${_esc(subj.name)}</div>
               <span class="dash-subject-code">${_esc(subj.code)}</span>
             </div>
-            <button onclick="ExamApp.dismissArchivedCourse('${subj.id}')" style="flex-shrink:0;background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;color:#9ca3af;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.borderColor='#ef4444';this.style.color='#ef4444'" onmouseout="this.style.borderColor='#e5e7eb';this.style.color='#9ca3af'">Dismiss</button>
+            <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
           </div>
           <div class="dash-no-exams" style="color:#9ca3af;">This course has been archived by your professor.</div>
         </div>`;
@@ -1105,15 +1105,6 @@ const ExamApp = {
     } else {
       render();
     }
-  },
-
-  dismissArchivedCourse(subjId) {
-    const sess = Auth.getStudentSession();
-    const student = DB.getStudent(sess?.studentId);
-    if (!student) return;
-    const enrolled = (student.enrolledSubjects || []).filter(id => id !== subjId);
-    DB.updateStudent(student.id, { enrolledSubjects: enrolled });
-    this._renderArchivedCourses();
   },
 
   dashSelectExam(examCode) {
