@@ -192,9 +192,6 @@ document.addEventListener('dbReady', function init() {
     this.value = digits.length > 2 ? digits.slice(0, 2) + '-' + digits.slice(2) : digits;
     const added = this.value.length - prev.length;
     this.setSelectionRange(cursor + added, cursor + added);
-    // Auto-fill year level
-    const yl = computeYearLevel(this.value);
-    if (yl !== '—') document.getElementById('stu-year').value = yl;
     });
   }
   });
@@ -1234,11 +1231,13 @@ function ensureStudentModalForm() {
     input.type = 'text';
     input.className = 'form-control';
     input.id = 'stu-year';
+    input.autocomplete = 'off';
     yearField.replaceWith(input);
     bindYearLevelInput(input);
   } else if (!yearField) {
     return;
   } else {
+    yearField.autocomplete = 'off';
     bindYearLevelInput(yearField);
   }
 
@@ -1249,6 +1248,7 @@ function ensureStudentModalForm() {
     input.className = 'form-control';
     input.id = 'stu-section';
     input.placeholder = 'e.g. B';
+    input.autocomplete = 'off';
     sectionField.replaceWith(input);
   }
 
@@ -2753,7 +2753,7 @@ function buildQuestionBlock(q, idx) {
         <label>Min Words Required</label>
         <input type="number" class="form-control" style="width:120px;" value="${q.minWords || 0}" min="0" max="1000" onchange="updateQField(${idx},'minWords',parseInt(this.value)||0)" />
       </div>
-      <div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
+      <div class="essay-note">
         <strong>Note:</strong> Essay answers are manually graded by the instructor. Students' scores for essay questions start at 0 until you grade them in Reports.
       </div>`;
   } else if (q.type === 'coding') {

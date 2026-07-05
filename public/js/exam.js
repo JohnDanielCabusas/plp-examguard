@@ -635,6 +635,7 @@ const ExamApp = {
         <div class="course-banner-inner">
           <div class="course-banner-title">${_esc(subj.name)}</div>
           <div class="course-banner-code">${_esc(subj.code)}</div>
+          ${subj.description ? `<div class="course-banner-desc">${_esc(subj.description)}</div>` : ''}
           <div class="course-banner-stats">
             <div class="course-stat"><div class="course-stat-value">${totalVisible}</div><div class="course-stat-label">Exams</div></div>
             <div class="course-stat"><div class="course-stat-value">${activeCount}</div><div class="course-stat-label">Active</div></div>
@@ -748,8 +749,8 @@ const ExamApp = {
         if (dbSess && dbSess.submitted) {
           const pct = dbSess.maxScore ? Math.round(dbSess.score / dbSess.maxScore * 100) : 0;
           const scoreHtml = dbSess.scoreReleased
-            ? `<span style="font-weight:700;color:#0f2d1a;">${dbSess.score}/${dbSess.maxScore}</span> <span style="color:#9ca3af;">(${pct}%)</span>`
-            : `<span style="color:#9ca3af;font-size:12px;">Awaiting result</span>`;
+            ? `<span class="course-score-value">${dbSess.score}/${dbSess.maxScore}</span> <span class="course-score-percent">(${pct}%)</span>`
+            : `<span class="course-score-pending">Awaiting result</span>`;
           accentLabel = 'Completed';
           stateHtml = `<span class="course-exam-state state-submitted">${this._portalIcon('checkCircle', { size: 12, stroke: '#4b5563' })}<span>Submitted</span></span>`;
           panelHtml = `<div class="course-exam-panel panel-submitted">

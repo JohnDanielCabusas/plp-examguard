@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import ThemeToggle from "../components/ThemeToggle.jsx";
+import { applyTheme, readStoredTheme, toggleTheme } from "../lib/theme.js";
 
 const SUPERADMIN_SECTIONS = new Set(["dashboard", "professors", "settings"]);
 
@@ -208,29 +210,8 @@ const ICONS = {
 // ── stat card ───────────────────────────────────────────────────
 function StatCard({ label, value, icon, color }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: "14px",
-        padding: "20px 24px",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-        display: "flex",
-        alignItems: "center",
-        gap: "16px",
-      }}
-    >
-      <div
-        style={{
-          width: "48px",
-          height: "48px",
-          borderRadius: "12px",
-          background: color,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
+    <div className="stat-card">
+      <div className={`stat-icon ${color}`}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="22"
@@ -245,26 +226,8 @@ function StatCard({ label, value, icon, color }) {
         />
       </div>
       <div>
-        <div
-          style={{
-            fontSize: "28px",
-            fontWeight: 800,
-            color: "var(--primary)",
-            lineHeight: 1,
-          }}
-        >
-          {value}
-        </div>
-        <div
-          style={{
-            fontSize: "12px",
-            color: "var(--text-muted)",
-            marginTop: "3px",
-            fontWeight: 600,
-          }}
-        >
-          {label}
-        </div>
+        <div className="stat-value">{value}</div>
+        <div className="stat-label">{label}</div>
       </div>
     </div>
   );
@@ -488,6 +451,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
 // ── main page ───────────────────────────────────────────────────
 export default function SuperAdminPage() {
   const [ready, setReady] = useState(false);
+  const [theme, setTheme] = useState(() => readStoredTheme());
   const [section, setSection] = useState(() => readSuperAdminSectionFromUrl());
   const [professors, setProfessors] = useState([]);
   const [professorSearch, setProfessorSearch] = useState("");
@@ -525,9 +489,17 @@ export default function SuperAdminPage() {
   const readyRef = useRef(false);
   const sessionRef = useRef(null);
 
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type, key: Date.now() });
   }, []);
+
+  const handleThemeToggle = () => {
+    setTheme(toggleTheme());
+  };
 
   const loadData = useCallback(() => {
     const profs = window.DB?.getAdmins?.() || [];
@@ -828,6 +800,7 @@ export default function SuperAdminPage() {
         }}
       >
         <div
+          className="theme-loading-spinner"
           style={{
             width: "36px",
             height: "36px",
@@ -838,6 +811,7 @@ export default function SuperAdminPage() {
           }}
         />
         <p
+          className="theme-loading-text"
           style={{
             color: "#6b7280",
             fontSize: "13px",
@@ -986,14 +960,19 @@ export default function SuperAdminPage() {
               </div>
               <div className="topbar-actions sa-topbar-actions">
                 <span className="topbar-date sa-topbar-date">{dateStr}</span>
-                <div className="sa-user-pill">
+                <ThemeToggle
+                  checked={theme === "dark"}
+                  onChange={handleThemeToggle}
+                  title="Toggle dark mode"
+                />
+                <button type="button" className="sa-user-pill" onClick={() => navTo("settings")}>
                   <div className="sa-user-avatar">
                     {(session?.name || "A").charAt(0).toUpperCase()}
                   </div>
                   <span className="sa-user-name">
                     {session?.name || "System Admin"}
                   </span>
-                </div>
+                </button>
               </div>
             </header>
 
@@ -1028,49 +1007,35 @@ export default function SuperAdminPage() {
                       {
                         label: "Professors",
                         value: stats.professors,
-                        bg: "#1a4d2a",
+                        color: "green",
                         icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
                       },
                       {
                         label: "Students",
                         value: stats.students,
-                        bg: "#2563eb",
+                        color: "blue",
                         icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
                       },
                       {
                         label: "Exams",
                         value: stats.exams,
-                        bg: "#7c3aed",
+                        color: "orange",
                         icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
                       },
                       {
                         label: "Courses",
                         value: stats.subjects,
-                        bg: "#0891b2",
+                        color: "purple",
                         icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
                       },
-                    ].map(({ label, value, bg, icon }) => (
-                      <div key={label} className="sa-stat-card">
-                        <div
-                          className="sa-stat-icon"
-                          style={{ background: bg }}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="22"
-                            height="22"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#fff"
-                            strokeWidth="2"
-                            dangerouslySetInnerHTML={{ __html: icon }}
-                          />
-                        </div>
-                        <div>
-                          <div className="sa-stat-value">{value}</div>
-                          <div className="sa-stat-label">{label}</div>
-                        </div>
-                      </div>
+                    ].map(({ label, value, icon, color }) => (
+                      <StatCard
+                        key={label}
+                        label={label}
+                        value={value}
+                        icon={icon}
+                        color={color}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1179,7 +1144,7 @@ export default function SuperAdminPage() {
                                   <td
                                     data-label="Email"
                                     style={{
-                                      color: "#6b7280",
+                                      color: "var(--text-muted)",
                                       fontSize: "13px",
                                     }}
                                   >
@@ -1188,7 +1153,7 @@ export default function SuperAdminPage() {
                                   <td
                                     data-label="Created"
                                     style={{
-                                      color: "#9ca3af",
+                                      color: "var(--text-muted)",
                                       fontSize: "12px",
                                     }}
                                   >
@@ -1310,17 +1275,17 @@ export default function SuperAdminPage() {
                             <div
                               style={{
                                 flex: "1 1 160px",
-                                background: "#f9fafb",
+                                background: "var(--surface-2)",
                                 borderRadius: "10px",
                                 padding: "12px",
                                 textAlign: "center",
-                                border: "1px solid #e5e7eb",
+                                border: "1px solid var(--border)",
                               }}
                             >
                               <div
                                 style={{
                                   fontSize: "12px",
-                                  color: "#6b7280",
+                                  color: "var(--text-muted)",
                                   marginBottom: "6px",
                                 }}
                               >
@@ -1344,13 +1309,13 @@ export default function SuperAdminPage() {
                                     width: "64px",
                                     height: "64px",
                                     borderRadius: "8px",
-                                    background: "#e5e7eb",
+                                    background: "var(--border)",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
                                     fontSize: "24px",
                                     fontWeight: 700,
-                                    color: "#6b7280",
+                                    color: "var(--text-muted)",
                                     margin: "0 auto 6px",
                                   }}
                                 >
@@ -1430,11 +1395,11 @@ export default function SuperAdminPage() {
                             <label
                               style={{
                                 flex: "1 1 160px",
-                                background: "#f9fafb",
+                                background: "var(--surface-2)",
                                 borderRadius: "10px",
                                 padding: "12px",
                                 textAlign: "center",
-                                border: "1px dashed #d1d5db",
+                                border: "1px dashed var(--border)",
                                 cursor: "pointer",
                                 display: "flex",
                                 flexDirection: "column",
@@ -1444,7 +1409,10 @@ export default function SuperAdminPage() {
                               }}
                             >
                               <div
-                                style={{ fontSize: "28px", color: "#9ca3af" }}
+                                style={{
+                                  fontSize: "28px",
+                                  color: "var(--text-muted)",
+                                }}
                               >
                                 +
                               </div>
@@ -1452,7 +1420,7 @@ export default function SuperAdminPage() {
                                 style={{
                                   fontSize: "13px",
                                   fontWeight: 600,
-                                  color: "#374151",
+                                  color: "var(--text)",
                                 }}
                               >
                                 Upload New Logo
@@ -1460,7 +1428,7 @@ export default function SuperAdminPage() {
                               <div
                                 style={{
                                   fontSize: "11px",
-                                  color: "#9ca3af",
+                                  color: "var(--text-muted)",
                                   marginTop: "2px",
                                 }}
                               >

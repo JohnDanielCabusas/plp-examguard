@@ -89,7 +89,7 @@ export default function AdminPage() {
             </div>
             <div className="sidebar-brand-text">
               <h2 id="sb-school-name">TUKLAS</h2>
-              <p>Admin Panel</p>
+              <p>Professor Panel</p>
             </div>
           </div>
 
@@ -172,10 +172,10 @@ export default function AdminPage() {
               </div>
 
               {/* User chip */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f3f4f6', borderRadius: '100px', padding: '4px 12px 4px 4px', cursor: 'default' }}>
+              <button type="button" className="topbar-user-pill" onClick={() => window.showSection('settings')}>
                 <div id="topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>A</div>
                 <span id="topbar-admin-name" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', whiteSpace: 'nowrap' }}>Administrator</span>
-              </div>
+              </button>
             </div>
           </header>
 
@@ -523,8 +523,8 @@ export default function AdminPage() {
                   <div className="section-subtitle">Detailed per-exam analytics and performance insights</div>
                 </div>
               </div>
-              <div style={{ background: '#fff', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Exam Analytics</label>
+              <div style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Exam Analytics</label>
                 <select className="form-control" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
                   <option value="">Select an exam to explore analytics</option>
                 </select>
@@ -708,14 +708,14 @@ export default function AdminPage() {
           <div className="modal-body">
             <input type="hidden" id="stu-id" />
             <div className="form-row cols-2">
-              <div className="form-group"><label>Student ID *</label><input type="text" className="form-control" id="stu-student-id" placeholder="e.g. 23-00218" inputMode="numeric" maxLength={8} /></div>
-              <div className="form-group"><label>Full Name *</label><input type="text" className="form-control" id="stu-name" placeholder="Last, First Middle" /></div>
+              <div className="form-group"><label>Student ID *</label><input type="text" className="form-control" id="stu-student-id" placeholder="e.g. 23-00218" inputMode="numeric" maxLength={8} autoComplete="off" /></div>
+              <div className="form-group"><label>Full Name *</label><input type="text" className="form-control" id="stu-name" placeholder="Last, First Middle" autoComplete="off" /></div>
             </div>
             <div className="form-row cols-2">
               <div className="form-group"><label>Year Level</label><select className="form-control" id="stu-year"><option value="">— Select Year Level —</option></select></div>
               <div className="form-group"><label>Section</label><select className="form-control" id="stu-section"><option value="">— Select Section —</option></select></div>
             </div>
-            <div className="form-group"><label>Email</label><input type="email" className="form-control" id="stu-email" placeholder="student@school.edu" /></div>
+            <div className="form-group"><label>Email</label><input type="email" className="form-control" id="stu-email" placeholder="student@school.edu" autoComplete="off" /></div>
           </div>
           <div className="modal-footer">
             <button className="btn btn-secondary" onClick={() => window.closeModal('modal-student')}>Cancel</button>

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ThemeToggle from '../components/ThemeToggle.jsx';
+import { applyTheme, readStoredTheme, toggleTheme } from '../lib/theme.js';
 
 const EYE_OPEN = (
   <>
@@ -18,9 +20,14 @@ const EYE_CLOSED = (
 export default function ExamPage() {
   const booted = useRef(false);
   const inlineLabelStyle = { display: 'inline-flex', alignItems: 'center', gap: '8px' };
+  const [theme, setTheme] = useState(() => readStoredTheme());
   const [showStudentCurrentPass, setShowStudentCurrentPass] = useState(false);
   const [showStudentNewPass, setShowStudentNewPass] = useState(false);
   const [showStudentConfirmPass, setShowStudentConfirmPass] = useState(false);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const EyeToggle = ({ show, onToggle }) => (
     <button
@@ -99,12 +106,16 @@ export default function ExamPage() {
     window.SupabaseSync.init();
   }, []);
 
+  const handleThemeToggle = () => {
+    setTheme(toggleTheme());
+  };
+
   return (
     <>
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
-        <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
-        <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
+        <div className="theme-loading-spinner" style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
+        <p className="theme-loading-text" style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
         <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
 
@@ -195,10 +206,12 @@ export default function ExamPage() {
                 </button>
                 <span className="portal-topbar-title" id="portal-topbar-title">Home</span>
               </div>
-              {/* User chip — top-right, same style as admin topbar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f3f4f6', borderRadius: '100px', padding: '4px 12px 4px 4px', cursor: 'default' }}>
-                <div id="portal-topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>S</div>
-                <span id="portal-topbar-name" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', whiteSpace: 'nowrap' }}>Student</span>
+              <div className="portal-topbar-actions">
+                <ThemeToggle checked={theme === 'dark'} onChange={handleThemeToggle} title="Toggle dark mode" />
+                <button type="button" className="portal-user-pill" onClick={() => window.ExamApp.showPortalTab('settings')}>
+                  <div id="portal-topbar-avatar" className="portal-user-avatar">S</div>
+                  <span id="portal-topbar-name" className="portal-user-name">Student</span>
+                </button>
               </div>
             </div>
 
@@ -265,7 +278,7 @@ export default function ExamPage() {
                     </div>
                     <div className="settings-field">
                       <div className="settings-field-label">Email</div>
-                      <div className="settings-field-readonly"><span id="stg-email" style={{ fontSize: '14px', color: '#374151' }} /><span className="settings-readonly-badge">Read-only</span></div>
+                      <div className="settings-field-readonly"><span id="stg-email" className="student-settings-readonly-value" style={{ fontSize: '14px', color: '#374151' }} /><span className="settings-readonly-badge">Read-only</span></div>
                     </div>
                     <div className="settings-field">
                       <div className="settings-field-label">Student ID</div>
@@ -304,21 +317,21 @@ export default function ExamPage() {
                       Change Password
                     </div>
                     <div className="form-group">
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentCurrentPass ? 'text' : 'password'} className="form-control" id="stg-cur-pass" placeholder="Enter your current account password" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentCurrentPass} onToggle={() => setShowStudentCurrentPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentNewPass ? 'text' : 'password'} className="form-control" id="stg-new-pass" placeholder="e.g. At least 6 characters" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentNewPass} onToggle={() => setShowStudentNewPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentConfirmPass ? 'text' : 'password'} className="form-control" id="stg-confirm-pass" placeholder="Re-enter the new password exactly" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentConfirmPass} onToggle={() => setShowStudentConfirmPass(v => !v)} />
@@ -407,12 +420,12 @@ export default function ExamPage() {
       </div>
 
       {/* STATE: EXAM (active) */}
-      <div id="state-exam" className="hidden" style={{ display:'none', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#f3f4f6' }}>
+      <div id="state-exam" className="hidden" style={{ display:'none', flexDirection:'column', height:'100vh', overflow:'hidden', background:'var(--bg)' }}>
 
         {/* Top bar */}
         <div className="examv2-topbar">
           <div className="examv2-topbar-left">
-            <img src="/plp-logo.png" alt="PLP" style={{ width:'36px', height:'36px', objectFit:'contain', borderRadius:'50%', background:'#fff', padding:'2px' }} />
+            <img src="/plp-logo.png" alt="PLP" style={{ width:'36px', height:'36px', objectFit:'contain', borderRadius:'50%', background:'var(--surface)', padding:'2px' }} />
             <div>
               <div className="examv2-title" id="exam-header-title">Loading…</div>
               <div className="examv2-subject" id="exam-header-subject" />
@@ -450,8 +463,8 @@ export default function ExamPage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
               <span id="warning-num">0</span>/3
             </div>
-            <button type="button" data-exam-control="true" className="btn btn-exam-submit examv2-interactive" onClick={() => window.ExamApp.confirmSubmit()}
-              style={{ background:'#1a4d2a', color:'#fff', border:'none', padding:'8px 20px', borderRadius:'8px', fontWeight:700, fontSize:'13px', cursor:'pointer' }}>
+            <button type="button" data-exam-control="true" className="btn btn-primary btn-exam-submit examv2-interactive" onClick={() => window.ExamApp.confirmSubmit()}
+              style={{ border:'none', padding:'8px 20px', borderRadius:'8px', fontWeight:700, fontSize:'13px', cursor:'pointer' }}>
               Finish Exam
             </button>
           </div>
@@ -499,7 +512,7 @@ export default function ExamPage() {
                   <BackLabel text="Previous" />
                 </button>
                 <button type="button" data-exam-control="true" id="btn-next" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.nextQuestion()}
-                  style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px', background:'#1a4d2a', color:'#fff', border:'none' }}>
+                  style={{ padding:'9px 22px', borderRadius:'8px', fontWeight:600, fontSize:'13px', border:'none' }}>
                   <NextLabel text="Next" />
                 </button>
               </div>
