@@ -348,10 +348,14 @@ async function doLogout() {
 // DASHBOARD
 // ============================================================
 function renderDashboard() {
-  const students = DB.getStudents();
   const subjects = DB.getSubjects();
   const exams = DB.getExams();
   const sessions = DB.getSessions();
+  const subjectIds = new Set(subjects.map(subject => subject.id));
+  const students = DB.getAllStudentsRaw().filter(student =>
+    !student.archived &&
+    (student.enrolledSubjects || []).some(subjectId => subjectIds.has(subjectId))
+  );
   const activeExams = exams.filter(e => e.status === 'active');
   const submittedSessions = sessions.filter(s => s.submitted);
 
@@ -2134,6 +2138,10 @@ function openExamEditor(id) {
   const statusBtn = document.getElementById('exam-editor-status-btn');
   const readyBtn = document.getElementById('exam-editor-ready-btn');
   const qCard = document.getElementById('exam-editor-questions-card');
+  const questionsList = document.getElementById('questions-list');
+  const questionCountBadge = document.getElementById('exam-q-count');
+
+  currentQBuilderExamId = null;
 
   if (id) {
     const e = DB.getExam(id);
@@ -2165,12 +2173,20 @@ function openExamEditor(id) {
       statusBtn._examStatus = e.status;
     } else if (statusBtn) { statusBtn.style.display = 'none'; }
   } else {
-    populateAudienceSelectors();
+    populateAudienceSelectors(sel.value || '', [], []);
     if (titleDisplay) titleDisplay.textContent = 'New Exam';
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
     if (qCard) qCard.style.display = '';
-    if (statusBtn) statusBtn.style.display = 'none';
+    if (statusBtn) {
+      statusBtn.style.display = 'none';
+      statusBtn._examId = null;
+      statusBtn._examStatus = null;
+    }
     if (readyBtn) readyBtn.style.display = 'none';
+    if (questionCountBadge) questionCountBadge.textContent = '';
+    if (questionsList) {
+      questionsList.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Start by saving this exam, then add questions.</p></div>`;
+    }
   }
 
   // Switch views
@@ -4881,6 +4897,7 @@ function openAIGen() {
   clearAIFile();
   const customPromptEl = document.getElementById('ai-custom-prompt');
   if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
+  window.dispatchEvent(new CustomEvent('ai:resetPrompt'));
   _aiSD('ai-status', 'none'); _aiSD('ai-preview', 'none'); _aiSD('ai-user-bubble', 'none');
   _aiSD('ai-gen-btn', 'flex'); _aiSD('ai-import-btn', 'none');
   const aiBackdrop = document.getElementById('modal-ai-gen');
