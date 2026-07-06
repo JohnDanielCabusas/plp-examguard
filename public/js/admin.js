@@ -700,15 +700,18 @@ function selectCourseColor(colorIndex) {
   }
 }
 
+let currentCourseDetailId = null;
+
 function viewEnrolledStudents(subjectId) {
   const subj = DB.getSubject(subjectId);
   if (!subj) return;
+  currentCourseDetailId = subjectId;
   const students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjectId));
   const exams    = DB.getExams().filter(e => e.subjectId === subjectId);
 
-  document.getElementById('modal-enrolled-title').textContent = formatCourseNameDisplay(subj.name);
-  document.getElementById('modal-enrolled-sub').textContent =
-    `${subj.code} · ${students.length} student${students.length !== 1 ? 's' : ''} · ${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
+  document.getElementById('course-detail-name').textContent = formatCourseNameDisplay(subj.name);
+  document.getElementById('course-detail-sub').textContent =
+    `${subj.code}${subj.schoolYear ? ' · S.Y. ' + subj.schoolYear : ''} · ${students.length} student${students.length !== 1 ? 's' : ''} · ${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
 
   const studentsHtml = students.length
     ? `<div class="table-wrapper"><table>
@@ -744,7 +747,7 @@ function viewEnrolledStudents(subjectId) {
       </table></div>`
     : `<div class="empty-state"><p>No exams created for this course yet.</p></div>`;
 
-  document.getElementById('modal-enrolled-body').innerHTML = `
+  document.getElementById('course-detail-body').innerHTML = `
     <div style="border-bottom:1.5px solid #e5e7eb;">
       <div style="display:flex;padding:0 8px;">
         <button class="exam-tab-btn active" id="etab-btn-students" onclick="switchEnrolledTab('students')" style="padding:12px 20px;">
@@ -758,7 +761,19 @@ function viewEnrolledStudents(subjectId) {
     <div id="etab-students">${studentsHtml}</div>
     <div id="etab-exams" class="hidden">${examsHtml}</div>`;
 
-  openModal('modal-enrolled-students');
+  document.getElementById('courses-list-view').classList.add('hidden');
+  document.getElementById('course-detail-view').classList.remove('hidden');
+}
+
+function closeCourseDetail() {
+  currentCourseDetailId = null;
+  document.getElementById('course-detail-view').classList.add('hidden');
+  document.getElementById('courses-list-view').classList.remove('hidden');
+  renderSubjects();
+}
+
+function editCurrentCourseDetail() {
+  if (currentCourseDetailId) openSubjectModal(currentCourseDetailId);
 }
 
 function switchEnrolledTab(tab) {
@@ -825,7 +840,7 @@ function renderSubjects() {
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
           </button>
           <div style="position:relative;z-index:1;">
-            <div class="course-card-code-label">${escHtml(s.code)}</div>
+            <div class="course-card-code-label">${escHtml(s.code)}${s.schoolYear ? ` · S.Y. ${escHtml(s.schoolYear)}` : ''}</div>
             <div class="course-card-name">${escHtml(courseName)}</div>
           </div>
         </div>
@@ -1080,6 +1095,7 @@ function openSubjectModal(id) {
   document.getElementById('subj-desc').value = '';
   document.getElementById('subj-year-level').value = '';
   document.getElementById('subj-section').value = '';
+  document.getElementById('subj-school-year').value = '';
   document.getElementById('subj-enroll-code').value = generateEnrollmentCode();
   document.getElementById('modal-subject-title').textContent = 'Add Course';
 
@@ -1092,6 +1108,7 @@ function openSubjectModal(id) {
     document.getElementById('subj-name').value = formatCourseNameDisplay(s.name);
     document.getElementById('subj-desc').value = s.description || '';
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
+    document.getElementById('subj-school-year').value = s.schoolYear || '';
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     document.getElementById('subj-year-level').value = yearLabelToNumber(savedYears[0] || '');
     document.getElementById('subj-section').value = formatCourseSectionsInputValue(s.sections || []);
@@ -1126,15 +1143,25 @@ function saveSubject() {
     return;
   }
 
+  const schoolYear = document.getElementById('subj-school-year').value.trim();
+  if (schoolYear && !/^\d{4}-\d{4}$/.test(schoolYear)) {
+    showToast('School year must be in the format 2025-2026.', 'error');
+    return;
+  }
+
   if (id) {
-    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections });
+    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear });
     showToast('Course updated successfully.', 'success');
   } else {
-    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections });
+    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear });
     showToast('Course added successfully.', 'success');
   }
   closeModal('modal-subject');
-  renderSubjects();
+  if (currentCourseDetailId && currentCourseDetailId === id) {
+    viewEnrolledStudents(id);
+  } else {
+    renderSubjects();
+  }
 }
 
 async function deleteSubject(id) {

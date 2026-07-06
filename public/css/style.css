@@ -7971,6 +7971,8 @@ tr:hover td { background: #fafbfc !important; }
 
 #section-exams { padding: 0 !important; }
 #exams-list-view { padding: 28px; }
+#section-subjects { padding: 0 !important; }
+#courses-list-view { padding: 28px; }
 
 /* Topbar */
 .exam-editor-topbar {
@@ -8691,6 +8693,11 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .yl-3 { background: #ede9fe; color: #5b21b6; }
 .yl-4 { background: #fef3c7; color: #92400e; }
 .yl-5 { background: #fee2e2; color: #b91c1c; }
+[data-theme="dark"] .yl-1 { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; }
+[data-theme="dark"] .yl-2 { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
+[data-theme="dark"] .yl-3 { background: rgba(139,92,246,0.18) !important; color: #c4b5fd !important; }
+[data-theme="dark"] .yl-4 { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
+[data-theme="dark"] .yl-5 { background: rgba(239,68,68,0.18) !important; color: #fca5a5 !important; }
 
 /* Section text */
 .section-text {

@@ -403,17 +403,45 @@ export default function AdminPage() {
               </div>
             </section>
 
-            {/* SUBJECTS (Courses) */}
-            <section id="section-subjects" className="admin-section hidden">
-              <div className="section-header">
-                <div>
-                  <div className="section-title">Courses</div>
-                  <div className="section-subtitle" id="courses-department-title" style={{ marginTop: '6px', fontSize: '20px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.02em', lineHeight: 1.2 }} />
-                  <div className="section-subtitle">Manage courses and their target year levels &amp; sections</div>
+            {/* SUBJECTS (Courses) — two views: grid and inline detail page */}
+            <section id="section-subjects" className="admin-section hidden" style={{ padding: 0 }}>
+
+              {/* VIEW 1: Cards grid */}
+              <div id="courses-list-view" style={{ padding: '28px' }}>
+                <div className="section-header">
+                  <div>
+                    <div className="section-title">Courses</div>
+                    <div className="section-subtitle" id="courses-department-title" style={{ marginTop: '6px', fontSize: '20px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.02em', lineHeight: 1.2 }} />
+                    <div className="section-subtitle">Manage courses and their target year levels &amp; sections</div>
+                  </div>
+                  <button className="btn btn-primary" onClick={() => window.openSubjectModal()}>+ Add Course</button>
                 </div>
-                <button className="btn btn-primary" onClick={() => window.openSubjectModal()}>+ Add Course</button>
+                <div id="course-cards-grid" className="course-cards-grid" />
               </div>
-              <div id="course-cards-grid" className="course-cards-grid" />
+
+              {/* VIEW 2: Inline course detail page */}
+              <div id="course-detail-view" className="hidden">
+                <div className="exam-editor-topbar">
+                  <button className="exam-editor-back" onClick={() => window.closeCourseDetail()}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    Courses
+                  </button>
+                  <div className="exam-editor-topbar-center">
+                    <span id="course-detail-name" className="exam-editor-name">Course</span>
+                  </div>
+                  <div className="exam-editor-topbar-actions">
+                    <button className="btn btn-secondary btn-sm" onClick={() => window.editCurrentCourseDetail()}>Edit Course</button>
+                  </div>
+                </div>
+                <div className="exam-editor-body">
+                  <div className="exam-editor-section-card">
+                    <div id="course-detail-sub" className="text-muted" style={{ fontSize: '13px' }} />
+                  </div>
+                  <div className="exam-editor-section-card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div id="course-detail-body" />
+                  </div>
+                </div>
+              </div>
             </section>
 
             {/* STUDENTS */}
@@ -867,6 +895,7 @@ export default function AdminPage() {
               <div className="form-group"><label>Course Name *</label><input type="text" className="form-control" id="subj-name" placeholder="e.g. Introduction to Computing" /></div>
             </div>
             <div className="form-group"><label>Description</label><textarea className="form-control" id="subj-desc" rows="2" placeholder="Brief description..." /></div>
+            <div className="form-group"><label>School Year</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
             <div className="form-row cols-2" style={{ marginBottom: 0 }}>
               <div className="form-group">
                 <label>Year Level</label>
@@ -967,16 +996,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="modal-backdrop hidden" id="modal-enrolled-students">
-        <div className="modal-dialog modal-lg">
-          <div className="modal-header">
-            <div><span className="modal-title" id="modal-enrolled-title">Enrolled Students</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-enrolled-sub" /></div>
-            <button className="modal-close" onClick={() => window.closeModal('modal-enrolled-students')}>&#10005;</button>
-          </div>
-          <div className="modal-body" id="modal-enrolled-body" style={{ padding: 0 }} />
-          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-enrolled-students')}>Close</button></div>
-        </div>
-      </div>
 
       <div className="modal-backdrop hidden" id="modal-camera-snap">
         <div className="modal-dialog modal-sm">
