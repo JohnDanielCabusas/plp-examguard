@@ -263,7 +263,7 @@
 [data-theme="dark"] .btn-action-ghost:hover,
 [data-theme="dark"] .tbl-btn-edit:hover {
   background: #22c55e !important;
-  color: #fff !important;
+  color: transparent !important;
   border-color: #22c55e !important;
   box-shadow: 0 6px 0 #145229 !important;
 }
@@ -280,7 +280,7 @@
 }
 [data-theme="dark"] .tbl-btn-archive:hover {
   background: #f87171 !important;
-  color: #fff !important;
+  color: transparent !important;
   border-color: #f87171 !important;
   box-shadow: 0 6px 0 #7f1d1d !important;
 }
