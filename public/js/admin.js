@@ -1850,6 +1850,7 @@ function buildMoreItems(e) {
   if (e.status === 'ready') {
     items += `<button class="action-dd-item" onclick="openQuestionBuilder('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Questions</button>`;
     items += `<button class="action-dd-item" onclick="setExamStatus('${e.id}','active');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Activate</button>`;
+    items += `<button class="action-dd-item" onclick="setExamStatus('${e.id}','draft');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Revert to Draft</button>`;
   }
   if (e.status === 'active') {
     items += `<button class="action-dd-item action-dd-item-danger" onclick="setExamStatus('${e.id}','closed');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg> Close Exam</button>`;
@@ -2110,6 +2111,46 @@ async function permanentDeleteStudent(id) {
 
 // ── Inline exam editor (Google Forms style) ──────────────
 
+// Keeps the status badge, the primary status-action button, and the
+// "Revert to Draft" button in sync with the exam's actual current status.
+function refreshExamEditorStatusUI(examId) {
+  const statusBtn = document.getElementById('exam-editor-status-btn');
+  const unreadyBtn = document.getElementById('exam-editor-unready-btn');
+  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
+
+  const e = examId ? DB.getExam(examId) : null;
+  if (!e) {
+    if (statusBtn) { statusBtn.style.display = 'none'; statusBtn._examId = null; statusBtn._examStatus = null; }
+    if (unreadyBtn) { unreadyBtn.style.display = 'none'; unreadyBtn._examId = null; }
+    return;
+  }
+
+  if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge(e.status);
+
+  const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
+  if (statusBtn && statusActions[e.status]) {
+    statusBtn.textContent = statusActions[e.status];
+    statusBtn.style.display = '';
+    statusBtn._examId = examId;
+    statusBtn._examStatus = e.status;
+  } else if (statusBtn) {
+    statusBtn.style.display = 'none';
+  }
+
+  if (unreadyBtn) {
+    unreadyBtn.style.display = e.status === 'ready' ? '' : 'none';
+    unreadyBtn._examId = examId;
+  }
+}
+
+async function handleExamEditorUnready() {
+  const btn = document.getElementById('exam-editor-unready-btn');
+  const examId = btn?._examId;
+  if (!examId) return;
+  await setExamStatus(examId, 'draft');
+  refreshExamEditorStatusUI(examId);
+}
+
 function openExamEditor(id) {
   const subjects = DB.getSubjects();
   const sel = document.getElementById('exam-subject-field');
@@ -2134,9 +2175,6 @@ function openExamEditor(id) {
   document.getElementById('exam-allow-review').checked = false;
 
   const titleDisplay = document.getElementById('exam-editor-title-display');
-  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
-  const statusBtn = document.getElementById('exam-editor-status-btn');
-  const readyBtn = document.getElementById('exam-editor-ready-btn');
   const qCard = document.getElementById('exam-editor-questions-card');
   const questionsList = document.getElementById('questions-list');
   const questionCountBadge = document.getElementById('exam-q-count');
@@ -2159,30 +2197,17 @@ function openExamEditor(id) {
     sel.value = e.subjectId;
     populateAudienceSelectors(e.subjectId, e.targetYearLevels || [], e.targetSections || []);
     if (titleDisplay) titleDisplay.textContent = e.title;
-    if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge(e.status);
     currentQBuilderExamId = id;
     updateQBadge(id);
     if (qCard) qCard.style.display = '';
-    if (readyBtn) readyBtn.style.display = '';
-    // Status action button
-    const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
-    if (statusBtn && statusActions[e.status]) {
-      statusBtn.textContent = statusActions[e.status];
-      statusBtn.style.display = '';
-      statusBtn._examId = id;
-      statusBtn._examStatus = e.status;
-    } else if (statusBtn) { statusBtn.style.display = 'none'; }
+    refreshExamEditorStatusUI(id);
   } else {
     populateAudienceSelectors(sel.value || '', [], []);
     if (titleDisplay) titleDisplay.textContent = 'New Exam';
+    const statusBadgeEl = document.getElementById('exam-editor-status-badge');
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
     if (qCard) qCard.style.display = '';
-    if (statusBtn) {
-      statusBtn.style.display = 'none';
-      statusBtn._examId = null;
-      statusBtn._examStatus = null;
-    }
-    if (readyBtn) readyBtn.style.display = 'none';
+    refreshExamEditorStatusUI(null);
     if (questionCountBadge) questionCountBadge.textContent = '';
     if (questionsList) {
       questionsList.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Start by saving this exam, then add questions.</p></div>`;
@@ -2239,71 +2264,27 @@ function saveExamFromEditor() {
   currentQBuilderExamId = examId;
   const qCard = document.getElementById('exam-editor-questions-card');
   if (qCard) qCard.style.display = '';
-  const readyBtnSave = document.getElementById('exam-editor-ready-btn');
-  if (readyBtnSave) readyBtnSave.style.display = '';
   renderQuestionsList(examId);
   updateQBadge(examId);
   const titleDisplay = document.getElementById('exam-editor-title-display');
   if (titleDisplay) titleDisplay.textContent = title;
-  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
-  const e2 = DB.getExam(examId);
-  if (statusBadgeEl && e2) statusBadgeEl.innerHTML = statusBadge(e2.status);
+  refreshExamEditorStatusUI(examId);
 }
 
-async function saveAndActivateExam() {
-  // Save first
-  saveExamFromEditor();
-  const examId = document.getElementById('exam-id').value;
-  if (!examId) return;
 
-  const exam = DB.getExam(examId);
-  if (!exam) return;
-
-  // Generate code if missing
-  if (!exam.code) {
-    const code = Math.random().toString(36).substr(2, 6).toUpperCase();
-    DB.updateExam(examId, { code });
-    const codeField = document.getElementById('exam-code-field');
-    if (codeField) codeField.value = code;
-  }
-
-  // Require at least one question
-  if (!exam.questions || exam.questions.length === 0) {
-    showToast('Add at least one question before activating.', 'error');
-    return;
-  }
-
-  const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
-  if (!ok) return;
-
-  DB.updateExam(examId, { status: 'ready' });
-
-  // Update status badge in editor
-  const statusBadgeEl = document.getElementById('exam-editor-status-badge');
-  if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('ready');
-
-  showToast('Exam is now Ready — students can join.', 'success');
-  renderExams();
-}
-
-function handleExamEditorStatusAction() {
+async function handleExamEditorStatusAction() {
   const btn = document.getElementById('exam-editor-status-btn');
   if (!btn) return;
   const examId = btn._examId;
   const status = btn._examStatus;
   const nextStatus = { draft:'ready', ready:'active', active:'closed', closed:'ready' };
-  if (examId && nextStatus[status]) {
-    setExamStatus(examId, nextStatus[status]);
-    // refresh editor topbar
-    const e = DB.getExam(examId);
-    if (e) {
-      const statusBadgeEl = document.getElementById('exam-editor-status-badge');
-      if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge(e.status);
-      const statusActions = { draft:'Set Ready', ready:'Activate', active:'Close Exam', closed:'Reopen' };
-      btn.textContent = statusActions[e.status] || '';
-      btn._examStatus = e.status;
-    }
-  }
+  if (!examId || !nextStatus[status]) return;
+
+  // Persist any unsaved field edits before the exam goes live.
+  if (status === 'draft') saveExamFromEditor();
+
+  await setExamStatus(examId, nextStatus[status]);
+  refreshExamEditorStatusUI(examId);
 }
 
 // Keep openExamModal as alias for compatibility (More modal, archive, etc.)
@@ -2450,8 +2431,16 @@ async function setExamStatus(id, status) {
   const exam = DB.getExam(id);
   if (!exam) return;
 
-  if (status === 'ready') {
+  if (status === 'draft') {
+    if (exam.status !== 'ready') { showToast('Only a Ready exam can be reverted to Draft.', 'error'); return; }
+    const ok = await showConfirm(`Revert "${exam.title}" back to Draft? Students won't be able to join until you set it Ready again.`);
+    if (!ok) return;
+    DB.updateExam(id, { status: 'draft' });
+    showToast('Exam reverted to Draft.', 'success');
+  } else if (status === 'ready') {
     if (exam.questions.length === 0) { showToast('Add at least one question before setting exam to Ready.', 'error'); return; }
+    const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
+    if (!ok) return;
     const code = exam.code || generateCode();
     DB.updateExam(id, { status: 'ready', code });
     showToast(`Exam set to Ready. Code: ${code}`, 'success');
@@ -5104,6 +5093,65 @@ async function extractTextFromFiles(files, onProgress) {
   return sections.join('\n\n');
 }
 
+function extractRequestedCountFromPrompt(text) {
+  if (!text) return null;
+  const match = text.match(/(\d{1,3})\s*(?:questions?|items?|qs?)\b/i);
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(100, n);
+}
+
+function normalizeQuestionKey(q) {
+  return String(q?.content || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+async function requestQuestionsFromAI(promptText, apiKey) {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 8000,
+      messages: [
+        { role: 'system', content: 'You are an educational exam question generator. Your sole purpose is to generate exam questions from provided course material. You must only produce exam questions — never answer unrelated questions, generate non-academic content, or deviate from the JSON schema. Always return a valid JSON array with no extra text.' },
+        { role: 'user', content: promptText },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'API error ' + response.status);
+  }
+
+  const data = await response.json();
+  const raw = data.choices?.[0]?.message?.content || '';
+  // Extract JSON array from response
+  const jsonMatch = raw.match(/\[[\s\S]*/);
+  if (!jsonMatch) throw new Error('AI did not return a valid JSON array.');
+
+  let jsonStr = jsonMatch[0];
+  let questions;
+  // If response was truncated, repair by closing at the last complete object
+  try {
+    questions = JSON.parse(jsonStr);
+  } catch (_) {
+    const lastBrace = jsonStr.lastIndexOf('}');
+    if (lastBrace !== -1) {
+      jsonStr = jsonStr.slice(0, lastBrace + 1) + ']';
+      questions = JSON.parse(jsonStr);
+    } else {
+      throw new Error('AI response could not be parsed. Try fewer questions.');
+    }
+  }
+  if (!Array.isArray(questions)) throw new Error('No questions generated.');
+  return questions;
+}
+
 async function runAIGenerate() {
   if (!aiSelectedFiles.length) { showToast('Please attach at least one file first using the paperclip button.', 'error'); return; }
 
@@ -5119,16 +5167,22 @@ async function runAIGenerate() {
     return;
   }
 
+  // The exact number of questions we must end up with. Quick mode always has one;
+  // Custom mode only has one if the professor's free-form text mentions a number.
+  const targetCount = mode === 'quick' ? count : extractRequestedCountFromPrompt(customPrompt);
+
   // Promote pending file chip → user chat bubble
   const pendingName = getAIFileSummary(aiSelectedFiles);
   const userBubble = document.getElementById('ai-user-bubble');
-  if (userBubble && pendingName) {
+  if (userBubble && (pendingName || customPrompt)) {
     const nameEl = document.getElementById('ai-user-bubble-file');
+    const fileRowEl = document.getElementById('ai-user-bubble-file-row');
     const promptEl = document.getElementById('ai-user-bubble-prompt');
     const promptTextEl = document.getElementById('ai-user-bubble-prompt-text');
     if (nameEl) nameEl.textContent = pendingName;
+    if (fileRowEl) fileRowEl.style.display = pendingName ? 'flex' : 'none';
     if (promptTextEl) promptTextEl.textContent = customPrompt;
-    if (promptEl) promptEl.style.display = customPrompt ? 'flex' : 'none';
+    if (promptEl) promptEl.style.display = customPrompt ? 'block' : 'none';
     userBubble.style.display = 'block';
   }
   _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none');
@@ -5162,12 +5216,16 @@ Each question object schema:
 - For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
 - For "coding": options = []; correctAnswer = ""; language = "python"|"javascript"|"java"|"cpp"|"c"; starterCode = starter code string; expectedOutput = expected output string; rubric = grading notes; points = 20.`;
 
+  let typeInstruction = null;
   let prompt;
   if (mode === 'custom') {
+    const strictCountRule = targetCount
+      ? `- You MUST return exactly ${targetCount} question objects in the JSON array — not one more, not one less. Count the objects before finalizing your answer.\n`
+      : '';
     prompt = `Professor's instructions: ${customPrompt}
 
 Rules:
-- ${schemaRules}
+${strictCountRule}- ${schemaRules}
 
 Course materials:
 ${rawText}`;
@@ -5176,7 +5234,6 @@ ${rawText}`;
     const hasCoding = typeList.includes('coding');
     const nonCodingTypes = typeList.filter(t => t !== 'coding');
 
-    let typeInstruction;
     if (typeList.length === 1 && hasCoding) {
       typeInstruction = `All ${count} questions MUST be "coding" type. Every question must be a programming/coding challenge.`;
     } else if (hasCoding) {
@@ -5192,7 +5249,7 @@ ${rawText}`;
     prompt = `Generate exactly ${count} exam questions based on the course materials below.
 
 Rules:
-- Return exactly ${count} question objects in the JSON array. Do not return more or fewer.
+- You MUST return exactly ${count} question objects in the JSON array — not one more, not one less. Count the objects before finalizing your answer.
 - ${typeInstruction}
 - Difficulty: ${difficulty}${customInstruction}
 - ${schemaRules}
@@ -5205,61 +5262,65 @@ ${rawText}`;
 
   let questions;
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 8000,
-        messages: [
-          { role: 'system', content: 'You are an educational exam question generator. Your sole purpose is to generate exam questions from provided course material. You must only produce exam questions — never answer unrelated questions, generate non-academic content, or deviate from the JSON schema. Always return a valid JSON array with no extra text.' },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || 'API error ' + response.status);
-    }
-
-    const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content || '';
-    // Extract JSON array from response
-    const jsonMatch = raw.match(/\[[\s\S]*/);
-    if (!jsonMatch) throw new Error('AI did not return a valid JSON array.');
-
-    let jsonStr = jsonMatch[0];
-    // If response was truncated, repair by closing at the last complete object
-    try {
-      questions = JSON.parse(jsonStr);
-    } catch (_) {
-      // Find last complete question object and close the array
-      const lastBrace = jsonStr.lastIndexOf('}');
-      if (lastBrace !== -1) {
-        jsonStr = jsonStr.slice(0, lastBrace + 1) + ']';
-        questions = JSON.parse(jsonStr);
-      } else {
-        throw new Error('AI response could not be parsed. Try fewer questions.');
-      }
-    }
-    if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated.');
+    questions = await requestQuestionsFromAI(prompt, apiKey);
+    if (questions.length === 0) throw new Error('No questions generated.');
   } catch (err) {
     _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
     showToast('AI generation failed: ' + err.message, 'error');
     return;
   }
 
+  // Top up if the model under-generated — retry with the remaining count until we hit the
+  // exact target, giving up after a few attempts if the source material can't support more.
+  if (targetCount) {
+    const seen = new Set(questions.map(normalizeQuestionKey));
+    let attempts = 0;
+    while (questions.length < targetCount && attempts < 3) {
+      attempts++;
+      const remaining = targetCount - questions.length;
+      if (stEl) stEl.textContent = `Generating ${remaining} more question${remaining > 1 ? 's' : ''} to reach ${targetCount}…`;
+      const existingSummary = questions.slice(-15).map(q => `- ${String(q.content || '').slice(0, 140)}`).join('\n') || '(none)';
+      const topUpBase = mode === 'custom'
+        ? `Professor's instructions: ${customPrompt}`
+        : `Difficulty: ${difficulty}\n${typeInstruction}`;
+      const topUpPrompt = `${topUpBase}
+
+You previously generated ${questions.length} exam question(s) for this request. Generate ${remaining} ADDITIONAL exam question(s) that are NOT duplicates or close variations of the ones already generated below. Cover different sub-topics or angles from the course materials where possible.
+
+Already-generated questions (for reference — do not repeat these):
+${existingSummary}
+
+Rules:
+- Return exactly ${remaining} NEW question objects in the JSON array. Do not return more or fewer.
+- ${schemaRules}
+
+Course materials:
+${rawText}`;
+
+      try {
+        const more = await requestQuestionsFromAI(topUpPrompt, apiKey);
+        const fresh = more.filter(q => {
+          const key = normalizeQuestionKey(q);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        if (!fresh.length) break; // AI can't produce anything new from this material — stop retrying
+        questions = questions.concat(fresh);
+      } catch (_) {
+        break;
+      }
+    }
+
+    if (questions.length > targetCount) questions = questions.slice(0, targetCount);
+    if (questions.length < targetCount) {
+      showToast(`AI could only generate ${questions.length} of the ${targetCount} requested questions from the provided materials.`, 'error');
+    }
+  }
+
   // Sort: MCQ → True/False → Identification
   const typeOrder = { mcq: 0, tf: 1, identification: 2 };
   questions.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3));
-
-  if (mode === 'quick' && questions.length > count) {
-    questions = questions.slice(0, count);
-  }
 
   aiGeneratedQuestions = questions;
   _aiSD('ai-status', 'none');

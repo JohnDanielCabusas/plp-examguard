@@ -9,6 +9,7 @@ export default function AdminPage() {
   const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute('data-theme') === 'dark');
   const [aiCustomPrompt, setAiCustomPrompt] = useState('');
   const [pinnedPrompts, setPinnedPrompts] = useState([]);
+  const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('');
 
   const sanitizePinnedPrompts = (value) => {
     if (!Array.isArray(value)) return [];
@@ -22,7 +23,7 @@ export default function AdminPage() {
         seen.add(key);
         return true;
       })
-      .slice(0, 6);
+      .slice(0, 10);
   };
 
   const parseAiCountInput = (value) => {
@@ -57,10 +58,16 @@ export default function AdminPage() {
     }
   };
 
-  const handlePinPrompt = () => {
-    const prompt = aiCustomPrompt.trim();
+  const handlePinPrompt = (promptOverride) => {
+    const prompt = String(
+      promptOverride
+      ?? lastSubmittedPrompt
+      ?? document.getElementById('ai-user-bubble-prompt-text')?.textContent
+      ?? aiCustomPrompt
+      ?? ''
+    ).trim();
     if (!prompt) {
-      window.showToast?.('Write a custom prompt first before pinning it.', 'error');
+      window.showToast?.('There is no prompt to pin yet.', 'error');
       return;
     }
     const nextPrompts = [prompt, ...pinnedPrompts.filter(entry => entry.toLowerCase() !== prompt.toLowerCase())];
@@ -68,9 +75,34 @@ export default function AdminPage() {
     window.showToast?.('Prompt pinned for quick reuse.', 'success');
   };
 
+  const handleRunAIGenerate = () => {
+    if (aiMode === 'custom') {
+      const currentPrompt = String(
+        document.getElementById('ai-custom-prompt-custom')?.value
+        ?? aiCustomPrompt
+        ?? document.getElementById('ai-custom-prompt')?.value
+        ?? ''
+      ).trim();
+      setLastSubmittedPrompt(currentPrompt);
+    }
+    window.runAIGenerate();
+  };
+
   const handleUsePinnedPrompt = (prompt) => {
     setAiMode('custom');
     setAiCustomPrompt(prompt);
+    requestAnimationFrame(() => document.getElementById('ai-custom-prompt-custom')?.focus());
+  };
+
+  const handleEditSentPrompt = () => {
+    const prompt = String(lastSubmittedPrompt || document.getElementById('ai-user-bubble-prompt-text')?.textContent || '').trim();
+    setAiMode('custom');
+    setAiCustomPrompt(prompt);
+    // Generation swaps the Generate button out for Import Selected — restore it so the edited prompt can be resent.
+    const genBtn = document.getElementById('ai-gen-btn');
+    const importBtn = document.getElementById('ai-import-btn');
+    if (genBtn) genBtn.style.display = 'flex';
+    if (importBtn) importBtn.style.display = 'none';
     requestAnimationFrame(() => document.getElementById('ai-custom-prompt-custom')?.focus());
   };
 
@@ -89,6 +121,8 @@ export default function AdminPage() {
         surfaceSoftAlt: '#202938',
         surfaceInput: '#11161d',
         surfacePreview: '#161d27',
+        composerBg: '#151b24',
+        composerFieldBg: '#1b2330',
         textStrong: '#f0f6fc',
         text: '#d7dee7',
         textMuted: '#93a0ae',
@@ -120,6 +154,8 @@ export default function AdminPage() {
         surfaceSoftAlt: '#f3f4f6',
         surfaceInput: '#ffffff',
         surfacePreview: '#f3f4f6',
+        composerBg: '#f8fafc',
+        composerFieldBg: '#ffffff',
         textStrong: '#0f2d1a',
         text: '#374151',
         textMuted: '#9ca3af',
@@ -214,6 +250,7 @@ export default function AdminPage() {
   useEffect(() => {
     const handlePromptReset = () => {
       setAiCustomPrompt('');
+      setLastSubmittedPrompt('');
     };
 
     window.addEventListener('ai:resetPrompt', handlePromptReset);
@@ -455,15 +492,15 @@ export default function AdminPage() {
                     <span id="exam-editor-status-badge" />
                   </div>
                   <div className="exam-editor-topbar-actions">
-                    <button className="btn btn-secondary btn-sm" id="exam-editor-status-btn" onClick={() => window.handleExamEditorStatusAction()} style={{ display: 'none' }} />
                     <button className="btn btn-secondary btn-sm" onClick={() => window.saveExamFromEditor()}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
                       Save Draft
                     </button>
-                    <button id="exam-editor-ready-btn" className="btn btn-primary btn-sm" onClick={() => window.saveAndActivateExam()} style={{ display: 'none' }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                      Ready
+                    <button className="btn btn-secondary btn-sm" id="exam-editor-unready-btn" title="Revert this exam back to Draft" onClick={() => window.handleExamEditorUnready()} style={{ display: 'none' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+                      Revert to Draft
                     </button>
+                    <button className="btn btn-primary btn-sm" id="exam-editor-status-btn" onClick={() => window.handleExamEditorStatusAction()} style={{ display: 'none' }} />
                   </div>
                 </div>
 
@@ -1010,70 +1047,18 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
-                /* CUSTOM: pinned prompts + welcome bubble */
-                <div style={{ padding:'20px 24px 0', display:'flex', flexDirection:'column', gap:'14px' }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', flexWrap:'wrap' }}>
-                    <div>
-                      <div style={{ fontSize:'11px', fontWeight:800, color:aiTheme.textMuted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'4px' }}>Ready-Made Prompts</div>
-                      <div style={{ fontSize:'12px', color:aiTheme.text, lineHeight:1.5 }}>
-                        Pin your best custom instructions so they stay one click away.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handlePinPrompt}
-                      style={{ padding:'8px 14px', borderRadius:'999px', border:`1px solid ${aiTheme.accentBorder}`, background:aiTheme.accentSoft, color:aiTheme.accentStrong, cursor:'pointer', fontSize:'12px', fontWeight:700 }}
-                    >
-                      Pin Current Prompt
-                    </button>
+              ) : !lastSubmittedPrompt ? (
+                /* CUSTOM: centered empty state (shown until the first prompt is submitted) */
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'64px 32px 24px', gap:'14px', animation:'aiBubbleIn 0.3s ease' }}>
+                  <div style={{ width:'52px', height:'52px', borderRadius:'14px', background:aiTheme.surfaceSoft, display:'flex', alignItems:'center', justifyContent:'center', border:`1px solid ${aiTheme.previewBorder}` }}>
+                    <img src="/plp-logo.png" alt="PLP" style={{ width:'30px', height:'30px', objectFit:'contain' }} />
                   </div>
-                  {pinnedPrompts.length ? (
-                    <div style={{ display:'grid', gap:'10px' }}>
-                      {pinnedPrompts.map((prompt, index) => (
-                        <div key={`${prompt}-${index}`} style={{ background:aiTheme.surfaceMuted, border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'14px', padding:'12px 14px', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'14px' }}>
-                          <div style={{ minWidth:0 }}>
-                            <div style={{ fontSize:'11px', fontWeight:800, color:aiTheme.textMuted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'6px' }}>
-                              Prompt {index + 1}
-                            </div>
-                            <div style={{ fontSize:'13px', color:aiTheme.text, lineHeight:1.55, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>
-                              {prompt}
-                            </div>
-                          </div>
-                          <div style={{ display:'flex', gap:'8px', flexShrink:0 }}>
-                            <button
-                              type="button"
-                              onClick={() => handleUsePinnedPrompt(prompt)}
-                              style={{ padding:'8px 12px', borderRadius:'10px', border:'none', background:aiTheme.primaryBg, color:aiTheme.primaryText, cursor:'pointer', fontSize:'12px', fontWeight:700 }}
-                            >
-                              Use Prompt
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePinnedPrompt(prompt)}
-                              style={{ padding:'8px 12px', borderRadius:'10px', border:`1px solid ${aiTheme.previewBorder}`, background:aiTheme.surfaceInput, color:aiTheme.textMuted, cursor:'pointer', fontSize:'12px', fontWeight:700 }}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ background:aiTheme.surfaceMuted, border:`1px dashed ${aiTheme.previewBorder}`, borderRadius:'14px', padding:'14px 16px', color:aiTheme.textMuted, fontSize:'13px', lineHeight:1.55 }}>
-                      No pinned prompts yet. Write a custom instruction below, then pin it to reuse it anytime.
-                    </div>
-                  )}
-                  <div style={{ display:'flex', gap:'10px', alignItems:'flex-end', animation:'aiBubbleIn 0.3s ease' }}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'50%', flexShrink:0, background:aiTheme.surfaceSoft, display:'flex', alignItems:'center', justifyContent:'center', border:`1px solid ${aiTheme.accentBorder}` }}>
-                    <img src="/plp-logo.png" alt="PLP" style={{ width:'24px', height:'24px', objectFit:'contain' }} />
-                  </div>
-                  <div style={{ background:aiTheme.surfacePreview, borderRadius:'16px 16px 16px 4px', padding:'13px 17px', maxWidth:'82%', fontSize:'13px', color:aiTheme.text, lineHeight:1.55 }}>
-                    Attach your course materials, then describe exactly what you want - how many questions, types, and difficulty.
+                  <div style={{ fontSize:'17px', fontWeight:700, color:aiTheme.textStrong }}>What would you like to generate?</div>
+                  <div style={{ fontSize:'13px', color:aiTheme.textMuted, maxWidth:'380px', lineHeight:1.6 }}>
+                    Attach your course materials, then describe how many questions, question types, and difficulty level you want.
                   </div>
                 </div>
-                </div>
-              )}
+              ) : null}
             </div>
 
             {/* ── Always-present shared elements (always in DOM for admin.js) ── */}
@@ -1081,14 +1066,42 @@ export default function AdminPage() {
 
               {/* User bubble — only meaningful in Custom mode */}
               <div id="ai-user-bubble" style={{ display:'none', animation:'aiBubbleIn 0.3s ease' }}>
-                <div style={{ background:isDark ? '#16311f' : '#0f2d1a', borderRadius:'14px', padding:'16px 20px', width:'100%', border:`1px solid ${aiTheme.accentBorder}` }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'8px' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                    <span id="ai-user-bubble-file" style={{ color:aiTheme.accentText, fontWeight:600, fontSize:'13px', wordBreak:'break-all' }} />
+                <div style={{ display:'flex', justifyContent:'flex-end', gap:'12px', alignItems:'flex-end' }}>
+                  <div className="ai-user-message" style={{ maxWidth:'78%', background:aiTheme.surfaceSoftAlt, border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'18px 18px 8px 18px', padding:'14px 16px', boxShadow:'0 16px 32px rgba(0,0,0,0.16)' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'12px' }}>
+                      <div style={{ minWidth:0, flex:1 }}>
+                        <div id="ai-user-bubble-file-row" style={{ display:'none', alignItems:'center', gap:'8px', marginBottom:'8px', color:aiTheme.textMuted }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.textMuted} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                          <span id="ai-user-bubble-file" style={{ fontWeight:600, fontSize:'12px', wordBreak:'break-all' }} />
+                        </div>
+                        <div id="ai-user-bubble-prompt" style={{ display:'none', color:aiTheme.textStrong, fontSize:'14px', lineHeight:1.65 }}>
+                          <span id="ai-user-bubble-prompt-text" />
+                        </div>
+                      </div>
+                      <div className="ai-user-actions" style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                        <button
+                          type="button"
+                          title="Pin Prompt"
+                          aria-label="Pin prompt"
+                          onClick={() => handlePinPrompt(lastSubmittedPrompt || document.getElementById('ai-user-bubble-prompt-text')?.textContent)}
+                          style={{ width:'28px', height:'28px', borderRadius:'10px', border:`1px solid ${aiTheme.accentBorder}`, background:'transparent', color:aiTheme.accent, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                        </button>
+                        <button
+                          type="button"
+                          title="Edit & resend"
+                          aria-label="Edit and resend prompt"
+                          onClick={handleEditSentPrompt}
+                          style={{ width:'28px', height:'28px', borderRadius:'10px', border:`1px solid ${aiTheme.previewBorder}`, background:'transparent', color:aiTheme.textMuted, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div id="ai-user-bubble-prompt" style={{ display:'none', color:isDark ? 'rgba(240,246,252,0.88)' : 'rgba(255,255,255,0.85)', fontSize:'13px', lineHeight:1.5, alignItems:'center', gap:'10px' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                    <span id="ai-user-bubble-prompt-text" />
+                  <div style={{ width:'40px', height:'40px', borderRadius:'999px', flexShrink:0, background:'linear-gradient(135deg, rgba(34,197,94,0.28), rgba(34,197,94,0.18))', border:`1px solid ${aiTheme.accentBorder}`, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 10px 28px rgba(0,0,0,0.2)' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
                   </div>
                 </div>
               </div>
@@ -1134,7 +1147,7 @@ export default function AdminPage() {
           </div>
 
           {/* ── Mode toggle bar ── */}
-          <div style={{ padding:'10px 20px', background:aiTheme.surfaceMuted, borderTop:`1px solid ${aiTheme.previewBorder}`, display:'flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
+          <div style={{ padding:'10px 20px', background:aiTheme.surfaceMuted, borderTop:`1px solid ${aiTheme.previewBorder}`, display: aiMode === 'custom' ? 'none' : 'flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
             {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
               <button key={m} type="button" onClick={() => { setAiMode(m); setDiffOpen(false); }}
                 style={{ padding:'7px 20px', borderRadius:'20px', fontSize:'12px', fontWeight:700, border:`1.5px solid ${aiTheme.toggleBorder}`, cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? aiTheme.primaryBg : aiTheme.toggleIdleBg, color: aiMode===m ? aiTheme.primaryText : aiTheme.toggleIdleText, boxShadow: aiMode===m ? 'none' : `inset 0 0 0 1px ${aiTheme.accentBorder}` }}>
@@ -1150,7 +1163,7 @@ export default function AdminPage() {
             <textarea id="ai-custom-prompt"
               placeholder={aiMode==='quick' ? '' : 'e.g. Generate 30 questions — 20 MCQ and 10 identification, medium difficulty, focus on Chapter 3…'}
               style={{ display: aiMode==='quick' ? 'none' : 'none', position:'absolute' }}
-              onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
+              onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleRunAIGenerate(); } }}
             />
 
             {aiMode === 'quick' ? (
@@ -1189,51 +1202,99 @@ export default function AdminPage() {
                 </div>
               </div>
             ) : (
-              /* Custom: textarea + paperclip + send */
+              /* Custom: pinned prompts + chat input */
               <>
-                <div id="ai-file-info" style={{ display:'none', padding:'8px 18px 0', alignItems:'center' }}>
-                  <div style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:aiTheme.accentBg, border:`1.5px solid ${aiTheme.accentBorder}`, borderRadius:'10px', padding:'6px 12px', fontSize:'12px', fontWeight:600, color:aiTheme.accentText }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                    <span id="ai-file-name" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'340px' }} />
-                    <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:aiTheme.accentStrong, fontSize:'14px', lineHeight:1, padding:0 }}>x</button>
+                <div style={{ padding:'14px 20px 18px' }}>
+                  <div style={{ border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'20px', background:aiTheme.composerBg, overflow:'hidden', boxShadow:isDark ? 'inset 0 1px 0 rgba(255,255,255,0.03), 0 16px 36px rgba(0,0,0,0.22)' : '0 12px 30px rgba(0,0,0,0.08)' }}>
+
+                    {pinnedPrompts.length > 0 && (
+                      <div style={{ padding:'14px 14px 0' }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', marginBottom:'10px' }}>
+                          <div style={{ fontSize:'12px', fontWeight:700, color:aiTheme.textStrong, display:'flex', alignItems:'center', gap:'6px' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accent} strokeWidth="2"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                            Pinned Prompts
+                          </div>
+                          <div style={{ fontSize:'12px', color:aiTheme.textMuted, fontWeight:600 }}>{pinnedPrompts.length}/10</div>
+                        </div>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:'8px' }}>
+                        {pinnedPrompts.map((prompt, index) => (
+                          <div
+                            key={`${prompt}-${index}`}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleUsePinnedPrompt(prompt)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleUsePinnedPrompt(prompt);
+                              }
+                            }}
+                            title={prompt}
+                            style={{ display:'flex', alignItems:'center', gap:'7px', maxWidth:'260px', background:aiTheme.surfacePreview, border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'999px', padding:'6px 8px 6px 11px', color:aiTheme.text, cursor:'pointer' }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accent} strokeWidth="2" style={{ flexShrink:0 }}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:'12px' }}>{prompt}</span>
+                            <button
+                              type="button"
+                              aria-label="Delete pinned prompt"
+                              onClick={(e) => { e.stopPropagation(); handleRemovePinnedPrompt(prompt); }}
+                              style={{ flexShrink:0, background:'none', border:'none', color:aiTheme.textMuted, fontSize:'13px', lineHeight:1, cursor:'pointer', padding:'2px' }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div id="ai-file-info" style={{ display:'none', alignItems:'center', padding:'14px 14px 0' }}>
+                      <div style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:aiTheme.composerFieldBg, border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'999px', padding:'8px 12px', fontSize:'12px', fontWeight:600, color:aiTheme.text }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                        <span id="ai-file-name" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'340px' }} />
+                        <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:aiTheme.textMuted, fontSize:'14px', lineHeight:1, padding:0 }}>×</button>
+                      </div>
+                    </div>
+
+                    <textarea id="ai-custom-prompt-custom" rows={1}
+                      value={aiCustomPrompt}
+                      placeholder="Ask Tuklas AI anything..."
+                      style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'16px 18px 6px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
+                      onChange={(e) => setAiCustomPrompt(e.target.value)}
+                      onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,96)+'px'; }}
+                      onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleRunAIGenerate(); } }}
+                    />
+
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', padding:'0 10px 10px 14px', flexWrap:'wrap', background:aiTheme.composerBg }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap' }}>
+                        <label htmlFor="ai-file-input" title="Attach files"
+                          style={{ width:'32px', height:'32px', background:'transparent', border:'none', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background 0.15s', color:aiTheme.textMuted }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background=aiTheme.surfaceSoft; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                        </label>
+                        <span style={{ width:'1px', height:'18px', background:aiTheme.previewBorder, margin:'0 4px' }} />
+                        {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
+                          <button key={m} type="button" onClick={() => { setAiMode(m); setDiffOpen(false); }}
+                            style={{ padding:'6px 14px', borderRadius:'999px', fontSize:'12px', fontWeight:700, border:`1px solid ${aiMode===m ? 'transparent' : aiTheme.previewBorder}`, cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? aiTheme.primaryBg : 'transparent', color: aiMode===m ? aiTheme.primaryText : aiTheme.text }}>
+                            {l}
+                          </button>
+                        ))}
+                        <span style={{ fontSize:'12px', color:aiTheme.textMuted, marginLeft:'2px' }}>Free-form Instructions</span>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                        <button id="ai-gen-btn" onClick={handleRunAIGenerate}
+                          style={{ height:'40px', padding:'0 18px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
+                          Generate with AI
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                        </button>
+                        <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+                          style={{ display:'none', height:'40px', padding:'0 16px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
+                          Import Selected
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div style={{ padding:'8px 18px 10px', display:'flex', gap:'10px', alignItems:'flex-end' }}>
-                  <label htmlFor="ai-file-input" title="Attach files"
-                    style={{ width:'38px', height:'38px', background:aiTheme.surfacePreview, border:`1.5px solid ${aiTheme.previewBorder}`, borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'all 0.15s' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background=aiTheme.surfaceSoft; e.currentTarget.style.borderColor=aiTheme.accentBorder; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background=aiTheme.surfacePreview; e.currentTarget.style.borderColor=aiTheme.previewBorder; }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={aiTheme.textMuted} strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  </label>
-                  <textarea id="ai-custom-prompt-custom" rows={1}
-                    value={aiCustomPrompt}
-                    placeholder="e.g. Generate 30 questions - 20 MCQ and 10 identification, medium difficulty..."
-                    style={{ flex:1, resize:'none', border:`1.5px solid ${aiTheme.previewBorder}`, borderRadius:'12px', padding:'9px 13px', fontSize:'13px', outline:'none', fontFamily:'inherit', lineHeight:1.5, maxHeight:'72px', overflowY:'auto', transition:'border-color 0.15s, background 0.15s, color 0.15s', background:aiTheme.surfaceInput, color:aiTheme.text }}
-                    onFocus={(e) => { e.target.style.borderColor=aiTheme.accentStrong; }}
-                    onBlur={(e) => { e.target.style.borderColor=aiTheme.previewBorder; }}
-                    onChange={(e) => setAiCustomPrompt(e.target.value)}
-                    onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,72)+'px'; }}
-                    onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); window.runAIGenerate(); } }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handlePinPrompt}
-                    style={{ height:'38px', padding:'0 14px', background:aiTheme.surfaceMuted, border:`1px solid ${aiTheme.accentBorder}`, borderRadius:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:aiTheme.accentStrong, fontWeight:700, fontSize:'12px', whiteSpace:'nowrap', flexShrink:0 }}
-                  >
-                    Pin Prompt
-                  </button>
-                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
-                    style={{ height:'38px', padding:'0 20px', background:aiTheme.primaryBg, border:'none', borderRadius:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                    Generate with AI
-                  </button>
-                  <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                    style={{ display:'none', height:'38px', padding:'0 16px', background:aiTheme.primaryBg, border:'none', borderRadius:'12px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
-                    Import Selected
-                  </button>
-                </div>
-                <div style={{ padding:'0 18px 14px 66px', fontSize:'11px', color:aiTheme.textMuted }}>
-                  Pinned prompts are saved to your professor settings and can be reused the next time you open Custom mode.
                 </div>
               </>
             )}
@@ -1268,8 +1329,14 @@ export default function AdminPage() {
         #ai-status { flex-direction:row; }
         #ai-preview { flex-direction:row; }
         #ai-gen-btn:hover { opacity:0.85; }
+        .ai-user-message { transition:transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+        .ai-user-message:hover { transform:translateY(-1px); border-color:${aiTheme.accentBorder}; box-shadow:0 20px 40px rgba(0,0,0,0.22); }
+        .ai-user-actions { opacity:0; pointer-events:none; transform:translateY(4px); transition:opacity 0.18s ease, transform 0.18s ease; }
+        .ai-user-message:hover .ai-user-actions { opacity:1; pointer-events:auto; transform:translateY(0); }
         .ai-file-drop-hover label { background:${aiTheme.surfaceSoft} !important; border-color:${aiTheme.accentStrong} !important; }
         #ai-custom-prompt-custom::placeholder { color:${aiTheme.textMuted}; }
+        #ai-custom-prompt-custom::selection { background:${isDark ? 'rgba(74,222,128,0.22)' : 'rgba(34,197,94,0.18)'}; color:${aiTheme.textStrong}; }
+        #ai-custom-prompt-custom:focus { background:${aiTheme.composerBg}; }
       `}</style>
     </>
   );
