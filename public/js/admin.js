@@ -2150,8 +2150,36 @@ function updateExamAbsenteeSummary(examId) {
   const el = document.getElementById('exam-absentee-summary');
   if (!el) return;
   const exam = examId ? DB.getExam(examId) : null;
-  const count = exam ? (exam.excludedStudentIds || []).length : 0;
-  el.textContent = count ? `${count} student${count === 1 ? '' : 's'} marked absent` : '';
+  const subjectId = exam?.subjectId || document.getElementById('exam-subject-field')?.value || '';
+  if (!subjectId) {
+    el.textContent = 'Select a course first.';
+    return;
+  }
+  const enrolledStudentIds = new Set(getExamAttendanceStudents(subjectId).map(student => student.id));
+  const count = exam
+    ? (exam.excludedStudentIds || []).filter(studentId => enrolledStudentIds.has(studentId)).length
+    : 0;
+  const enrolledCount = enrolledStudentIds.size;
+  el.textContent = count
+    ? `${count} of ${enrolledCount} enrolled student${enrolledCount === 1 ? '' : 's'} marked absent`
+    : `${enrolledCount} enrolled student${enrolledCount === 1 ? '' : 's'} available`;
+}
+
+function getExamAttendanceStudents(subjectId) {
+  if (!subjectId) return [];
+  return DB.getStudents()
+    .filter(student => (student.enrolledSubjects || []).includes(subjectId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function pruneExamExcludedStudentIds(excludedStudentIds, subjectId) {
+  if (!subjectId) return [];
+  const enrolledStudentIds = new Set(getExamAttendanceStudents(subjectId).map(student => student.id));
+  return (excludedStudentIds || []).filter(studentId => enrolledStudentIds.has(studentId));
+}
+
+function handleExamEditorSubjectChange() {
+  updateExamAbsenteeSummary(currentQBuilderExamId || null);
 }
 
 async function handleExamEditorUnready() {
@@ -2166,12 +2194,7 @@ function openExamEditor(id) {
   const subjects = DB.getSubjects();
   const sel = document.getElementById('exam-subject-field');
   sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(formatCourseNameDisplay(s.name))}</option>`).join('');
-
-  // Wire subject change → repopulate audience
-  if (!sel._audienceWired) {
-    sel._audienceWired = true;
-    sel.addEventListener('change', function() { populateAudienceSelectors(this.value, [], []); });
-  }
+  sel.onchange = handleExamEditorSubjectChange;
 
   // Reset form
   document.getElementById('exam-id').value = '';
@@ -2206,14 +2229,12 @@ function openExamEditor(id) {
     document.getElementById('exam-ai-detect').checked = e.requireAIDetection || false;
     document.getElementById('exam-allow-review').checked = e.allowReview || false;
     sel.value = e.subjectId;
-    populateAudienceSelectors(e.subjectId, e.targetYearLevels || [], e.targetSections || []);
     if (titleDisplay) titleDisplay.textContent = e.title;
     currentQBuilderExamId = id;
     updateQBadge(id);
     if (qCard) qCard.style.display = '';
     refreshExamEditorStatusUI(id);
   } else {
-    populateAudienceSelectors(sel.value || '', [], []);
     if (titleDisplay) titleDisplay.textContent = 'New Exam';
     const statusBadgeEl = document.getElementById('exam-editor-status-badge');
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
@@ -2253,20 +2274,20 @@ function saveExamFromEditor() {
   const requireCamera = document.getElementById('exam-require-camera').checked;
   const requireAIDetection = document.getElementById('exam-ai-detect').checked;
   const allowReview = document.getElementById('exam-allow-review').checked;
-  const checkedCombos = [...document.querySelectorAll('.exam-yearsection-cb:checked')];
-  const targetYearLevels = checkedCombos.map(cb => cb.dataset.year);
-  const targetSections = checkedCombos.map(cb => cb.dataset.section);
 
   if (!title) { showToast('Exam title is required.', 'error'); return; }
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
-  if (!targetYearLevels.length) { showToast('Select at least one Year Level - Section this exam is restricted to.', 'error'); return; }
 
-  const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, targetYearLevels, targetSections };
+  const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
 
   let examId = id;
   if (id) {
-    DB.updateExam(id, data);
+    const existingExam = DB.getExam(id);
+    DB.updateExam(id, {
+      ...data,
+      excludedStudentIds: pruneExamExcludedStudentIds(existingExam?.excludedStudentIds, subjectId),
+    });
     showToast('Exam saved.', 'success');
   } else {
     const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, questions: [], excludedStudentIds: [] });
@@ -2347,7 +2368,21 @@ function saveExam() {
 
   let examId = id;
   if (id) {
-    DB.updateExam(id, { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData });
+    const existingExam = DB.getExam(id);
+    DB.updateExam(id, {
+      title,
+      subjectId,
+      description,
+      timeLimit,
+      code,
+      shuffleQuestions,
+      shuffleAnswers,
+      requireCamera,
+      requireAIDetection,
+      allowReview,
+      excludedStudentIds: pruneExamExcludedStudentIds(existingExam?.excludedStudentIds, subjectId),
+      ...audienceData,
+    });
     showToast('Exam updated.', 'success');
   } else {
     const exam = DB.addExam({ title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
@@ -2363,88 +2398,25 @@ function saveExam() {
   switchExamTab('questions');
 }
 
-// Formats a student's year level + section as a single compact code, e.g.
-// yearLevel "3rd Year" + section "B" → "3-B". Used to build/match the exam
-// audience restriction list.
-function formatYearSection(yearLevel, section) {
-  const yearMatch = String(yearLevel || '').match(/\d+/);
-  const yearPart = yearMatch ? yearMatch[0] : String(yearLevel || '').trim();
-  const sectionPart = String(section || '').trim();
-  if (!yearPart || !sectionPart) return '';
-  return `${yearPart}-${sectionPart}`;
-}
-
-// Builds the Year-Section restriction checkboxes for the exam editor's audience picker,
-// scoped to the exact year-section combinations that actually exist among students
-// enrolled in the selected subject (e.g. "3-B", "4-A") — never a generic system-wide list.
-// savedYearLevels/savedSections are parallel arrays (same storage shape as the exam
-// record: index i in each represents one allowed year+section combo).
-function populateAudienceSelectors(subjectId, savedYearLevels, savedSections) {
-  const enrolled = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjectId));
-  const yearOrder = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
-  const seen = new Set();
-  const combos = enrolled
-    .map(s => ({ yearLevel: s.yearLevel, section: s.section, code: formatYearSection(s.yearLevel, s.section) }))
-    .filter(c => c.code && !seen.has(c.code) && seen.add(c.code))
-    .sort((a, b) => {
-      const yearDiff = yearOrder.indexOf(a.yearLevel) - yearOrder.indexOf(b.yearLevel);
-      return yearDiff !== 0 ? yearDiff : String(a.section).localeCompare(String(b.section));
-    });
-
-  const savedPairs = new Set((savedYearLevels || []).map((y, i) => `${y}||${(savedSections || [])[i]}`));
-
-  const panel = document.getElementById('exam-audience-panel');
-  if (panel) {
-    panel.innerHTML = combos.length
-      ? combos.map(c => `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:600;padding:7px 12px;border:1px solid var(--border);border-radius:999px;"><input type="checkbox" class="exam-yearsection-cb" value="${escHtml(c.code)}" data-year="${escHtml(c.yearLevel)}" data-section="${escHtml(c.section)}" ${savedPairs.has(`${c.yearLevel}||${c.section}`) ? 'checked' : ''} onchange="updateExamAudienceSummary()" style="accent-color:#1a4d2a;width:15px;height:15px;cursor:pointer;" />${escHtml(c.code)}</label>`).join('')
-      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No enrolled students yet — enroll students in this course first</span>`;
-  }
-
-  updateExamAudienceSummary();
-}
-
-function updateExamAudienceSummary() {
-  const summaryEl = document.getElementById('exam-audience-summary');
-  if (!summaryEl) return;
-  const combos = [...document.querySelectorAll('.exam-yearsection-cb:checked')].map(cb => cb.value);
-  summaryEl.textContent = combos.length ? combos.join(', ') : 'Select year - section…';
-}
-
-function toggleExamAudienceDropdown() {
-  const panel = document.getElementById('exam-audience-panel');
-  const chevron = document.getElementById('exam-audience-chevron');
-  if (!panel) return;
-  const opening = panel.classList.contains('hidden');
-  panel.classList.toggle('hidden');
-  if (chevron) chevron.style.transform = opening ? 'rotate(180deg)' : '';
-}
-
 // ── Manage Absentees (per-exam student exclusion) ──────────
 
 function openExamAbsenteesModal() {
-  // Persist the current form — including the Year/Section restriction — before building
-  // the roster. Without this, checking a new restriction box and immediately opening this
-  // modal (without hitting the main Save button first) would show a roster based on
-  // unsaved checkbox state, while the exam's actually-persisted targetYearLevels/
-  // targetSections (what students are really gated on in exam.js) stays stale — so a
-  // student marked "present" here could still be blocked by the unsaved restriction.
+  // Persist the current form first, in case this exam hasn't been saved yet.
   saveExamFromEditor();
   if (!currentQBuilderExamId) return;
   const examId = currentQBuilderExamId;
   const exam = DB.getExam(examId);
   if (!exam) return;
 
-  // Scope the roster to whatever audience restriction is currently set, so the list
-  // matches exactly who is actually eligible to take this exam.
-  const targetPairs = [...document.querySelectorAll('.exam-yearsection-cb:checked')].map(cb => ({ year: cb.dataset.year, section: cb.dataset.section }));
-  let students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(exam.subjectId));
-  if (targetPairs.length) students = students.filter(s => targetPairs.some(p => p.year === s.yearLevel && p.section.toLowerCase() === String(s.section || '').toLowerCase()));
-  students.sort((a, b) => a.name.localeCompare(b.name));
-
-  const excluded = new Set(exam.excludedStudentIds || []);
+  const students = getExamAttendanceStudents(exam.subjectId);
+  const normalizedExcludedStudentIds = pruneExamExcludedStudentIds(exam.excludedStudentIds, exam.subjectId);
+  if (normalizedExcludedStudentIds.length !== (exam.excludedStudentIds || []).length) {
+    DB.updateExam(examId, { excludedStudentIds: normalizedExcludedStudentIds });
+  }
+  const excluded = new Set(normalizedExcludedStudentIds);
 
   const sub = document.getElementById('modal-absentees-sub');
-  if (sub) sub.textContent = `${students.length} student${students.length === 1 ? '' : 's'} eligible for "${exam.title}" — uncheck anyone absent`;
+  if (sub) sub.textContent = `${students.length} enrolled student${students.length === 1 ? '' : 's'} for "${exam.title}" — uncheck anyone absent`;
 
   const body = document.getElementById('modal-absentees-body');
   if (body) {
@@ -2473,7 +2445,7 @@ function openExamAbsenteesModal() {
               </div>
             </label>`).join('')}
         </div>`
-      : `<div class="empty-state" style="padding:20px;"><p>No enrolled students match this exam's audience restriction.</p></div>`;
+      : `<div class="empty-state" style="padding:20px;"><p>No students are enrolled in this course yet.</p></div>`;
   }
 
   document.getElementById('modal-exam-absentees').classList.remove('hidden');
@@ -2733,16 +2705,8 @@ function pickQuestionType(idx, type) {
 }
 
 // Close on outside click
-document.addEventListener('click', (e) => {
+document.addEventListener('click', () => {
   document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
-
-  const audiencePanel = document.getElementById('exam-audience-panel');
-  const audienceDropdown = document.getElementById('exam-audience-dropdown');
-  if (audiencePanel && !audiencePanel.classList.contains('hidden') && audienceDropdown && !audienceDropdown.contains(e.target)) {
-    audiencePanel.classList.add('hidden');
-    const chevron = document.getElementById('exam-audience-chevron');
-    if (chevron) chevron.style.transform = '';
-  }
 });
 
 function setTFAnswer(qIdx, answer) {
@@ -4678,20 +4642,6 @@ function showToast(message, type = 'success', options = {}) {
 // ============================================================
 // UTILITIES
 // ============================================================
-function buildAudienceTag(exam) {
-  const years = exam.targetYearLevels || [];
-  const sections = exam.targetSections || [];
-  if (!years.length) return '';
-
-  const combos = years.map((y, i) => formatYearSection(y, sections[i])).filter(Boolean);
-  if (!combos.length) return '';
-
-  return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-    ${escHtml(combos.join(', '))}
-  </span>`;
-}
-
 function statusBadge(status) {
   const map = {
     draft: 'badge-secondary',

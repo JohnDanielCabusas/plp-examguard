@@ -628,6 +628,25 @@ export default function ExamPage() {
           </div>
         </div>
       </div>
+
+      <div id="confirm-unenroll-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog">
+            <div className="confirm-icon" style={{ background: '#fdecea' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b3261e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                <line x1="12" y1="2" x2="12" y2="12"/>
+              </svg>
+            </div>
+            <div className="confirm-title">Unenroll from Course</div>
+            <div className="confirm-message" id="confirm-unenroll-msg">Unenroll from this course? You will lose access to its exams and materials unless you rejoin with an enrollment code.</div>
+            <div className="confirm-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelUnenroll()}>Cancel</button>
+              <button type="button" data-exam-control="true" className="btn btn-danger examv2-interactive" onClick={() => window.ExamApp.confirmUnenroll()}>Unenroll</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

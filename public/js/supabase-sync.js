@@ -331,29 +331,6 @@ const SupabaseSync = {
         error = retryError;
       }
 
-      // Subjects: (owner_admin_id, code) conflict on upsert.
-      // Fetch the existing record and overwrite it with the new data using its real ID,
-      // then fix local cache. Works for both ID divergence and archived-code-reuse.
-      if (error && table === 'subjects' && error.code === '23505') {
-        const { data: existing } = await this._client.from('subjects')
-          .select('id')
-          .eq('code', row.code)
-          .eq('owner_admin_id', row.owner_admin_id)
-          .maybeSingle();
-        if (existing && existing.id !== row.id) {
-          const subjects = window.DB?._read?.('acs_subjects', []);
-          const idx = subjects.findIndex(s => s.id === data.id);
-          if (idx >= 0) {
-            subjects[idx] = { ...subjects[idx], id: existing.id };
-            window.DB?._write?.('acs_subjects', subjects);
-          }
-          const { error: fixError } = await this._client.from('subjects')
-            .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
-          if (!fixError) return;
-          error = fixError;
-        }
-      }
-
       if (error) {
         console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
         // Surface sync failures as a visible warning

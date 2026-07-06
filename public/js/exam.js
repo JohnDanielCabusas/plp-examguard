@@ -316,24 +316,11 @@ const ExamApp = {
       return;
     }
 
-    // Audience restrictions — block new joins for students outside the exam's allowed
-    // year-section combos, or explicitly excluded (e.g. marked absent). Students who
-    // already have a session in progress are grandfathered in rather than kicked out mid-exam.
+    // Attendance — block new joins for students explicitly marked absent by the
+    // professor. Students who already have a session in progress are grandfathered in
+    // rather than kicked out mid-exam.
     if (!existingSession) {
       const student = DB.getStudent(studentSession.studentId);
-      const yearLevel = studentSession.yearLevel || (student ? student.yearLevel : '');
-      const section = studentSession.section || (student ? student.section : '');
-      const targetYears = exam.targetYearLevels || [];
-      const targetSections = exam.targetSections || [];
-
-      if (targetYears.length) {
-        const combo = formatYearSection(yearLevel, section);
-        const allowed = targetYears.some((y, i) => formatYearSection(y, targetSections[i]) === combo);
-        if (!allowed) {
-          this._showError('This exam is not available for your year level and section.');
-          return;
-        }
-      }
       if (student && (exam.excludedStudentIds || []).includes(student.id)) {
         this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
         return;
@@ -661,6 +648,7 @@ const ExamApp = {
         <div class="course-banner-deco-circle c2"></div>
         <div class="course-banner-deco-circle c3"></div>
         <div class="course-banner-deco-letter">${deco}</div>
+        <button type="button" class="course-banner-unenroll-btn" onclick="ExamApp.requestUnenroll('${subj.id}')" title="Unenroll from this course">Unenroll</button>
         <div class="course-banner-inner">
           <div class="course-banner-title">${_esc(subj.name)}</div>
           <div class="course-banner-code">${_esc(subj.code)}</div>
@@ -741,17 +729,10 @@ const ExamApp = {
 
     const student = DB.getStudent(sess.studentId);
     // Mirrors the join-time enforcement in _startExamFlow: a student is blocked from an
-    // exam if it's restricted to other year-section groups, or they're marked absent —
-    // unless they already have a session (in progress or submitted), which is grandfathered in.
+    // exam if they're marked absent — unless they already have a session (in progress or
+    // submitted), which is grandfathered in.
     const isBlockedForStudent = (e) => {
       if (DB.getStudentSession(e.id, sess.studentId)) return false;
-      const targetYears = e.targetYearLevels || [];
-      const targetSections = e.targetSections || [];
-      if (targetYears.length) {
-        const combo = formatYearSection(sess.yearLevel, sess.section);
-        const allowed = targetYears.some((y, i) => formatYearSection(y, targetSections[i]) === combo);
-        if (!allowed) return true;
-      }
       if (student && (e.excludedStudentIds || []).includes(student.id)) return true;
       return false;
     };
@@ -818,12 +799,12 @@ const ExamApp = {
             <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (blocked) {
-          accentLabel = 'Restricted';
-          stateHtml = `<span class="course-exam-state state-closed">Restricted</span>`;
+          accentLabel = 'Absent';
+          stateHtml = `<span class="course-exam-state state-closed">Absent</span>`;
           panelHtml = `<div class="course-exam-panel panel-closed">
             <div class="course-exam-panel-top">
               ${stateHtml}
-              <div class="course-exam-panel-note">This exam isn't available to you.</div>
+              <div class="course-exam-panel-note">You've been marked absent for this exam.</div>
             </div>
             <button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.5;cursor:not-allowed;"><span>Not Available</span></button>
           </div>`;
@@ -1042,15 +1023,8 @@ const ExamApp = {
     // Audience filter: returns true if the exam is visible to this student
     const audienceMatch = (e) => {
       // Already joined (in progress or submitted) — don't retroactively hide it if
-      // the restriction/exclusion list changes after the fact.
+      // the exclusion list changes after the fact.
       if (DB.getStudentSession(e.id, sess.studentId)) return true;
-      const years = e.targetYearLevels || [];
-      const sections = e.targetSections || [];
-      if (years.length) {
-        const combo = formatYearSection(sess.yearLevel, sess.section);
-        const allowed = years.some((y, i) => formatYearSection(y, sections[i]) === combo);
-        if (!allowed) return false;
-      }
       if (student && (e.excludedStudentIds || []).includes(student.id)) return false;
       return true;
     };
@@ -1140,10 +1114,6 @@ const ExamApp = {
           `<span>${_esc(`${e.timeLimit} min`)}</span>`,
         ];
         if (e.requireCamera) metaParts.push(this._portalLabel('camera', 'Camera', { size: 13, gap: 5 }));
-        if ((e.targetYearLevels||[]).length) {
-          const combos = e.targetYearLevels.map((y, i) => formatYearSection(y, (e.targetSections||[])[i])).filter(Boolean);
-          if (combos.length) metaParts.push(this._portalLabel('users', combos.join(', '), { size: 13, gap: 5 }));
-        }
 
         return `<div class="dash-exam-row">
           <div style="min-width:0;flex:1;">
@@ -1173,6 +1143,7 @@ const ExamApp = {
             <div class="dash-subject-name">${_esc(subj.name)}</div>
             <span class="dash-subject-code">${_esc(subj.code)}</span>
           </div>
+          <button type="button" class="btn btn-secondary btn-sm dash-unenroll-btn" title="Unenroll from this course" onclick="ExamApp.requestUnenroll('${subj.id}')">Unenroll</button>
         </div>
         ${examsHtml}
       </div>`;
@@ -1327,6 +1298,36 @@ const ExamApp = {
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
     Auth.clearStudentSession();
     window.location.href = 'index.html';
+  },
+
+  _unenrollTargetId: null,
+
+  requestUnenroll(subjId) {
+    const subj = DB.getSubjects().find(s => s.id === subjId);
+    if (!subj) return;
+    this._unenrollTargetId = subjId;
+    const msgEl = document.getElementById('confirm-unenroll-msg');
+    if (msgEl) msgEl.textContent = `Unenroll from "${subj.name}"? You will lose access to its exams and materials unless you rejoin with an enrollment code.`;
+    document.getElementById('confirm-unenroll-modal')?.classList.remove('hidden');
+  },
+
+  cancelUnenroll() {
+    this._unenrollTargetId = null;
+    document.getElementById('confirm-unenroll-modal')?.classList.add('hidden');
+  },
+
+  confirmUnenroll() {
+    const subjId = this._unenrollTargetId;
+    const sess = Auth.getStudentSession();
+    if (!subjId || !sess) { this.cancelUnenroll(); return; }
+    const student = DB.getStudent(sess.studentId);
+    if (!student) { this.cancelUnenroll(); return; }
+    const updated = (student.enrolledSubjects || []).filter(id => id !== subjId);
+    DB.updateStudent(student.id, { enrolledSubjects: updated });
+    this.cancelUnenroll();
+    this._showToast('You have been unenrolled from the course.', 'success');
+    if (this._currentCourseId === subjId) this.showPortalTab('home');
+    this._renderDashboard(sess);
   },
 
   // ============================================================
@@ -3452,16 +3453,6 @@ const ExamApp = {
 function _esc(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// Formats a year level + section as a compact code, e.g. "3rd Year" + "B" → "3-B".
-// Mirrors formatYearSection() in admin.js — used to match/display exam audience restrictions.
-function formatYearSection(yearLevel, section) {
-  const yearMatch = String(yearLevel || '').match(/\d+/);
-  const yearPart = yearMatch ? yearMatch[0] : String(yearLevel || '').trim();
-  const sectionPart = String(section || '').trim();
-  if (!yearPart || !sectionPart) return '';
-  return `${yearPart}-${sectionPart}`;
 }
 
 function _escText(str) {
