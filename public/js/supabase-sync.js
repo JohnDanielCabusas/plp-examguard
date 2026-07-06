@@ -14,6 +14,12 @@ const SupabaseSync = {
   _deferredHydrationPromise: null,
   _readyEmitted: false,
   _sessionAiDetectionsSupported: true,
+  // Exam IDs whose excluded_student_ids value is known to NOT have made it to Supabase yet
+  // (e.g. PostgREST's schema cache was briefly stale and rejected the column). While an id
+  // is in this set, realtime/pull updates for that exam must not trust the incoming
+  // excluded_student_ids value — it would just echo back the stale server-side copy and
+  // clobber the correct local one. Cleared once a write that includes the field succeeds.
+  _examIdsWithUnsyncedExclusions: new Set(),
 
   _writeLocal(key, value) {
     window.DB?._write?.(key, value);
@@ -80,8 +86,27 @@ const SupabaseSync = {
     this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
     this._writeLocal('acs_students', (students || []).map(r => this._dbToJsStudent(r)));
     this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
-    this._writeLocal('acs_exams', (exams || []).map(r => this._dbToJsExam(r)));
+    this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+  },
+
+  // Normalizes exam rows from Supabase, but preserves the locally-known
+  // excludedStudentIds instead of letting the pull silently wipe/revert it, whenever
+  // either (a) this Supabase project's schema doesn't have the column yet (pre-migration),
+  // or (b) a prior write for that exam is known not to have persisted the field (see
+  // _examIdsWithUnsyncedExclusions in syncDoc()).
+  _dbToJsExamsPreservingLocal(rawRows) {
+    const existingById = new Map(this._localArray('acs_exams').map(e => [e.id, e]));
+    return (rawRows || []).map(r => {
+      const normalized = this._dbToJsExam(r);
+      if (!('excluded_student_ids' in r) || this._examIdsWithUnsyncedExclusions.has(normalized.id)) {
+        const prior = existingById.get(normalized.id);
+        if (prior && Array.isArray(prior.excludedStudentIds)) {
+          normalized.excludedStudentIds = prior.excludedStudentIds;
+        }
+      }
+      return normalized;
+    });
   },
   async _hydrateDeferredTables() {
     if (this._deferredHydrationPromise || !this._client) return this._deferredHydrationPromise;
@@ -135,6 +160,11 @@ const SupabaseSync = {
           rows = rows.map(row => this._withoutSessionAiDetections(row));
           ({ error } = await c.from(table).upsert(rows));
         }
+        if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
+          rows.forEach(row => this._examIdsWithUnsyncedExclusions.add(row.id));
+          rows = rows.map(row => this._withoutExamExcludedStudentIds(row));
+          ({ error } = await c.from(table).upsert(rows));
+        }
         if (error) console.warn(`[SupabaseSync] seed ${table}:`, error.message);
       }
     }
@@ -169,6 +199,17 @@ const SupabaseSync = {
         this._writeLocal(lsKey, current.filter(r => r.id !== old.id));
       } else {
         const normalized = normalizer(row);
+        // Exams: preserve locally-known excludedStudentIds if either (a) this Supabase
+        // project's schema doesn't have the column yet (pre-migration), or (b) our last
+        // write for this exam is known to have failed to persist that field (e.g. a
+        // temporarily stale PostgREST schema cache) — in both cases the incoming row's
+        // value is stale/wrong and would clobber the correct local one. See syncDoc().
+        if (table === 'exams' && row && (!('excluded_student_ids' in row) || this._examIdsWithUnsyncedExclusions.has(normalized.id))) {
+          const prior = current.find(r => r.id === normalized.id);
+          if (prior && Array.isArray(prior.excludedStudentIds)) {
+            normalized.excludedStudentIds = prior.excludedStudentIds;
+          }
+        }
         const idx = current.findIndex(r => r.id === normalized.id);
         if (idx >= 0) { current[idx] = normalized; this._writeLocal(lsKey, current); }
         else { this._writeLocal(lsKey, [...current, normalized]); }
@@ -203,7 +244,7 @@ const SupabaseSync = {
     if (!this._client) return;
     const { data: exams } = await this._client.from('exams').select('*');
     if (exams) {
-      this._writeLocal('acs_exams', exams.map(r => this._dbToJsExam(r)));
+      this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
   },
 
@@ -229,9 +270,28 @@ const SupabaseSync = {
     // avoiding false conflicts on unique columns like exams.code
     this._client.from(table).upsert(row, { onConflict: 'id' })
       .then(async ({ error }) => {
+        if (!error && table === 'exams') {
+          // This write included excluded_student_ids and Postgres accepted it —
+          // the row is now authoritative again, so trust future echoes of it.
+          this._examIdsWithUnsyncedExclusions.delete(row.id);
+        }
+
         if (error && this._isMissingSessionAiDetectionsError(table, error)) {
           this._sessionAiDetectionsSupported = false;
           const fallbackRow = this._withoutSessionAiDetections(row);
+          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+          if (!retryError) return;
+          error = retryError;
+        }
+
+        if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
+          // PostgREST's schema cache is (probably temporarily) out of sync with the real
+          // table — don't give up on this field forever, just skip it for THIS write and
+          // keep trying on every future save until it succeeds. Meanwhile, mark this exam
+          // so realtime/pull echoes don't clobber the correct local value with Supabase's
+          // stale copy of excluded_student_ids.
+          this._examIdsWithUnsyncedExclusions.add(row.id);
+          const fallbackRow = this._withoutExamExcludedStudentIds(row);
           const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
           if (!retryError) return;
           error = retryError;
@@ -354,7 +414,7 @@ const SupabaseSync = {
   },
 
   _jsToDbExam(d) {
-    return {
+    const row = {
       id: d.id,
       subject_id: d.subjectId,
       title: d.title,
@@ -374,7 +434,9 @@ const SupabaseSync = {
       owner_admin_id: d.ownerAdminId || null,
       started_at: d.startedAt || null,
       closed_at: d.closedAt || null,
+      excluded_student_ids: Array.isArray(d.excludedStudentIds) ? d.excludedStudentIds : [],
     };
+    return row;
   },
 
   _jsToDbSession(d) {
@@ -516,6 +578,7 @@ const SupabaseSync = {
       questions: Array.isArray(r.questions) ? r.questions : [],
       targetYearLevels: Array.isArray(r.target_year_levels) ? r.target_year_levels : [],
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
+      excludedStudentIds: Array.isArray(r.excluded_student_ids) ? r.excluded_student_ids : [],
       ownerAdminId: r.owner_admin_id || '',
       startedAt: r.started_at || null,
       closedAt: r.closed_at || null,
@@ -583,6 +646,17 @@ const SupabaseSync = {
   _withoutSessionAiDetections(row) {
     const next = { ...row };
     delete next.ai_detections;
+    return next;
+  },
+
+  _isMissingExamExcludedStudentIdsError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'exams' && message.includes(`Could not find the 'excluded_student_ids' column`);
+  },
+
+  _withoutExamExcludedStudentIds(row) {
+    const next = { ...row };
+    delete next.excluded_student_ids;
     return next;
   },
 

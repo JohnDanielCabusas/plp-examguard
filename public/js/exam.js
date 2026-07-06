@@ -314,6 +314,30 @@ const ExamApp = {
       return;
     }
 
+    // Audience restrictions — block new joins for students outside the exam's allowed
+    // year-section combos, or explicitly excluded (e.g. marked absent). Students who
+    // already have a session in progress are grandfathered in rather than kicked out mid-exam.
+    if (!existingSession) {
+      const student = DB.getStudent(studentSession.studentId);
+      const yearLevel = studentSession.yearLevel || (student ? student.yearLevel : '');
+      const section = studentSession.section || (student ? student.section : '');
+      const targetYears = exam.targetYearLevels || [];
+      const targetSections = exam.targetSections || [];
+
+      if (targetYears.length) {
+        const combo = formatYearSection(yearLevel, section);
+        const allowed = targetYears.some((y, i) => formatYearSection(y, targetSections[i]) === combo);
+        if (!allowed) {
+          this._showError('This exam is not available for your year level and section.');
+          return;
+        }
+      }
+      if (student && (exam.excludedStudentIds || []).includes(student.id)) {
+        this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+        return;
+      }
+    }
+
     if (exam.status === 'ready') {
       this._renderWaitingInfo(studentSession, exam);
       this.showState('waiting');
@@ -701,6 +725,23 @@ const ExamApp = {
     const listEl = document.getElementById('course-tab-exams');
     if (!listEl) return;
 
+    const student = DB.getStudent(sess.studentId);
+    // Mirrors the join-time enforcement in _startExamFlow: a student is blocked from an
+    // exam if it's restricted to other year-section groups, or they're marked absent —
+    // unless they already have a session (in progress or submitted), which is grandfathered in.
+    const isBlockedForStudent = (e) => {
+      if (DB.getStudentSession(e.id, sess.studentId)) return false;
+      const targetYears = e.targetYearLevels || [];
+      const targetSections = e.targetSections || [];
+      if (targetYears.length) {
+        const combo = formatYearSection(sess.yearLevel, sess.section);
+        const allowed = targetYears.some((y, i) => formatYearSection(y, targetSections[i]) === combo);
+        if (!allowed) return true;
+      }
+      if (student && (e.excludedStudentIds || []).includes(student.id)) return true;
+      return false;
+    };
+
     const allExams = DB.getExams().filter(e => e.subjectId === subjId && e.status !== 'draft');
     if (!allExams.length) {
       listEl.innerHTML = `<div class="dash-empty">
@@ -730,6 +771,7 @@ const ExamApp = {
 
       exams.forEach(e => {
         const dbSess = DB.getStudentSession(e.id, sess.studentId);
+        const blocked = !dbSess && (e.status === 'active' || e.status === 'ready') && isBlockedForStudent(e);
         let panelHtml = '';
         let stateHtml = '';
         let accentLabel = g.label;
@@ -760,6 +802,16 @@ const ExamApp = {
               <div class="course-exam-panel-note">${scoreHtml}</div>
             </div>
             <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
+          </div>`;
+        } else if (blocked) {
+          accentLabel = 'Restricted';
+          stateHtml = `<span class="course-exam-state state-closed">Restricted</span>`;
+          panelHtml = `<div class="course-exam-panel panel-closed">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-note">This exam isn't available to you.</div>
+            </div>
+            <button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.5;cursor:not-allowed;"><span>Not Available</span></button>
           </div>`;
         } else if (e.status === 'active') {
           accentLabel = 'Active';
@@ -808,10 +860,12 @@ const ExamApp = {
           </div>`;
         }
 
-        html += `<div class="course-exam-card ${g.cardClass}">
+        const cardClass = blocked ? 'status-closed' : g.cardClass;
+        const iconClass = blocked ? '' : g.iconClass;
+        html += `<div class="course-exam-card ${cardClass}"${blocked ? ' style="opacity:0.7;"' : ''}>
           <div class="course-exam-shell">
             <div class="course-exam-card-left">
-              <div class="course-exam-icon ${g.iconClass}">
+              <div class="course-exam-icon ${iconClass}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               </div>
               <div class="course-exam-copy">
@@ -970,13 +1024,17 @@ const ExamApp = {
 
     // Audience filter: returns true if the exam is visible to this student
     const audienceMatch = (e) => {
+      // Already joined (in progress or submitted) — don't retroactively hide it if
+      // the restriction/exclusion list changes after the fact.
+      if (DB.getStudentSession(e.id, sess.studentId)) return true;
       const years = e.targetYearLevels || [];
       const sections = e.targetSections || [];
-      if (years.length > 0 && sess.yearLevel && !years.includes(sess.yearLevel)) return false;
-      if (sections.length > 0 && sess.section) {
-        const match = sections.some(s => s.toLowerCase() === sess.section.toLowerCase());
-        if (!match) return false;
+      if (years.length) {
+        const combo = formatYearSection(sess.yearLevel, sess.section);
+        const allowed = years.some((y, i) => formatYearSection(y, sections[i]) === combo);
+        if (!allowed) return false;
       }
+      if (student && (e.excludedStudentIds || []).includes(student.id)) return false;
       return true;
     };
 
@@ -1065,11 +1123,9 @@ const ExamApp = {
           `<span>${_esc(`${e.timeLimit} min`)}</span>`,
         ];
         if (e.requireCamera) metaParts.push(this._portalLabel('camera', 'Camera', { size: 13, gap: 5 }));
-        if ((e.targetYearLevels||[]).length || (e.targetSections||[]).length) {
-          const abbr = { '1st Year':'Y1','2nd Year':'Y2','3rd Year':'Y3','4th Year':'Y4' };
-          const yrs = (e.targetYearLevels||[]).map(y => abbr[y]||y).join('/');
-          const secs = (e.targetSections||[]).join('/');
-          metaParts.push(this._portalLabel('users', [yrs, secs].filter(Boolean).join(' · '), { size: 13, gap: 5 }));
+        if ((e.targetYearLevels||[]).length) {
+          const combos = e.targetYearLevels.map((y, i) => formatYearSection(y, (e.targetSections||[])[i])).filter(Boolean);
+          if (combos.length) metaParts.push(this._portalLabel('users', combos.join(', '), { size: 13, gap: 5 }));
         }
 
         return `<div class="dash-exam-row">
@@ -3281,6 +3337,16 @@ const ExamApp = {
 function _esc(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Formats a year level + section as a compact code, e.g. "3rd Year" + "B" → "3-B".
+// Mirrors formatYearSection() in admin.js — used to match/display exam audience restrictions.
+function formatYearSection(yearLevel, section) {
+  const yearMatch = String(yearLevel || '').match(/\d+/);
+  const yearPart = yearMatch ? yearMatch[0] : String(yearLevel || '').trim();
+  const sectionPart = String(section || '').trim();
+  if (!yearPart || !sectionPart) return '';
+  return `${yearPart}-${sectionPart}`;
 }
 
 function _escText(str) {

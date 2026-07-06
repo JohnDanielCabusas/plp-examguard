@@ -2122,6 +2122,7 @@ function refreshExamEditorStatusUI(examId) {
   if (!e) {
     if (statusBtn) { statusBtn.style.display = 'none'; statusBtn._examId = null; statusBtn._examStatus = null; }
     if (unreadyBtn) { unreadyBtn.style.display = 'none'; unreadyBtn._examId = null; }
+    updateExamAbsenteeSummary(null);
     return;
   }
 
@@ -2141,6 +2142,16 @@ function refreshExamEditorStatusUI(examId) {
     unreadyBtn.style.display = e.status === 'ready' ? '' : 'none';
     unreadyBtn._examId = examId;
   }
+
+  updateExamAbsenteeSummary(examId);
+}
+
+function updateExamAbsenteeSummary(examId) {
+  const el = document.getElementById('exam-absentee-summary');
+  if (!el) return;
+  const exam = examId ? DB.getExam(examId) : null;
+  const count = exam ? (exam.excludedStudentIds || []).length : 0;
+  el.textContent = count ? `${count} student${count === 1 ? '' : 's'} marked absent` : '';
 }
 
 async function handleExamEditorUnready() {
@@ -2242,12 +2253,14 @@ function saveExamFromEditor() {
   const requireCamera = document.getElementById('exam-require-camera').checked;
   const requireAIDetection = document.getElementById('exam-ai-detect').checked;
   const allowReview = document.getElementById('exam-allow-review').checked;
-  const targetYearLevels = [...document.querySelectorAll('.exam-year-cb:checked')].map(cb => cb.value);
-  const targetSections   = [...document.querySelectorAll('.exam-section-cb:checked')].map(cb => cb.value);
+  const checkedCombos = [...document.querySelectorAll('.exam-yearsection-cb:checked')];
+  const targetYearLevels = checkedCombos.map(cb => cb.dataset.year);
+  const targetSections = checkedCombos.map(cb => cb.dataset.section);
 
   if (!title) { showToast('Exam title is required.', 'error'); return; }
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
+  if (!targetYearLevels.length) { showToast('Select at least one Year Level - Section this exam is restricted to.', 'error'); return; }
 
   const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, targetYearLevels, targetSections };
 
@@ -2256,7 +2269,7 @@ function saveExamFromEditor() {
     DB.updateExam(id, data);
     showToast('Exam saved.', 'success');
   } else {
-    const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, questions: [] });
+    const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, questions: [], excludedStudentIds: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');
@@ -2350,70 +2363,139 @@ function saveExam() {
   switchExamTab('questions');
 }
 
-function populateAudienceSelectors(savedYears = [], savedSections = []) {
-  const students = DB.getStudents();
-
-  // Collect unique year levels
-  const allYears = [...new Set(
-    students.map(s => s.yearLevel).filter(Boolean)
-  )].sort((a, b) => {
-    const order = ['1st Year','2nd Year','3rd Year','4th Year','5th Year'];
-    return order.indexOf(a) - order.indexOf(b);
-  });
-
-  // Collect unique sections
-  const allSections = [...new Set(
-    students.map(s => s.section).filter(Boolean)
-  )].sort();
-
-  const cbStyle = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;color:#374151;';
-
-  const yearEl = document.getElementById('exam-year-checks');
-  if (yearEl) {
-    yearEl.innerHTML = allYears.length
-      ? allYears.map(y => `
-          <label style="${cbStyle}">
-            <input type="checkbox" class="exam-year-cb" value="${escHtml(y)}"
-              ${savedYears.includes(y) ? 'checked' : ''}
-              style="accent-color:#0f2d1a;width:15px;height:15px;cursor:pointer;" />
-            ${escHtml(y)}
-          </label>`).join('')
-      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No students in the system yet</span>`;
-  }
-
-  const secEl = document.getElementById('exam-section-checks');
-  if (secEl) {
-    secEl.innerHTML = allSections.length
-      ? allSections.map(s => `
-          <label style="${cbStyle}">
-            <input type="checkbox" class="exam-section-cb" value="${escHtml(s)}"
-              ${savedSections.includes(s) ? 'checked' : ''}
-              style="accent-color:#0f2d1a;width:15px;height:15px;cursor:pointer;" />
-            ${escHtml(s)}
-          </label>`).join('')
-      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No sections in the system yet</span>`;
-  }
+// Formats a student's year level + section as a single compact code, e.g.
+// yearLevel "3rd Year" + section "B" → "3-B". Used to build/match the exam
+// audience restriction list.
+function formatYearSection(yearLevel, section) {
+  const yearMatch = String(yearLevel || '').match(/\d+/);
+  const yearPart = yearMatch ? yearMatch[0] : String(yearLevel || '').trim();
+  const sectionPart = String(section || '').trim();
+  if (!yearPart || !sectionPart) return '';
+  return `${yearPart}-${sectionPart}`;
 }
 
-function populateAudienceSelectors(subjectId, savedYears, savedSections) {
-  const subj = DB.getSubject(subjectId);
-  const availYears    = (subj && subj.yearLevels) ? subj.yearLevels : [];
-  const availSections = (subj && subj.sections)   ? subj.sections   : [];
-  const cbStyle = 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;color:#374151;';
+// Builds the Year-Section restriction checkboxes for the exam editor's audience picker,
+// scoped to the exact year-section combinations that actually exist among students
+// enrolled in the selected subject (e.g. "3-B", "4-A") — never a generic system-wide list.
+// savedYearLevels/savedSections are parallel arrays (same storage shape as the exam
+// record: index i in each represents one allowed year+section combo).
+function populateAudienceSelectors(subjectId, savedYearLevels, savedSections) {
+  const enrolled = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjectId));
+  const yearOrder = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+  const seen = new Set();
+  const combos = enrolled
+    .map(s => ({ yearLevel: s.yearLevel, section: s.section, code: formatYearSection(s.yearLevel, s.section) }))
+    .filter(c => c.code && !seen.has(c.code) && seen.add(c.code))
+    .sort((a, b) => {
+      const yearDiff = yearOrder.indexOf(a.yearLevel) - yearOrder.indexOf(b.yearLevel);
+      return yearDiff !== 0 ? yearDiff : String(a.section).localeCompare(String(b.section));
+    });
 
-  const yearEl = document.getElementById('exam-year-checks');
-  if (yearEl) {
-    yearEl.innerHTML = availYears.length
-      ? availYears.map(y => `<label style="${cbStyle}"><input type="checkbox" class="exam-year-cb" value="${escHtml(y)}" ${(savedYears||[]).includes(y) ? 'checked' : ''} style="accent-color:#0f2d1a;width:15px;height:15px;cursor:pointer;" />${escHtml(y)}</label>`).join('')
-      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No year levels defined for this course</span>`;
+  const savedPairs = new Set((savedYearLevels || []).map((y, i) => `${y}||${(savedSections || [])[i]}`));
+
+  const panel = document.getElementById('exam-audience-panel');
+  if (panel) {
+    panel.innerHTML = combos.length
+      ? combos.map(c => `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:600;padding:7px 12px;border:1px solid var(--border);border-radius:999px;"><input type="checkbox" class="exam-yearsection-cb" value="${escHtml(c.code)}" data-year="${escHtml(c.yearLevel)}" data-section="${escHtml(c.section)}" ${savedPairs.has(`${c.yearLevel}||${c.section}`) ? 'checked' : ''} onchange="updateExamAudienceSummary()" style="accent-color:#1a4d2a;width:15px;height:15px;cursor:pointer;" />${escHtml(c.code)}</label>`).join('')
+      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No enrolled students yet — enroll students in this course first</span>`;
   }
 
-  const secEl = document.getElementById('exam-section-checks');
-  if (secEl) {
-    secEl.innerHTML = availSections.length
-      ? availSections.map(s => `<label style="${cbStyle}"><input type="checkbox" class="exam-section-cb" value="${escHtml(s)}" ${(savedSections||[]).includes(s) ? 'checked' : ''} style="accent-color:#0f2d1a;width:15px;height:15px;cursor:pointer;" />${escHtml(s)}</label>`).join('')
-      : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">No sections defined for this course</span>`;
+  updateExamAudienceSummary();
+}
+
+function updateExamAudienceSummary() {
+  const summaryEl = document.getElementById('exam-audience-summary');
+  if (!summaryEl) return;
+  const combos = [...document.querySelectorAll('.exam-yearsection-cb:checked')].map(cb => cb.value);
+  summaryEl.textContent = combos.length ? combos.join(', ') : 'Select year - section…';
+}
+
+function toggleExamAudienceDropdown() {
+  const panel = document.getElementById('exam-audience-panel');
+  const chevron = document.getElementById('exam-audience-chevron');
+  if (!panel) return;
+  const opening = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden');
+  if (chevron) chevron.style.transform = opening ? 'rotate(180deg)' : '';
+}
+
+// ── Manage Absentees (per-exam student exclusion) ──────────
+
+function openExamAbsenteesModal() {
+  if (!currentQBuilderExamId) {
+    saveExamFromEditor();
+    if (!currentQBuilderExamId) return;
   }
+  const examId = currentQBuilderExamId;
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+
+  // Scope the roster to whatever audience restriction is currently set, so the list
+  // matches exactly who is actually eligible to take this exam.
+  const targetPairs = [...document.querySelectorAll('.exam-yearsection-cb:checked')].map(cb => ({ year: cb.dataset.year, section: cb.dataset.section }));
+  let students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(exam.subjectId));
+  if (targetPairs.length) students = students.filter(s => targetPairs.some(p => p.year === s.yearLevel && p.section.toLowerCase() === String(s.section || '').toLowerCase()));
+  students.sort((a, b) => a.name.localeCompare(b.name));
+
+  const excluded = new Set(exam.excludedStudentIds || []);
+
+  const sub = document.getElementById('modal-absentees-sub');
+  if (sub) sub.textContent = `${students.length} student${students.length === 1 ? '' : 's'} eligible for "${exam.title}" — uncheck anyone absent`;
+
+  const body = document.getElementById('modal-absentees-body');
+  if (body) {
+    body._examId = examId;
+    body.innerHTML = students.length
+      ? `
+        <div style="display:flex;align-items:center;padding:0 2px 12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
+            <div class="checkbox-wrapper-30"><div class="checkbox" style="--size:0.9;--stroke:#1a6b35;">
+              <input type="checkbox" id="absentee-select-all" ${excluded.size === 0 ? 'checked' : ''} onchange="toggleAllAbsentees(this.checked)" />
+              <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+            </div></div>
+            Present (select all)
+          </label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;">
+          ${students.map(s => `
+            <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+              <div class="checkbox-wrapper-30"><div class="checkbox" style="--size:0.9;--stroke:#1a6b35;">
+                <input type="checkbox" class="absentee-cb" data-student-id="${s.id}" ${excluded.has(s.id) ? '' : 'checked'} onchange="syncAbsenteeSelectAll()" />
+                <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+              </div></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;">${escHtml(s.name)}</div>
+                <div style="font-size:11px;color:#9ca3af;">${escHtml(s.studentId)}${s.yearLevel ? ' · ' + escHtml(s.yearLevel) : ''}${s.section ? ' · ' + escHtml(s.section) : ''}</div>
+              </div>
+            </label>`).join('')}
+        </div>`
+      : `<div class="empty-state" style="padding:20px;"><p>No enrolled students match this exam's audience restriction.</p></div>`;
+  }
+
+  document.getElementById('modal-exam-absentees').classList.remove('hidden');
+}
+
+function toggleAllAbsentees(checked) {
+  document.querySelectorAll('.absentee-cb').forEach(cb => { cb.checked = checked; });
+}
+
+function syncAbsenteeSelectAll() {
+  const all = [...document.querySelectorAll('.absentee-cb')];
+  const selAll = document.getElementById('absentee-select-all');
+  if (selAll) selAll.checked = all.length > 0 && all.every(cb => cb.checked);
+}
+
+function saveExamAbsentees() {
+  const body = document.getElementById('modal-absentees-body');
+  const examId = body?._examId;
+  if (!examId) return;
+  const excludedStudentIds = [...document.querySelectorAll('.absentee-cb')].filter(cb => !cb.checked).map(cb => cb.dataset.studentId);
+  DB.updateExam(examId, { excludedStudentIds });
+  updateExamAbsenteeSummary(examId);
+  showToast(excludedStudentIds.length
+    ? `${excludedStudentIds.length} student${excludedStudentIds.length === 1 ? '' : 's'} marked absent and blocked from this exam.`
+    : 'All students marked present.', 'success');
+  closeModal('modal-exam-absentees');
 }
 
 function generateCode() {
@@ -2647,8 +2729,16 @@ function pickQuestionType(idx, type) {
 }
 
 // Close on outside click
-document.addEventListener('click', () => {
+document.addEventListener('click', (e) => {
   document.querySelectorAll('.qe-type-dd.open').forEach(d => d.classList.remove('open'));
+
+  const audiencePanel = document.getElementById('exam-audience-panel');
+  const audienceDropdown = document.getElementById('exam-audience-dropdown');
+  if (audiencePanel && !audiencePanel.classList.contains('hidden') && audienceDropdown && !audienceDropdown.contains(e.target)) {
+    audiencePanel.classList.add('hidden');
+    const chevron = document.getElementById('exam-audience-chevron');
+    if (chevron) chevron.style.transform = '';
+  }
 });
 
 function setTFAnswer(qIdx, answer) {
@@ -4587,19 +4677,14 @@ function showToast(message, type = 'success', options = {}) {
 function buildAudienceTag(exam) {
   const years = exam.targetYearLevels || [];
   const sections = exam.targetSections || [];
-  if (!years.length && !sections.length) return '';
+  if (!years.length) return '';
 
-  const parts = [];
-  if (years.length) {
-    // Abbreviate: "1st Year" → "Y1", etc.
-    const abbr = { '1st Year': 'Y1', '2nd Year': 'Y2', '3rd Year': 'Y3', '4th Year': 'Y4', '5th Year': 'Y5' };
-    parts.push(years.map(y => abbr[y] || y).join(', '));
-  }
-  if (sections.length) parts.push(sections.join(', '));
+  const combos = years.map((y, i) => formatYearSection(y, sections[i])).filter(Boolean);
+  if (!combos.length) return '';
 
   return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;">
     <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-    ${escHtml(parts.join(' · '))}
+    ${escHtml(combos.join(', '))}
   </span>`;
 }
 

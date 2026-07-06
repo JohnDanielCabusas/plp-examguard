@@ -561,10 +561,38 @@ export default function AdminPage() {
                         </label>
                       ))}
                     </div>
-                    {/* Hidden audience inputs kept for saveExamFromEditor compatibility */}
-                    <div style={{ display: 'none' }}>
-                      <div id="exam-year-checks" />
-                      <div id="exam-section-checks" />
+                  </div>
+
+                  {/* Audience & Attendance — who can actually take this exam */}
+                  <div className="exam-editor-section-card">
+                    <div className="exam-editor-section-label">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      Audience &amp; Attendance
+                    </div>
+                    <div className="form-group">
+                      <label>Restrict to Year Level - Section *</label>
+                      <div id="exam-audience-dropdown" style={{ border: '1.5px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <button
+                          type="button"
+                          id="exam-audience-toggle"
+                          onClick={() => window.toggleExamAudienceDropdown()}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '10px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: 'inherit', textAlign: 'left' }}
+                        >
+                          <span id="exam-audience-summary">Select year - section…</span>
+                          <svg id="exam-audience-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transition: 'transform 0.15s', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div id="exam-audience-panel" className="hidden" style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '8px' }} />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Individual Attendance</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => window.openExamAbsenteesModal()}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px', verticalAlign: '-2px' }}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                          Manage Absentees
+                        </button>
+                        <span id="exam-absentee-summary" className="text-muted" style={{ fontSize: '12px' }} />
+                      </div>
                     </div>
                   </div>
 
@@ -924,6 +952,20 @@ export default function AdminPage() {
           <div className="modal-header"><span className="modal-title" id="modal-results-title">Exam Results</span><button className="modal-close" onClick={() => window.closeModal('modal-exam-results')}>&#10005;</button></div>
           <div className="modal-body" id="modal-results-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-results')}>Close</button></div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-exam-absentees">
+        <div className="modal-dialog modal-lg">
+          <div className="modal-header">
+            <div><span className="modal-title">Manage Absentees</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-absentees-sub" /></div>
+            <button className="modal-close" onClick={() => window.closeModal('modal-exam-absentees')}>&#10005;</button>
+          </div>
+          <div className="modal-body" id="modal-absentees-body" style={{ padding: '16px 20px' }} />
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-absentees')}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => window.saveExamAbsentees()}>Save</button>
+          </div>
         </div>
       </div>
 
