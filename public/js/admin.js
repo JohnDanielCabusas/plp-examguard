@@ -317,6 +317,14 @@ function showSection(name) {
   const secEl = document.getElementById('section-' + name);
   if (secEl) requestAnimationFrame(() => initCustomDropdowns(secEl));
 
+  // The scroll fab lives outside .admin-section (see JSX comment), so it isn't
+  // auto-hidden by the section switch above — sync it to whether the exam
+  // editor sub-view is actually the one showing.
+  const examEditorOpen = name === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
+  document.getElementById('exam-editor-scroll-fab')?.classList.toggle('hidden', !examEditorOpen);
+  document.getElementById('exam-outline-nav')?.classList.toggle('hidden', !examEditorOpen);
+  if (examEditorOpen) { updateExamScrollFabDirection(); repositionExamScrollFab(); renderExamOutline(); }
+
   closeSidebar();
 }
 
@@ -1831,6 +1839,7 @@ function renderExams() {
     const subjectName = subject ? escHtml(formatCourseNameDisplay(subject.name)) : 'No subject';
     const hdr = statusHeaderColor[e.status] || statusHeaderColor.draft;
     const qCount = (e.questions || []).length;
+    const totalPoints = (e.questions || []).reduce((sum, q) => sum + (Number(q.points) || 0), 0);
     const actions = buildExamActions(e);
     return `
     <div class="exam-card" onclick="openExamModal('${e.id}')">
@@ -1857,6 +1866,10 @@ function renderExams() {
           <div class="exam-stat-cell">
             <div class="exam-stat-num">${e.timeLimit}</div>
             <div class="exam-stat-lab">Minutes</div>
+          </div>
+          <div class="exam-stat-cell">
+            <div class="exam-stat-num">${totalPoints}</div>
+            <div class="exam-stat-lab">Points</div>
           </div>
         </div>
         <div class="exam-card-date">${formatDate(e.createdAt)}</div>
@@ -2235,6 +2248,9 @@ function openExamEditor(id) {
   document.getElementById('exam-ai-detect').checked = false;
   document.getElementById('exam-allow-review').checked = false;
 
+  selectedQuestionIndices.clear();
+  switchExamEditorMainTab('builder');
+
   const titleDisplay = document.getElementById('exam-editor-title-display');
   const qCard = document.getElementById('exam-editor-questions-card');
   const questionsList = document.getElementById('questions-list');
@@ -2276,6 +2292,10 @@ function openExamEditor(id) {
   // Switch views
   document.getElementById('exams-list-view').classList.add('hidden');
   document.getElementById('exam-editor-view').classList.remove('hidden');
+  document.getElementById('exam-editor-scroll-fab')?.classList.remove('hidden');
+  document.getElementById('exam-outline-nav')?.classList.remove('hidden');
+  updateExamScrollFabDirection();
+  renderExamOutline();
   requestAnimationFrame(() => {
     if (id) renderQuestionsList(id);
     initExamEditorDrag();
@@ -2285,9 +2305,397 @@ function openExamEditor(id) {
 
 function closeExamEditor() {
   document.getElementById('exam-editor-view').classList.add('hidden');
+  document.getElementById('exam-editor-scroll-fab')?.classList.add('hidden');
+  document.getElementById('exam-outline-nav')?.classList.add('hidden');
   document.getElementById('exams-list-view').classList.remove('hidden');
   renderExams();
 }
+
+// ── Builder / Exam Paper sub-tabs ────────────────────────
+function switchExamEditorMainTab(tab) {
+  const isPaper = tab === 'paper';
+  document.getElementById('exam-editor-subtab-builder')?.classList.toggle('active', !isPaper);
+  document.getElementById('exam-editor-subtab-paper')?.classList.toggle('active', isPaper);
+  document.getElementById('exam-editor-builder-tab')?.classList.toggle('hidden', isPaper);
+  document.getElementById('exam-editor-paper-tab')?.classList.toggle('hidden', !isPaper);
+  document.getElementById('exam-editor-scroll-fab')?.classList.toggle('hidden', isPaper);
+  document.getElementById('exam-outline-nav')?.classList.toggle('hidden', isPaper);
+  if (isPaper) renderExamPaper();
+}
+
+// ── Exam Paper — printable preview + export ──────────────
+const EXAM_PAPER_TYPE_LABELS = { mcq: 'Multiple Choice', checkbox: 'Checkboxes', tf: 'True / False', identification: 'Identification', enumeration: 'Enumeration', matching: 'Matching Type', essay: 'Essay', coding: 'Coding' };
+
+function buildExamPaperModel(exam) {
+  return exam.questions.map((q, idx) => {
+    const base = { number: idx + 1, points: Number(q.points) || 0, content: q.content || '', imageUrl: q.imageUrl || '' };
+    switch (q.type) {
+      case 'mcq':
+        return { ...base, kind: 'options', options: (q.options || []).map((o, i) => ({ letter: String.fromCharCode(65 + i), text: o || '' })) };
+      case 'checkbox':
+        return { ...base, kind: 'options', instructions: 'Select all that apply.', options: (q.options || []).map((o, i) => ({ letter: String.fromCharCode(65 + i), text: o || '' })) };
+      case 'tf':
+        return { ...base, kind: 'options', options: [{ letter: 'A', text: 'True' }, { letter: 'B', text: 'False' }] };
+      case 'essay':
+        return { ...base, kind: 'essay' };
+      case 'coding':
+        return { ...base, kind: 'coding', language: q.language || 'code' };
+      case 'enumeration':
+        return { ...base, kind: 'enum', count: (q.answers || []).length || 3 };
+      case 'matching': {
+        const pairs = q.pairs || [];
+        const terms = pairs.map((p, i) => ({ num: i + 1, text: p.term || '' }));
+        const matchOptions = [...pairs.map(p => p.match || '')].sort().map((m, i) => ({ letter: String.fromCharCode(65 + i), text: m }));
+        return { ...base, kind: 'matching', terms, matchOptions };
+      }
+      default: // identification, or anything else
+        return { ...base, kind: 'blank' };
+    }
+  });
+}
+
+// Renders question/answer text, but calls out empty content instead of
+// silently printing a blank line — makes incomplete questions/choices
+// obvious on the printable paper instead of looking like a rendering bug.
+function examPaperText(text) {
+  const t = String(text || '').trim();
+  return t ? escHtml(t) : '<span class="exam-paper-opt-empty">(empty)</span>';
+}
+
+// `forWord` switches option/blank rendering from <ul>/<ol> to plain <div>
+// rows and gives images an explicit width attribute — Word's HTML importer
+// adds its own bullet/number glyphs on top of <li> markers (doubling up with
+// our own "A./B." lettering) and mostly ignores CSS max-width on <img>.
+function examPaperQuestionToHtml(qm, forWord) {
+  const contentHtml = String(qm.content || '').trim() ? escHtml(qm.content) : '<em>(no question text)</em>';
+  let html = `<div class="exam-paper-q">
+    <div class="exam-paper-q-row"><span class="exam-paper-q-num">${qm.number}.</span> <span>${contentHtml}<span class="exam-paper-q-pts">(${qm.points} pt${qm.points !== 1 ? 's' : ''})</span></span></div>`;
+  if (qm.imageUrl) {
+    html += forWord
+      ? `<img class="exam-paper-q-img" src="${escHtml(qm.imageUrl)}" alt="" width="340" />`
+      : `<img class="exam-paper-q-img" src="${escHtml(qm.imageUrl)}" alt="" />`;
+  }
+  if (qm.instructions) html += `<div class="exam-paper-instructions">${escHtml(qm.instructions)}</div>`;
+  if (qm.kind === 'options') {
+    html += forWord
+      ? qm.options.map(o => `<div class="exam-paper-opt-row"><span class="exam-paper-opt-letter">${o.letter}.</span>${examPaperText(o.text)}</div>`).join('')
+      : `<ul class="exam-paper-opts">${qm.options.map(o => `<li><span class="exam-paper-opt-letter">${o.letter}.</span>${examPaperText(o.text)}</li>`).join('')}</ul>`;
+  } else if (qm.kind === 'blank') {
+    html += `<div class="exam-paper-answer-line">&nbsp;</div>`;
+  } else if (qm.kind === 'essay') {
+    html += `<div class="exam-paper-answer-line" style="width:100%;height:60px;">&nbsp;</div>`;
+  } else if (qm.kind === 'coding') {
+    html += `<div class="exam-paper-instructions">Write your ${escHtml(qm.language)} solution below.</div><div class="exam-paper-answer-line" style="width:100%;height:100px;">&nbsp;</div>`;
+  } else if (qm.kind === 'enum') {
+    html += forWord
+      ? Array.from({ length: qm.count }).map((_, i) => `<div class="exam-paper-opt-row">${i + 1}. <span class="exam-paper-answer-line" style="display:inline-block;width:200px;margin:0;">&nbsp;</span></div>`).join('')
+      : `<ol class="exam-paper-opts" style="list-style:decimal;">${Array.from({ length: qm.count }).map(() => `<li class="exam-paper-answer-line" style="margin-left:0;width:220px;">&nbsp;</li>`).join('')}</ol>`;
+  } else if (qm.kind === 'matching') {
+    html += `<div class="exam-paper-match-cols">
+      <div class="exam-paper-match-col">${qm.terms.map(t => `<div>${t.num}. ${examPaperText(t.text)}</div>`).join('')}</div>
+      <div class="exam-paper-match-col">${qm.matchOptions.map(m => `<div>${m.letter}. ${examPaperText(m.text)}</div>`).join('')}</div>
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function buildExamPaperHtml(exam, forWord) {
+  const subject = DB.getSubject(exam.subjectId);
+  const adminSession = Auth.getAdminSession();
+  const profName = (adminSession && adminSession.name) || 'Professor';
+  const initial = profName.charAt(0).toUpperCase();
+  const totalPts = exam.questions.reduce((s, q) => s + (Number(q.points) || 0), 0);
+  const model = buildExamPaperModel(exam);
+  return `
+    <div class="exam-paper-header">
+      <div class="exam-paper-title">${escHtml(exam.title || 'Untitled Exam')}</div>
+      <div class="exam-paper-meta"><span class="exam-paper-meta-avatar">${escHtml(initial)}</span><strong>${escHtml(profName)}</strong>&nbsp;·&nbsp;Created ${escHtml(formatDate(exam.createdAt))}</div>
+      <div class="exam-paper-sub">${subject ? escHtml(formatCourseNameDisplay(subject.name)) + ' · ' : ''}${exam.questions.length} question${exam.questions.length !== 1 ? 's' : ''} · ${totalPts} point${totalPts !== 1 ? 's' : ''} · ${exam.timeLimit} minutes</div>
+    </div>
+    <hr class="exam-paper-hr" />
+    ${model.map(qm => examPaperQuestionToHtml(qm, forWord)).join('')}
+  `;
+}
+
+function renderExamPaper() {
+  const sheet = document.getElementById('exam-paper-sheet');
+  if (!sheet) return;
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) { sheet.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Save the exam first to preview it here.</p></div>`; return; }
+  sheet.innerHTML = buildExamPaperHtml(exam) + (exam.questions.length ? '' : `<div class="empty-state" style="padding:20px;"><p>No questions yet.</p></div>`);
+}
+
+function exportExamPaperWord() {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) { showToast('Save the exam first.', 'error'); return; }
+  if (!exam.questions.length) { showToast('Add some questions first.', 'error'); return; }
+  const bodyHtml = buildExamPaperHtml(exam, true);
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${escHtml(exam.title || 'Exam')}</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; color:#1a1a1a; }
+  .exam-paper-header { text-align:center; margin-bottom:4pt; }
+  .exam-paper-title { font-size:20pt; font-weight:bold; margin-bottom:8pt; }
+  .exam-paper-meta { font-size:11pt; color:#4b5563; margin-bottom:4pt; }
+  .exam-paper-meta-avatar { display:none; }
+  .exam-paper-sub { font-size:10pt; color:#6b7280; margin-bottom:16pt; }
+  .exam-paper-hr { border:none; border-top:1px solid #ccc; margin:12pt 0 16pt; }
+  .exam-paper-q { margin-bottom:16pt; }
+  .exam-paper-q-row { font-size:12pt; font-weight:bold; }
+  .exam-paper-q-pts { font-weight:normal; color:#888; font-size:10pt; }
+  /* Plain rows, not <ul>/<li> — Word's HTML importer adds its own bullet on
+     top of <li> markers regardless of list-style, doubling up with the
+     "A./B." lettering we already draw ourselves. */
+  .exam-paper-opt-row { font-size:11pt; margin:4pt 0 0 24pt; }
+  .exam-paper-opt-letter { font-weight:bold; margin-right:4pt; }
+  .exam-paper-opt-empty { color:#b91c1c; font-style:italic; }
+  .exam-paper-answer-line { margin:8pt 0 0 24pt; border-bottom:1px solid #999; width:280px; }
+  .exam-paper-instructions { margin:4pt 0 0 24pt; font-size:9pt; font-style:italic; color:#666; }
+  .exam-paper-match-cols { display:flex; gap:24pt; margin:6pt 0 0 24pt; }
+  .exam-paper-q-img { display:block; margin:8pt 0 4pt 24pt; }
+</style></head>
+<body>${bodyHtml}</body></html>`;
+  const blob = new Blob(['﻿', html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugifyReportName(exam.title)}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Exam paper exported as Word document.', 'success');
+}
+
+function exportExamPaperPdf() {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) { showToast('Save the exam first.', 'error'); return; }
+  if (!exam.questions.length) { showToast('Add some questions first.', 'error'); return; }
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) { showToast('PDF library not loaded. Check internet connection.', 'error'); return; }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const marginLeft = 16, marginRight = 16;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const usableWidth = pageWidth - marginLeft - marginRight;
+  let y = 20;
+
+  const ensureSpace = (needed) => { if (y + needed > pageHeight - 18) { doc.addPage(); y = 20; } };
+  const writeLines = (text, opts = {}) => {
+    const { fontSize = 11, bold = false, indent = 0, color = [26, 26, 26], lineGap = 5.4 } = opts;
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(fontSize);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(String(text || ''), usableWidth - indent);
+    lines.forEach(line => {
+      ensureSpace(lineGap);
+      doc.text(line, marginLeft + indent, y);
+      y += lineGap;
+    });
+  };
+
+  const adminSession = Auth.getAdminSession();
+  const subject = DB.getSubject(exam.subjectId);
+  const totalPts = exam.questions.reduce((s, q) => s + (Number(q.points) || 0), 0);
+
+  writeLines(exam.title || 'Untitled Exam', { fontSize: 18, bold: true, lineGap: 7 });
+  writeLines(`${adminSession ? adminSession.name : 'Professor'}  ·  Created ${formatDate(exam.createdAt)}`, { fontSize: 10, color: [75, 85, 99] });
+  writeLines(`${subject ? formatCourseNameDisplay(subject.name) + ' · ' : ''}${exam.questions.length} question${exam.questions.length !== 1 ? 's' : ''} · ${totalPts} point${totalPts !== 1 ? 's' : ''} · ${exam.timeLimit} minutes`, { fontSize: 9.5, color: [107, 114, 128] });
+  y += 2;
+  ensureSpace(1);
+  doc.setDrawColor(220);
+  doc.line(marginLeft, y, pageWidth - marginRight, y);
+  y += 8;
+
+  const dataUrlImageFormat = (dataUrl) => {
+    const m = /^data:image\/(\w+);base64,/i.exec(dataUrl || '');
+    if (!m) return 'PNG';
+    const ext = m[1].toUpperCase();
+    return ext === 'JPG' ? 'JPEG' : ext;
+  };
+  const drawQuestionImage = (imageUrl) => {
+    if (!imageUrl) return;
+    try {
+      const format = dataUrlImageFormat(imageUrl);
+      const props = doc.getImageProperties(imageUrl);
+      const maxW = usableWidth - 8;
+      const maxH = 70;
+      let w = maxW, h = (props.height / props.width) * w;
+      if (h > maxH) { h = maxH; w = (props.width / props.height) * h; }
+      ensureSpace(h + 6);
+      doc.addImage(imageUrl, format, marginLeft + 8, y, w, h);
+      y += h + 6;
+    } catch (err) {
+      console.warn('[Exam Paper PDF] Unable to embed image:', err);
+    }
+  };
+
+  buildExamPaperModel(exam).forEach(qm => {
+    ensureSpace(10);
+    writeLines(`${qm.number}. ${qm.content || '(no question text)'}   (${qm.points} pt${qm.points !== 1 ? 's' : ''})`, { fontSize: 11.5, bold: true, lineGap: 5.6 });
+    drawQuestionImage(qm.imageUrl);
+    if (qm.instructions) writeLines(qm.instructions, { fontSize: 9, indent: 6, color: [107, 114, 128] });
+    if (qm.kind === 'options') {
+      qm.options.forEach(o => writeLines(`${o.letter}. ${o.text || '(empty)'}`, { fontSize: 10.5, indent: 8, color: o.text ? [26, 26, 26] : [185, 28, 28] }));
+    } else if (qm.kind === 'blank') {
+      writeLines('Answer: ____________________________________', { fontSize: 10.5, indent: 8 });
+    } else if (qm.kind === 'essay' || qm.kind === 'coding') {
+      if (qm.kind === 'coding') writeLines(`Write your ${qm.language} solution below.`, { fontSize: 9, indent: 8, color: [107, 114, 128] });
+      writeLines('_________________________________________________', { fontSize: 10.5, indent: 8 });
+      writeLines('_________________________________________________', { fontSize: 10.5, indent: 8 });
+    } else if (qm.kind === 'enum') {
+      for (let i = 0; i < qm.count; i++) writeLines(`${i + 1}. ______________________________`, { fontSize: 10.5, indent: 8 });
+    } else if (qm.kind === 'matching') {
+      writeLines('Column A:', { fontSize: 9.5, indent: 8, color: [107, 114, 128] });
+      qm.terms.forEach(t => writeLines(`${t.num}. ${t.text || '(empty)'}`, { fontSize: 10.5, indent: 12, color: t.text ? [26, 26, 26] : [185, 28, 28] }));
+      writeLines('Column B:', { fontSize: 9.5, indent: 8, color: [107, 114, 128] });
+      qm.matchOptions.forEach(m => writeLines(`${m.letter}. ${m.text || '(empty)'}`, { fontSize: 10.5, indent: 12, color: m.text ? [26, 26, 26] : [185, 28, 28] }));
+    }
+    y += 4;
+  });
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`Page ${i} of ${pageCount}`, marginLeft, pageHeight - 10);
+  }
+
+  doc.save(`${slugifyReportName(exam.title)}_exam_paper.pdf`);
+  showToast('Exam paper exported as PDF.', 'success');
+}
+
+function scrollExamEditorTo(where) {
+  window.scrollTo({
+    top: where === 'top' ? 0 : document.documentElement.scrollHeight,
+    behavior: 'smooth',
+  });
+}
+
+// Single fab that flips direction depending on scroll position: shows a
+// down-arrow (and scrolls to the bottom) until you're near the bottom of the
+// page, then flips to an up-arrow (and scrolls to the top).
+let _examScrollFabAtBottom = false;
+function updateExamScrollFabDirection() {
+  const btn = document.getElementById('exam-scroll-fab-btn');
+  const icon = document.getElementById('exam-scroll-fab-icon');
+  if (!btn || !icon) return;
+  const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+  _examScrollFabAtBottom = scrollable > 4 && window.scrollY >= scrollable - 40;
+  btn.title = _examScrollFabAtBottom ? 'Scroll to top' : 'Scroll to bottom';
+  icon.innerHTML = _examScrollFabAtBottom
+    ? '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>'
+    : '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>';
+}
+function handleExamScrollFabClick() {
+  scrollExamEditorTo(_examScrollFabAtBottom ? 'top' : 'bottom');
+}
+window.addEventListener('scroll', updateExamScrollFabDirection, { passive: true });
+
+// Some embedding webviews/zoom implementations desync the visual viewport
+// (what's actually on screen) from the layout viewport that `position: fixed`
+// is normally anchored to — the classic bug where a fixed corner button ends
+// up just outside the visible area at certain zoom levels. Recompute the fab's
+// offsets from window.visualViewport (when available) so it always stays
+// inside whatever is actually visible, regardless of zoom or screen size.
+function repositionExamScrollFab() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const rightGap = Math.max(0, window.innerWidth - (vv.offsetLeft + vv.width));
+  const bottomGap = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height));
+  const fab = document.getElementById('exam-editor-scroll-fab');
+  if (fab) {
+    fab.style.right = `calc(max(16px, env(safe-area-inset-right)) + ${rightGap}px)`;
+    fab.style.bottom = `calc(max(16px, env(safe-area-inset-bottom)) + ${bottomGap}px)`;
+  }
+  const outline = document.getElementById('exam-outline-nav');
+  if (outline) {
+    outline.style.right = `calc(max(10px, env(safe-area-inset-right)) + ${rightGap}px)`;
+  }
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', repositionExamScrollFab);
+  window.visualViewport.addEventListener('scroll', repositionExamScrollFab);
+}
+
+// ── Hover outline nav (jump to Exam Details / Attendance / each question) ──
+let _examOutlineSections = [];
+
+function buildExamOutlineSections() {
+  const sections = [
+    { id: 'exam-editor-details-card', label: 'Exam Details', level: 0 },
+  ];
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (exam) {
+    const typeLabels = { mcq: 'Multiple Choice', checkbox: 'Checkboxes', tf: 'True / False', identification: 'Identification', enumeration: 'Enumeration', matching: 'Matching Type', essay: 'Essay', coding: 'Coding' };
+    // Group questions by type — the type is the heading, each question number
+    // nests under it as an indented sub-item.
+    const order = [];
+    const byType = new Map();
+    exam.questions.forEach((q, idx) => {
+      if (!byType.has(q.type)) { byType.set(q.type, []); order.push(q.type); }
+      byType.get(q.type).push(idx);
+    });
+    order.forEach(type => {
+      const idxs = byType.get(type);
+      const heading = typeLabels[type] || type;
+      sections.push({ id: 'qblock-' + idxs[0], label: idxs.length > 1 ? `${heading} (${idxs.length})` : heading, level: 0 });
+      idxs.forEach(idx => {
+        sections.push({ id: 'qblock-' + idx, label: `Q${idx + 1}`, level: 1 });
+      });
+    });
+  }
+  return sections;
+}
+
+function renderExamOutline() {
+  const ticksEl = document.getElementById('exam-outline-ticks');
+  const panelEl = document.getElementById('exam-outline-panel');
+  if (!ticksEl || !panelEl) return;
+  _examOutlineSections = buildExamOutlineSections();
+  // Ticks only represent headings (Exam Details + each question type) — an
+  // exam with 150+ questions still only ever shows a handful of ticks,
+  // instead of one per question piling up the whole right edge of the screen.
+  ticksEl.innerHTML = _examOutlineSections.map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.level === 0)
+    .map(({ s, i }) => `<div class="exam-outline-tick" data-outline-idx="${i}" title="${escHtml(s.label)}" onclick="jumpToExamOutline(${i})"></div>`)
+    .join('');
+  panelEl.innerHTML = _examOutlineSections.map((s, i) =>
+    `<button type="button" class="exam-outline-item${s.level ? ' exam-outline-item-sub' : ''}" data-outline-idx="${i}" onclick="jumpToExamOutline(${i})">${escHtml(s.label)}</button>`
+  ).join('');
+  updateExamOutlineActive();
+}
+
+function jumpToExamOutline(i) {
+  const target = _examOutlineSections[i];
+  const el = target && document.getElementById(target.id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function updateExamOutlineActive() {
+  if (!_examOutlineSections.length) return;
+  let activeIdx = 0;
+  for (let i = 0; i < _examOutlineSections.length; i++) {
+    const el = document.getElementById(_examOutlineSections[i].id);
+    if (el && el.getBoundingClientRect().top <= 140) activeIdx = i;
+  }
+  // Ticks only exist for headings — highlight the heading that owns whichever
+  // entry (heading or sub-item) is currently active.
+  let headingIdx = activeIdx;
+  while (headingIdx > 0 && _examOutlineSections[headingIdx].level !== 0) headingIdx--;
+  document.querySelectorAll('.exam-outline-tick').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.outlineIdx) === headingIdx);
+  });
+  document.querySelectorAll('.exam-outline-item').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.outlineIdx) === activeIdx);
+  });
+}
+window.addEventListener('scroll', updateExamOutlineActive, { passive: true });
+window.addEventListener('resize', repositionExamScrollFab);
 
 function saveExamFromEditor() {
   const id = document.getElementById('exam-id').value;
@@ -2370,6 +2778,11 @@ function updateQBadge(examId) {
   const e = DB.getExam(examId);
   const badge = document.getElementById('exam-q-count');
   if (badge && e) badge.textContent = e.questions.length || '';
+  const ptsBadge = document.getElementById('exam-total-points');
+  if (ptsBadge && e) {
+    const total = e.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
+    ptsBadge.textContent = e.questions.length ? `${total} pt${total !== 1 ? 's' : ''} total` : '';
+  }
 }
 
 function saveExam() {
@@ -2524,6 +2937,21 @@ async function setExamStatus(id, status) {
     showToast('Exam reverted to Draft.', 'success');
   } else if (status === 'ready') {
     if (exam.questions.length === 0) { showToast('Add at least one question before setting exam to Ready.', 'error'); return; }
+    const badIdx = exam.questions.findIndex(q => getQuestionIssue(q));
+    if (badIdx !== -1) {
+      const issue = getQuestionIssue(exam.questions[badIdx]);
+      showToast(`Question ${badIdx + 1} is incomplete: ${issue}. Please fill it in before setting Ready.`, 'error');
+      if (currentQBuilderExamId === id) {
+        renderQuestionsList(id);
+        const card = document.getElementById('qblock-' + badIdx);
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          card.classList.add('qe-card-flash');
+          setTimeout(() => card.classList.remove('qe-card-flash'), 1200);
+        }
+      }
+      return;
+    }
     const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
     if (!ok) return;
     const code = exam.code || generateCode();
@@ -2654,6 +3082,10 @@ function renderQuestionsList(examId) {
     });
   }
   updateQBadge(examId);
+  updateSelectAllUI();
+  repositionExamScrollFab();
+  renderExamOutline();
+  requestAnimationFrame(updateExamScrollFabDirection);
 }
 
 // ── Enumeration helpers ──────────────────────────────────
@@ -2667,6 +3099,7 @@ function updateEnumAnswer(qIdx, aIdx, val) {
     return { ...q, answers };
   });
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
 }
 function addEnumAnswer(qIdx) {
   const exam = DB.getExam(currentQBuilderExamId);
@@ -2697,6 +3130,7 @@ function updateMatchPair(qIdx, pIdx, field, val) {
     return { ...q, pairs };
   });
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
 }
 function addMatchPair(qIdx) {
   const exam = DB.getExam(currentQBuilderExamId);
@@ -2776,6 +3210,119 @@ function changeQuestionType(idx, newType) {
   const questions = exam.questions.map((q, i) => i !== idx ? q : { ...q, type: newType, ...(defaults[newType] || {}) });
   DB.updateExam(currentQBuilderExamId, { questions });
   renderQuestionsList(currentQBuilderExamId);
+}
+
+// ── Bulk selection (Select All / Clear) ──────────────────
+let selectedQuestionIndices = new Set();
+
+function toggleQuestionSelect(idx, checked) {
+  if (checked) selectedQuestionIndices.add(idx);
+  else selectedQuestionIndices.delete(idx);
+  updateSelectAllUI();
+}
+
+function updateSelectAllUI() {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const selectAllBtn = document.getElementById('exam-select-all-btn');
+  const clearSelectionBtn = document.getElementById('exam-clear-selection-btn');
+  const clearBtn = document.getElementById('exam-clear-q-btn');
+  if (!exam) return;
+  const total = exam.questions.length;
+  if (selectAllBtn) {
+    selectAllBtn.textContent = total > 0 && selectedQuestionIndices.size === total ? 'Deselect All' : 'Select All';
+    selectAllBtn.disabled = total === 0;
+  }
+  if (clearSelectionBtn) {
+    clearSelectionBtn.style.display = selectedQuestionIndices.size > 0 ? '' : 'none';
+  }
+  if (clearBtn) {
+    clearBtn.textContent = selectedQuestionIndices.size > 0 ? `Delete Selected (${selectedQuestionIndices.size})` : 'Delete All';
+    clearBtn.disabled = total === 0;
+  }
+}
+
+function clearQuestionSelection() {
+  selectedQuestionIndices.clear();
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+function selectAllQuestions() {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam || !exam.questions.length) return;
+  if (selectedQuestionIndices.size === exam.questions.length) {
+    selectedQuestionIndices.clear();
+  } else {
+    exam.questions.forEach((_, i) => selectedQuestionIndices.add(i));
+  }
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+async function clearQuestions() {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam || !exam.questions.length) return;
+  const hasSelection = selectedQuestionIndices.size > 0;
+  const count = hasSelection ? selectedQuestionIndices.size : exam.questions.length;
+  const ok = await showConfirm(
+    hasSelection
+      ? `Delete ${count} selected question${count !== 1 ? 's' : ''}? This cannot be undone.`
+      : `Delete all ${count} question${count !== 1 ? 's' : ''} from this exam? This cannot be undone.`
+  );
+  if (!ok) return;
+  const questions = hasSelection
+    ? exam.questions.filter((_, i) => !selectedQuestionIndices.has(i))
+    : [];
+  DB.updateExam(currentQBuilderExamId, { questions });
+  selectedQuestionIndices.clear();
+  renderQuestionsList(currentQBuilderExamId);
+  showToast(hasSelection ? 'Selected questions deleted.' : 'All questions deleted.', 'success');
+}
+
+// Returns a short reason string if the question is incomplete, or null if it's fine.
+function getQuestionIssue(q) {
+  if (!q.content || !q.content.trim()) return 'Question text is empty';
+  switch (q.type) {
+    case 'mcq':
+      if (!Array.isArray(q.options) || q.options.length === 0 || q.options.some(o => !o || !o.trim())) return 'One or more answer choices are empty';
+      if (!q.correctAnswer || !q.correctAnswer.trim()) return 'No correct answer selected';
+      break;
+    case 'checkbox':
+      if (!Array.isArray(q.options) || q.options.length === 0 || q.options.some(o => !o || !o.trim())) return 'One or more answer choices are empty';
+      if (!Array.isArray(q.correctAnswerIndices) || q.correctAnswerIndices.length === 0) return 'No correct answer selected';
+      break;
+    case 'tf':
+      if (!q.correctAnswer || !q.correctAnswer.trim()) return 'No correct answer selected';
+      break;
+    case 'identification':
+      if (!q.correctAnswer || !q.correctAnswer.trim()) return 'Correct answer is empty';
+      break;
+    case 'enumeration':
+      if (!Array.isArray(q.answers) || q.answers.length === 0 || q.answers.some(a => !a || !a.trim())) return 'One or more answers are empty';
+      break;
+    case 'matching':
+      if (!Array.isArray(q.pairs) || q.pairs.length === 0 || q.pairs.some(p => !p.term || !p.term.trim() || !p.match || !p.match.trim())) return 'One or more matching pairs are incomplete';
+      break;
+  }
+  return null;
+}
+
+// Re-checks one question's completeness and patches just its card in-place
+// (no full list re-render, so focus/scroll/typing isn't disturbed).
+function refreshQuestionIssue(idx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const q = exam?.questions?.[idx];
+  const card = document.getElementById('qblock-' + idx);
+  if (!q || !card) return;
+  const issue = getQuestionIssue(q);
+  card.classList.toggle('qe-card-incomplete', !!issue);
+  const body = card.querySelector('.qe-card-body');
+  const banner = card.querySelector('.qe-issue-banner');
+  if (issue) {
+    const html = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${escHtml(issue)}`;
+    if (banner) banner.innerHTML = html;
+    else if (body) body.insertAdjacentHTML('afterbegin', `<div class="qe-issue-banner">${html}</div>`);
+  } else if (banner) {
+    banner.remove();
+  }
 }
 
 function buildQuestionBlock(q, idx) {
@@ -2930,10 +3477,21 @@ function buildQuestionBlock(q, idx) {
     ? `<img src="${escHtml(q.imageUrl)}" alt="Question image" class="q-img-preview" onerror="this.style.display='none'" />`
     : '';
 
+  const issue = getQuestionIssue(q);
+  const issueBanner = issue
+    ? `<div class="qe-issue-banner"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${escHtml(issue)}</div>`
+    : '';
+
   return `
-    <div class="qe-card" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeColor}">
+    <div class="qe-card${issue ? ' qe-card-incomplete' : ''}" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeColor}">
       <div class="qe-card-header">
         <div class="qe-header-left">
+          <div class="checkbox-wrapper-30" onclick="event.stopPropagation()" title="Select this question">
+            <div class="checkbox" style="--size:0.78;--stroke:#1a6b35">
+              <input type="checkbox" class="qe-select-cb" ${selectedQuestionIndices.has(idx) ? 'checked' : ''} onchange="toggleQuestionSelect(${idx},this.checked)" />
+              <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+            </div>
+          </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:3px;" onclick="event.stopPropagation()">
             <div class="checkbox-wrapper-30">
               <div class="checkbox" style="--size:0.78;--stroke:#1a6b35">
@@ -2963,6 +3521,7 @@ function buildQuestionBlock(q, idx) {
         </div>
       </div>
       <div class="qe-card-body">
+        ${issueBanner}
         <textarea class="qe-q-textarea" rows="1" placeholder="Question text" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onchange="updateQField(${idx},'content',this.value)">${escHtml(q.content)}</textarea>
         ${imgPreview ? `<div class="q-img-preview-wrap" id="qimg-preview-${idx}" style="margin-bottom:10px;">${imgPreview}</div>` : `<div id="qimg-preview-${idx}" style="display:none;"></div>`}
         <div class="qe-img-row">
@@ -2994,7 +3553,7 @@ function initExamEditorDrag() {
   });
 
   container.addEventListener('dragend', () => {
-    container.querySelectorAll('.question-block').forEach(b =>
+    container.querySelectorAll('.qe-card').forEach(b =>
       b.classList.remove('q-dragging', 'q-drag-over'));
     _dragQIdx = null;
   });
@@ -3012,7 +3571,7 @@ function initExamEditorDrag() {
 
   container.addEventListener('dragleave', e => {
     if (!container.contains(e.relatedTarget)) {
-      container.querySelectorAll('.question-block').forEach(b => b.classList.remove('q-drag-over'));
+      container.querySelectorAll('.qe-card').forEach(b => b.classList.remove('q-drag-over'));
     }
   });
 
@@ -3048,6 +3607,7 @@ function toggleCheckboxAnswer(qIdx, optIdx) {
   // Persist to DB
   const questions = exam.questions.map((q2, i) => i !== qIdx ? q2 : { ...q2, correctAnswerIndices });
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
 
   // Update ONLY the clicked row in-place — no full re-render
   const container = document.getElementById(`opts-${qIdx}`);
@@ -3114,6 +3674,7 @@ function removeQuestion(idx) {
   if (!exam) return;
   const questions = exam.questions.filter((_, i) => i !== idx);
   DB.updateExam(currentQBuilderExamId, { questions });
+  selectedQuestionIndices.clear(); // indices shifted — stale selection would point at the wrong cards
   renderQuestionsList(currentQBuilderExamId);
 }
 
@@ -3122,6 +3683,8 @@ function updateQField(idx, field, value) {
   if (!exam) return;
   const questions = exam.questions.map((q, i) => i === idx ? { ...q, [field]: value } : q);
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(idx);
+  if (field === 'points') updateQBadge(currentQBuilderExamId);
 }
 
 function updateOption(qIdx, oIdx, value) {
@@ -3135,6 +3698,7 @@ function updateOption(qIdx, oIdx, value) {
     return { ...q, options, correctAnswer };
   });
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
 }
 
 function setCorrectOption(qIdx, oIdx) {
@@ -3144,6 +3708,7 @@ function setCorrectOption(qIdx, oIdx) {
   const correctAnswer = q.options[oIdx];
   const questions = exam.questions.map((q2, i) => i === qIdx ? { ...q2, correctAnswer } : q2);
   DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
 
   // Update only this question's option rows in-place
   const container = document.getElementById(`opts-${qIdx}`);
@@ -3353,24 +3918,21 @@ function setMonitorView(view) {
   const btnTable = document.getElementById('monitor-view-table');
   const btnCam = document.getElementById('monitor-view-camera');
 
-  const activeStyle = { background: '#1a4d2a', color: '#fff' };
-  const inactiveStyle = { background: 'transparent', color: '#6b7280' };
-
   const statsStrip = document.getElementById('monitor-stats-strip');
 
   if (view === 'camera') {
     if (tableView) tableView.style.display = 'none';
     if (camView) camView.style.display = '';
     if (statsStrip) statsStrip.style.display = 'none';
-    if (btnTable) Object.assign(btnTable.style, inactiveStyle);
-    if (btnCam) Object.assign(btnCam.style, activeStyle);
+    if (btnTable) btnTable.classList.remove('active');
+    if (btnCam) btnCam.classList.add('active');
     renderCameraGrid(monitorExamId);
   } else {
     if (tableView) tableView.style.display = '';
     if (camView) camView.style.display = 'none';
     if (statsStrip) statsStrip.style.display = '';
-    if (btnTable) Object.assign(btnTable.style, activeStyle);
-    if (btnCam) Object.assign(btnCam.style, inactiveStyle);
+    if (btnTable) btnTable.classList.add('active');
+    if (btnCam) btnCam.classList.remove('active');
   }
 }
 
@@ -3496,14 +4058,14 @@ function renderMonitoringTable(examId) {
   const flagged    = sessions.filter(s => s.warnings >= 2).length;
 
   const stats = [
-    { accent:'#166534', bg:'#dcfce7', value: sessions.length, label:'Total',
-      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
-    { accent:'#d97706', bg:'#fef3c7', value: inProgress, label:'In Progress',
-      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
-    { accent:'#166534', bg:'#dcfce7', value: submitted,  label:'Submitted',
-      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` },
-    { accent:'#dc2626', bg:'#fee2e2', value: flagged,    label:'Flagged',
-      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>` },
+    { color:'blue', value: sessions.length, label:'Total',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
+    { color:'orange', value: inProgress, label:'In Progress',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
+    { color:'green', value: submitted,  label:'Submitted',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>` },
+    { color:'red', value: flagged,    label:'Flagged',
+      icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>` },
   ];
 
   let strip = document.getElementById('monitor-stats-strip');
@@ -3514,12 +4076,9 @@ function renderMonitoringTable(examId) {
     grid.parentNode.insertBefore(strip, grid);
   }
   strip.innerHTML = stats.map(c => `
-    <div class="monitor-stat-card" style="border-left-color:${c.accent}">
-      <div class="msc-icon" style="background:${c.bg};">${c.icon}</div>
-      <div class="msc-body">
-        <div class="msc-value" style="color:${c.accent}">${c.value}</div>
-        <div class="msc-label">${c.label}</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-icon ${c.color}">${c.icon}</div>
+      <div><div class="stat-value">${c.value}</div><div class="stat-label">${c.label}</div></div>
     </div>`).join('');
 
   if (!sessions.length) {
@@ -3581,7 +4140,7 @@ function renderMonitoringTable(examId) {
       <td style="text-align:center;">${logsHtml}</td>
       <td style="text-align:center;">
         <div class="table-actions" style="justify-content:center;">
-          ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span style="font-size:12px;color:#9ca3af;">Submitted</span>'}
+          ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span style="font-size:12px;color:#9ca3af;">Submitted</span>'}
         </div>
       </td>
     </tr>`;
@@ -3640,7 +4199,7 @@ function showStudentLog(sessionId) {
   `;
 }
 
-function exportActivityLog() {
+async function exportActivityLog() {
   const examId = monitorExamId;
   const exam   = examId ? DB.getExam(examId) : null;
   const sessions = DB.getSessions().filter(s => (!examId || s.examId === examId));
@@ -3650,68 +4209,146 @@ function exportActivityLog() {
     return;
   }
 
-  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const ExcelJSLib = window.ExcelJS;
+  if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
+
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const rows = [];
-
-  // ── Header ──────────────────────────────────────────────────
-  rows.push(['=== PLP ExamGuard — Activity Log Export ===']);
-  rows.push([`Exam: ${exam ? exam.title : 'All Exams'}`, `Exported: ${fmtDate(new Date().toISOString())}`]);
-  rows.push([]);
-
-  // ── Summary table ────────────────────────────────────────────
-  rows.push(['--- STUDENT SUMMARY ---']);
-
   const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'low_brightness', 'copy_attempt', 'screenshot'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
     'Total Activities',
   ];
-  rows.push(summaryHeader);
+  const colCount = summaryHeader.length;
 
-  sessions.forEach(s => {
+  const BRAND = 'FF0F2D1A';
+  const BRAND_LIGHT = 'FFE8F0EA';
+  const HEADER_FILL = 'FF1A4D2A';
+  const ZEBRA_FILL = 'FFF7FAF7';
+  const BORDER_COLOR = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+  const cellBorder = { top: BORDER_COLOR, left: BORDER_COLOR, bottom: BORDER_COLOR, right: BORDER_COLOR };
+
+  const workbook = new ExcelJSLib.Workbook();
+  workbook.creator = 'PLP ExamGuard';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Activity Log');
+
+  const widths = [24, 14, 10, 8, 30, 15, ...violationTypes.map(() => 16), 16];
+  widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+
+  const styleHeaderRow = (rowIdx, labels) => {
+    labels.forEach((h, i) => {
+      const cell = sheet.getCell(rowIdx, i + 1);
+      cell.value = h;
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = cellBorder;
+    });
+    sheet.getRow(rowIdx).height = 30;
+  };
+  const styleSectionBanner = (rowIdx, label) => {
+    sheet.mergeCells(rowIdx, 1, rowIdx, colCount);
+    const cell = sheet.getCell(rowIdx, 1);
+    cell.value = label;
+    cell.font = { bold: true, size: 11, color: { argb: BRAND } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_LIGHT } };
+    cell.alignment = { vertical: 'middle' };
+    sheet.getRow(rowIdx).height = 20;
+  };
+  const styleDataRow = (rowIdx, values, zebraOn, leftAlignCols = [0]) => {
+    values.forEach((v, i) => {
+      const cell = sheet.getCell(rowIdx, i + 1);
+      cell.value = v;
+      cell.border = cellBorder;
+      cell.alignment = { vertical: 'middle', horizontal: leftAlignCols.includes(i) ? 'left' : 'center', wrapText: leftAlignCols.includes(i) };
+      if (zebraOn) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA_FILL } };
+    });
+  };
+
+  let rowIdx = 1;
+
+  // Title banner
+  sheet.mergeCells(rowIdx, 1, rowIdx, colCount);
+  const titleCell = sheet.getCell(rowIdx, 1);
+  titleCell.value = 'PLP ExamGuard — Activity Log Export';
+  titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  titleCell.alignment = { vertical: 'middle' };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND } };
+  sheet.getRow(rowIdx).height = 28;
+  rowIdx++;
+
+  // Subtitle
+  sheet.mergeCells(rowIdx, 1, rowIdx, colCount);
+  const subCell = sheet.getCell(rowIdx, 1);
+  subCell.value = `Exam: ${exam ? exam.title : 'All Exams'}      Exported: ${fmtDate(new Date().toISOString())}`;
+  subCell.font = { italic: true, size: 10, color: { argb: 'FF4B5563' } };
+  sheet.getRow(rowIdx).height = 18;
+  rowIdx += 2; // + blank spacer row
+
+  // ── Student summary ──────────────────────────────────────────
+  styleSectionBanner(rowIdx, 'STUDENT SUMMARY');
+  rowIdx++;
+  styleHeaderRow(rowIdx, summaryHeader);
+  rowIdx++;
+
+  sessions.forEach((s, si) => {
     const activities = s.activities || [];
     const counts = Object.fromEntries(violationTypes.map(t => [t, 0]));
     activities.forEach(a => { if (a.type in counts) counts[a.type]++; });
     const status = s.submitted ? (s.autoSubmitted ? 'Auto-Submitted' : 'Submitted') : 'In Progress';
-    const scoreStr = s.submitted && s.maxScore ? `${s.score ?? 0}` : '';
-    rows.push([
+    const scoreVal = s.submitted && s.maxScore != null ? (s.score ?? 0) : null;
+    styleDataRow(rowIdx, [
       s.studentName || s.studentId,
       s.studentId,
       s.warnings ?? 0,
-      scoreStr,
-      s.maxScore ?? '',
+      scoreVal,
+      s.maxScore ?? null,
       status,
       ...violationTypes.map(t => counts[t] || 0),
       activities.length,
-    ]);
+    ], si % 2 === 1);
+    rowIdx++;
   });
 
-  // ── Timeline ─────────────────────────────────────────────────
-  rows.push([]);
-  rows.push(['--- ACTIVITY TIMELINE ---']);
-  rows.push(['Timestamp', 'Student Name', 'Student ID', 'Violation Type', 'Detail']);
+  rowIdx++; // blank spacer
 
+  // ── Activity timeline ────────────────────────────────────────
+  styleSectionBanner(rowIdx, 'ACTIVITY TIMELINE');
+  rowIdx++;
+  const timelineHeader = ['Timestamp', 'Student Name', 'Student ID', 'Violation Type', 'Detail'];
+  styleHeaderRow(rowIdx, timelineHeader);
+  rowIdx++;
+
+  let tlCount = 0;
   sessions.forEach(s => {
-    const activities = s.activities || [];
-    activities.forEach(a => {
-      rows.push([
+    (s.activities || []).forEach(a => {
+      styleDataRow(rowIdx, [
         fmtDate(a.timestamp),
         s.studentName || s.studentId,
         s.studentId,
         getBehaviorLabel(a.type),
         a.detail || '',
-      ]);
+      ], tlCount % 2 === 1, [1, 4]);
+      rowIdx++;
+      tlCount++;
     });
   });
 
-  // ── Build CSV ────────────────────────────────────────────────
-  const csv = rows.map(r => Array.isArray(r) ? r.map(esc).join(',') : esc(r)).join('\r\n');
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  if (!tlCount) {
+    sheet.mergeCells(rowIdx, 1, rowIdx, colCount);
+    const noneCell = sheet.getCell(rowIdx, 1);
+    noneCell.value = 'No suspicious activity recorded.';
+    noneCell.font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  sheet.views = [{ showGridLines: false }];
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const filename = `activity-log${exam ? '-' + exam.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : ''}-${new Date().toISOString().slice(0,10)}.csv`;
+  const filename = `activity-log${exam ? '-' + exam.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : ''}-${new Date().toISOString().slice(0,10)}.xlsx`;
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);

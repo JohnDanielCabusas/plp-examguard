@@ -532,11 +532,23 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* Sub-tabs: Builder vs printable Exam Paper */}
+                <div className="exam-editor-subtabs">
+                  <button type="button" className="exam-editor-subtab active" id="exam-editor-subtab-builder" onClick={() => window.switchExamEditorMainTab('builder')}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    Builder
+                  </button>
+                  <button type="button" className="exam-editor-subtab" id="exam-editor-subtab-paper" onClick={() => window.switchExamEditorMainTab('paper')}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                    Exam Paper
+                  </button>
+                </div>
+
                 {/* Editor body — scrollable */}
-                <div className="exam-editor-body">
+                <div className="exam-editor-body" id="exam-editor-builder-tab">
 
                   {/* Details card */}
-                  <div className="exam-editor-section-card">
+                  <div className="exam-editor-section-card" id="exam-editor-details-card">
                     <div className="exam-editor-section-label">
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                       Exam Details
@@ -592,7 +604,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Attendance — mark individual students absent for this exam */}
-                  <div className="exam-editor-section-card">
+                  <div className="exam-editor-section-card" id="exam-editor-attendance-card">
                     <div className="exam-editor-section-label">
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       Attendance
@@ -610,9 +622,17 @@ export default function AdminPage() {
 
                   {/* Questions area */}
                   <div className="exam-editor-section-card" id="exam-editor-questions-card" style={{ display: 'none' }}>
-                    <div className="exam-editor-section-label">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                      Questions <span id="exam-q-count" className="exam-q-badge" style={{ marginLeft: '6px' }} />
+                    <div className="exam-editor-section-label" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        Questions <span id="exam-q-count" className="exam-q-badge" style={{ marginLeft: '6px' }} />
+                        <span id="exam-total-points" className="exam-q-badge" style={{ marginLeft: '6px', background: '#92400e' }} />
+                      </span>
+                      <span style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" id="exam-select-all-btn" className="btn btn-secondary btn-sm" onClick={() => window.selectAllQuestions()}>Select All</button>
+                        <button type="button" id="exam-clear-selection-btn" className="btn btn-secondary btn-sm" style={{ display: 'none' }} onClick={() => window.clearQuestionSelection()}>Clear Selection</button>
+                        <button type="button" id="exam-clear-q-btn" className="btn btn-danger btn-sm" onClick={() => window.clearQuestions()}>Delete All</button>
+                      </span>
                     </div>
                     <div id="questions-list" />
                     <div className="exam-add-q-bar">
@@ -638,35 +658,53 @@ export default function AdminPage() {
                   </div>
 
                 </div>
+
+                {/* Printable exam paper preview */}
+                <div className="exam-paper-tab hidden" id="exam-editor-paper-tab">
+                  <div className="exam-paper-toolbar">
+                    <span className="text-muted" style={{ fontSize: '12px' }}>Printable view of all questions in this exam</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.exportExamPaperPdf()}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Export PDF
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.exportExamPaperWord()}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Export Word
+                      </button>
+                    </div>
+                  </div>
+                  <div className="exam-paper-sheet-wrap">
+                    <div className="exam-paper-sheet" id="exam-paper-sheet" />
+                  </div>
+                </div>
               </div>
             </section>
 
             {/* MONITORING */}
             <section id="section-monitoring" className="admin-section hidden">
               <div className="monitor-topbar">
-                <div>
-                  <div className="section-title" style={{ marginBottom: '2px' }}>Live Monitoring</div>
-                  <div className="section-subtitle">Real-time student exam activity</div>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div className="monitor-topbar-left">
+                  <div>
+                    <div className="section-title" style={{ marginBottom: '2px' }}>Live Monitoring</div>
+                    <div className="section-subtitle">Real-time student exam activity</div>
+                  </div>
                   <span id="monitor-live-badge" className="hidden monitor-live-chip">
                     <span className="live-dot" />LIVE
                   </span>
                   <select className="form-control filter-select" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()}>
                     <option value="">Select an exam to monitor</option>
                   </select>
-                  <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: '8px', padding: '2px' }}>
-                    <button id="monitor-view-table" onClick={() => window.setMonitorView('table')}
-                      style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, background: '#1a4d2a', color: '#fff', transition: 'all 0.15s' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                      Sessions
-                    </button>
-                    <button id="monitor-view-camera" onClick={() => window.setMonitorView('camera')}
-                      style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, background: 'transparent', color: '#6b7280', transition: 'all 0.15s' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                      Camera Grid
-                    </button>
-                  </div>
+                </div>
+                <div className="monitor-view-toggle">
+                  <button id="monitor-view-table" className="monitor-view-btn active" onClick={() => window.setMonitorView('table')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    Sessions
+                  </button>
+                  <button id="monitor-view-camera" className="monitor-view-btn" onClick={() => window.setMonitorView('camera')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                    Camera Grid
+                  </button>
                 </div>
               </div>
               {/* Camera grid view */}
@@ -697,9 +735,9 @@ export default function AdminPage() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     Activity Log
                     <span id="log-student-name" style={{ fontWeight: 500, fontSize: '12px', color: '#9ca3af' }} />
-                    <button id="btn-export-log" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as CSV" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: 600, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button id="btn-export-log" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as Excel" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: 600, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      Export CSV
+                      Export Excel
                     </button>
                   </div>
                   <div className="activity-log-body" id="log-body">
@@ -871,6 +909,22 @@ export default function AdminPage() {
                 </div>
               </div>
             </section>
+
+            {/* Floating fast-scroll button — lives outside the .admin-section tree so it
+                truly floats fixed to the viewport (an .admin-section ancestor's entrance
+                animation leaves a lingering `transform`, which would otherwise turn this
+                into an absolutely-positioned element scoped to that section instead). */}
+            <div className="exam-editor-scroll-fab hidden" id="exam-editor-scroll-fab">
+              <button type="button" className="exam-scroll-fab-btn" id="exam-scroll-fab-btn" title="Scroll to bottom" onClick={() => window.handleExamScrollFabClick()}>
+                <svg id="exam-scroll-fab-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+              </button>
+            </div>
+
+            {/* Hover outline nav — collapsed ticks that expand into a jump-to-section list */}
+            <div className="exam-outline-nav hidden" id="exam-outline-nav">
+              <div className="exam-outline-ticks" id="exam-outline-ticks" />
+              <div className="exam-outline-panel" id="exam-outline-panel" />
+            </div>
 
           </div>{/* /content-area */}
         </div>{/* /main-content */}

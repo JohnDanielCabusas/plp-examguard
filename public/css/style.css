@@ -59,9 +59,12 @@
 [data-theme="dark"] .main-content,
 [data-theme="dark"] .content-area { background: var(--bg); }
 [data-theme="dark"] .topbar { background: var(--surface) !important; border-bottom-color: var(--border) !important; }
-[data-theme="dark"] .topbar-actions > div { background: var(--surface-2) !important; }
 [data-theme="dark"] #topbar-admin-name,
 [data-theme="dark"] .topbar-title { color: var(--text) !important; }
+[data-theme="dark"] .topbar .dm-toggle {
+  background: transparent !important;
+  border-radius: 999px;
+}
 [data-theme="dark"] .topbar-user-pill {
   background: var(--surface-2) !important;
   border: 1px solid var(--border) !important;
@@ -375,6 +378,13 @@
   content: '';
   border-radius: 50%;
   background: #fff;
+  position: absolute;
+  margin-left: -20px; margin-top: -20px;
+  opacity: 0.15;
+  height: 40px; width: 40px;
+  left: 50%; top: 50%;
+  pointer-events: none;
+}
 [data-theme="dark"] .portal-user-pill {
   background: var(--surface-2) !important;
   border: 1px solid var(--border) !important;
@@ -382,12 +392,6 @@
 [data-theme="dark"] .portal-user-name {
   color: #e5e7eb !important;
 }
-  position: absolute;
-  margin-left: -20px; margin-top: -20px;
-  opacity: 0.15;
-  height: 40px; width: 40px;
-  left: 50%; top: 50%;
-  pointer-events: none;
 [data-theme="dark"] .dash-quick-card-title,
 [data-theme="dark"] .course-card-name,
 [data-theme="dark"] .dash-greeting-text {
@@ -399,23 +403,7 @@
 [data-theme="dark"] .dash-active-exam-meta {
   color: #94a3b8 !important;
 }
-}
 .dm-toggle .dm-button {
-[data-theme="dark"] .essay-meta {
-  color: #94a3b8 !important;
-}
-[data-theme="dark"] .essay-hint,
-[data-theme="dark"] .essay-chars {
-  color: #cbd5e1 !important;
-}
-[data-theme="dark"] .essay-textarea {
-  background: var(--surface-2) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-}
-[data-theme="dark"] .essay-textarea:focus {
-  background: var(--surface-2) !important;
-}
   transition: all 300ms cubic-bezier(0.23, 1, 0.32, 1);
   box-shadow: 0 6px 12px -2px rgba(0,0,0,0.25),
               inset 0 -2px 3px -1px rgba(0,0,0,0.1),
@@ -431,6 +419,21 @@
   height: 34px; width: 34px;
   left: 50%; top: 50%;
   pointer-events: none;
+}
+[data-theme="dark"] .essay-meta {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .essay-hint,
+[data-theme="dark"] .essay-chars {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .essay-textarea {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .essay-textarea:focus {
+  background: var(--surface-2) !important;
 }
 .dm-toggle .dm-label {
   transition: color 300ms ease-out, transform 300ms ease;
@@ -6811,6 +6814,9 @@ input[type="password"]::-ms-clear {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
 }
+.monitor-topbar-left {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
 .monitor-live-chip {
   display: inline-flex; align-items: center; gap: 6px;
   background: #dcfce7; color: #166534;
@@ -6822,6 +6828,30 @@ input[type="password"]::-ms-clear {
   background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
   padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
 }
+
+/* Sessions / Camera Grid view toggle */
+.monitor-view-toggle {
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+}
+[data-theme="dark"] .monitor-view-toggle { background: var(--surface-2) !important; }
+.monitor-view-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+  color: #6b7280;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+.monitor-view-btn.active { background: #1a4d2a; color: #fff; }
+[data-theme="dark"] .monitor-view-btn { color: var(--text-muted) !important; }
+[data-theme="dark"] .monitor-view-btn.active { background: #22c55e !important; color: #04150a !important; }
 
 /* ── Stats strip ─────────────────────────────────────────── */
 .monitor-stats-strip {
@@ -6874,6 +6904,9 @@ input[type="password"]::-ms-clear {
 .ms-badge-amber { background: #fef3c7; color: #92400e; }
 .ms-badge-green { background: #dcfce7; color: #166534; }
 .ms-badge-blue  { background: #dbeafe; color: #1e40af; }
+[data-theme="dark"] .ms-badge-amber { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
+[data-theme="dark"] .ms-badge-green { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
+[data-theme="dark"] .ms-badge-blue  { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; }
 
 /* Warning pill */
 .ms-warn-pill {
@@ -8026,12 +8059,227 @@ tr:hover td { background: #fafbfc !important; }
   background: var(--bg) !important;
 }
 
+/* Builder vs Exam Paper sub-tabs */
+.exam-editor-subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 24px 0;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+[data-theme="dark"] .exam-editor-subtabs {
+  background: var(--surface) !important;
+  border-bottom-color: var(--border) !important;
+}
+.exam-editor-subtab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  transition: color 0.15s, background 0.15s;
+}
+.exam-editor-subtab:hover { color: var(--text); background: rgba(0,0,0,0.03); }
+[data-theme="dark"] .exam-editor-subtab:hover { background: rgba(255,255,255,0.05); }
+.exam-editor-subtab.active { color: #1a6b35; border-bottom-color: #1a6b35; }
+[data-theme="dark"] .exam-editor-subtab.active { color: #4ade80; border-bottom-color: #4ade80; }
+
+/* Exam Paper — printable preview */
+.exam-paper-tab { background: #f1f4f1; min-height: calc(100vh - 58px - 46px); }
+[data-theme="dark"] .exam-paper-tab { background: var(--bg) !important; }
+.exam-paper-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 28px;
+  flex-wrap: wrap;
+}
+.exam-paper-sheet-wrap { padding: 0 28px 60px; display: flex; justify-content: center; }
+.exam-paper-sheet {
+  width: 100%;
+  max-width: 780px;
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  padding: 48px 56px;
+  font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+}
+/* This is a printable "paper" meant to look the same regardless of the
+   app's light/dark theme, so header text needs explicit colors — otherwise
+   global dark-mode rules like `[data-theme="dark"] strong` wash it out to
+   near-white against this intentionally-white page. */
+.exam-paper-header { text-align: center; margin-bottom: 4px; }
+.exam-paper-title { font-size: 24px; font-weight: 800; margin-bottom: 12px; color: #111827 !important; }
+.exam-paper-meta { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: #4b5563 !important; margin-bottom: 6px; }
+.exam-paper-meta strong { color: #111827 !important; }
+.exam-paper-meta-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg,#1a4d2a,#2f7a45);
+  color: #fff !important; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+.exam-paper-sub { font-size: 12.5px; color: #6b7280 !important; margin-bottom: 24px; text-align: center; }
+.exam-paper-hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0 26px; }
+.exam-paper-q { margin-bottom: 22px; }
+.exam-paper-q-row { display: flex; gap: 8px; font-size: 14px; font-weight: 700; color: #111827 !important; }
+.exam-paper-q-num { flex-shrink: 0; }
+.exam-paper-q-pts { font-weight: 500; color: #9ca3af !important; font-size: 12px; margin-left: 6px; }
+.exam-paper-q-img { display: block; max-width: 100%; max-height: 220px; margin: 10px 0 4px 24px; border-radius: 6px; }
+.exam-paper-opts { list-style: none; margin: 10px 0 0 24px; padding: 0; }
+.exam-paper-opts li { font-size: 13.5px; color: #374151 !important; margin-bottom: 6px; }
+.exam-paper-opt-letter { font-weight: 700; margin-right: 6px; }
+.exam-paper-opt-empty { color: #b91c1c !important; font-style: italic; }
+.exam-paper-answer-line { margin: 12px 0 0 24px; font-size: 13.5px; color: #374151 !important; border-bottom: 1px solid #9ca3af; width: 320px; padding-bottom: 4px; }
+.exam-paper-instructions { margin: 8px 0 0 24px; font-size: 12px; font-style: italic; color: #6b7280 !important; }
+.exam-paper-match-cols { display: flex; gap: 32px; margin: 10px 0 0 24px; }
+.exam-paper-match-col { font-size: 13.5px; color: #374151 !important; }
+.exam-paper-match-col div { margin-bottom: 6px; }
+@media print {
+  .exam-editor-topbar, .exam-editor-subtabs, .exam-paper-toolbar, .exam-editor-scroll-fab, .exam-outline-nav { display: none !important; }
+  .exam-paper-tab { background: #fff !important; }
+  .exam-paper-sheet { box-shadow: none; }
+}
+
+/* Floating fast-scroll buttons — anchored with clamp() so they scale down
+   on small/zoomed viewports instead of overflowing off-screen, and padded
+   with env(safe-area-inset-*) for devices with notches/home indicators. */
+.exam-editor-scroll-fab {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.5vh, 10px);
+  pointer-events: none; /* only the buttons themselves should capture clicks */
+}
+.exam-scroll-fab-btn {
+  width: clamp(36px, 5vw, 44px);
+  height: clamp(36px, 5vw, 44px);
+  border-radius: 50%;
+  background: #1a4d2a;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+.exam-scroll-fab-btn svg { width: clamp(15px, 2.2vw, 18px); height: clamp(15px, 2.2vw, 18px); }
+.exam-scroll-fab-btn:hover { background: #1f5f34; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.3); }
+.exam-scroll-fab-btn:active { transform: translateY(0); }
+[data-theme="dark"] .exam-scroll-fab-btn { background: #22c55e; color: #04150a; }
+[data-theme="dark"] .exam-scroll-fab-btn:hover { background: #4ade80; }
+@media (max-width: 640px) {
+  .exam-editor-scroll-fab { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
+}
+
+/* Hover outline nav — collapsed ticks on the right edge that expand on hover
+   into a jump-to-section list (Exam Details, Attendance, each question). */
+.exam-outline-nav {
+  position: fixed;
+  top: 50%;
+  right: max(10px, env(safe-area-inset-right));
+  transform: translateY(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+}
+.exam-outline-ticks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 8px;
+  cursor: pointer;
+}
+.exam-outline-tick {
+  width: 14px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: rgba(148,163,184,0.55);
+  transition: background 0.15s, width 0.15s;
+}
+.exam-outline-tick:hover { background: rgba(26,107,53,0.8); }
+.exam-outline-tick.active { background: #1a6b35; width: 20px; }
+[data-theme="dark"] .exam-outline-tick { background: rgba(148,163,184,0.35); }
+[data-theme="dark"] .exam-outline-tick.active { background: #4ade80; }
+
+.exam-outline-panel {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%) translateX(8px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+  padding: 6px;
+  min-width: 190px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.exam-outline-nav:hover .exam-outline-panel,
+.exam-outline-nav:focus-within .exam-outline-panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+.exam-outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.exam-outline-item:hover { background: #f3f4f6; }
+.exam-outline-item.active { color: #1a6b35; background: #ecfdf3; }
+.exam-outline-item-sub { padding-left: 22px; font-weight: 500; font-size: 12px; color: #6b7280; }
+[data-theme="dark"] .exam-outline-panel { background: var(--surface) !important; border-color: var(--border) !important; }
+[data-theme="dark"] .exam-outline-item { color: var(--text) !important; }
+[data-theme="dark"] .exam-outline-item:hover { background: var(--surface-2) !important; }
+[data-theme="dark"] .exam-outline-item.active { color: #4ade80 !important; background: rgba(74,222,128,0.14) !important; }
+[data-theme="dark"] .exam-outline-item-sub { color: var(--text-muted) !important; }
+@media (max-width: 640px) {
+  .exam-outline-nav { display: none; } /* not enough width for a hover flyout on small screens */
+}
+
 /* Details card */
 .exam-editor-section-card {
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
   padding: 20px 24px 22px;
+  /* Reserve space for the sticky topbar (58px) so scrollIntoView()/the outline
+     nav don't land a section's own header right underneath it, hidden from view. */
+  scroll-margin-top: 74px;
 }
 [data-theme="dark"] .exam-editor-section-card {
   background: var(--surface) !important;
@@ -8144,7 +8392,6 @@ tr:hover td { background: #fafbfc !important; }
   background: #16502d !important;
   border-color: #16502d !important;
   color: #fff !important;
-}
 }
 
 /* ── Question blocks ─────────────────────────── */
@@ -8826,6 +9073,12 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   box-shadow: 0 2px 0 #991b1b;
   transition: transform 34ms, box-shadow 34ms;
 }
+/* Icon-less usage (e.g. Force Submit) — center the label instead of leaving
+   the icon's reserved right-padding, and keep it visible on hover instead of
+   fading to transparent (which assumes a sliding icon is there to replace it). */
+.tbl-btn-plain { justify-content: center !important; padding: 0 16px !important; }
+.tbl-btn-plain:hover { color: #fff !important; }
+[data-theme="dark"] .tbl-btn-plain:hover { color: #fff !important; }
 
 .table-actions { justify-content: center; }
 
@@ -8842,11 +9095,27 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   transition: box-shadow 0.18s;
   border-top: 3px solid var(--q-accent, #9ca3af);
+  /* Reserve space for the sticky topbar (58px) so jumping here from the
+     outline nav doesn't hide the card's own header underneath it. */
+  scroll-margin-top: 74px;
 }
 .qe-card.qe-new { animation: qeEnter 0.18s ease both; }
 .qe-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.09); }
 .qe-card.q-dragging { opacity: 0.35; transform: scale(0.99); }
 .qe-card.q-drag-over { border-color: #1a6b35; box-shadow: 0 0 0 3px rgba(26,107,53,0.12); }
+.qe-card.qe-card-incomplete { border-top-color: #dc2626 !important; }
+.qe-issue-banner {
+  display: flex; align-items: center; gap: 6px;
+  background: #fef2f2; color: #b91c1c;
+  font-size: 12px; font-weight: 600;
+  padding: 7px 10px; border-radius: 8px; margin-bottom: 10px;
+}
+[data-theme="dark"] .qe-issue-banner {
+  background: rgba(248,113,113,0.15) !important;
+  color: #fca5a5 !important;
+}
+@keyframes qeFlash { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); } 50% { box-shadow: 0 0 0 4px rgba(220,38,38,0.35); } }
+.qe-card.qe-card-flash { animation: qeFlash 0.6s ease 2; }
 
 .qe-card-header {
   display: flex; align-items: center; justify-content: space-between;
