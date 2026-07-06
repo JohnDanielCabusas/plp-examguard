@@ -2422,10 +2422,14 @@ function toggleExamAudienceDropdown() {
 // ── Manage Absentees (per-exam student exclusion) ──────────
 
 function openExamAbsenteesModal() {
-  if (!currentQBuilderExamId) {
-    saveExamFromEditor();
-    if (!currentQBuilderExamId) return;
-  }
+  // Persist the current form — including the Year/Section restriction — before building
+  // the roster. Without this, checking a new restriction box and immediately opening this
+  // modal (without hitting the main Save button first) would show a roster based on
+  // unsaved checkbox state, while the exam's actually-persisted targetYearLevels/
+  // targetSections (what students are really gated on in exam.js) stays stale — so a
+  // student marked "present" here could still be blocked by the unsaved restriction.
+  saveExamFromEditor();
+  if (!currentQBuilderExamId) return;
   const examId = currentQBuilderExamId;
   const exam = DB.getExam(examId);
   if (!exam) return;

@@ -569,6 +569,73 @@
   border-color: var(--border) !important;
   box-shadow: var(--shadow-sm) !important;
 }
+
+/* Exam Submitted / Auto-Submitted screen */
+[data-theme="dark"] #state-submitted.state-center {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(74,222,128,0.06), transparent 24%),
+    radial-gradient(circle at 80% 18%, rgba(59,130,246,0.05), transparent 22%),
+    radial-gradient(circle at 50% 90%, rgba(245,158,11,0.05), transparent 26%),
+    var(--bg) !important;
+}
+[data-theme="dark"] #state-submitted .submitted-card h2 {
+  color: #4ade80 !important;
+}
+[data-theme="dark"] #state-submitted .submitted-card p {
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] .submitted-details-title {
+  color: #4ade80 !important;
+}
+[data-theme="dark"] .submitted-detail-row {
+  border-bottom-color: var(--border) !important;
+}
+[data-theme="dark"] .submitted-detail-label {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .submitted-detail-icon {
+  color: #4ade80 !important;
+}
+[data-theme="dark"] .submitted-detail-value {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .submitted-icon-wrap.success,
+[data-theme="dark"] .submitted-icon-wrap.done {
+  background: radial-gradient(circle at 50% 40%, rgba(34,197,94,0.18) 0%, rgba(34,197,94,0.08) 100%) !important;
+  color: #4ade80 !important;
+  box-shadow: inset 0 0 0 1px rgba(74,222,128,0.2) !important;
+}
+[data-theme="dark"] .submitted-icon-wrap.auto {
+  background: radial-gradient(circle at 50% 40%, rgba(245,158,11,0.2) 0%, rgba(245,158,11,0.08) 100%) !important;
+  color: #fbbf24 !important;
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.25) !important;
+}
+[data-theme="dark"] .submitted-auto-note {
+  background: rgba(34,197,94,0.1) !important;
+}
+[data-theme="dark"] .submitted-auto-badge {
+  background: rgba(34,197,94,0.18) !important;
+  color: #4ade80 !important;
+}
+[data-theme="dark"] .submitted-auto-text {
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] .score-released-bar-wrap {
+  background: var(--surface-2) !important;
+}
+[data-theme="dark"] #state-submitted .course-exam-cta-secondary {
+  color: #4ade80 !important;
+  border-color: rgba(74,222,128,0.35) !important;
+}
+[data-theme="dark"] .btn-submitted-return {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+[data-theme="dark"] .btn-submitted-return:hover {
+  border-color: #4ade80 !important;
+  box-shadow: 0 4px 14px rgba(74,222,128,0.22) !important;
+}
 [data-theme="dark"] .settings-card-title {
   border-bottom-color: var(--border) !important;
 }
@@ -821,6 +888,87 @@
   border-color: var(--border) !important;
   color: var(--text-muted) !important;
 }
+
+/* Exam-taking question card + answer inputs (examv2) */
+[data-theme="dark"] .question-card,
+[data-theme="dark"] .examv2-question-wrap .question-card {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 1px var(--border) !important;
+}
+[data-theme="dark"] .question-header {
+  background: var(--surface-2) !important;
+  border-bottom-color: var(--border) !important;
+}
+[data-theme="dark"] .question-card.answered {
+  border-color: rgba(74,222,128,0.3) !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3), 0 0 0 1px rgba(74,222,128,0.15) !important;
+}
+[data-theme="dark"] .question-card.answered .question-header {
+  background: var(--surface) !important;
+  border-bottom-color: rgba(74,222,128,0.18) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .question-content {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .question-type-label {
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .question-points {
+  background: rgba(34,197,94,0.14) !important;
+  color: #4ade80 !important;
+}
+[data-theme="dark"] .q-required-badge,
+[data-theme="dark"] .examv2-question-wrap .q-required-badge {
+  background: rgba(248,113,113,0.14) !important;
+  color: #f87171 !important;
+  border-color: rgba(248,113,113,0.35) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .mcq-option,
+[data-theme="dark"] .examv2-question-wrap .tf-btn,
+[data-theme="dark"] .examv2-question-wrap .checkbox-option {
+  background: var(--surface-2) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .mcq-option:hover,
+[data-theme="dark"] .examv2-question-wrap .tf-btn:hover,
+[data-theme="dark"] .examv2-question-wrap .checkbox-option:hover {
+  border-color: #4ade80 !important;
+  background: rgba(34,197,94,0.1) !important;
+  color: #86efac !important;
+}
+[data-theme="dark"] .examv2-question-wrap .mcq-option.selected,
+[data-theme="dark"] .examv2-question-wrap .tf-btn.selected {
+  border-color: #4ade80 !important;
+  background: rgba(34,197,94,0.16) !important;
+  color: #86efac !important;
+}
+[data-theme="dark"] .examv2-question-wrap .mcq-option-letter {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] .examv2-question-wrap .mcq-option.selected .mcq-option-letter {
+  background: #22c55e !important;
+  border-color: #22c55e !important;
+  color: #062814 !important;
+}
+[data-theme="dark"] .id-input::placeholder,
+[data-theme="dark"] .examv2-question-wrap .id-input::placeholder {
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] .examv2-nav-footer {
+  background: var(--surface) !important;
+  border-top-color: var(--border) !important;
+}
+[data-theme="dark"] .examv2-mark-review {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .examv2-nav-legend {
+  border-top-color: var(--border) !important;
+}
+
 [data-theme="dark"] .sa-toast,
 [data-theme="dark"] .sa-modal {
   background: var(--surface) !important;

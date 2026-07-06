@@ -37,6 +37,7 @@ const ExamApp = {
   _darkSeconds: 0,           // consecutive seconds below brightness threshold
   _brightnessWarningIssued: false, // prevent repeated brightness warnings
   _dashInterval: null,      // dashboard poll interval
+  _courseInterval: null,    // course-view exams poll interval
   _fullscreenInteractionGraceUntil: 0,
   _pendingFullscreenRecovery: null,
   _fullscreenVerifyTimer: null,
@@ -278,8 +279,9 @@ const ExamApp = {
   },
 
   _startExamFlow(studentSession) {
-    // Stop any running dashboard poll
+    // Stop any running dashboard/course-view poll
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
 
     const exam = DB.getExamByCode(studentSession.examCode);
     if (!exam) {
@@ -384,6 +386,9 @@ const ExamApp = {
   // ============================================================
   // ── Portal UI helpers ──────────────────────────────────
   showPortalTab(tab) {
+    // Leaving the course view (if any) — stop its poll.
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
+
     ['home','settings','archived'].forEach(t => {
       const el = document.getElementById('portal-tab-' + t);
       if (el) el.classList.toggle('hidden', t !== tab);
@@ -675,8 +680,10 @@ const ExamApp = {
       : 'exams';
     this.showCourseTab(preferredTab);
 
-    // Refresh exams from Supabase to catch any deletions/changes missed by realtime
-    if (window.SupabaseSync?.refreshExams) {
+    // Refresh exams from Supabase to catch any deletions/changes missed by realtime —
+    // e.g. a professor updating the audience restriction or marking someone present/absent.
+    const refreshCourseState = () => {
+      if (!window.SupabaseSync?.refreshExams) return;
       window.SupabaseSync.refreshExams().then(() => {
         if (this._currentCourseId !== subjId) return; // user navigated away
         // Re-render banner stats
@@ -697,7 +704,14 @@ const ExamApp = {
         // Re-render the active exam tab
         if (this._currentCourseTab === 'exams') this._renderCourseExams();
       }).catch(() => {});
-    }
+    };
+
+    refreshCourseState();
+
+    // Keep polling while this course view stays open, so a professor's restriction/
+    // attendance changes show up here without the student needing to manually refresh.
+    if (this._courseInterval) clearInterval(this._courseInterval);
+    this._courseInterval = setInterval(refreshCourseState, 5000);
   },
 
   showCourseTab(tab) {
@@ -941,6 +955,9 @@ const ExamApp = {
   showDashboard(studentSession) {
     const sess = studentSession || Auth.getStudentSession();
     if (!sess) { window.location.href = 'index.html'; return; }
+
+    // Leaving the course view (if any) — stop its poll.
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
 
     this.showState('dashboard');
 
@@ -1215,6 +1232,7 @@ const ExamApp = {
 
   dashSelectExam(examCode) {
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
     // Remember where to return after the exam (course view or home)
     this._returnCourseId = this._currentCourseId || null;
     const sess = Auth.getStudentSession();
@@ -1294,6 +1312,7 @@ const ExamApp = {
       return;
     }
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
     Auth.clearStudentSession();
     window.location.href = 'index.html';
   },
@@ -1305,6 +1324,7 @@ const ExamApp = {
   confirmLogout() {
     this.cancelLogout();
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
     Auth.clearStudentSession();
     window.location.href = 'index.html';
   },
@@ -2426,8 +2446,9 @@ const ExamApp = {
   // RENDER QUESTIONS
   // ============================================================
   renderQuestions() {
-    const questions = [...this.exam.questions];
-    if (this.exam.shuffleQuestions) this.shuffle(questions);
+    const questions = this.exam.shuffleQuestions
+      ? this._shuffleWithinTypeGroups(this.exam.questions)
+      : [...this.exam.questions];
     this.questionOrder = questions;
     this.currentQuestionIndex = 0;
     this.markedForReview = new Set();
@@ -2452,6 +2473,8 @@ const ExamApp = {
 
     if (q.type === 'mcq') {
       answerHtml = this._renderMCQ(q, idx);
+    } else if (q.type === 'checkbox') {
+      answerHtml = this._renderCheckbox(q, idx);
     } else if (q.type === 'tf') {
       answerHtml = this._renderTF(q, idx);
     } else if (q.type === 'identification') {
@@ -2466,7 +2489,7 @@ const ExamApp = {
       answerHtml = this._renderMatching(q, idx);
     }
 
-    const typeLabels = { mcq:'Multiple Choice', tf:'True / False', identification:'Identification', essay:'Essay', enumeration:'Enumeration', matching:'Matching Type', coding:'Coding' };
+    const typeLabels = { mcq:'Multiple Choice', checkbox:'Checkboxes', tf:'True / False', identification:'Identification', essay:'Essay', enumeration:'Enumeration', matching:'Matching Type', coding:'Coding' };
 
     const imgHtml = q.imageUrl
       ? `<div class="question-img-wrap"><img src="${_escAttr(q.imageUrl)}" alt="Question image" class="question-img" onerror="this.parentElement.style.display='none'" /></div>`
@@ -2497,10 +2520,30 @@ const ExamApp = {
 
     return `<div class="mcq-options" id="mcq-${q.id}">` +
       options.map((opt, oi) => `
-        <div class="mcq-option" id="mcq-opt-${q.id}-${oi}" data-exam-control="true" data-qid="${q.id}" data-val="${_escAttr(opt)}" onclick="ExamApp.selectMCQ('${q.id}', '${_escAttr(opt)}')">
+        <div class="mcq-option" id="mcq-opt-${q.id}-${oi}" data-exam-control="true" data-qid="${q.id}" data-val="${_escAttr(opt)}" onclick="ExamApp.selectMCQ(this)">
           <div class="mcq-option-letter">${letters[oi] || (oi+1)}</div>
           <span class="mcq-option-text">${_escText(opt)}</span>
         </div>
+      `).join('') +
+      `</div>`;
+  },
+
+  _renderCheckbox(q, idx) {
+    // Checkbox correctness is keyed by option INDEX (correctAnswerIndices), so we keep
+    // each option's original index attached even when shuffled, instead of shuffling a
+    // plain array (which would desync the picked indices from the correct-answer indices).
+    const options = q.options.map((opt, oi) => ({ opt, oi }));
+    if (this.exam.shuffleAnswers) this.shuffle(options);
+
+    return `<div class="checkbox-options" id="checkbox-${q.id}">` +
+      options.map(({ opt, oi }) => `
+        <label class="checkbox-option" id="checkbox-opt-${q.id}-${oi}" data-exam-control="true" data-qid="${q.id}" data-idx="${oi}">
+          <div class="checkbox-wrapper-30"><div class="checkbox" style="--size:0.9;--stroke:#1a6b35;">
+            <input type="checkbox" onchange="ExamApp.toggleCheckboxOption(this)" />
+            <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+          </div></div>
+          <span class="mcq-option-text">${_escText(opt)}</span>
+        </label>
       `).join('') +
       `</div>`;
   },
@@ -2532,13 +2575,13 @@ const ExamApp = {
     const count = (q.answers||[]).length || 3;
     const rows = Array.from({length: count}, (_, i) => `
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:13px;color:#9ca3af;font-weight:700;min-width:22px;">${i+1}.</span>
+        <span style="font-size:13px;color:var(--text-muted);font-weight:700;min-width:22px;">${i+1}.</span>
         <input type="text" class="form-control" id="enum-${q.id}-${i}" data-exam-control="true" placeholder="Item ${i+1}"
           autocomplete="off" spellcheck="true"
           oninput="ExamApp.handleEnumInput(event,'${q.id}',${count})" style="flex:1;" />
       </div>`).join('');
     return `<div style="display:flex;flex-direction:column;gap:8px;">${rows}</div>
-      <div style="font-size:11px;color:#9ca3af;margin-top:6px;">List all ${count} items. Each correct item earns partial points.</div>`;
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">List all ${count} items. Each correct item earns partial points.</div>`;
   },
 
   _renderMatching(q, idx) {
@@ -2548,8 +2591,8 @@ const ExamApp = {
     return `<div style="display:flex;flex-direction:column;gap:8px;">
       ${pairs.map((p,pi)=>`
         <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;">
-          <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;">${_esc(p.term)}</div>
-          <div style="color:#9ca3af;font-size:16px;display:flex;align-items:center;justify-content:center;">${this._portalIcon('arrowRight', { size: 14, stroke: '#9ca3af' })}</div>
+          <div style="background:var(--surface-2);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;">${_esc(p.term)}</div>
+          <div style="color:var(--text-muted);font-size:16px;display:flex;align-items:center;justify-content:center;">${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</div>
           <select class="form-control" id="match-${q.id}-${pi}" data-exam-control="true"
             onchange="ExamApp.handleMatchInput(event,'${q.id}',${pairs.length})"
             style="font-size:13px;">
@@ -2644,6 +2687,16 @@ const ExamApp = {
       opts.forEach(opt => {
         if (opt.getAttribute('data-val') === value) opt.classList.add('selected');
       });
+    } else if (q.type === 'checkbox') {
+      let selectedIndices = [];
+      try { selectedIndices = JSON.parse(value) || []; } catch (_) {}
+      const opts = document.querySelectorAll(`[data-qid="${q.id}"].checkbox-option`);
+      opts.forEach(opt => {
+        if (!selectedIndices.includes(parseInt(opt.dataset.idx, 10))) return;
+        opt.classList.add('selected');
+        const input = opt.querySelector('input[type="checkbox"]');
+        if (input) input.checked = true;
+      });
     } else if (q.type === 'tf') {
       const trueBtn = document.getElementById(`tf-${q.id}-true`);
       const falseBtn = document.getElementById(`tf-${q.id}-false`);
@@ -2676,15 +2729,32 @@ const ExamApp = {
   // ============================================================
   // ANSWER SELECTION
   // ============================================================
-  selectMCQ(questionId, value) {
+  selectMCQ(el) {
+    const questionId = el.dataset.qid;
+    const value = el.dataset.val;
     // Deselect all options for this question
     document.querySelectorAll(`[data-qid="${questionId}"].mcq-option`).forEach(opt => {
       opt.classList.remove('selected');
     });
-    // Select clicked
-    const clicked = document.querySelector(`[data-qid="${questionId}"][data-val="${CSS.escape(value)}"]`);
-    if (clicked) clicked.classList.add('selected');
+    // Select clicked — read the value straight off the clicked element rather than
+    // re-matching by value, so option text with quotes/special characters can never
+    // break re-selection.
+    el.classList.add('selected');
     this.selectAnswer(questionId, value);
+  },
+
+  toggleCheckboxOption(inputEl) {
+    const optionEl = inputEl.closest('.checkbox-option');
+    if (!optionEl) return;
+    optionEl.classList.toggle('selected', inputEl.checked);
+    const questionId = optionEl.dataset.qid;
+    const selectedIndices = [...document.querySelectorAll(`[data-qid="${questionId}"].checkbox-option`)]
+      .filter(opt => opt.querySelector('input[type="checkbox"]')?.checked)
+      .map(opt => parseInt(opt.dataset.idx, 10))
+      .sort((a, b) => a - b);
+    // Store '' (not '[]') when nothing is checked, so this reads as unanswered like every
+    // other question type instead of a truthy-but-empty string.
+    this.selectAnswer(questionId, selectedIndices.length ? JSON.stringify(selectedIndices) : '');
   },
 
   selectTF(questionId, value) {
@@ -2957,7 +3027,7 @@ const ExamApp = {
       `;
     }
 
-    const typeLabel = { mcq: 'MCQ', tf: 'T/F', identification: 'ID', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay' };
+    const typeLabel = { mcq: 'MCQ', checkbox: 'Checkbox', tf: 'T/F', identification: 'ID', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay' };
 
     container.innerHTML = exam.questions.map((q, idx) => {
       const ans = (sess.answers || {})[q.id];
@@ -3016,6 +3086,28 @@ const ExamApp = {
                   </div>
                 </div>`;
               }).join('')}
+            </div>
+          </div>`;
+      } else if (q.type === 'checkbox') {
+        let given = [];
+        try { given = JSON.parse(ans || '[]') || []; } catch (_) {}
+        const correctIndices = q.correctAnswerIndices || [];
+        resultHtml = `
+          <div class="review-answer-group">
+            <div class="review-enum-list">
+              ${(q.options || []).map((opt, oi) => {
+                const wasGiven = given.includes(oi);
+                const shouldBeGiven = correctIndices.includes(oi);
+                const got = wasGiven === shouldBeGiven;
+                if (!wasGiven && !shouldBeGiven) return '';
+                return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                  <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                  <div class="review-enum-copy">
+                    <div class="review-enum-expected">${_esc(opt)}</div>
+                    ${!got ? `<div class="review-enum-student">${wasGiven ? 'You selected this, but it\'s not correct' : 'You missed this correct option'}</div>` : ''}
+                  </div>
+                </div>`;
+              }).join('') || `<div class="review-answer-note">(no answer)</div>`}
             </div>
           </div>`;
       } else {
@@ -3309,6 +3401,13 @@ const ExamApp = {
         try { studentAns = JSON.parse(ans); } catch {}
         const correct = pairs.filter((p,i) => (studentAns[i]||'').toUpperCase() === p.match.toUpperCase()).length;
         earned += pairs.length > 0 ? Math.round((correct / pairs.length) * q.points) : 0;
+      } else if (q.type === 'checkbox') {
+        let given = [];
+        try { given = JSON.parse(ans) || []; } catch {}
+        const correct = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+        const sortedGiven = given.slice().sort((a, b) => a - b);
+        const exactMatch = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
+        if (exactMatch) earned += q.points;
       } else {
         const studentAns = ans.toString().trim().toUpperCase();
         const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
@@ -3328,6 +3427,22 @@ const ExamApp = {
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
+  },
+
+  // Shuffles question order while keeping each question type contiguous (its own
+  // "section") — e.g. all Multiple Choice questions stay together, all True/False
+  // questions stay together, etc. Only the order WITHIN each type group is randomized;
+  // the relative order of the type groups themselves matches their first occurrence
+  // in the original exam (i.e. however the professor arranged the types).
+  _shuffleWithinTypeGroups(questions) {
+    const groupOrder = [];
+    const groups = {};
+    questions.forEach(q => {
+      if (!groups[q.type]) { groups[q.type] = []; groupOrder.push(q.type); }
+      groups[q.type].push(q);
+    });
+    groupOrder.forEach(type => this.shuffle(groups[type]));
+    return groupOrder.flatMap(type => groups[type]);
   },
 };
 

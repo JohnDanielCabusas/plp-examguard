@@ -14,6 +14,10 @@ const SupabaseSync = {
   _deferredHydrationPromise: null,
   _readyEmitted: false,
   _sessionAiDetectionsSupported: true,
+  // Serialize writes per table/id so rapid local edits (for example absent -> present ->
+  // draft -> ready on the same exam) cannot reach Supabase out of order and resurrect
+  // stale state on other clients.
+  _docSyncChains: new Map(),
   // Exam IDs whose excluded_student_ids value is known to NOT have made it to Supabase yet
   // (e.g. PostgREST's schema cache was briefly stale and rejected the column). While an id
   // is in this set, realtime/pull updates for that exam must not trust the incoming
@@ -262,71 +266,101 @@ const SupabaseSync = {
       .then(({ error }) => { if (error) console.error('[SupabaseSync] syncSysAdmin:', error.message); });
   },
 
+  _docSyncKey(table, id) {
+    return `${table}:${id}`;
+  },
+
+  _enqueueDocSync(table, id, task) {
+    const key = this._docSyncKey(table, id);
+    const previous = this._docSyncChains.get(key) || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(task)
+      .finally(() => {
+        if (this._docSyncChains.get(key) === next) this._docSyncChains.delete(key);
+      });
+    this._docSyncChains.set(key, next);
+    return next;
+  },
+
   syncDoc(table, data) {
     if (!this._client || !data?.id) return;
     const row = this._jsToDb(table, data);
     if (!row) return;
-    // onConflict:'id' ensures we always UPDATE existing rows by primary key,
-    // avoiding false conflicts on unique columns like exams.code
-    this._client.from(table).upsert(row, { onConflict: 'id' })
-      .then(async ({ error }) => {
-        if (!error && table === 'exams') {
-          // This write included excluded_student_ids and Postgres accepted it —
-          // the row is now authoritative again, so trust future echoes of it.
-          this._examIdsWithUnsyncedExclusions.delete(row.id);
-        }
+    this._enqueueDocSync(table, data.id, async () => {
+      // onConflict:'id' ensures we always UPDATE existing rows by primary key,
+      // avoiding false conflicts on unique columns like exams.code
+      let { error } = await this._client.from(table).upsert(row, { onConflict: 'id' });
+      if (!error && table === 'exams') {
+        // This write included excluded_student_ids and Postgres accepted it —
+        // the row is now authoritative again, so trust future echoes of it.
+        this._examIdsWithUnsyncedExclusions.delete(row.id);
+      }
 
-        if (error && this._isMissingSessionAiDetectionsError(table, error)) {
-          this._sessionAiDetectionsSupported = false;
-          const fallbackRow = this._withoutSessionAiDetections(row);
-          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
-          if (!retryError) return;
-          error = retryError;
-        }
+      if (error && this._isMissingSessionAiDetectionsError(table, error)) {
+        this._sessionAiDetectionsSupported = false;
+        const fallbackRow = this._withoutSessionAiDetections(row);
+        const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+        if (!retryError) return;
+        error = retryError;
+      }
 
-        if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
-          // PostgREST's schema cache is (probably temporarily) out of sync with the real
-          // table — don't give up on this field forever, just skip it for THIS write and
-          // keep trying on every future save until it succeeds. Meanwhile, mark this exam
-          // so realtime/pull echoes don't clobber the correct local value with Supabase's
-          // stale copy of excluded_student_ids.
-          this._examIdsWithUnsyncedExclusions.add(row.id);
-          const fallbackRow = this._withoutExamExcludedStudentIds(row);
-          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
-          if (!retryError) return;
-          error = retryError;
+      if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
+        // PostgREST's schema cache is (probably temporarily) out of sync with the real
+        // table — don't give up on this field forever, just skip it for THIS write and
+        // keep trying on every future save until it succeeds. Meanwhile, mark this exam
+        // so realtime/pull echoes don't clobber the correct local value with Supabase's
+        // stale copy of excluded_student_ids.
+        this._examIdsWithUnsyncedExclusions.add(row.id);
+        const fallbackRow = this._withoutExamExcludedStudentIds(row);
+        const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+        if (!retryError) {
+          // The rest of the exam saved, but the present/absent list specifically did NOT
+          // reach Supabase this time — say so, instead of letting the generic "saved"
+          // toast imply students on other devices already see the change. Also keep
+          // retrying in the background so it self-heals without needing another save.
+          document.dispatchEvent(new CustomEvent('supabaseSyncError', {
+            detail: {
+              table,
+              message: 'Attendance change saved on this device, but has not synced online yet — students on other devices may not see it until it does. Retrying automatically…',
+            },
+          }));
+          this._scheduleExamExclusionRetry(row.id);
+          return;
         }
+        error = retryError;
+      }
 
-        // Subjects: (owner_admin_id, code) conflict on upsert.
-        // Fetch the existing record and overwrite it with the new data using its real ID,
-        // then fix local cache. Works for both ID divergence and archived-code-reuse.
-        if (error && table === 'subjects' && error.code === '23505') {
-          const { data: existing } = await this._client.from('subjects')
-            .select('id')
-            .eq('code', row.code)
-            .eq('owner_admin_id', row.owner_admin_id)
-            .maybeSingle();
-          if (existing && existing.id !== row.id) {
-            const subjects = window.DB?._read?.('acs_subjects', []);
-            const idx = subjects.findIndex(s => s.id === data.id);
-            if (idx >= 0) {
-              subjects[idx] = { ...subjects[idx], id: existing.id };
-              window.DB?._write?.('acs_subjects', subjects);
-            }
-            const { error: fixError } = await this._client.from('subjects')
-              .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
-            if (!fixError) return;
-            error = fixError;
+      // Subjects: (owner_admin_id, code) conflict on upsert.
+      // Fetch the existing record and overwrite it with the new data using its real ID,
+      // then fix local cache. Works for both ID divergence and archived-code-reuse.
+      if (error && table === 'subjects' && error.code === '23505') {
+        const { data: existing } = await this._client.from('subjects')
+          .select('id')
+          .eq('code', row.code)
+          .eq('owner_admin_id', row.owner_admin_id)
+          .maybeSingle();
+        if (existing && existing.id !== row.id) {
+          const subjects = window.DB?._read?.('acs_subjects', []);
+          const idx = subjects.findIndex(s => s.id === data.id);
+          if (idx >= 0) {
+            subjects[idx] = { ...subjects[idx], id: existing.id };
+            window.DB?._write?.('acs_subjects', subjects);
           }
+          const { error: fixError } = await this._client.from('subjects')
+            .upsert({ ...row, id: existing.id }, { onConflict: 'id' });
+          if (!fixError) return;
+          error = fixError;
         }
+      }
 
-        if (error) {
-          console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
-          // Surface sync failures as a visible warning
-          const ev = new CustomEvent('supabaseSyncError', { detail: { table, message: error.message } });
-          document.dispatchEvent(ev);
-        }
-      });
+      if (error) {
+        console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
+        // Surface sync failures as a visible warning
+        const ev = new CustomEvent('supabaseSyncError', { detail: { table, message: error.message } });
+        document.dispatchEvent(ev);
+      }
+    });
   },
 
   deleteDoc(table, id) {
@@ -658,6 +692,28 @@ const SupabaseSync = {
     const next = { ...row };
     delete next.excluded_student_ids;
     return next;
+  },
+
+  // Keeps retrying (with backoff) to write excluded_student_ids for one exam whose last
+  // attempt hit a stale PostgREST schema cache, so a professor's present/absent change
+  // self-heals onto Supabase without needing another unrelated save to trigger a retry.
+  _scheduleExamExclusionRetry(examId, attempt = 1) {
+    if (attempt > 5) return; // give up for now — the next real save will try again anyway
+    const delay = Math.min(30000, 3000 * attempt);
+    setTimeout(async () => {
+      if (!this._client || !this._examIdsWithUnsyncedExclusions.has(examId)) return;
+      const exam = window.DB?.getExam?.(examId);
+      if (!exam) return;
+      const row = this._jsToDbExam(exam);
+      const { error } = await this._client.from('exams').upsert(row, { onConflict: 'id' });
+      if (!error) {
+        this._examIdsWithUnsyncedExclusions.delete(examId);
+        return;
+      }
+      if (this._isMissingExamExcludedStudentIdsError('exams', error)) {
+        this._scheduleExamExclusionRetry(examId, attempt + 1);
+      }
+    }, delay);
   },
 
   _emitReady() {
