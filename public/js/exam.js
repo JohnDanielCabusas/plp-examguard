@@ -36,6 +36,19 @@ const ExamApp = {
   _brightnessBaseline: null, // luminance baseline recorded at exam start
   _darkSeconds: 0,           // consecutive seconds below brightness threshold
   _brightnessWarningIssued: false, // prevent repeated brightness warnings
+  _MIN_LUMINANCE: 50,        // absolute minimum camera luminance (0–255) — below this the display is too dark for the professor to see
+  _LOW_LIGHT_PROMPT_SEC: 3,  // seconds below minimum before the "turn up brightness" prompt appears
+  _LOW_LIGHT_WARN_SEC: 20,   // seconds below minimum before a formal warning is issued
+  _lowLightSeconds: 0,       // consecutive seconds below the absolute minimum
+  _lowLightWarningIssued: false, // prevent repeated low-light strike warnings
+  _cameraWatchdog: null,     // interval verifying the camera stream stays live
+  _cameraOffSeconds: 0,      // consecutive seconds with the webcam off/blocked
+  _cameraOffWarningIssued: false, // prevent repeated camera-off strike warnings
+  _cameraReacquiring: false, // true while attempting to re-open the camera
+  _CAMERA_OFF_WARN_SEC: 15,  // seconds with the camera off before a formal warning
+  _brightnessCheckRound: 0,  // perceptual check: consecutive correct rounds
+  _brightnessCheckFails: 0,  // perceptual check: failed attempts
+  _brightnessCheckAnswer: null, // index of the tile holding the symbol
   _dashInterval: null,      // dashboard poll interval
   _courseInterval: null,    // course-view exams poll interval
   _fullscreenInteractionGraceUntil: 0,
@@ -1483,6 +1496,9 @@ const ExamApp = {
     // Initialize camera if exam requires it
     if (this.exam && this.exam.requireCamera) {
       this.initCamera();
+    } else {
+      // No camera — verify display brightness with a perceptual check instead
+      this._startBrightnessCheck();
     }
 
     // Update header
@@ -1822,6 +1838,7 @@ const ExamApp = {
       video.srcObject = stream;
       if (statusText) statusText.textContent = 'Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
+      this._startCameraWatchdog();
 
       // Wait for video to be ready then check for presence before starting
       video.onloadeddata = () => {
@@ -1846,7 +1863,108 @@ const ExamApp = {
       if (statusText) statusText.textContent = 'Camera denied';
       if (blockedMsg) blockedMsg.style.display = 'flex';
       this._recordActivity('camera_denied', 'Camera permission denied: ' + err.message);
+      // Keep watching — the overlay blocks the exam and retries the camera
+      // until the student re-enables it.
+      this._startCameraWatchdog();
     }
+  },
+
+  // ── Camera-off detection ─────────────────────────────────────
+  // Polls the camera stream every second. If the webcam is turned off,
+  // unplugged, blocked at the OS level, or permission is revoked, a
+  // blocking overlay tells the student to re-enable it, a strike is
+  // issued if it stays off, and the camera is retried automatically.
+  _startCameraWatchdog() {
+    if (this._cameraWatchdog) clearInterval(this._cameraWatchdog);
+    this._cameraOffSeconds = 0;
+    this._cameraOffWarningIssued = false;
+    this._cameraWatchdog = setInterval(() => this._checkCameraAlive(), 1000);
+  },
+
+  _isCameraLive() {
+    const track = this._cameraStream && this._cameraStream.getVideoTracks()[0];
+    return !!(track && track.readyState === 'live' && !track.muted);
+  },
+
+  _checkCameraAlive() {
+    if (!this.session) return;
+    if (this._cameraPrompting || this._cameraReacquiring) return; // permission dialog open
+
+    if (this._isCameraLive()) {
+      if (this._cameraOffSeconds > 0) {
+        this._cameraOffSeconds = 0;
+        this._cameraOffWarningIssued = false;
+        this._hideCameraOffOverlay();
+        const statusText = document.getElementById('camera-status-text');
+        if (statusText) statusText.textContent = '● Monitoring';
+      }
+      return;
+    }
+
+    // Camera is off / blocked / unplugged
+    this._cameraOffSeconds += 1;
+    this._showCameraOffOverlay();
+    const statusText = document.getElementById('camera-status-text');
+    if (statusText) statusText.textContent = 'Camera off';
+
+    if (this._cameraOffSeconds >= this._CAMERA_OFF_WARN_SEC && !this._cameraOffWarningIssued) {
+      this._cameraOffWarningIssued = true;
+      this.issueWarning('camera_off', 'Webcam turned off or blocked during the exam');
+    }
+
+    // Try to re-open the camera every ~5 seconds
+    if (this._cameraOffSeconds % 5 === 1) this._reacquireCamera();
+  },
+
+  async _reacquireCamera() {
+    if (this._cameraReacquiring) return;
+    this._cameraReacquiring = true;
+    this._cameraPrompting = true; // suppress focus-loss warnings if a permission dialog opens
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+      if (this._cameraStream) this._cameraStream.getTracks().forEach(t => t.stop());
+      this._cameraStream = stream;
+      const video = document.getElementById('camera-feed');
+      if (video) video.srcObject = stream;
+      const blockedMsg = document.getElementById('camera-blocked-msg');
+      if (blockedMsg) blockedMsg.style.display = 'none';
+      const statusText = document.getElementById('camera-status-text');
+      if (statusText) statusText.textContent = '● Monitoring';
+      this._cameraOffSeconds = 0;
+      this._cameraOffWarningIssued = false;
+      this._hideCameraOffOverlay();
+      this._recordActivity('camera_restored', 'Webcam re-enabled — monitoring resumed');
+      // If the camera was denied at exam start, detection never began — start it now
+      if (video && !this._motionInterval) {
+        setTimeout(() => this._checkInitialPresence(video), 800);
+      }
+    } catch (e) {
+      // Still blocked — the watchdog keeps the overlay up and retries
+    } finally {
+      this._cameraReacquiring = false;
+      this._cameraPrompting = false;
+    }
+  },
+
+  _showCameraOffOverlay() {
+    const overlay = document.getElementById('camera-off-overlay');
+    if (!overlay) return;
+    const cd = document.getElementById('camera-off-countdown');
+    if (cd) {
+      const remaining = Math.max(0, Math.ceil(this._CAMERA_OFF_WARN_SEC - this._cameraOffSeconds));
+      cd.textContent = this._cameraOffWarningIssued
+        ? 'A violation warning has been recorded. Re-enable your camera now.'
+        : `A warning will be recorded in ${remaining}s if the camera stays off.`;
+    }
+    if (overlay.style.display === 'none' || !overlay.style.display) {
+      overlay.style.display = 'flex';
+      this._recordActivity('camera_off', 'Webcam turned off or blocked during the exam');
+    }
+  },
+
+  _hideCameraOffOverlay() {
+    const overlay = document.getElementById('camera-off-overlay');
+    if (overlay && overlay.style.display !== 'none') overlay.style.display = 'none';
   },
 
   _checkInitialPresence(video) {
@@ -1869,6 +1987,8 @@ const ExamApp = {
     this._brightnessBaseline = null; // reset baseline so first frames calibrate it
     this._darkSeconds = 0;
     this._brightnessWarningIssued = false;
+    this._lowLightSeconds = 0;
+    this._lowLightWarningIssued = false;
     this._motionInterval = setInterval(() => {
       if (this._faceModelReady && this._faceModel) {
         this._detectFace(video);
@@ -1968,6 +2088,10 @@ const ExamApp = {
         canvas.height = video.videoHeight || 240;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          const frame = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          this._checkAmbientBrightness(frame, canvas.width * canvas.height);
+        } catch (e) {}
         predictions.forEach(pred => {
           const [x1, y1] = pred.topLeft;
           const [x2, y2] = pred.bottomRight;
@@ -2016,10 +2140,14 @@ const ExamApp = {
     this._motionBlocked = false;
   },
 
-  // ── Relative brightness detection ────────────────────────────
-  // Establishes a luminance baseline at exam start, then flags when
-  // brightness drops below 75% of that baseline. This detects the
-  // student dimming their screen regardless of room lighting conditions.
+  // ── Brightness detection ─────────────────────────────────────
+  // Two layers:
+  //  1. Absolute level — camera luminance must stay above _MIN_LUMINANCE.
+  //     Below it, a live prompt tells the student to turn their screen
+  //     brightness up; ignoring it for _LOW_LIGHT_WARN_SEC becomes a strike.
+  //  2. Relative drop — a luminance baseline is recorded at exam start and
+  //     a drop below 75% of it flags the student dimming their screen
+  //     regardless of room lighting conditions.
   _checkAmbientBrightness(frameData, pixelCount) {
     let lum = 0;
     for (let i = 0; i < frameData.length; i += 4) {
@@ -2027,6 +2155,24 @@ const ExamApp = {
     }
     const avgLuminance = lum / pixelCount; // 0–255
 
+    // ── Layer 1: absolute minimum brightness ──
+    const tick = 0.6; // seconds per detection frame
+    if (avgLuminance < this._MIN_LUMINANCE) {
+      this._lowLightSeconds += tick;
+      if (this._lowLightSeconds >= this._LOW_LIGHT_PROMPT_SEC) {
+        this._showBrightnessPrompt(avgLuminance);
+      }
+      if (this._lowLightSeconds >= this._LOW_LIGHT_WARN_SEC && !this._lowLightWarningIssued) {
+        this._lowLightWarningIssued = true;
+        this.issueWarning('low_brightness', 'Screen brightness too low — professor cannot see the display clearly');
+      }
+    } else if (this._lowLightSeconds > 0) {
+      this._lowLightSeconds = 0;
+      this._lowLightWarningIssued = false;
+      this._hideBrightnessPrompt();
+    }
+
+    // ── Layer 2: relative drop vs baseline ──
     // First reading: record baseline (needs > 20 luminance to be useful)
     if (this._brightnessBaseline === null) {
       if (avgLuminance > 20) this._brightnessBaseline = avgLuminance;
@@ -2064,6 +2210,115 @@ const ExamApp = {
     }
   },
 
+  // Live "turn up your brightness" prompt — appears while the camera
+  // luminance is below the required minimum and updates a meter in real
+  // time; disappears on its own once brightness is restored.
+  _showBrightnessPrompt(avgLuminance) {
+    const overlay = document.getElementById('brightness-warning-overlay');
+    if (!overlay) return;
+    const requiredPct = Math.round((this._MIN_LUMINANCE / 255) * 100);
+    const currentPct = Math.min(100, Math.round((avgLuminance / 255) * 100));
+
+    const fill = document.getElementById('brightness-meter-fill');
+    if (fill) fill.style.width = currentPct + '%';
+    const marker = document.getElementById('brightness-meter-marker');
+    if (marker) marker.style.left = requiredPct + '%';
+    const levelText = document.getElementById('brightness-level-text');
+    if (levelText) levelText.textContent = `Current level: ${currentPct}% — required: at least ${requiredPct}%`;
+    const cdText = document.getElementById('brightness-warn-countdown');
+    if (cdText) {
+      const remaining = Math.max(0, Math.ceil(this._LOW_LIGHT_WARN_SEC - this._lowLightSeconds));
+      cdText.textContent = this._lowLightWarningIssued
+        ? 'A violation warning has been recorded.'
+        : `A warning will be recorded in ${remaining}s if brightness is not increased.`;
+    }
+
+    if (overlay.style.display === 'none' || !overlay.style.display) {
+      overlay.style.display = 'flex';
+      this._recordActivity('low_brightness_prompt', `Display too dark (${currentPct}% luminance) — student prompted to increase brightness`);
+    }
+  },
+
+  _hideBrightnessPrompt() {
+    const overlay = document.getElementById('brightness-warning-overlay');
+    if (overlay && overlay.style.display !== 'none') overlay.style.display = 'none';
+  },
+
+  // ── Perceptual brightness check (no-camera exams) ────────────
+  // Browsers cannot read the OS screen-brightness setting, so when the
+  // exam has no camera we verify brightness perceptually: one of four
+  // near-black tiles contains a faint symbol that is only visible when
+  // the display is bright enough. Two randomized correct picks prove
+  // the student's brightness is at an acceptable level.
+  _startBrightnessCheck() {
+    if (!this.session) return;
+    // Don't repeat the check on page refresh / exam resume
+    const session = DB.getSession(this.session.id);
+    const acts = (session && session.activities) || [];
+    if (acts.some(a => a.type === 'brightness_check_passed' || a.type === 'brightness_check_skipped')) return;
+    this._brightnessCheckRound = 0;
+    this._brightnessCheckFails = 0;
+    const skip = document.getElementById('brightness-check-skip');
+    if (skip) skip.style.display = 'none';
+    const msg = document.getElementById('brightness-check-msg');
+    if (msg) { msg.textContent = ''; }
+    this._renderBrightnessCheckRound();
+    const overlay = document.getElementById('brightness-check-overlay');
+    if (overlay) overlay.style.display = 'flex';
+  },
+
+  _renderBrightnessCheckRound() {
+    const grid = document.getElementById('brightness-check-grid');
+    if (!grid) return;
+    const symbols = ['▲', '●', '■', '◆', '✚'];
+    this._brightnessCheckAnswer = Math.floor(Math.random() * 4);
+    const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+    grid.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.setAttribute('data-exam-control', 'true');
+      tile.style.cssText = 'width:104px;height:104px;border-radius:14px;border:1px solid #1f2937;background:#0a0a0a;color:#262626;font-size:42px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;';
+      tile.textContent = i === this._brightnessCheckAnswer ? symbol : '';
+      tile.onclick = () => this._answerBrightnessCheck(i);
+      grid.appendChild(tile);
+    }
+    const progress = document.getElementById('brightness-check-progress');
+    if (progress) progress.textContent = `Round ${this._brightnessCheckRound + 1} of 2`;
+  },
+
+  _answerBrightnessCheck(index) {
+    const msg = document.getElementById('brightness-check-msg');
+    if (index === this._brightnessCheckAnswer) {
+      this._brightnessCheckRound++;
+      if (this._brightnessCheckRound >= 2) {
+        this._recordActivity('brightness_check_passed',
+          'Display brightness check passed' + (this._brightnessCheckFails ? ` after ${this._brightnessCheckFails} failed attempt(s)` : ''));
+        const overlay = document.getElementById('brightness-check-overlay');
+        if (overlay) overlay.style.display = 'none';
+        return;
+      }
+      if (msg) { msg.textContent = 'Correct — one more round to confirm.'; msg.style.color = '#4ade80'; }
+      this._renderBrightnessCheckRound();
+    } else {
+      this._brightnessCheckFails++;
+      this._brightnessCheckRound = 0;
+      this._recordActivity('brightness_check_failed', 'Student could not identify the faint symbol — display likely too dark');
+      if (msg) { msg.textContent = 'Wrong tile. Turn your screen brightness up (80–100%), then look again.'; msg.style.color = '#fbbf24'; }
+      this._renderBrightnessCheckRound();
+      // After several failures allow continuing so a faulty panel can't lock
+      // the student out — the skip is recorded for the professor.
+      const skip = document.getElementById('brightness-check-skip');
+      if (skip && this._brightnessCheckFails >= 4) skip.style.display = '';
+    }
+  },
+
+  _skipBrightnessCheck() {
+    this._recordActivity('brightness_check_skipped', `Student skipped the brightness check after ${this._brightnessCheckFails} failed attempt(s)`);
+    const overlay = document.getElementById('brightness-check-overlay');
+    if (overlay) overlay.style.display = 'none';
+  },
+
   // Keep captureSnapshot for admin monitoring thumbnails (less frequent)
   captureSnapshot() {
     const video = document.getElementById('camera-feed');
@@ -2089,11 +2344,18 @@ const ExamApp = {
 
   stopCamera() {
     this._cameraPrompting = false;
+    if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
     if (this._motionInterval) { clearInterval(this._motionInterval); this._motionInterval = null; }
     if (this._snapInterval)   { clearInterval(this._snapInterval);   this._snapInterval = null; }
     this._prevFrameData = null;
     this._noMotionSec = 0;
     this._motionBlocked = false;
+    this._lowLightSeconds = 0;
+    this._lowLightWarningIssued = false;
+    this._hideBrightnessPrompt();
+    this._cameraOffSeconds = 0;
+    this._cameraOffWarningIssued = false;
+    this._hideCameraOffOverlay();
     if (this._cameraStream) {
       this._cameraStream.getTracks().forEach(t => t.stop());
       this._cameraStream = null;
@@ -2307,7 +2569,8 @@ const ExamApp = {
       fullscreen_exit: 'You exited fullscreen mode.',
       screenshot:      'Screenshot attempt detected.',
       no_person:       'No person detected in the camera frame.',
-      low_brightness:  'Your camera feed is too dark — please ensure adequate lighting.',
+      low_brightness:  'Your display is too dark — turn up your screen brightness so your professor can see you.',
+      camera_off:      'Your webcam was turned off or blocked. Camera monitoring is required during the exam.',
     };
 
     msgEl.textContent  = messages[type] || detail;

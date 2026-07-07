@@ -578,6 +578,63 @@ export default function ExamPage() {
         <div style={{ fontSize: '13px', opacity: 0.7 }}>Stay visible in front of your camera to continue the exam.</div>
       </div>
 
+      {/* Low Brightness Warning Overlay */}
+      <div id="brightness-warning-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.96)', zIndex: 8900, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff', padding: '24px' }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px' }}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+          <path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+        </svg>
+        <div style={{ fontSize: '28px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Screen Too Dark</div>
+        <div style={{ fontSize: '16px', opacity: 0.85, marginBottom: '24px', maxWidth: '440px', lineHeight: 1.5 }}>
+          Please turn up your screen brightness.<br />Your professor cannot clearly see your display and camera feed.
+        </div>
+        <div style={{ width: 'min(340px, 80vw)', marginBottom: '10px' }}>
+          <div style={{ position: 'relative', height: '14px', borderRadius: '99px', background: 'rgba(255,255,255,0.15)', overflow: 'visible' }}>
+            <div id="brightness-meter-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', borderRadius: '99px', background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.4s ease' }} />
+            <div id="brightness-meter-marker" style={{ position: 'absolute', top: '-4px', bottom: '-4px', left: '20%', width: '3px', background: '#4ade80', borderRadius: '2px' }} />
+          </div>
+        </div>
+        <div id="brightness-level-text" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: '#fbbf24' }}>Current level: 0%</div>
+        <div id="brightness-warn-countdown" style={{ fontSize: '13px', opacity: 0.7 }}>Increase your brightness to continue without a warning.</div>
+      </div>
+
+      {/* Brightness Check Overlay (no-camera exams) — pure black background is required for the perceptual test */}
+      <div id="brightness-check-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: '#000', zIndex: 8800, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#e5e7eb', padding: '24px' }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '18px' }}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
+          <path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+        </svg>
+        <div style={{ fontSize: '26px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif", color: '#fff' }}>Display Brightness Check</div>
+        <div style={{ fontSize: '15px', opacity: 0.8, marginBottom: '6px', maxWidth: '460px', lineHeight: 1.5 }}>
+          One of the tiles below contains a faint symbol. Click the tile with the symbol to start your exam.
+        </div>
+        <div style={{ fontSize: '13px', opacity: 0.6, marginBottom: '22px', maxWidth: '460px', lineHeight: 1.5 }}>
+          Can&rsquo;t see any symbol? Your screen is too dark — turn your brightness up, then look again.
+        </div>
+        <div id="brightness-check-grid" style={{ display: 'flex', gap: '14px', marginBottom: '18px' }} />
+        <div id="brightness-check-progress" style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.5, marginBottom: '8px' }}>Round 1 of 2</div>
+        <div id="brightness-check-msg" style={{ fontSize: '13px', fontWeight: 700, minHeight: '18px', marginBottom: '14px' }} />
+        <button type="button" id="brightness-check-skip" data-exam-control="true" onClick={() => window.ExamApp._skipBrightnessCheck()}
+          style={{ display: 'none', background: 'none', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
+          I can&rsquo;t see any symbol — continue anyway (this will be reported to your professor)
+        </button>
+      </div>
+
+      {/* Camera Off Overlay */}
+      <div id="camera-off-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(153,27,27,0.96)', zIndex: 9000, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff', padding: '24px' }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px', opacity: 0.9 }}>
+          <path d="M16 16v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+        <div style={{ fontSize: '28px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Camera Is Off</div>
+        <div style={{ fontSize: '16px', opacity: 0.85, marginBottom: '24px', maxWidth: '440px', lineHeight: 1.5 }}>
+          Your webcam has been turned off or blocked.<br />Re-enable your camera to continue the exam — camera monitoring is required at all times.
+        </div>
+        <div id="camera-off-countdown" style={{ fontSize: '13px', opacity: 0.75 }}>Attempting to reconnect&hellip;</div>
+      </div>
+
       {/* Camera Container */}
       <div id="camera-container" className="camera-container" style={{ display: 'none' }}>
         <div className="camera-feed-wrap">

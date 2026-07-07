@@ -76,6 +76,13 @@ function getSubmissionStatusBadge(session) {
 
 const BEHAVIOR_LABELS = {
   no_person: 'No Person Detected',
+  low_brightness: 'Low Screen Brightness',
+  low_brightness_prompt: 'Brightness Prompt Shown',
+  camera_off: 'Camera Turned Off',
+  camera_restored: 'Camera Restored',
+  brightness_check_passed: 'Brightness Check Passed',
+  brightness_check_failed: 'Brightness Check Failed',
+  brightness_check_skipped: 'Brightness Check Skipped',
   window_blur: 'Window Blur',
   tab_switch: 'Tab Switch',
   fullscreen_exit: 'Fullscreen Exit',
@@ -4213,7 +4220,7 @@ async function exportActivityLog() {
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'low_brightness', 'copy_attempt', 'screenshot'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'low_brightness', 'camera_off', 'copy_attempt', 'screenshot'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
