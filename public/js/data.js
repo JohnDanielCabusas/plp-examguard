@@ -12,6 +12,7 @@ const DB = {
     sessions: 'acs_sessions',
     logs: 'acs_logs',
     sysadmin: 'acs_sysadmin',
+    professorActivityLog: 'acs_professor_activity_log',
   },
   _cache: {},
 
@@ -79,6 +80,20 @@ const DB = {
 
   _getDefaultOwnerAdminId() {
     return this._getCurrentAdminId() || this._getPrimaryAdminId() || null;
+  },
+
+  // Records a professor's own activity (course/exam/student changes made from
+  // their admin panel) to the professor activity log shown on the system
+  // admin dashboard. Best-effort — never blocks the action that triggered it.
+  _logProfessorActivity(action, entityType, entityName) {
+    const session = window.Auth?.getAdminSession?.() || this._getPrimaryAdmin();
+    window.SupabaseSync?.logProfessorActivity?.({
+      professorId: session?.id || this._getCurrentAdminId(),
+      professorName: session?.name || session?.username || 'Unknown',
+      action,
+      entityType,
+      entityName,
+    });
   },
 
   _withOwner(data, ownerAdminId = this._getDefaultOwnerAdminId()) {
@@ -519,9 +534,13 @@ const DB = {
   async refreshAdminsFromSupabase() {
     const supabase = this._getSupabaseClient();
     if (!supabase) return this.getAdmins();
-    const { data, error } = await supabase
+    const adminSession = window.Auth?.getAdminSession?.();
+    const sysAdminSession = window.Auth?.getSysAdminSession?.();
+    let query = supabase
       .from('professors')
       .select('id, username, name, email, department, created_at');
+    if (adminSession?.id && !sysAdminSession) query = query.eq('id', adminSession.id);
+    const { data, error } = await query;
     if (error) throw error;
     const admins = (data || []).map(row => this._sanitizeAdminRecord({
       id: row.id,
@@ -579,7 +598,28 @@ const DB = {
     return this._filterByOwner(this.getAllStudentsRaw()).filter(s => s.archived);
   },
   getStudent(studentId) {
-    return this.getAllStudentsRaw().find(s => s.studentId === studentId) || null;
+    const normalizedStudentId = this._normalizeStudentIdValue(studentId);
+    if (!normalizedStudentId) return null;
+
+    const matches = this.getAllStudentsRaw().filter(student =>
+      this._normalizeStudentIdValue(student.studentId) === normalizedStudentId
+    );
+    if (!matches.length) return null;
+
+    const ownerAdminId = this._getCurrentAdminId();
+    if (ownerAdminId) {
+      return matches.find(student => student.ownerAdminId === ownerAdminId) || null;
+    }
+
+    const studentSession = window.Auth?.getStudentSession?.();
+    const sessionEmail = this._normalizeStudentEmailValue(studentSession?.email);
+    if (sessionEmail) {
+      return matches.find(student =>
+        this._normalizeStudentEmailValue(student.email) === sessionEmail
+      ) || matches[0];
+    }
+
+    return matches[0];
   },
   getStudentById(id) {
     return this.getAllStudentsRaw().find(s => s.id === id) || null;
@@ -593,7 +633,7 @@ const DB = {
   findStudentConflict({ studentId, email, excludeId = null } = {}) {
     const normalizedStudentId = this._normalizeStudentIdValue(studentId);
     const normalizedEmail = this._normalizeStudentEmailValue(email);
-    const students = this._filterByOwner(this.getAllStudentsRaw());
+    const students = this.getAllStudentsRaw();
 
     const studentIdMatch = normalizedStudentId
       ? students.find(student =>
@@ -657,6 +697,7 @@ const DB = {
     this._saveStudentToSupabase(newStudent).catch(error => {
       console.warn('[Supabase] Unable to sync new student record:', error.message || error);
     });
+    this._logProfessorActivity('student_added', 'student', newStudent.name || newStudent.studentId);
     return newStudent;
   },
   updateStudent(id, updates) {
@@ -719,17 +760,21 @@ const DB = {
     this._write(this.KEYS.students, students);
     const archived = students.find(s => s.id === id);
     if (archived) SupabaseSync.syncDoc('students', archived);
+    this._logProfessorActivity('student_archived', 'student', archived?.name || archived?.studentId);
   },
   restoreStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: false, archivedAt: null } : s);
     this._write(this.KEYS.students, students);
     const restored = students.find(s => s.id === id);
     if (restored) SupabaseSync.syncDoc('students', restored);
+    this._logProfessorActivity('student_restored', 'student', restored?.name || restored?.studentId);
   },
   deleteStudent(id) {
+    const student = this.getStudentById(id);
     const students = this.getAllStudentsRaw().filter(s => s.id !== id);
     this._write(this.KEYS.students, students);
     SupabaseSync.deleteDoc('students', id);
+    this._logProfessorActivity('student_deleted', 'student', student?.name || student?.studentId);
   },
   studentExists(studentId) {
     return !!this.findStudentConflict({ studentId }).studentIdMatch;
@@ -753,18 +798,27 @@ const DB = {
     subjects.push(newSubject);
     this._write(this.KEYS.subjects, subjects);
     SupabaseSync.syncDoc('subjects', newSubject);
+    this._logProfessorActivity('course_created', 'course', newSubject.name || newSubject.code);
     return newSubject;
   },
   updateSubject(id, updates) {
+    const before = this._read(this.KEYS.subjects, []).find(s => s.id === id);
     const subjects = this._read(this.KEYS.subjects, []).map(s => s.id === id ? { ...s, ...updates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
     this._write(this.KEYS.subjects, subjects);
     const updated = subjects.find(s => s.id === id);
     if (updated) SupabaseSync.syncDoc('subjects', updated);
+    if (updated && updates.archived === true && !before?.archived) {
+      this._logProfessorActivity('course_archived', 'course', updated.name || updated.code);
+    } else if (updated && updates.archived === false && before?.archived) {
+      this._logProfessorActivity('course_restored', 'course', updated.name || updated.code);
+    }
   },
   deleteSubject(id) {
+    const subject = this._read(this.KEYS.subjects, []).find(s => s.id === id);
     const subjects = this._read(this.KEYS.subjects, []).filter(s => s.id !== id);
     this._write(this.KEYS.subjects, subjects);
     SupabaseSync.deleteDoc('subjects', id);
+    this._logProfessorActivity('course_deleted', 'course', subject?.name || subject?.code);
   },
 
   // ---- Exams ----
@@ -789,9 +843,11 @@ const DB = {
     exams.push(newExam);
     this._write(this.KEYS.exams, exams);
     SupabaseSync.syncDoc('exams', newExam);
+    this._logProfessorActivity('exam_created', 'exam', newExam.title);
     return newExam;
   },
   updateExam(id, updates) {
+    const before = this._read(this.KEYS.exams, []).find(e => e.id === id);
     const subjects = this._read(this.KEYS.subjects, []);
     const exams = this._read(this.KEYS.exams, []).map(e => {
       if (e.id !== id) return e;
@@ -804,12 +860,23 @@ const DB = {
     });
     this._write(this.KEYS.exams, exams);
     const updated = exams.find(e => e.id === id);
-    if (updated) SupabaseSync.syncDoc('exams', updated);
+    if (!updated) return;
+    SupabaseSync.syncDoc('exams', updated);
+    if (updates.status === 'active' && before?.status !== 'active') {
+      this._logProfessorActivity(before?.status === 'closed' ? 'exam_reopened' : 'exam_started', 'exam', updated.title);
+    } else if (updates.status === 'closed' && before?.status !== 'closed') {
+      this._logProfessorActivity('exam_closed', 'exam', updated.title);
+    }
+    if (updates.scoringReleased === true && !before?.scoringReleased) {
+      this._logProfessorActivity('exam_scores_released', 'exam', updated.title);
+    }
   },
   deleteExam(id) {
+    const exam = this._read(this.KEYS.exams, []).find(e => e.id === id);
     const exams = this._read(this.KEYS.exams, []).filter(e => e.id !== id);
     this._write(this.KEYS.exams, exams);
     SupabaseSync.deleteDoc('exams', id);
+    this._logProfessorActivity('exam_deleted', 'exam', exam?.title);
   },
   getActiveExams() {
     return this.getExams().filter(e => e.status === 'active');
@@ -865,6 +932,11 @@ const DB = {
   },
   getLogsBySession(sessionId) {
     return this.getLogs().filter(l => l.sessionId === sessionId);
+  },
+
+  // ---- Professor activity log (system-admin actions on professor accounts) ----
+  getProfessorActivityLog() {
+    return this._read(this.KEYS.professorActivityLog, []);
   },
 };
 

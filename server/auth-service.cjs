@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { promisify } = require('util');
-const { query } = require('./db.cjs');
+const { getPool, query } = require('./db.cjs');
 
 const pbkdf2 = promisify(crypto.pbkdf2);
 
@@ -12,6 +12,8 @@ const DEFAULT_SYSADMIN_PASSWORD = String(process.env.AUTH_DEFAULT_SYSADMIN_PASSW
 const DEFAULT_PROFESSOR_PASSWORD = String(process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD || 'admin123');
 const DEFAULT_PASSWORD_USERNAME = String(process.env.AUTH_DEFAULT_PROFESSOR_USERNAME || 'admin').trim().toLowerCase();
 const DEFAULT_PASSWORD_EMAIL = String(process.env.AUTH_DEFAULT_PROFESSOR_EMAIL || 'admin@school.edu').trim().toLowerCase();
+const ACTIVITY_LOG_RETENTION_DAYS = 15;
+const PROFESSOR_OWNED_TABLES = ['students', 'subjects', 'exams', 'sessions', 'logs'];
 
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -188,8 +190,42 @@ async function getProfessorById(id) {
   return rows[0] || null;
 }
 
+async function getProfessorPublicById(id) {
+  const row = await getProfessorById(id);
+  return normalizeProfessor(row);
+}
+
 async function updateProfessorPassword(id, passwordHash) {
   await query('update public.professors set password = $2 where id = $1', [id, passwordHash]);
+}
+
+async function logProfessorActivity(action, professor, { details = null, entityType = null, entityName = null } = {}) {
+  try {
+    await query(
+      `insert into public.professor_activity_log (id, professor_id, professor_name, action, entity_type, entity_name, details)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [createId(), professor?.id || null, professor?.name || professor?.username || 'Unknown', action, entityType, entityName, details],
+    );
+  } catch (error) {
+    console.error('[auth-service] logProfessorActivity failed:', error.message || error);
+  }
+}
+
+// Keeps professor_activity_log from growing without bound — drops entries
+// past the retention window. Called on server startup and on an interval
+// (see server.js); safe to call as often as needed since it's a no-op when
+// there's nothing to delete.
+async function cleanupProfessorActivityLog() {
+  try {
+    const { rowCount } = await query(
+      `delete from public.professor_activity_log where created_at < now() - interval '${ACTIVITY_LOG_RETENTION_DAYS} days'`,
+    );
+    if (rowCount) {
+      console.log(`[auth-service] cleanupProfessorActivityLog: removed ${rowCount} entr${rowCount === 1 ? 'y' : 'ies'} older than ${ACTIVITY_LOG_RETENTION_DAYS} days.`);
+    }
+  } catch (error) {
+    console.error('[auth-service] cleanupProfessorActivityLog failed:', error.message || error);
+  }
 }
 
 async function saveProfessor({ id, name, username, email, password }) {
@@ -235,7 +271,9 @@ async function saveProfessor({ id, name, username, email, password }) {
     }
     const { rows } = await query(sql, updates);
     if (!rows[0]) return { success: false, message: 'Professor account not found.' };
-    return { success: true, professor: normalizeProfessor(rows[0]) };
+    const professor = normalizeProfessor(rows[0]);
+    await logProfessorActivity('account_updated', professor, { entityType: 'professor', entityName: professor.name });
+    return { success: true, professor };
   }
 
   const { rows } = await query(
@@ -244,17 +282,110 @@ async function saveProfessor({ id, name, username, email, password }) {
      returning id, username, name, email, department, created_at`,
     [createId(), normalizedUsername, await hashPassword(password), normalizedName, normalizedEmail],
   );
-  return { success: true, professor: normalizeProfessor(rows[0]) };
+  const professor = normalizeProfessor(rows[0]);
+  await logProfessorActivity('account_created', professor, { entityType: 'professor', entityName: professor.name });
+  return { success: true, professor };
 }
 
 async function deleteProfessor(id) {
   if (!id) return { success: false, message: 'Professor id is required.' };
   const { rows } = await query(
-    `delete from public.professors where id = $1 returning id`,
+    `delete from public.professors where id = $1 returning id, username, name, email, department, created_at`,
     [id],
   );
   if (!rows[0]) return { success: false, message: 'Professor account not found.' };
+  const professor = normalizeProfessor(rows[0]);
+  await logProfessorActivity('account_deleted', professor, { entityType: 'professor', entityName: professor.name });
   return { success: true };
+}
+
+async function countProfessorOwnedRows(executor, table, ownerId) {
+  const { rows } = await executor(
+    `select count(*)::int as count from public.${table} where owner_admin_id = $1`,
+    [ownerId],
+  );
+  return Number(rows[0]?.count || 0);
+}
+
+async function getDeletedProfessorOwnerCandidates(professor) {
+  const professorName = String(professor?.name || '').trim();
+  if (!professor?.id || !professorName) return [];
+
+  try {
+    const { rows } = await query(
+      `select distinct professor_id
+         from public.professor_activity_log
+        where professor_id is not null
+          and professor_id <> $1
+          and action = 'account_deleted'
+          and lower(professor_name) = lower($2)`,
+      [professor.id, professorName],
+    );
+    return rows
+      .map(row => String(row.professor_id || '').trim())
+      .filter(Boolean);
+  } catch (error) {
+    if (error?.code !== '42P01') {
+      console.warn('[auth-service] getDeletedProfessorOwnerCandidates:', error.message || error);
+    }
+    return [];
+  }
+}
+
+async function recoverProfessorOwnership(professor) {
+  if (!professor?.id) return { recovered: false, reason: 'missing_professor' };
+
+  const candidates = await getDeletedProfessorOwnerCandidates(professor);
+  if (!candidates.length) return { recovered: false, reason: 'no_candidates' };
+
+  const recoverable = [];
+  for (const candidateId of candidates) {
+    const existingProfessor = await getProfessorById(candidateId);
+    if (existingProfessor) continue;
+
+    let ownedRowCount = 0;
+    for (const table of PROFESSOR_OWNED_TABLES) {
+      ownedRowCount += await countProfessorOwnedRows(query, table, candidateId);
+    }
+    if (ownedRowCount > 0) recoverable.push({ candidateId, ownedRowCount });
+  }
+
+  if (recoverable.length !== 1) {
+    return {
+      recovered: false,
+      reason: recoverable.length ? 'ambiguous_candidates' : 'no_orphaned_rows',
+    };
+  }
+
+  const [{ candidateId }] = recoverable;
+  const client = await getPool().connect();
+
+  try {
+    await client.query('begin');
+    const migratedCounts = {};
+
+    for (const table of PROFESSOR_OWNED_TABLES) {
+      const result = await client.query(
+        `update public.${table}
+            set owner_admin_id = $2
+          where owner_admin_id = $1`,
+        [candidateId, professor.id],
+      );
+      migratedCounts[table] = result.rowCount || 0;
+    }
+
+    await client.query('commit');
+    return { recovered: true, fromOwnerId: candidateId, migratedCounts };
+  } catch (error) {
+    try {
+      await client.query('rollback');
+    } catch (_) {
+      // Ignore rollback errors so we can surface the original failure.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function getSysAdminRow() {
@@ -265,6 +396,80 @@ async function getSysAdminRow() {
       limit 1`,
   );
   return rows[0] || null;
+}
+
+async function saveSysAdminProfile({ username, name, email, department }) {
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const normalizedName = String(name || '').trim();
+  const normalizedEmail = String(email || '').trim().toLowerCase() || null;
+  const normalizedDepartment = String(department || '').trim() || null;
+
+  if (!normalizedUsername) return { success: false, message: 'Username is required.' };
+  if (!normalizedName) return { success: false, message: 'Administrator name is required.' };
+  if (!/^[a-z0-9_.-]{3,30}$/.test(normalizedUsername)) {
+    return { success: false, message: 'Username must be 3-30 characters (letters, numbers, _ . -).' };
+  }
+
+  const { rows } = await query(
+    `update public.superadmin
+        set username = $1,
+            name = $2,
+            email = $3,
+            department = $4
+      where id = 'main'
+      returning id, username, name, email, department`,
+    [normalizedUsername, normalizedName, normalizedEmail, normalizedDepartment],
+  );
+
+  if (!rows[0]) return { success: false, message: 'System administrator account not found.' };
+  return { success: true, sysAdmin: normalizeSysAdmin(rows[0]) };
+}
+
+async function getSettingsRow() {
+  const { rows } = await query(
+    `select id, school_name, logo_url, department, admin_name, admin_email, claude_api_key
+       from public.settings
+      where id = 'main'
+      limit 1`,
+  );
+  return rows[0] || null;
+}
+
+function normalizeSettings(row, { includeSensitive = false } = {}) {
+  if (!row) return null;
+  return {
+    schoolName: row.school_name || '',
+    logoUrl: row.logo_url || '',
+    department: row.department || '',
+    adminName: row.admin_name || '',
+    adminEmail: row.admin_email || '',
+    ...(includeSensitive ? { claudeApiKey: row.claude_api_key || '' } : {}),
+  };
+}
+
+async function saveSettings({ schoolName, logoUrl, department, adminName, adminEmail }) {
+  const normalizedSchoolName = String(schoolName || '').trim();
+  const normalizedLogoUrl = String(logoUrl || '').trim() || null;
+  const normalizedDepartment = String(department || '').trim() || null;
+  const normalizedAdminName = String(adminName || '').trim() || null;
+  const normalizedAdminEmail = String(adminEmail || '').trim().toLowerCase() || null;
+
+  if (!normalizedSchoolName) return { success: false, message: 'School / System name is required.' };
+
+  const { rows } = await query(
+    `insert into public.settings (id, school_name, logo_url, department, admin_name, admin_email)
+     values ('main', $1, $2, $3, $4, $5)
+     on conflict (id) do update
+       set school_name = excluded.school_name,
+           logo_url = excluded.logo_url,
+           department = excluded.department,
+           admin_name = excluded.admin_name,
+           admin_email = excluded.admin_email
+     returning id, school_name, logo_url, department, admin_name, admin_email, claude_api_key`,
+    [normalizedSchoolName, normalizedLogoUrl, normalizedDepartment, normalizedAdminName, normalizedAdminEmail],
+  );
+
+  return { success: true, settings: normalizeSettings(rows[0]) };
 }
 
 async function updateSysAdminPassword(passwordHash) {
@@ -431,11 +636,19 @@ module.exports = {
   getProfessorByUsername,
   getProfessorByEmail,
   getProfessorById,
+  getProfessorPublicById,
   updateProfessorPassword,
+  logProfessorActivity,
+  cleanupProfessorActivityLog,
+  recoverProfessorOwnership,
   saveProfessor,
   deleteProfessor,
   getSysAdminRow,
+  saveSysAdminProfile,
   updateSysAdminPassword,
+  getSettingsRow,
+  normalizeSettings,
+  saveSettings,
   getStudentByEmail,
   getStudentByStudentId,
   updateStudentPassword,

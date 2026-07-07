@@ -211,7 +211,21 @@ export default function AdminPage() {
       }
     };
 
-    window.SupabaseSync.init();
+    let cancelled = false;
+    (async () => {
+      const session = await window.Auth?.validateAdminSession?.();
+      if (cancelled) return;
+      if (!session) {
+        window.location.replace('index.html');
+        return;
+      }
+      window.SupabaseSync.init();
+    })();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('dbReady', onReady);
+    };
   }, []);
 
   useEffect(() => {

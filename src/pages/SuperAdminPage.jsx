@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import { applyTheme, readStoredTheme, toggleTheme } from "../lib/theme.js";
 
-const SUPERADMIN_SECTIONS = new Set(["dashboard", "professors", "settings"]);
+const SUPERADMIN_SECTIONS = new Set(["dashboard", "settings"]);
 
 function readSuperAdminSectionFromUrl() {
   if (typeof window === "undefined") return "dashboard";
@@ -158,22 +158,6 @@ const ICONS = {
       <rect x="3" y="14" width="7" height="7" />
     </svg>
   ),
-  professors: (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
   settings: (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -186,6 +170,21 @@ const ICONS = {
     >
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  ),
+  activity: (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   ),
   signout: (
@@ -206,6 +205,91 @@ const ICONS = {
     </svg>
   ),
 };
+
+const ACTIVITY_DESCRIPTIONS = {
+  login: () => "Logged in",
+  account_created: () => "Account created",
+  account_updated: () => "Account updated",
+  account_deleted: () => "Account deleted",
+  course_created: (name) => `Created course "${name}"`,
+  course_archived: (name) => `Archived course "${name}"`,
+  course_restored: (name) => `Restored course "${name}"`,
+  course_deleted: (name) => `Deleted course "${name}"`,
+  exam_created: (name) => `Created exam "${name}"`,
+  exam_started: (name) => `Started exam "${name}"`,
+  exam_closed: (name) => `Closed exam "${name}"`,
+  exam_reopened: (name) => `Reopened exam "${name}"`,
+  exam_scores_released: (name) => `Released scores for "${name}"`,
+  exam_deleted: (name) => `Deleted exam "${name}"`,
+  student_added: (name) => `Added student "${name}"`,
+  student_archived: (name) => `Archived student "${name}"`,
+  student_restored: (name) => `Restored student "${name}"`,
+  student_deleted: (name) => `Removed student "${name}"`,
+};
+
+function describeActivity(entry) {
+  const describe = ACTIVITY_DESCRIPTIONS[entry.action];
+  return describe ? describe(entry.entityName) : entry.action;
+}
+
+// ── professor activity log table ─────────────────────────────────
+function ActivityLogTable({ entries }) {
+  if (entries.length === 0) {
+    return (
+      <div className="dash-empty" style={{ padding: "48px" }}>
+        <div className="dash-empty-title">No activity yet</div>
+        <div className="dash-empty-sub">
+          Professor logins and course, exam, or student changes will show up
+          here.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Professor</th>
+            <th>Activity</th>
+            <th>Date &amp; Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <tr key={entry.id}>
+              <td data-label="Professor">
+                <div className="sa-person-cell">
+                  <div className="sa-person-avatar">
+                    {(entry.professorName || "?").charAt(0).toUpperCase()}
+                  </div>
+                  <span style={{ fontWeight: 600 }}>
+                    {entry.professorName || "Unknown"}
+                  </span>
+                </div>
+              </td>
+              <td data-label="Activity">{describeActivity(entry)}</td>
+              <td
+                data-label="Date & Time"
+                style={{ color: "var(--text-muted)", fontSize: "12px" }}
+              >
+                {entry.createdAt
+                  ? new Date(entry.createdAt).toLocaleString("en-PH", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 // ── stat card ───────────────────────────────────────────────────
 function StatCard({ label, value, icon, color }) {
@@ -407,14 +491,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
               defaultValue={professor?.email || ""}
             />
           </div>
-          {isEdit ? (
-            <div className="form-group">
-              <label>Password</label>
-              <p className="text-muted" style={{ fontSize: "12px", margin: 0 }}>
-                Only this professor can change their own password, from their admin panel's sign-in screen ("Forgot Password?").
-              </p>
-            </div>
-          ) : (
+          {isEdit ? null : (
             <div className="form-group">
               <label>Password *</label>
               <div style={{ position: "relative" }}>
@@ -461,6 +538,8 @@ export default function SuperAdminPage() {
   const [section, setSection] = useState(() => readSuperAdminSectionFromUrl());
   const [professors, setProfessors] = useState([]);
   const [professorSearch, setProfessorSearch] = useState("");
+  const [professorActivityLog, setProfessorActivityLog] = useState([]);
+  const [activityLogExpanded, setActivityLogExpanded] = useState(false);
   const [stats, setStats] = useState({
     professors: 0,
     students: 0,
@@ -514,7 +593,9 @@ export default function SuperAdminPage() {
     const subjects = window.DB?.getSubjects?.() || [];
     const settings = window.DB?.getSettings?.() || {};
     const sysAdmin = window.DB?.getSysAdmin?.() || {};
+    const activityLog = window.DB?.getProfessorActivityLog?.() || [];
     setProfessors(profs);
+    setProfessorActivityLog(activityLog);
     setStats({
       professors: profs.length,
       students: students.length,
@@ -537,16 +618,17 @@ export default function SuperAdminPage() {
     const boot = () => {
       if (readyRef.current) return;
       readyRef.current = true;
-
-      const session = window.Auth?.getSysAdminSession?.();
-      if (!session) {
-        window.location.replace("index.html");
-        return;
-      }
-      sessionRef.current = session;
+      sessionRef.current = window.Auth?.getSysAdminSession?.() || null;
 
       setReady(true);
       loadData();
+
+      // The activity log is hydrated in a deferred background fetch that
+      // resolves after "dbReady" fires, so the loadData() above usually
+      // reads it before it has arrived — refresh once it's actually in.
+      window.SupabaseSync?.refreshProfessorActivityLog?.().then(() => {
+        setProfessorActivityLog(window.DB?.getProfessorActivityLog?.() || []);
+      });
 
       document
         .getElementById("fb-loading")
@@ -554,9 +636,23 @@ export default function SuperAdminPage() {
     };
 
     document.addEventListener("dbReady", boot);
-    window.SupabaseSync?.init?.();
+    let cancelled = false;
 
-    return () => document.removeEventListener("dbReady", boot);
+    (async () => {
+      const session = await window.Auth?.validateSysAdminSession?.();
+      if (cancelled) return;
+      if (!session) {
+        window.location.replace("index.html");
+        return;
+      }
+      sessionRef.current = session;
+      window.SupabaseSync?.init?.();
+    })();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("dbReady", boot);
+    };
   }, [loadData]);
 
   useEffect(() => {
@@ -623,6 +719,7 @@ export default function SuperAdminPage() {
     }
 
     await window.Auth.refreshAdminsFromSupabase?.();
+    await window.SupabaseSync?.refreshProfessorActivityLog?.();
     showToast(existing ? "Professor updated successfully." : "Professor added successfully.");
     setProfModal(null);
     loadData();
@@ -636,6 +733,10 @@ export default function SuperAdminPage() {
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(query));
   });
+
+  const sortedActivityLog = [...professorActivityLog].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+  );
 
   const confirmDeleteProfessor = (prof) => {
     setConfirm({
@@ -652,25 +753,38 @@ export default function SuperAdminPage() {
           return;
         }
         await window.Auth.refreshAdminsFromSupabase?.();
+        await window.SupabaseSync?.refreshProfessorActivityLog?.();
         showToast("Professor deleted.");
         loadData();
       },
     });
   };
 
-  const saveSystemSettings = () => {
+  const saveSystemSettings = async () => {
     const schoolName = (systemSettings.schoolName || "").trim();
     if (!schoolName) {
       showToast("School / System name is required.", "error");
       return;
     }
     const next = { schoolName, logoUrl: systemSettings.logoUrl || "" };
-    window.DB?.updateSettings?.(next);
-    setSystemSettings(next);
+    const result = await window.Auth?.saveSystemSettings?.(next);
+    if (!result?.success) {
+      showToast(result?.message || "Unable to save system settings right now.", "error");
+      return;
+    }
+    const saved = {
+      ...(window.DB?.getSettings?.() || {}),
+      ...(result.settings || next),
+    };
+    window.DB?._write?.("acs_settings", saved);
+    setSystemSettings({
+      schoolName: saved.schoolName || schoolName,
+      logoUrl: saved.logoUrl || "",
+    });
     showToast("School / System settings saved.");
   };
 
-  const saveAdminProfile = () => {
+  const saveAdminProfile = async () => {
     const name = (adminProfile.name || "").trim();
     const username = (adminProfile.username || "").trim().toLowerCase();
     const email = (adminProfile.email || "").trim().toLowerCase();
@@ -689,18 +803,26 @@ export default function SuperAdminPage() {
       return;
     }
 
-    const updated = window.DB?.updateSysAdmin?.({
+    const result = await window.Auth?.saveSysAdminProfile?.({
       name,
       username,
       email,
       department,
     });
-    sessionRef.current = {
-      ...(sessionRef.current || {}),
+    if (!result?.success) {
+      showToast(result?.message || "Unable to save account information right now.", "error");
+      return;
+    }
+    const updated = result.sysAdmin || {
       name,
       username,
       email,
       department,
+    };
+    window.DB?._write?.("acs_sysadmin", updated);
+    sessionRef.current = {
+      ...(sessionRef.current || {}),
+      ...updated,
     };
     sessionStorage.setItem(
       "acs_sysadmin_session",
@@ -734,12 +856,24 @@ export default function SuperAdminPage() {
     reader.readAsDataURL(file);
   };
 
-  const removeSystemLogo = () => {
+  const removeSystemLogo = async () => {
     const schoolName =
       (systemSettings.schoolName || "").trim() || "TUKLAS";
     const next = { ...systemSettings, schoolName, logoUrl: "" };
-    setSystemSettings(next);
-    window.DB?.updateSettings?.(next);
+    const result = await window.Auth?.saveSystemSettings?.(next);
+    if (!result?.success) {
+      showToast(result?.message || "Unable to remove the logo right now.", "error");
+      return;
+    }
+    const saved = {
+      ...(window.DB?.getSettings?.() || {}),
+      ...(result.settings || next),
+    };
+    window.DB?._write?.("acs_settings", saved);
+    setSystemSettings({
+      schoolName: saved.schoolName || schoolName,
+      logoUrl: saved.logoUrl || "",
+    });
     showToast("Logo removed successfully.");
   };
 
@@ -860,6 +994,42 @@ export default function SuperAdminPage() {
           onClose={() => setProfModal(null)}
         />
       )}
+      {activityLogExpanded && (
+        <div className="sa-modal-overlay" onClick={() => setActivityLogExpanded(false)}>
+          <div
+            className="sa-modal sa-modal-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sa-modal-header">
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: "16px",
+                  color: "var(--primary)",
+                }}
+              >
+                All Activity
+              </span>
+              <button
+                onClick={() => setActivityLogExpanded(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "20px",
+                  color: "#9ca3af",
+                  lineHeight: 1,
+                }}
+              >
+                &#10005;
+              </button>
+            </div>
+            <div className="sa-modal-body" style={{ padding: 0 }}>
+              <ActivityLogTable entries={sortedActivityLog} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -915,14 +1085,6 @@ export default function SuperAdminPage() {
                 <span className="nav-icon">{ICONS.dashboard}</span>
                 <span className="nav-item-label">Dashboard</span>
               </div>
-              <div className="nav-section-label">Management</div>
-              <div
-                className={`nav-item${section === "professors" ? " active" : ""}`}
-                onClick={() => navTo("professors")}
-              >
-                <span className="nav-icon">{ICONS.professors}</span>
-                <span className="nav-item-label">Professors</span>
-              </div>
               <div className="nav-section-label">System</div>
               <div
                 className={`nav-item${section === "settings" ? " active" : ""}`}
@@ -965,7 +1127,6 @@ export default function SuperAdminPage() {
                 </button>
                 <span className="topbar-title">
                   {section === "dashboard" && "Dashboard"}
-                  {section === "professors" && "Professors"}
                   {section === "settings" && "Settings"}
                 </span>
               </div>
@@ -1049,13 +1210,9 @@ export default function SuperAdminPage() {
                       />
                     ))}
                   </div>
-                </div>
-              )}
 
-              {/* ── PROFESSORS ── */}
-              {section === "professors" && (
-                <div>
-                  <div className="section-header">
+                  {/* ── PROFESSORS ── */}
+                  <div className="section-header" style={{ marginTop: "28px" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div>
                         <div className="section-title">Professors</div>
@@ -1209,6 +1366,60 @@ export default function SuperAdminPage() {
                           </table>
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  {/* ── PROFESSOR ACTIVITY LOG ── */}
+                  <div className="section-header" style={{ marginTop: "28px" }}>
+                    <div>
+                      <div className="section-title">Activity Log</div>
+                      <div className="section-subtitle">
+                        Recent professor activity — logins, courses, exams, and students
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card" style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={() => setActivityLogExpanded(true)}
+                      title="View all activity"
+                      style={{
+                        position: "absolute",
+                        top: "6px",
+                        right: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "28px",
+                        height: "28px",
+                        background: "none",
+                        border: "none",
+                        borderRadius: "6px",
+                        color: "var(--primary)",
+                        cursor: "pointer",
+                        zIndex: 1,
+                      }}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                        <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+                        <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                      </svg>
+                    </button>
+                    <div className="card-body" style={{ padding: 0 }}>
+                      <ActivityLogTable entries={sortedActivityLog.slice(0, 5)} />
                     </div>
                   </div>
                 </div>

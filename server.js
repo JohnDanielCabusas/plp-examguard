@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
+const { cleanupProfessorActivityLog } = require('./server/auth-service.cjs');
 
 // Serve from the Vite build output in production
 const rootDir = path.join(__dirname, 'dist');
@@ -89,3 +90,10 @@ server.listen(port, () => {
   console.log(`Serving from: ${rootDir}`);
   console.log(`Run "npm run build" first to generate the dist/ folder.`);
 });
+
+// Database maintenance: trim the professor activity log so it can't grow
+// without bound. Runs once at startup, then once every 24h for as long as
+// this process stays up.
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+cleanupProfessorActivityLog();
+setInterval(cleanupProfessorActivityLog, ONE_DAY_MS);

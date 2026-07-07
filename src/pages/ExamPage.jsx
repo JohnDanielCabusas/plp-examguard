@@ -79,7 +79,7 @@ export default function ExamPage() {
     booted.current = true;
 
     const fbEl = document.getElementById('fb-loading');
-    document.addEventListener('dbReady', () => {
+    const onReady = () => {
       if (fbEl) fbEl.style.display = 'none';
       // Populate topbar user chip from student session
       requestAnimationFrame(() => {
@@ -93,7 +93,8 @@ export default function ExamPage() {
           if (nameEl) nameEl.textContent = name;
         }
       });
-    });
+    };
+    document.addEventListener('dbReady', onReady);
     // Portal sidebar toggle (desktop: icon-only, mobile: hide/show)
     window._portalToggleSidebar = () => {
       const sidebar = document.getElementById('portal-sidebar');
@@ -103,7 +104,21 @@ export default function ExamPage() {
       if (main) main.classList.toggle('portal-sidebar-collapsed');
     };
 
-    window.SupabaseSync.init();
+    let cancelled = false;
+    (async () => {
+      const session = await window.Auth?.validateStudentSession?.();
+      if (cancelled) return;
+      if (!session) {
+        window.location.replace('index.html');
+        return;
+      }
+      window.SupabaseSync.init();
+    })();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('dbReady', onReady);
+    };
   }, []);
 
   const handleThemeToggle = () => {

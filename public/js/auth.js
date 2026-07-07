@@ -29,6 +29,15 @@ const Auth = {
     return data;
   },
 
+  _postKeepalive(path, payload) {
+    fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+      keepalive: true,
+    }).catch(() => {});
+  },
+
   async adminLogin(username, password) {
     const result = await this._post('/api/auth/professor/login', { username, password });
     if (!result.success) return result;
@@ -72,6 +81,16 @@ const Auth = {
 
   async deleteProfessorAccount(id) {
     return this._post('/api/auth/professor/delete', { id });
+  },
+
+  async validateAdminSession() {
+    const result = await this._post('/api/auth/professor/session', {});
+    if (!result?.success || !result.admin) {
+      this.clearAdminSession();
+      return null;
+    }
+    sessionStorage.setItem('acs_admin_session', JSON.stringify(result.admin));
+    return result.admin;
   },
 
   getAdminPasswordReset() {
@@ -135,6 +154,16 @@ const Auth = {
     });
   },
 
+  async validateStudentSession() {
+    const result = await this._post('/api/auth/student/session', {});
+    if (!result?.success || !result.session) {
+      this.clearStudentSession();
+      return null;
+    }
+    sessionStorage.setItem('acs_student_session', JSON.stringify(result.session));
+    return result.session;
+  },
+
   getStudentPasswordReset() {
     try { return JSON.parse(sessionStorage.getItem(this.STUDENT_RESET_KEY)); } catch { return null; }
   },
@@ -175,6 +204,9 @@ const Auth = {
 
     const exam = DB.getExamByCode(examCode.trim().toUpperCase());
     if (!exam) return { success: false, message: 'Invalid exam code.' };
+    if (!(student.enrolledSubjects || []).includes(exam.subjectId)) {
+      return { success: false, message: 'You are not enrolled in the course for this exam.' };
+    }
     if (exam.status === 'draft') return { success: false, message: 'This exam is not yet ready.' };
     if (exam.status === 'closed' || exam.status === 'archived') {
       // Allow through if student has a submitted session — they can view their result
@@ -223,18 +255,7 @@ const Auth = {
       // account was deleted out from under this tab.
       if (!admins.length) return session;
       const admin = admins.find(a => a.id === session.id);
-      if (!admin) {
-        // Treat this exactly like a removed account: kill the session immediately
-        // rather than let ownership-scoping code (data.js _shouldClaimLegacyOwner)
-        // fall through to "no owner" or silently reassign another admin's records
-        // to this now-nonexistent id.
-        this.clearAdminSession();
-        sessionStorage.setItem('acs_admin_removed_notice', '1');
-        if (!/(?:^|\/)index\.html$/.test(window.location.pathname) && window.location.pathname !== '/') {
-          window.location.href = 'index.html?tab=admin';
-        }
-        return null;
-      }
+      if (!admin) return session;
       return {
         ...session,
         username: admin.username || session.username,
@@ -265,10 +286,12 @@ const Auth = {
 
   clearAdminSession() {
     sessionStorage.removeItem('acs_admin_session');
+    this._postKeepalive('/api/auth/professor/logout', {});
   },
 
   clearStudentSession() {
     sessionStorage.removeItem('acs_student_session');
+    this._postKeepalive('/api/auth/student/logout', {});
   },
 
   requireAdmin() {
@@ -298,6 +321,14 @@ const Auth = {
       currentPassword,
       newPassword,
     });
+  },
+
+  async saveSysAdminProfile(data) {
+    return this._post('/api/auth/sysadmin/profile/save', data);
+  },
+
+  async saveSystemSettings(data) {
+    return this._post('/api/auth/settings/save', data);
   },
 
   async refreshAdminsFromSupabase() {
@@ -333,26 +364,27 @@ const Auth = {
   },
 
   async refreshSysAdminSession() {
-    const sysAdmin = DB.getSysAdmin();
-    const session = this.getSysAdminSession();
-    if (!session || !sysAdmin) return sysAdmin;
-    const nextSession = {
-      ...session,
-      username: sysAdmin.username || session.username,
-      name: sysAdmin.name || session.name,
-      email: sysAdmin.email || session.email || '',
-      department: sysAdmin.department || session.department || '',
-    };
-    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(nextSession));
-    return { success: true, session: nextSession };
+    const session = await this.validateSysAdminSession();
+    return session ? { success: true, session } : { success: false, message: 'System administrator session not found.' };
   },
 
   getSysAdminSession() {
     try { return JSON.parse(sessionStorage.getItem('acs_sysadmin_session')); } catch { return null; }
   },
 
+  async validateSysAdminSession() {
+    const result = await this._post('/api/auth/sysadmin/session', {});
+    if (!result?.success || !result.session) {
+      this.clearSysAdminSession();
+      return null;
+    }
+    sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(result.session));
+    return result.session;
+  },
+
   clearSysAdminSession() {
     sessionStorage.removeItem('acs_sysadmin_session');
+    this._postKeepalive('/api/auth/sysadmin/logout', {});
   },
 
   requireSysAdmin() {

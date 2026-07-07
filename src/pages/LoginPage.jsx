@@ -142,7 +142,8 @@ export default function LoginPage() {
     } else {
       setFbLoading(false);
     }
-    if (window.SupabaseSync?.init) window.SupabaseSync.init();
+    if (window.SupabaseSync?.initPublic) window.SupabaseSync.initPublic();
+    else if (window.SupabaseSync?.init) window.SupabaseSync.init();
 
     return () => {
       document.removeEventListener('dbReady', onReady);

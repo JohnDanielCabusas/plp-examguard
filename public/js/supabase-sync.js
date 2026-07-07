@@ -29,6 +29,14 @@ const SupabaseSync = {
     window.DB?._write?.(key, value);
   },
 
+  _getSessions() {
+    return {
+      admin: window.Auth?.getAdminSession?.() || null,
+      sysadmin: window.Auth?.getSysAdminSession?.() || null,
+      student: window.Auth?.getStudentSession?.() || null,
+    };
+  },
+
   // ── Public: call once per page load (from React useEffect) ──
   async init() {
     if (this._initPromise) return this._initPromise;
@@ -56,9 +64,98 @@ const SupabaseSync = {
     return this._initPromise;
   },
 
+  async initPublic() {
+    if (this._initPromise) return this._initPromise;
+
+    this._initPromise = (async () => {
+      const client = window.supabase;
+      if (!client) {
+        this._emitReady();
+        return;
+      }
+      this._client = client;
+
+      try {
+        const { data: settings } = await client
+          .from('settings')
+          .select('id, school_name, logo_url, department, admin_name, admin_email')
+          .eq('id', 'main')
+          .maybeSingle();
+        if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+      } catch (e) {
+        console.warn('[SupabaseSync] Error loading public settings:', e.message || e);
+      } finally {
+        this._emitReady();
+      }
+    })();
+
+    return this._initPromise;
+  },
+
   // ── Pull all tables into the in-memory cache ───────────────
   async _pullFromSupabase() {
     const c = this._client;
+    const { admin, sysadmin, student } = this._getSessions();
+
+    if (admin?.id && !sysadmin) {
+      const [
+        { data: settings },
+        { data: admins },
+        { data: students },
+        { data: subjects },
+        { data: exams },
+        { data: sessions },
+      ] = await Promise.all([
+        c.from('settings').select('*').eq('id', 'main').maybeSingle(),
+        c.from('professors').select('id, username, name, email, department, created_at').eq('id', admin.id),
+        c.from('students').select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at').eq('owner_admin_id', admin.id),
+        c.from('subjects').select('*').eq('owner_admin_id', admin.id).order('created_at'),
+        c.from('exams').select('*').eq('owner_admin_id', admin.id).order('created_at'),
+        c.from('sessions').select('*').eq('owner_admin_id', admin.id).order('created_at'),
+      ]);
+
+      if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+      this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
+      this._writeLocal('acs_students', (students || []).map(r => this._dbToJsStudent(r)));
+      this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
+      this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
+      this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+      return;
+    }
+
+    if (student?.studentId && !sysadmin) {
+      const { data: settings } = await c
+        .from('settings')
+        .select('id, school_name, logo_url, department, admin_name, admin_email')
+        .eq('id', 'main')
+        .maybeSingle();
+
+      const { data: studentRow } = await c
+        .from('students')
+        .select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at')
+        .eq('student_id', student.studentId)
+        .maybeSingle();
+
+      const enrolledSubjectIds = Array.isArray(studentRow?.enrolled_subjects) ? studentRow.enrolled_subjects : [];
+      const [{ data: subjects }, { data: sessions }] = await Promise.all([
+        enrolledSubjectIds.length
+          ? c.from('subjects').select('*').in('id', enrolledSubjectIds).order('created_at')
+          : Promise.resolve({ data: [] }),
+        c.from('sessions').select('*').eq('student_id', student.studentId).order('created_at'),
+      ]);
+      const subjectIds = (subjects || []).map(subjectRow => subjectRow.id);
+      const { data: exams } = subjectIds.length
+        ? await c.from('exams').select('*').in('subject_id', subjectIds).order('created_at')
+        : { data: [] };
+
+      if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+      this._writeLocal('acs_students', studentRow ? [this._dbToJsStudent(studentRow)] : []);
+      this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
+      this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
+      this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+      return;
+    }
+
     const [
       { data: settings },
       { data: superadmin },
@@ -117,14 +214,19 @@ const SupabaseSync = {
 
     this._deferredHydrationPromise = (async () => {
       try {
-        const { data: logs } = await this._client
+        const { admin, sysadmin, student } = this._getSessions();
+        let query = this._client
           .from('logs')
           .select('*')
           .order('created_at');
+        if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+        if (student?.studentId && !sysadmin && !admin?.id) query = query.eq('student_id', student.studentId);
+        const { data: logs } = await query;
         this._writeLocal('acs_logs', (logs || []).map(r => this._dbToJsLog(r)));
       } catch (e) {
         console.warn('[SupabaseSync] Error hydrating deferred tables:', e.message || e);
       }
+      await this.refreshProfessorActivityLog();
     })();
 
     return this._deferredHydrationPromise;
@@ -178,6 +280,8 @@ const SupabaseSync = {
   _setupListeners() {
     const c = this._client;
     if (this._channel) return;
+    const { admin, sysadmin } = this._getSessions();
+    const ownerFilter = admin?.id && !sysadmin ? `owner_admin_id=eq.${admin.id}` : null;
 
     const applyChange = (table, lsKey, normalizer) => (payload) => {
       const { eventType, new: row, old } = payload;
@@ -223,14 +327,16 @@ const SupabaseSync = {
     this._channel = c.channel('acs-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' },
         applyChange('settings', 'acs_settings', r => this._dbToJsSettings(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('subjects', 'acs_subjects', r => this._dbToJsSubject(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('exams', 'acs_exams', r => this._dbToJsExam(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('sessions', 'acs_sessions', r => this._dbToJsSession(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('logs', 'acs_logs', r => this._dbToJsLog(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professor_activity_log' },
+        applyChange('professor_activity_log', 'acs_professor_activity_log', r => this._dbToJsProfessorActivityLog(r)))
       .subscribe();
   },
 
@@ -238,7 +344,10 @@ const SupabaseSync = {
 
   async refreshSubjects() {
     if (!this._client) return;
-    const { data: subjects } = await this._client.from('subjects').select('*');
+    const { admin, sysadmin } = this._getSessions();
+    let query = this._client.from('subjects').select('*');
+    if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+    const { data: subjects } = await query;
     if (subjects) {
       this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
     }
@@ -246,10 +355,45 @@ const SupabaseSync = {
 
   async refreshExams() {
     if (!this._client) return;
-    const { data: exams } = await this._client.from('exams').select('*');
+    const { admin, sysadmin } = this._getSessions();
+    let query = this._client.from('exams').select('*');
+    if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+    const { data: exams } = await query;
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
+  },
+
+  async refreshProfessorActivityLog() {
+    if (!this._client) return;
+    try {
+      const { data } = await this._client
+        .from('professor_activity_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      this._writeLocal('acs_professor_activity_log', (data || []).map(r => this._dbToJsProfessorActivityLog(r)));
+    } catch (e) {
+      console.warn('[SupabaseSync] Error refreshing professor activity log:', e.message || e);
+    }
+  },
+
+  // Records one professor activity entry (course/exam/student change made
+  // from the professor's own admin panel). Insert-only — there is nothing to
+  // upsert/reconcile, unlike syncDoc().
+  logProfessorActivity({ professorId, professorName, action, entityType, entityName, details } = {}) {
+    if (!this._client || !action) return;
+    const row = {
+      id: window.DB?.generateId?.() || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`,
+      professor_id: professorId || null,
+      professor_name: professorName || 'Unknown',
+      action,
+      entity_type: entityType || null,
+      entity_name: entityName || null,
+      details: details || null,
+    };
+    this._client.from('professor_activity_log').insert(row)
+      .then(({ error }) => { if (error) console.error('[SupabaseSync] logProfessorActivity:', error.message); });
   },
 
   // ── Write helpers ───────────────────────────────────────────
@@ -650,6 +794,19 @@ const SupabaseSync = {
       details: r.details || '',
       timestamp: r.timestamp || r.created_at || null,
       ownerAdminId: r.owner_admin_id || '',
+    };
+  },
+
+  _dbToJsProfessorActivityLog(r) {
+    return {
+      id: r.id,
+      professorId: r.professor_id || '',
+      professorName: r.professor_name || '',
+      action: r.action,
+      entityType: r.entity_type || '',
+      entityName: r.entity_name || '',
+      details: r.details || '',
+      createdAt: r.created_at || null,
     };
   },
 

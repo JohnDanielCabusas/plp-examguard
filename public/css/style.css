@@ -7843,6 +7843,11 @@ tr:hover td { background: #fafbfc !important; }
   width: min(100%, 440px);
 }
 
+.sa-modal-lg {
+  width: min(96vw, 1400px);
+  max-height: min(94vh, 960px);
+}
+
 .sa-modal-header {
   padding: 20px 24px;
   border-bottom: 1px solid #f3f4f6;
@@ -7947,7 +7952,8 @@ tr:hover td { background: #fafbfc !important; }
 
   .sa-modal,
   .sa-modal-sm,
-  .sa-modal-md {
+  .sa-modal-md,
+  .sa-modal-lg {
     width: 100%;
     max-height: 92vh;
     border-radius: 16px 16px 0 0;

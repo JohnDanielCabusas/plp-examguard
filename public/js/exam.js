@@ -277,6 +277,11 @@ const ExamApp = {
     if (footerMeta) footerMeta.textContent = this._formatFooterMeta(sess);
   },
 
+  _isStudentEnrolledInExam(student, exam) {
+    if (!student || !exam?.subjectId) return false;
+    return (student.enrolledSubjects || []).includes(exam.subjectId);
+  },
+
   // ============================================================
   // INIT
   // ============================================================
@@ -339,11 +344,14 @@ const ExamApp = {
       return;
     }
 
-    // Attendance — block new joins for students explicitly marked absent by the
-    // professor. Students who already have a session in progress are grandfathered in
-    // rather than kicked out mid-exam.
+    // Enrollment + attendance checks only block brand-new joins. Students who already
+    // have a session are grandfathered in so mid-exam changes do not strand them.
     if (!existingSession) {
       const student = DB.getStudent(studentSession.studentId);
+      if (!this._isStudentEnrolledInExam(student, exam)) {
+        this._showError('You are not enrolled in the course for this exam. Please contact your instructor if this is a mistake.');
+        return;
+      }
       if (student && (exam.excludedStudentIds || []).includes(student.id)) {
         this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
         return;
@@ -482,11 +490,11 @@ const ExamApp = {
       return;
     }
 
-    const yearSectionMatch = yearSection.match(/^([1-4])-([A-Z])$/);
+    const yearSectionMatch = yearSection.match(/^([1-5])-([A-Z])$/);
     if (!yearSectionMatch) { this._showToast('Year & section must use the format 3-B.', 'error', { variant: 'settings' }); return; }
     if (!department) { this._showToast('Please select your department.', 'error', { variant: 'settings' }); return; }
     if (!program) { this._showToast('Please enter your program.', 'error', { variant: 'settings' }); return; }
-    const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+    const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year', '5': '5th Year' };
     const yearLevel = yearMap[yearSectionMatch[1]] || '';
     const section = `Section ${yearSectionMatch[2]}`;
     const updates = { name, studentId, yearLevel, section, yearSection, department, program };
@@ -1240,10 +1248,20 @@ const ExamApp = {
     const code = (document.getElementById('dash-exam-code-input').value || '').trim().toUpperCase();
     if (!code) return;
     const exam = DB.getExamByCode(code);
+    const el = document.getElementById('dash-exam-code-input');
     if (!exam) {
-      const el = document.getElementById('dash-exam-code-input');
       el.style.borderColor = '#dc2626';
       el.placeholder = 'Invalid code — try again';
+      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
+      return;
+    }
+    const sess = Auth.getStudentSession();
+    const student = sess ? DB.getStudent(sess.studentId) : null;
+    if (student && !this._isStudentEnrolledInExam(student, exam)) {
+      el.style.borderColor = '#dc2626';
+      el.value = '';
+      el.placeholder = 'Not enrolled in that course';
+      this._showToast('You are not enrolled in the course for this exam.', 'error');
       setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
       return;
     }

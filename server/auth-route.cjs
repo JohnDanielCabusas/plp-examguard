@@ -1,7 +1,7 @@
+const crypto = require('crypto');
 const { sendVerificationEmail } = require('./email-service.cjs');
 const {
   createCode,
-  ensureDefaultAuthRecords,
   normalizeProfessor,
   normalizeStudent,
   normalizeSysAdmin,
@@ -10,11 +10,18 @@ const {
   getProfessorByUsername,
   getProfessorByEmail,
   getProfessorById,
+  getProfessorPublicById,
   updateProfessorPassword,
+  logProfessorActivity,
+  recoverProfessorOwnership,
   saveProfessor,
   deleteProfessor,
   getSysAdminRow,
+  saveSysAdminProfile,
   updateSysAdminPassword,
+  getSettingsRow,
+  normalizeSettings,
+  saveSettings,
   getStudentByEmail,
   getStudentByStudentId,
   updateStudentPassword,
@@ -24,10 +31,141 @@ const {
 
 const verificationStore = new Map();
 const TEN_MINUTES = 10 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const ADMIN_SESSION_COOKIE = 'acs_admin_auth';
+const SYSADMIN_SESSION_COOKIE = 'acs_sysadmin_auth';
+const STUDENT_SESSION_COOKIE = 'acs_student_auth';
 
 function jsonResponse(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+function getSessionSecret() {
+  return String(
+    process.env.AUTH_SESSION_SECRET
+    || process.env.SUPABASE_DB_PASSWORD
+    || 'replace-this-auth-session-secret'
+  );
+}
+
+function toBase64Url(value) {
+  return Buffer.from(value)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function fromBase64Url(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 ? '='.repeat(4 - (normalized.length % 4)) : '';
+  return Buffer.from(normalized + padding, 'base64').toString('utf8');
+}
+
+function signValue(value) {
+  return crypto.createHmac('sha256', getSessionSecret()).update(value).digest('hex');
+}
+
+function serializeSession(payload) {
+  const json = JSON.stringify(payload);
+  const encoded = toBase64Url(json);
+  return `${encoded}.${signValue(encoded)}`;
+}
+
+function deserializeSession(raw) {
+  const value = String(raw || '');
+  const dotIndex = value.lastIndexOf('.');
+  if (dotIndex <= 0) return null;
+
+  const encoded = value.slice(0, dotIndex);
+  const signature = value.slice(dotIndex + 1);
+  const expected = signValue(encoded);
+  const actualBuffer = Buffer.from(signature, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  if (
+    actualBuffer.length !== expectedBuffer.length
+    || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(fromBase64Url(encoded));
+    if (!payload || typeof payload !== 'object') return null;
+    if (payload.expiresAt && Date.now() > payload.expiresAt) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function parseCookies(req) {
+  const raw = String(req.headers?.cookie || '');
+  if (!raw) return {};
+  return raw.split(';').reduce((acc, part) => {
+    const [name, ...rest] = part.trim().split('=');
+    if (!name) return acc;
+    acc[name] = decodeURIComponent(rest.join('='));
+    return acc;
+  }, {});
+}
+
+function appendSetCookie(res, cookie) {
+  const existing = res.getHeader('Set-Cookie');
+  if (!existing) {
+    res.setHeader('Set-Cookie', cookie);
+    return;
+  }
+  const next = Array.isArray(existing) ? [...existing, cookie] : [existing, cookie];
+  res.setHeader('Set-Cookie', next);
+}
+
+function buildCookie(name, value, req, maxAgeMs = SESSION_MAX_AGE_MS) {
+  const isSecure = req.headers['x-forwarded-proto'] === 'https'
+    || req.socket?.encrypted
+    || process.env.NODE_ENV === 'production';
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.max(0, Math.floor(maxAgeMs / 1000))}`,
+  ];
+  if (isSecure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+function writeSessionCookie(res, req, cookieName, payload) {
+  appendSetCookie(res, buildCookie(cookieName, serializeSession({
+    ...payload,
+    expiresAt: Date.now() + SESSION_MAX_AGE_MS,
+  }), req));
+}
+
+function clearSessionCookie(res, req, cookieName) {
+  appendSetCookie(res, buildCookie(cookieName, '', req, 0));
+}
+
+function readSessionCookie(req, cookieName) {
+  const cookies = parseCookies(req);
+  return deserializeSession(cookies[cookieName]);
+}
+
+function forbid(res, message = 'Not authorized.') {
+  jsonResponse(res, 403, { success: false, message });
+}
+
+function buildProfessorSessionPayload(admin) {
+  return { role: 'professor', professorId: admin.id };
+}
+
+function buildSysAdminSessionPayload() {
+  return { role: 'sysadmin', sysAdminId: 'main' };
+}
+
+function buildStudentSessionPayload(student) {
+  return { role: 'student', studentNumber: student.student_id };
 }
 
 function readJsonBody(req) {
@@ -85,7 +223,27 @@ async function sendCodeEmail({ email, code, type }) {
   });
 }
 
-async function handleProfessorLogin(res, body) {
+async function getCurrentProfessorSession(req) {
+  const session = readSessionCookie(req, ADMIN_SESSION_COOKIE);
+  if (!session || session.role !== 'professor' || !session.professorId) return null;
+  return getProfessorPublicById(session.professorId);
+}
+
+async function getCurrentSysAdminSession(req) {
+  const session = readSessionCookie(req, SYSADMIN_SESSION_COOKIE);
+  if (!session || session.role !== 'sysadmin') return null;
+  const sysAdmin = await getSysAdminRow();
+  return normalizeSysAdmin(sysAdmin);
+}
+
+async function getCurrentStudentSession(req) {
+  const session = readSessionCookie(req, STUDENT_SESSION_COOKIE);
+  if (!session || session.role !== 'student' || !session.studentNumber) return null;
+  const student = await getStudentByStudentId(session.studentNumber);
+  return normalizeStudent(student);
+}
+
+async function handleProfessorLogin(req, res, body) {
   const username = String(body?.username || '').trim();
   const password = String(body?.password || '');
   const admin = await getProfessorByUsername(username);
@@ -96,6 +254,15 @@ async function handleProfessorLogin(res, body) {
   if (verification.needsUpgrade && verification.hash) {
     await updateProfessorPassword(admin.id, verification.hash);
   }
+
+  try {
+    await recoverProfessorOwnership(admin);
+  } catch (error) {
+    console.warn('[auth-route] recoverProfessorOwnership during login:', error.message || error);
+  }
+
+  await logProfessorActivity('login', admin);
+  writeSessionCookie(res, req, ADMIN_SESSION_COOKIE, buildProfessorSessionPayload(admin));
 
   jsonResponse(res, 200, {
     success: true,
@@ -110,7 +277,7 @@ async function handleProfessorLogin(res, body) {
   });
 }
 
-async function handleSysAdminLogin(res, body) {
+async function handleSysAdminLogin(req, res, body) {
   const username = String(body?.username || '').trim();
   const password = String(body?.password || '');
   const sysAdmin = await getSysAdminRow();
@@ -125,6 +292,8 @@ async function handleSysAdminLogin(res, body) {
   if (verification.needsUpgrade && verification.hash) {
     await updateSysAdminPassword(verification.hash);
   }
+
+  writeSessionCookie(res, req, SYSADMIN_SESSION_COOKIE, buildSysAdminSessionPayload());
 
   jsonResponse(res, 200, {
     success: true,
@@ -145,7 +314,7 @@ async function handleStudentStatus(res, body) {
   jsonResponse(res, 200, { success: true, ...status });
 }
 
-async function handleStudentLogin(res, body) {
+async function handleStudentLogin(req, res, body) {
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
   const student = await getStudentByEmail(email);
@@ -158,6 +327,8 @@ async function handleStudentLogin(res, body) {
   if (verification.needsUpgrade && verification.hash) {
     await updateStudentPassword(student.id, verification.hash);
   }
+
+  writeSessionCookie(res, req, STUDENT_SESSION_COOKIE, buildStudentSessionPayload(student));
 
   jsonResponse(res, 200, {
     success: true,
@@ -289,7 +460,7 @@ async function completeStudentReset(res, body) {
   jsonResponse(res, 200, { success: true });
 }
 
-async function handleStudentSetup(res, body) {
+async function handleStudentSetup(req, res, body) {
   const email = String(body?.email || '').trim().toLowerCase();
   const pending = getVerification('student-verification', email);
   if (!pending || !pending.verified) {
@@ -300,11 +471,17 @@ async function handleStudentSetup(res, body) {
   }
   const result = await saveStudentSetup(body);
   if (!result.success) return jsonResponse(res, 400, result);
+  const student = await getStudentByStudentId(result.session?.studentId);
+  if (student) {
+    writeSessionCookie(res, req, STUDENT_SESSION_COOKIE, buildStudentSessionPayload(student));
+  }
   clearVerification('student-verification', email);
   jsonResponse(res, 200, result);
 }
 
-async function handleProfessorVerify(res, body) {
+async function handleProfessorVerify(req, res, body) {
+  const session = await getCurrentProfessorSession(req);
+  if (!session || session.id !== body?.id) return forbid(res);
   const admin = await getProfessorById(body?.id);
   if (!admin) return jsonResponse(res, 404, { success: false, message: 'Professor account not found.' });
   const verification = await verifyPassword(String(body?.password || ''), admin.password);
@@ -314,7 +491,9 @@ async function handleProfessorVerify(res, body) {
   jsonResponse(res, 200, { success: verification.valid });
 }
 
-async function handleStudentVerify(res, body) {
+async function handleStudentVerify(req, res, body) {
+  const session = await getCurrentStudentSession(req);
+  if (!session || session.studentId !== body?.studentId) return forbid(res);
   const student = await getStudentByStudentId(body?.studentId || '');
   if (!student) return jsonResponse(res, 404, { success: false, message: 'Student account not found.' });
   const verification = await verifyPassword(String(body?.password || ''), student.password);
@@ -324,7 +503,9 @@ async function handleStudentVerify(res, body) {
   jsonResponse(res, 200, { success: verification.valid });
 }
 
-async function handleSysAdminVerify(res, body) {
+async function handleSysAdminVerify(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
   const sysAdmin = await getSysAdminRow();
   if (!sysAdmin) return jsonResponse(res, 404, { success: false, message: 'System administrator account not found.' });
   const verification = await verifyPassword(String(body?.password || ''), sysAdmin.password);
@@ -334,7 +515,9 @@ async function handleSysAdminVerify(res, body) {
   jsonResponse(res, 200, { success: verification.valid });
 }
 
-async function handleProfessorChangePassword(res, body) {
+async function handleProfessorChangePassword(req, res, body) {
+  const session = await getCurrentProfessorSession(req);
+  if (!session || session.id !== body?.id) return forbid(res);
   const admin = await getProfessorById(body?.id);
   if (!admin) return jsonResponse(res, 404, { success: false, message: 'Professor account not found.' });
   const currentPassword = String(body?.currentPassword || '');
@@ -346,7 +529,9 @@ async function handleProfessorChangePassword(res, body) {
   jsonResponse(res, 200, { success: true });
 }
 
-async function handleStudentChangePassword(res, body) {
+async function handleStudentChangePassword(req, res, body) {
+  const session = await getCurrentStudentSession(req);
+  if (!session || session.studentId !== body?.studentId) return forbid(res);
   const student = await getStudentByStudentId(body?.studentId || '');
   if (!student) return jsonResponse(res, 404, { success: false, message: 'Student account not found.' });
   const currentPassword = String(body?.currentPassword || '');
@@ -358,7 +543,9 @@ async function handleStudentChangePassword(res, body) {
   jsonResponse(res, 200, { success: true });
 }
 
-async function handleSysAdminChangePassword(res, body) {
+async function handleSysAdminChangePassword(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
   const sysAdmin = await getSysAdminRow();
   if (!sysAdmin) return jsonResponse(res, 404, { success: false, message: 'System administrator account not found.' });
   const currentPassword = String(body?.currentPassword || '');
@@ -370,7 +557,9 @@ async function handleSysAdminChangePassword(res, body) {
   jsonResponse(res, 200, { success: true });
 }
 
-async function handleProfessorSave(res, body) {
+async function handleProfessorSave(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
   const name = String(body?.name || '').trim();
   const username = String(body?.username || '').trim().toLowerCase();
   const email = String(body?.email || '').trim().toLowerCase();
@@ -394,10 +583,82 @@ async function handleProfessorSave(res, body) {
   jsonResponse(res, result.success ? 200 : 400, result);
 }
 
-async function handleProfessorDelete(res, body) {
+async function handleProfessorDelete(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
   const id = String(body?.id || '').trim();
   if (!id) return jsonResponse(res, 400, { success: false, message: 'Professor id is required.' });
   const result = await deleteProfessor(id);
+  jsonResponse(res, result.success ? 200 : 400, result);
+}
+
+async function handleProfessorSession(req, res) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+  try {
+    await recoverProfessorOwnership(admin);
+  } catch (error) {
+    console.warn('[auth-route] recoverProfessorOwnership during session:', error.message || error);
+  }
+  jsonResponse(res, 200, {
+    success: true,
+    admin: {
+      ...admin,
+      loginAt: new Date().toISOString(),
+    },
+  });
+}
+
+async function handleStudentSession(req, res) {
+  const student = await getCurrentStudentSession(req);
+  if (!student) return forbid(res);
+  jsonResponse(res, 200, {
+    success: true,
+    session: {
+      studentId: student.studentId,
+      studentName: student.name,
+      yearLevel: student.yearLevel || '',
+      section: student.section || '',
+      yearSection: student.yearSection || '',
+      department: student.department || '',
+      program: student.program || '',
+      email: student.email || '',
+      loginAt: new Date().toISOString(),
+    },
+  });
+}
+
+async function handleSysAdminSession(req, res) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
+  jsonResponse(res, 200, {
+    success: true,
+    session: {
+      username: session.username,
+      name: session.name || 'System Administrator',
+      email: session.email || '',
+      department: session.department || '',
+      loginAt: new Date().toISOString(),
+    },
+  });
+}
+
+function handleLogout(req, res, cookieName) {
+  clearSessionCookie(res, req, cookieName);
+  jsonResponse(res, 200, { success: true });
+}
+
+async function handleSysAdminProfileSave(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
+  const result = await saveSysAdminProfile(body || {});
+  jsonResponse(res, result.success ? 200 : 400, result);
+}
+
+async function handleSettingsSave(req, res, body) {
+  const session = await getCurrentSysAdminSession(req);
+  if (!session) return forbid(res);
+  const result = await saveSettings(body || {});
   jsonResponse(res, result.success ? 200 : 400, result);
 }
 
@@ -418,12 +679,11 @@ async function handleAuthRoute(req, res) {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
 
   try {
-    await ensureDefaultAuthRecords();
     switch (pathname) {
-      case '/api/auth/professor/login': await handleProfessorLogin(res, body); return true;
-      case '/api/auth/sysadmin/login': await handleSysAdminLogin(res, body); return true;
+      case '/api/auth/professor/login': await handleProfessorLogin(req, res, body); return true;
+      case '/api/auth/sysadmin/login': await handleSysAdminLogin(req, res, body); return true;
       case '/api/auth/student/status': await handleStudentStatus(res, body); return true;
-      case '/api/auth/student/login': await handleStudentLogin(res, body); return true;
+      case '/api/auth/student/login': await handleStudentLogin(req, res, body); return true;
       case '/api/auth/professor/reset/request': await handleProfessorResetRequest(res, body); return true;
       case '/api/auth/professor/reset/verify': await verifyCode(res, { flow: 'admin-reset', email: body?.email, code: body?.code }); return true;
       case '/api/auth/professor/reset/complete': await completeProfessorReset(res, body); return true;
@@ -432,15 +692,23 @@ async function handleAuthRoute(req, res) {
       case '/api/auth/student/reset/request': await handleStudentResetRequest(res, body); return true;
       case '/api/auth/student/reset/verify': await verifyCode(res, { flow: 'student-reset', email: body?.email, code: body?.code }); return true;
       case '/api/auth/student/reset/complete': await completeStudentReset(res, body); return true;
-      case '/api/auth/student/setup': await handleStudentSetup(res, body); return true;
-      case '/api/auth/professor/verify': await handleProfessorVerify(res, body); return true;
-      case '/api/auth/student/verify': await handleStudentVerify(res, body); return true;
-      case '/api/auth/sysadmin/verify': await handleSysAdminVerify(res, body); return true;
-      case '/api/auth/professor/change-password': await handleProfessorChangePassword(res, body); return true;
-      case '/api/auth/student/change-password': await handleStudentChangePassword(res, body); return true;
-      case '/api/auth/sysadmin/change-password': await handleSysAdminChangePassword(res, body); return true;
-      case '/api/auth/professor/save': await handleProfessorSave(res, body); return true;
-      case '/api/auth/professor/delete': await handleProfessorDelete(res, body); return true;
+      case '/api/auth/student/setup': await handleStudentSetup(req, res, body); return true;
+      case '/api/auth/professor/session': await handleProfessorSession(req, res); return true;
+      case '/api/auth/student/session': await handleStudentSession(req, res); return true;
+      case '/api/auth/sysadmin/session': await handleSysAdminSession(req, res); return true;
+      case '/api/auth/professor/logout': handleLogout(req, res, ADMIN_SESSION_COOKIE); return true;
+      case '/api/auth/student/logout': handleLogout(req, res, STUDENT_SESSION_COOKIE); return true;
+      case '/api/auth/sysadmin/logout': handleLogout(req, res, SYSADMIN_SESSION_COOKIE); return true;
+      case '/api/auth/professor/verify': await handleProfessorVerify(req, res, body); return true;
+      case '/api/auth/student/verify': await handleStudentVerify(req, res, body); return true;
+      case '/api/auth/sysadmin/verify': await handleSysAdminVerify(req, res, body); return true;
+      case '/api/auth/professor/change-password': await handleProfessorChangePassword(req, res, body); return true;
+      case '/api/auth/student/change-password': await handleStudentChangePassword(req, res, body); return true;
+      case '/api/auth/sysadmin/change-password': await handleSysAdminChangePassword(req, res, body); return true;
+      case '/api/auth/sysadmin/profile/save': await handleSysAdminProfileSave(req, res, body); return true;
+      case '/api/auth/settings/save': await handleSettingsSave(req, res, body); return true;
+      case '/api/auth/professor/save': await handleProfessorSave(req, res, body); return true;
+      case '/api/auth/professor/delete': await handleProfessorDelete(req, res, body); return true;
       default: return false;
     }
   } catch (error) {
