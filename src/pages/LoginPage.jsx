@@ -120,6 +120,11 @@ export default function LoginPage() {
       });
       const params = new URLSearchParams(window.location.search);
       if (params.get('tab') === 'student') setActiveTab('student');
+      if (sessionStorage.getItem('acs_admin_removed_notice')) {
+        sessionStorage.removeItem('acs_admin_removed_notice');
+        setActiveTab('admin');
+        setAdminError('Your account has been removed by the administrator. Please contact your school administrator if you believe this is a mistake.');
+      }
       if (window.Auth?.getSysAdminSession?.()) { window.location.replace('super-admin.html'); return; }
       if (window.Auth?.getAdminSession?.()) { window.location.replace('admin.html'); return; }
       if (window.Auth?.getStudentSession?.()) { window.location.replace('exam.html'); return; }

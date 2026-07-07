@@ -56,6 +56,16 @@ const ExamApp = {
   _fullscreenVerifyTimer: null,
   _recentClipboardShortcut: null,
   _intentionalFullscreenExit: false,
+  // ── Connectivity monitor ──
+  _connectionState: 'online', // 'online' | 'weak' | 'offline'
+  _connFailStreak: 0,         // consecutive failed probes (debounces flapping before declaring offline)
+  _connCheckInterval: null,
+  _connOnlineHandler: null,
+  _connOfflineHandler: null,
+  _CONN_PROBE_MS: 6000,       // how often to probe while the tab is open
+  _CONN_TIMEOUT_MS: 4000,     // probe request timeout
+  _CONN_WEAK_MS: 1500,        // probe latency above this = "weak" signal
+  _pendingManualSubmit: false, // true if the student tried to submit while offline
 
   _repairStudentEmail(studentSession) {
     if (!studentSession?.studentId || !studentSession?.email) return;
@@ -1486,6 +1496,7 @@ const ExamApp = {
   // ============================================================
   startExam() {
     this._rememberTrustedInteraction(2000);
+    this._initConnectionMonitor();
     this.requestFullscreen();
     this.initAntiCheat();
     this.startTimer();
@@ -2378,6 +2389,7 @@ const ExamApp = {
     });
     this.anticheatListeners = [];
     this.stopCamera();
+    this._stopConnectionMonitor();
   },
 
   // ============================================================
@@ -3082,6 +3094,144 @@ const ExamApp = {
     DB.updateSession(this.session.id, { answers: this.answers });
   },
 
+  // ============================================================
+  // CONNECTIVITY MONITOR
+  // ============================================================
+  // navigator.onLine / the browser's online-offline events only reflect the
+  // network adapter's state — they miss "connected to Wi-Fi but no internet"
+  // and can't tell strong from weak. So this combines both: the native events
+  // give an instant signal the moment the adapter actually drops, and a
+  // periodic same-origin fetch (timed) gives a real reachability + latency
+  // reading in between. Two consecutive failed probes (or a native 'offline'
+  // event) are required before the exam freezes, so a single dropped packet
+  // doesn't slam the freeze overlay shut on a student for no reason.
+  _initConnectionMonitor() {
+    this._connFailStreak = 0;
+    this._pendingManualSubmit = false;
+    this._connOnlineHandler = () => this._probeConnection();
+    this._connOfflineHandler = () => {
+      this._connFailStreak = 2; // the OS itself says the adapter is down — trust it immediately
+      this._setConnectionState('offline');
+    };
+    window.addEventListener('online', this._connOnlineHandler);
+    window.addEventListener('offline', this._connOfflineHandler);
+    if (this._connCheckInterval) clearInterval(this._connCheckInterval);
+    this._connCheckInterval = setInterval(() => this._probeConnection(), this._CONN_PROBE_MS);
+    this._probeConnection();
+  },
+
+  _stopConnectionMonitor() {
+    if (this._connCheckInterval) { clearInterval(this._connCheckInterval); this._connCheckInterval = null; }
+    if (this._connOnlineHandler) { window.removeEventListener('online', this._connOnlineHandler); this._connOnlineHandler = null; }
+    if (this._connOfflineHandler) { window.removeEventListener('offline', this._connOfflineHandler); this._connOfflineHandler = null; }
+  },
+
+  _isOffline() { return this._connectionState === 'offline'; },
+
+  // Same-origin requests (e.g. this app's own dev/hosting server) can succeed over the
+  // OS loopback interface even with Wi-Fi fully off, which would make this probe lie.
+  // Supabase is a genuinely remote dependency the exam actually needs (it's where
+  // answers get saved), so pinging it is both a real network test AND the exact
+  // signal that matters: if this fails, saving would fail too. `no-cors` is used
+  // because we only need to know the request could complete, not read its response.
+  _connProbeUrl() {
+    const base = window.SupabaseBridge?.env?.url;
+    return base ? `${base}/auth/v1/health?_cb=` : '/plp-logo.png?_cb=';
+  },
+
+  async _probeConnection() {
+    if (!navigator.onLine) { this._connFailStreak = 2; this._setConnectionState('offline'); return; }
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this._CONN_TIMEOUT_MS);
+      await fetch(this._connProbeUrl() + start, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+      clearTimeout(timer);
+      this._connFailStreak = 0;
+      this._setConnectionState((Date.now() - start) > this._CONN_WEAK_MS ? 'weak' : 'online');
+    } catch (e) {
+      this._connFailStreak++;
+      this._setConnectionState(this._connFailStreak >= 2 ? 'offline' : 'weak');
+    }
+  },
+
+  _setConnectionState(state) {
+    const prev = this._connectionState;
+    this._connectionState = state;
+    this._updateConnectionIndicator(state);
+    if (state === 'offline' && prev !== 'offline') {
+      this._showOfflineOverlay();
+      this._recordActivity('connection_lost', 'Internet connection lost — exam frozen until reconnect');
+    } else if (state !== 'offline' && prev === 'offline') {
+      this._hideOfflineOverlay();
+      this._recordActivity('connection_restored', 'Internet connection restored — resyncing answers');
+      this._resyncSessionState();
+    }
+  },
+
+  _updateConnectionIndicator(state) {
+    const wrap = document.getElementById('connection-status');
+    const icon = document.getElementById('connection-icon');
+    const label = document.getElementById('connection-label');
+    if (!wrap || !icon || !label) return;
+    wrap.className = 'conn-status conn-' + state;
+    const icons = {
+      online:  '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+      weak:    '<path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><path d="M1.42 9a16 16 0 0 1 3.4-2.6" opacity="0.3"/><path d="M19.18 6.4A16 16 0 0 1 22.58 9" opacity="0.3"/>',
+      offline: '<line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+    };
+    const labels = { online: 'Online', weak: 'Weak connection', offline: 'Offline' };
+    icon.innerHTML = icons[state] || icons.online;
+    label.textContent = labels[state] || 'Online';
+  },
+
+  _showOfflineOverlay() {
+    const overlay = document.getElementById('offline-overlay');
+    if (!overlay) return;
+    const detail = document.getElementById('offline-overlay-detail');
+    if (detail) {
+      detail.textContent = this._pendingManualSubmit
+        ? 'Your exam will submit automatically once you’re back online.'
+        : 'Your answers are saved. The exam will resume automatically once you’re back online.';
+    }
+    overlay.style.display = 'flex';
+  },
+
+  _hideOfflineOverlay() {
+    const overlay = document.getElementById('offline-overlay');
+    if (overlay) overlay.style.display = 'none';
+  },
+
+  // Belt-and-suspenders for the moment right at the offline transition, before the
+  // full-screen overlay has painted — makes the block visible immediately either way.
+  _flashReconnectNotice(message) {
+    this._showOfflineOverlay();
+    const detail = document.getElementById('offline-overlay-detail');
+    if (detail && message) detail.textContent = message;
+    const content = document.getElementById('offline-overlay-content');
+    if (content) {
+      content.classList.remove('offline-shake');
+      void content.offsetWidth;
+      content.classList.add('offline-shake');
+    }
+  },
+
+  // Push the latest local state back to the server once reconnected. `answers` is
+  // always the full current map (not a delta), so resending it now supersedes every
+  // write that silently failed while offline — no replay queue needed.
+  _resyncSessionState() {
+    if (this.session) {
+      DB.updateSession(this.session.id, { answers: this.answers, warnings: this.warnings });
+    }
+    if (this._pendingManualSubmit) {
+      this._pendingManualSubmit = false;
+      this.submitExam('manual');
+      return;
+    }
+    // Unfreeze: showQuestion() was refusing to run while offline, so re-run it now.
+    this.showQuestion(this.currentQuestionIndex);
+  },
+
   // ── Single-question navigation ───────────────────────────────
 
   _buildNavGrid() {
@@ -3094,6 +3244,7 @@ const ExamApp = {
   },
 
   showQuestion(idx) {
+    if (this._isOffline()) { this._flashReconnectNotice(); return; }
     const questions = this.questionOrder;
     if (!questions.length) return;
     idx = Math.max(0, Math.min(idx, questions.length - 1));
@@ -3505,6 +3656,15 @@ const ExamApp = {
   },
 
   submitExam(trigger) {
+    // Auto-submit (violations/timeout) still proceeds locally so it can't be dodged by
+    // pulling the connection; the reconnect resync will push it once back online. A
+    // manual submit, however, must wait — otherwise the student sees "Submitted!" while
+    // the actual score silently never reaches the server.
+    if (trigger === 'manual' && this._isOffline()) {
+      this._pendingManualSubmit = true;
+      this._flashReconnectNotice('Reconnect to submit your exam.');
+      return;
+    }
     document.getElementById('confirm-submit-modal').classList.add('hidden');
 
     this.stopTimer();

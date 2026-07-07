@@ -288,9 +288,21 @@ const SupabaseSync = {
     const row = this._jsToDb(table, data);
     if (!row) return;
     this._enqueueDocSync(table, data.id, async () => {
-      // onConflict:'id' ensures we always UPDATE existing rows by primary key,
-      // avoiding false conflicts on unique columns like exams.code
-      let { error } = await this._client.from(table).upsert(row, { onConflict: 'id' });
+      // Professors are only ever CREATED server-side (server/auth-service.cjs), which
+      // hashes and sets the required `password` column. Client-side syncs of a
+      // professor (e.g. a professor editing their own settings) never carry a
+      // password, so an upsert here would fall through to an INSERT — missing
+      // `password` — and violate the NOT NULL constraint if the row doesn't already
+      // exist (deleted, or never created). A plain UPDATE can only ever touch an
+      // existing row, so a missing/deleted professor just becomes a harmless no-op.
+      let error;
+      if (table === 'professors') {
+        ({ error } = await this._client.from(table).update(row).eq('id', data.id));
+      } else {
+        // onConflict:'id' ensures we always UPDATE existing rows by primary key,
+        // avoiding false conflicts on unique columns like exams.code
+        ({ error } = await this._client.from(table).upsert(row, { onConflict: 'id' }));
+      }
       if (!error && table === 'exams') {
         // This write included excluded_student_ids and Postgres accepted it —
         // the row is now authoritative again, so trust future echoes of it.

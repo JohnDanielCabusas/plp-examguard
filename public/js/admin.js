@@ -87,6 +87,8 @@ const BEHAVIOR_LABELS = {
   brightness_check_passed: 'Brightness Check Passed',
   brightness_check_failed: 'Brightness Check Failed',
   brightness_check_skipped: 'Brightness Check Skipped',
+  connection_lost: 'Connection Lost',
+  connection_restored: 'Connection Restored',
   window_blur: 'Window Blur',
   tab_switch: 'Tab Switch',
   fullscreen_exit: 'Fullscreen Exit',
@@ -1150,15 +1152,9 @@ function saveSubject() {
 
   if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
 
-  const activeWithCode = DB.getSubjects().filter(s => s.code === code && s.id !== id && !s.archived);
-  const yearsOverlap = (a, b) => !a.length || !b.length || a.some(y => b.includes(y));
-  const secsOverlap  = (a, b) => !a.length || !b.length || a.some(s => b.includes(s));
-  const conflict = activeWithCode.find(s =>
-    yearsOverlap(yearLevels, s.yearLevels || []) && secsOverlap(sections, Array.isArray(s.sections) ? s.sections : [])
-  );
+  const conflict = DB.getSubjects().find(s => s.code === code && s.id !== id && !s.archived);
   if (conflict) {
-    const label = [conflict.yearLevels?.join('/'), (conflict.sections||[]).join('/')].filter(Boolean).join(' ');
-    showToast(`Course code "${code}" is already in use${label ? ` for ${label}` : ''}. Please use a different code or section.`, 'error');
+    showToast(`Course code "${code}" is already in use by "${conflict.name}". Please choose a different code.`, 'error');
     return;
   }
 
@@ -2712,6 +2708,7 @@ function saveExamFromEditor() {
   if (!title) { showToast('Exam title is required.', 'error'); return; }
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
+  if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
 
   const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
 
@@ -2801,6 +2798,7 @@ function saveExam() {
   if (!title) { showToast('Exam title is required.', 'error'); return; }
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
+  if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
 
   const allowReview  = document.getElementById('exam-allow-review').checked;
   const audienceData = { targetYearLevels, targetSections };
@@ -2920,8 +2918,26 @@ function generateCode() {
   return code;
 }
 
+// Exam codes are looked up globally (DB.getExamByCode has no owner filter — students
+// join by code with no professor context), so uniqueness must be checked globally too.
+function isExamCodeTaken(code, excludeId) {
+  if (!code) return false;
+  const existing = DB.getExamByCode(code);
+  return !!existing && existing.id !== excludeId;
+}
+
+function generateUniqueExamCode() {
+  let code;
+  let attempts = 0;
+  do {
+    code = generateCode();
+    attempts++;
+  } while (isExamCodeTaken(code) && attempts < 50);
+  return code;
+}
+
 function generateAndSetCode() {
-  document.getElementById('exam-code-field').value = generateCode();
+  document.getElementById('exam-code-field').value = generateUniqueExamCode();
 }
 
 async function setExamStatus(id, status) {
@@ -2953,7 +2969,7 @@ async function setExamStatus(id, status) {
     }
     const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
     if (!ok) return;
-    const code = exam.code || generateCode();
+    const code = exam.code || generateUniqueExamCode();
     DB.updateExam(id, { status: 'ready', code });
     showToast(`Exam set to Ready. Code: ${code}`, 'success');
   } else if (status === 'active') {

@@ -247,6 +247,16 @@ async function saveProfessor({ id, name, username, email, password }) {
   return { success: true, professor: normalizeProfessor(rows[0]) };
 }
 
+async function deleteProfessor(id) {
+  if (!id) return { success: false, message: 'Professor id is required.' };
+  const { rows } = await query(
+    `delete from public.professors where id = $1 returning id`,
+    [id],
+  );
+  if (!rows[0]) return { success: false, message: 'Professor account not found.' };
+  return { success: true };
+}
+
 async function getSysAdminRow() {
   const { rows } = await query(
     `select id, username, password, name, email, department
@@ -314,7 +324,26 @@ async function saveStudentSetup({ email, studentId, password, fullName, yearSect
   if (byEmail?.password) return { success: false, message: 'An account already exists with this email. Please sign in instead.' };
 
   const byId = await getStudentByStudentId(normalizedStudentId);
-  const existingStudent = byId || byEmail;
+  if (byEmail && byId && byEmail.id !== byId.id) {
+    return {
+      success: false,
+      message: 'This Student ID is already assigned to another account. Please contact your professor or admin.',
+    };
+  }
+  if (!byEmail && byId) {
+    return {
+      success: false,
+      message: 'This Student ID is already assigned to another account. Please contact your professor or admin.',
+    };
+  }
+  if (byEmail?.student_id && byEmail.student_id.toUpperCase() !== normalizedStudentId) {
+    return {
+      success: false,
+      message: 'The Student ID does not match the verified email. Please contact your professor or admin.',
+    };
+  }
+
+  const existingStudent = byEmail || byId;
 
   let row;
   if (existingStudent) {
@@ -404,6 +433,7 @@ module.exports = {
   getProfessorById,
   updateProfessorPassword,
   saveProfessor,
+  deleteProfessor,
   getSysAdminRow,
   updateSysAdminPassword,
   getStudentByEmail,

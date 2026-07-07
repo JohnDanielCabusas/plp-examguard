@@ -86,7 +86,14 @@ const DB = {
   },
 
   _filterByOwner(records, ownerAdminId = this._getCurrentAdminId()) {
-    if (!ownerAdminId) return records;
+    if (!ownerAdminId) {
+      // A missing owner id normally means "no admin context at all" (fine to pass
+      // records through unfiltered). But if it's missing because Auth.getAdminSession()
+      // just discovered the account was deleted mid-session, that must NEVER fall
+      // through to "show everything" — that IS the data leak. Show nothing instead.
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('acs_admin_removed_notice')) return [];
+      return records;
+    }
     return records.filter(record => record?.ownerAdminId === ownerAdminId);
   },
 
@@ -546,11 +553,6 @@ const DB = {
     SupabaseSync.syncDoc('professors',newProf);
     return { success: true, professor: newProf };
   },
-  deleteProfessor(id) {
-    const admins = this.getAdmins().filter(a => a.id !== id);
-    this._write(this.KEYS.admins, admins);
-  },
-
   // ---- System Admin ----
   getSysAdmin() {
     const stored = this._read(this.KEYS.sysadmin, null);

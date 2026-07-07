@@ -9560,11 +9560,35 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   flex-shrink: 0;
 }
 .examv2-timer.timer-warning { color: #dc2626; background: #fef2f2; border-color: #fca5a5; }
-.examv2-topbar-right { flex: 1; display: flex; justify-content: flex-end; }
+.examv2-topbar-right { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .examv2-student-chip {
   font-size: 12px; font-weight: 600; color: #374151;
   background: #f3f4f6; border-radius: 20px; padding: 5px 12px;
 }
+
+/* Connection status pill (exam topbar) */
+.conn-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700;
+  padding: 5px 12px; border-radius: 20px;
+  transition: background 0.25s, color 0.25s;
+}
+.conn-status.conn-online  { background: #e8f5ec; color: #15803d; }
+.conn-status.conn-weak    { background: #fef3c7; color: #92400e; }
+.conn-status.conn-offline { background: #fee2e2; color: #b91c1c; animation: connPulse 1.4s ease-in-out infinite; }
+[data-theme="dark"] .conn-status.conn-online  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
+[data-theme="dark"] .conn-status.conn-weak    { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
+[data-theme="dark"] .conn-status.conn-offline { background: rgba(220,38,38,0.18) !important; color: #f87171 !important; }
+@keyframes connPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Offline overlay shake (reused from the warning-overlay pattern) */
+@keyframes offlineShake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.offline-shake { animation: offlineShake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
 
 /* Stats bar */
 .examv2-stats-bar {

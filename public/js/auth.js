@@ -70,6 +70,10 @@ const Auth = {
     });
   },
 
+  async deleteProfessorAccount(id) {
+    return this._post('/api/auth/professor/delete', { id });
+  },
+
   getAdminPasswordReset() {
     try { return JSON.parse(sessionStorage.getItem(this.ADMIN_RESET_KEY)); } catch { return null; }
   },
@@ -211,8 +215,26 @@ const Auth = {
     try {
       const session = JSON.parse(sessionStorage.getItem('acs_admin_session'));
       if (!session) return null;
-      const admin = session.id ? DB.getAdmins().find(a => a.id === session.id) : null;
-      if (!admin) return session;
+      if (!session.id) return session;
+      const admins = DB.getAdmins();
+      // Empty list almost always means the professors table just hasn't been pulled
+      // yet (e.g. very early at boot) — don't punish a valid session for a cold
+      // cache. Once the list IS populated and the id genuinely isn't in it, the
+      // account was deleted out from under this tab.
+      if (!admins.length) return session;
+      const admin = admins.find(a => a.id === session.id);
+      if (!admin) {
+        // Treat this exactly like a removed account: kill the session immediately
+        // rather than let ownership-scoping code (data.js _shouldClaimLegacyOwner)
+        // fall through to "no owner" or silently reassign another admin's records
+        // to this now-nonexistent id.
+        this.clearAdminSession();
+        sessionStorage.setItem('acs_admin_removed_notice', '1');
+        if (!/(?:^|\/)index\.html$/.test(window.location.pathname) && window.location.pathname !== '/') {
+          window.location.href = 'index.html?tab=admin';
+        }
+        return null;
+      }
       return {
         ...session,
         username: admin.username || session.username,

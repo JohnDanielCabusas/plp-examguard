@@ -327,17 +327,21 @@ function ProfessorModal({ professor, onSave, onClose }) {
       setError("Username must be 3–30 characters (letters, numbers, _ . -).");
       return;
     }
-    if (!isEdit && !password) {
-      setError("Password is required.");
-      return;
-    }
-    if (password && password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
+    if (!isEdit) {
+      if (!password) {
+        setError("Password is required.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters.");
+        return;
+      }
     }
 
     const data = { name, username, email };
-    if (password) data.password = password;
+    // Only ever sent when adding — an existing professor's password can only be
+    // changed by the professor themselves, not reset here by the super admin.
+    if (!isEdit && password) data.password = password;
     const result = await onSave(data);
     if (result?.success === false) {
       setError(result.message || "Unable to save professor.");
@@ -403,32 +407,34 @@ function ProfessorModal({ professor, onSave, onClose }) {
               defaultValue={professor?.email || ""}
             />
           </div>
-          <div className="form-group">
-            <label>
-              {isEdit ? "New Password" : "Password *"}{" "}
-              {isEdit && (
-                <span style={{ fontWeight: 400, color: "#9ca3af" }}>
-                  (leave blank to keep current)
-                </span>
-              )}
-            </label>
-            <div style={{ position: "relative" }}>
-              <input
-                ref={passRef}
-                type={showPass ? "text" : "password"}
-                className="form-control"
-                placeholder="Minimum 6 characters"
-                style={{ paddingRight: "42px" }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave();
-                }}
-              />
-              <EyeToggle
-                show={showPass}
-                onToggle={() => setShowPass((v) => !v)}
-              />
+          {isEdit ? (
+            <div className="form-group">
+              <label>Password</label>
+              <p className="text-muted" style={{ fontSize: "12px", margin: 0 }}>
+                Only this professor can change their own password, from their admin panel's sign-in screen ("Forgot Password?").
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="form-group">
+              <label>Password *</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  ref={passRef}
+                  type={showPass ? "text" : "password"}
+                  className="form-control"
+                  placeholder="Minimum 6 characters"
+                  style={{ paddingRight: "42px" }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave();
+                  }}
+                />
+                <EyeToggle
+                  show={showPass}
+                  onToggle={() => setShowPass((v) => !v)}
+                />
+              </div>
+            </div>
+          )}
           {error && (
             <div className="text-danger mb-12" style={{ fontSize: "13px" }}>
               {error}
@@ -638,9 +644,14 @@ export default function SuperAdminPage() {
       confirmLabel: "Delete",
       confirmClassName: "btn btn-danger",
       icon: "danger",
-      onConfirm: () => {
-        window.DB.deleteProfessor(prof.id);
+      onConfirm: async () => {
+        const result = await window.Auth.deleteProfessorAccount(prof.id);
         setConfirm(null);
+        if (!result?.success) {
+          showToast(result?.message || "Unable to delete professor.", "error");
+          return;
+        }
+        await window.Auth.refreshAdminsFromSupabase?.();
         showToast("Professor deleted.");
         loadData();
       },

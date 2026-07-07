@@ -436,6 +436,12 @@ export default function ExamPage() {
             <span id="timer-display">--:--</span>
           </div>
           <div className="examv2-topbar-right">
+            <div className="conn-status conn-online" id="connection-status" title="Connection status">
+              <svg id="connection-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0" /><path d="M1.42 9a16 16 0 0 1 21.16 0" /><path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><line x1="12" y1="20" x2="12.01" y2="20" />
+              </svg>
+              <span id="connection-label">Online</span>
+            </div>
             <div className="examv2-student-chip" id="exam-student-info" />
           </div>
         </div>
@@ -620,6 +626,28 @@ export default function ExamPage() {
           style={{ display: 'none', background: 'none', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
           I can&rsquo;t see any symbol — continue anyway (this will be reported to your professor)
         </button>
+      </div>
+
+      {/* Offline Overlay — sits above every other anti-cheat overlay (all <9990) since
+          none of them matter while there's no connection to sync against. Stays below
+          the 3-strike warning-overlay (9999) so a violation notice already on screen
+          isn't hidden by it. */}
+      <div id="offline-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.97)', zIndex: 9990, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff', padding: '24px' }}>
+        <div id="offline-overlay-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px', opacity: 0.9 }}>
+            <line x1="1" y1="1" x2="23" y2="23" />
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" /><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+            <path d="M10.71 5.05A16 16 0 0 1 22.58 9" /><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><line x1="12" y1="20" x2="12.01" y2="20" />
+          </svg>
+          <div style={{ fontSize: '28px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>You&rsquo;re Offline</div>
+          <div style={{ fontSize: '16px', opacity: 0.85, marginBottom: '10px', maxWidth: '440px', lineHeight: 1.5 }}>
+            The exam is paused. Reconnect to continue.
+          </div>
+          <div id="offline-overlay-detail" style={{ fontSize: '13px', opacity: 0.7, maxWidth: '420px', lineHeight: 1.5 }}>
+            Your answers are saved. The exam will resume automatically once you&rsquo;re back online.
+          </div>
+        </div>
       </div>
 
       {/* Camera Off Overlay */}

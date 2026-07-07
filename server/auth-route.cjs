@@ -12,6 +12,7 @@ const {
   getProfessorById,
   updateProfessorPassword,
   saveProfessor,
+  deleteProfessor,
   getSysAdminRow,
   updateSysAdminPassword,
   getStudentByEmail,
@@ -393,6 +394,13 @@ async function handleProfessorSave(res, body) {
   jsonResponse(res, result.success ? 200 : 400, result);
 }
 
+async function handleProfessorDelete(res, body) {
+  const id = String(body?.id || '').trim();
+  if (!id) return jsonResponse(res, 400, { success: false, message: 'Professor id is required.' });
+  const result = await deleteProfessor(id);
+  jsonResponse(res, result.success ? 200 : 400, result);
+}
+
 async function handleAuthRoute(req, res) {
   if (req.method !== 'POST') {
     jsonResponse(res, 405, { success: false, message: 'Method not allowed.' });
@@ -432,6 +440,7 @@ async function handleAuthRoute(req, res) {
       case '/api/auth/student/change-password': await handleStudentChangePassword(res, body); return true;
       case '/api/auth/sysadmin/change-password': await handleSysAdminChangePassword(res, body); return true;
       case '/api/auth/professor/save': await handleProfessorSave(res, body); return true;
+      case '/api/auth/professor/delete': await handleProfessorDelete(res, body); return true;
       default: return false;
     }
   } catch (error) {
