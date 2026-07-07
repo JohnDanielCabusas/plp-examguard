@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node -e ' *)",
-      "Bash(curl -sI \"https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js\")"
+      "Bash(curl -sI \"https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js\")",
+      "Bash(TEST_PORT=5174 node ./__test-fix.mjs)"
     ]
   }
 }

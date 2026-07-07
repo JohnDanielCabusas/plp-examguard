@@ -5,6 +5,10 @@
 // ---- Shared icon SVGs ----
 const icArchiveFill = `<svg class="archive-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
 const icEditFill = `<svg class="edit-icon" viewBox="0 0 512 512"><path d="M410.3 231l11.3-11.3-33.9-33.9-62.1-62.1L291.7 89.8l-11.3 11.3-22.6 22.6L58.6 322.9c-10.4 10.4-18 23.3-22.2 37.4L1 480.7c-2.5 8.4-.2 17.5 6.1 23.7s15.3 8.5 23.7 6.1l120.3-35.4c14.1-4.2 27-11.8 37.4-22.2L387.7 253.7 410.3 231zM160 399.4l-9.1 22.7c-4 3.1-8.5 5.4-13.3 6.9L59.4 452l23-78.1c1.4-4.9 3.8-9.4 6.9-13.3l22.7-9.1v32c0 8.8 7.2 16 16 16h32zM362.7 18.7L348.3 33.2 325.7 55.8 314.3 67.1l33.9 33.9 62.1 62.1 33.9 33.9 11.3-11.3 22.6-22.6 14.5-14.5c25-25 25-65.5 0-90.5L453.3 18.7c-25-25-65.5-25-90.5 0zm-47.4 168l-144 144c-6.2 6.2-16.4 6.2-22.6 0s-6.2-16.4 0-22.6l144-144c6.2-6.2 16.4-6.2 22.6 0s6.2 16.4 0 22.6z"/></svg>`;
+const icEyeFill = `<svg class="edit-icon" viewBox="0 0 576 512"><path d="M572.52 241.4C518.29 135.59 410.93 64 288 64S57.68 135.64 3.48 241.41a32.35 32.35 0 0 0 0 29.19C57.71 376.41 165.07 448 288 448s230.32-71.64 284.52-177.41a32.35 32.35 0 0 0 0-29.19zM288 400a144 144 0 1 1 144-144 143.93 143.93 0 0 1-144 144zm0-240a95.31 95.31 0 0 0-25.31 3.79 47.85 47.85 0 0 1-66.9 66.9A95.78 95.78 0 1 0 288 160z"/></svg>`;
+const icUndoFill = `<svg class="edit-icon" viewBox="0 0 512 512"><path d="M125.7 160H176c17.7 0 32 14.3 32 32s-14.3 32-32 32H48c-17.7 0-32-14.3-32-32V64c0-17.7 14.3-32 32-32s32 14.3 32 32v51.2l17.6-17.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"/></svg>`;
+const icRedoStroke = `<svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>`;
+const icTrashStroke = `<svg class="archive-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
 
 // ---- State ----
 let currentSection = 'dashboard';
@@ -2007,13 +2011,9 @@ function renderArchivedExams() {
         <td data-label="Time" style="text-align:center;">${e.timeLimit} min</td>
         <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(e.updatedAt || e.createdAt)}</span></td>
         <td data-label="">
-          <div class="table-actions" style="justify-content:center;">
-            <button class="btn-action btn-action-primary" onclick="recoverExam('${e.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Recover
-            </button>
-            <button class="btn-action btn-action-danger" onclick="permanentDeleteExam('${e.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg> Delete Permanently
-            </button>
+          <div class="table-actions">
+            <button class="btn-action btn-action-ghost" onclick="recoverExam('${e.id}')">Recover${icUndoFill}</button>
+            <button class="tbl-btn tbl-btn-archive" onclick="permanentDeleteExam('${e.id}')">Delete Permanently${icTrashStroke}</button>
           </div>
         </td>
       </tr>
@@ -2040,13 +2040,9 @@ function renderArchivedStudents() {
       <td data-label="Section" style="text-align:center;">${escHtml(s.section || '—')}</td>
       <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt)}</span></td>
       <td data-label="">
-        <div class="table-actions" style="justify-content:center;">
-          <button class="btn-action btn-action-primary" onclick="restoreStudent('${s.id}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Restore
-          </button>
-          <button class="btn-action btn-action-danger" onclick="permanentDeleteStudent('${s.id}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg> Delete Permanently
-          </button>
+        <div class="table-actions">
+          <button class="btn-action btn-action-ghost" onclick="restoreStudent('${s.id}')">Restore${icUndoFill}</button>
+          <button class="tbl-btn tbl-btn-archive" onclick="permanentDeleteStudent('${s.id}')">Delete Permanently${icTrashStroke}</button>
         </div>
       </td>
     </tr>
@@ -2093,13 +2089,9 @@ function renderArchivedCourses() {
         <td>${escHtml(sections)}</td>
         <td style="text-align:center;" class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt || s.createdAt)}</td>
         <td>
-          <div class="table-actions" style="justify-content:center;">
-            <button class="btn-action btn-action-primary" onclick="recoverCourse('${s.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Recover
-            </button>
-            <button class="btn-action btn-action-danger" onclick="permanentDeleteCourse('${s.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg> Delete Permanently
-            </button>
+          <div class="table-actions">
+            <button class="btn-action btn-action-ghost" onclick="recoverCourse('${s.id}')">Recover${icUndoFill}</button>
+            <button class="tbl-btn tbl-btn-archive" onclick="permanentDeleteCourse('${s.id}')">Delete Permanently${icTrashStroke}</button>
           </div>
         </td>
       </tr>`;
@@ -3871,15 +3863,34 @@ function viewStudentAnswers(sessionId) {
               </div>` : requireAI ? '<span style="font-size:12px;color:#9ca3af;">No answer to scan</span>' : ''}
           </div>
         </div>`;
+    } else if (q.type === 'checkbox') {
+      let given = [];
+      try { given = JSON.parse(studentAns || '[]') || []; } catch (_) {}
+      const correctIndices = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+      const sortedGiven = given.slice().sort((a, b) => a - b);
+      const isCorrect = correctIndices.length === sortedGiven.length && correctIndices.every((v, i) => v === sortedGiven[i]);
+      const rowClass = given.length ? (isCorrect ? 'correct' : 'wrong') : '';
+      const studentLabels = given.map(i => (q.options || [])[i]).filter(v => v !== undefined);
+      const correctLabels = correctIndices.map(i => (q.options || [])[i]).filter(v => v !== undefined);
+      html += `
+        <div class="answer-row ${rowClass}">
+          <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
+            <span>Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
+            <span>Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
+            <span>${isCorrect ? '✓ +' + q.points : (given.length ? '✗ 0' : '— 0')} pts</span>
+          </div>
+        </div>`;
     } else {
-      const isCorrect = studentAns.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase();
+      const correctAnswer = q.correctAnswer || '';
+      const isCorrect = studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
       const rowClass = studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
       html += `
         <div class="answer-row ${rowClass}">
           <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
           <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
             <span>Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
-            <span>Correct: <span class="correct-ans">${escHtml(q.correctAnswer)}</span></span>
+            <span>Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
             <span>${isCorrect ? '✓ +' + q.points : (studentAns ? '✗ 0' : '— 0')} pts</span>
           </div>
         </div>`;
@@ -4595,9 +4606,11 @@ function renderReportTable() {
       </td>
       <td>${pct}%</td>
       <td>${submissionStatus}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn btn-secondary btn-sm" onclick="viewStudentAnswers('${s.id}')">Review</button>
-        <button class="btn btn-warning btn-sm" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake</button>
+      <td data-label="">
+        <div class="table-actions">
+          <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button>
+          <button class="tbl-btn tbl-btn-warning" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake${icRedoStroke}</button>
+        </div>
       </td>
     </tr>`;
   }).join('');

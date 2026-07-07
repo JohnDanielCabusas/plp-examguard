@@ -2210,9 +2210,13 @@ tr:hover td { background: #F8FDF8; }
   background: #fff;
   color: #0f2d1a;
   border: 1.5px solid #e5e7eb !important;
-  padding: 0 20px;
+  /* Right padding reserves room for the absolutely-positioned icon so longer
+     labels (Review, Recover, Restore) don't run into it — left padding alone
+     (the old symmetric 0 20px) only worked for four-letter "Edit". */
+  padding: 0 34px 0 16px;
   height: 34px;
   min-width: 80px;
+  white-space: nowrap;
   border-radius: 8px;
   /* 3D raised look: lifted face + bottom shadow like exam pushable buttons */
   box-shadow: 0 4px 0 #c5c5c5;
@@ -2226,7 +2230,7 @@ tr:hover td { background: #F8FDF8; }
 .btn-action-ghost svg.edit-icon {
   width: 12px; height: 12px;
   position: absolute;
-  right: 0; margin-right: 16px;
+  right: 14px;
   fill: #0f2d1a;
   transition: right 0.3s, margin 0.3s, fill 0.3s;
 }
@@ -2962,6 +2966,13 @@ tr:hover td { background: #F8FDF8; }
 .rank-badge.rank-1 { background: #fef3c7; color: #92400e; }
 .rank-badge.rank-2 { background: #f1f5f9; color: #475569; }
 .rank-badge.rank-3 { background: #fde8d8; color: #9a3412; }
+
+/* Dark mode: the blanket "td *" text-color rule (below) would otherwise wash
+   these out to light-gray-on-light-gray. Higher specificity + !important wins. */
+[data-theme="dark"] .rank-badge { background: var(--surface-2) !important; color: var(--text-muted) !important; }
+[data-theme="dark"] .rank-badge.rank-1 { background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important; }
+[data-theme="dark"] .rank-badge.rank-2 { background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; }
+[data-theme="dark"] .rank-badge.rank-3 { background: rgba(251,146,60,0.18) !important; color: #fb923c !important; }
 
 /* ============================================================
    STUDENT INFO BOX
@@ -6931,6 +6942,9 @@ input[type="password"]::-ms-clear {
   padding: 4px 10px; border-radius: 20px;
   font-size: 13px; font-weight: 700;
 }
+/* Dark mode: the blanket "td *" text-color rule would otherwise wash this
+   out to light-gray-on-light-pink. Higher specificity + !important wins. */
+[data-theme="dark"] .ms-warn-pill { background: rgba(220,38,38,0.18) !important; color: #f87171 !important; }
 
 /* Logs count button */
 .ms-log-btn {
@@ -6939,12 +6953,14 @@ input[type="password"]::-ms-clear {
   border-radius: 8px; transition: background 0.15s;
 }
 .ms-log-btn:hover { background: #f0fdf4; }
+[data-theme="dark"] .ms-log-btn:hover { background: rgba(34,197,94,0.12) !important; }
 .ms-log-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 24px; height: 24px; border-radius: 50%;
   background: #dcfce7; color: #166534;
   font-size: 12px; font-weight: 800; padding: 0 7px;
 }
+[data-theme="dark"] .ms-log-count { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
 
 /* Eye icon — open = viewing, closed = not viewing */
 .ms-eye {
@@ -9095,6 +9111,73 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .tbl-btn-plain { justify-content: center !important; padding: 0 16px !important; }
 .tbl-btn-plain:hover { color: #fff !important; }
 [data-theme="dark"] .tbl-btn-plain:hover { color: #fff !important; }
+
+/* Amber "caution" raised action (e.g. Allow Retake) — same 3D language as
+   tbl-btn-archive, distinct color so it doesn't read as destructive. */
+.tbl-btn-warning {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0 !important;
+  background: #fff;
+  color: #b45309;
+  border: 1.5px solid #e5e7eb !important;
+  padding: 0 36px 0 14px;
+  height: 34px;
+  min-width: 90px;
+  border-radius: 8px;
+  box-shadow: 0 4px 0 #c5c5c5;
+  transform: translateY(-3px);
+  transition: color 0.3s, background 0.3s, border-color 0.3s,
+              box-shadow 600ms cubic-bezier(.3,.7,.4,1),
+              transform 600ms cubic-bezier(.3,.7,.4,1);
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tbl-btn-warning svg.warning-icon {
+  width: 12px; height: 12px;
+  position: absolute;
+  right: 14px;
+  stroke: #b45309;
+  transition: right 0.3s, stroke 0.3s, transform 0.3s;
+}
+.tbl-btn-warning:hover {
+  background: #d97706;
+  color: transparent;
+  border-color: #d97706 !important;
+  box-shadow: 0 6px 0 #92400e;
+  transform: translateY(-5px);
+  transition: color 0.3s, background 0.3s, border-color 0.3s,
+              box-shadow 250ms cubic-bezier(.3,.7,.4,1.5),
+              transform 250ms cubic-bezier(.3,.7,.4,1.5);
+}
+.tbl-btn-warning:hover svg.warning-icon {
+  right: 50%;
+  transform: translateX(50%);
+  stroke: #fff;
+}
+.tbl-btn-warning:active {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #92400e;
+  transition: transform 34ms, box-shadow 34ms;
+}
+[data-theme="dark"] .tbl-btn-warning {
+  background: var(--surface-2) !important;
+  color: #fbbf24 !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 4px 0 #090d12 !important;
+}
+[data-theme="dark"] .tbl-btn-warning:hover {
+  background: #d97706 !important;
+  color: transparent !important;
+  border-color: #d97706 !important;
+  box-shadow: 0 6px 0 #92400e !important;
+}
+[data-theme="dark"] .tbl-btn-warning svg.warning-icon { stroke: #fbbf24 !important; }
+[data-theme="dark"] .tbl-btn-warning:hover svg.warning-icon { stroke: #fff !important; }
 
 .table-actions { justify-content: center; }
 
