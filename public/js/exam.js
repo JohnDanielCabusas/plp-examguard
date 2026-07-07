@@ -699,11 +699,17 @@ const ExamApp = {
       : 'exams';
     this.showCourseTab(preferredTab);
 
-    // Refresh exams from Supabase to catch any deletions/changes missed by realtime —
-    // e.g. a professor updating the audience restriction or marking someone present/absent.
+    // Refresh exams/sessions/classmates from Supabase to catch anything missed by
+    // realtime — e.g. a professor updating the audience restriction, marking someone
+    // present/absent, or allowing a retake (which mutates a session, not an exam).
     const refreshCourseState = () => {
-      if (!window.SupabaseSync?.refreshExams) return;
-      window.SupabaseSync.refreshExams().then(() => {
+      const sync = window.SupabaseSync;
+      if (!sync?.refreshExams) return;
+      Promise.all([
+        sync.refreshExams(),
+        sync.refreshSessions?.(),
+        sync.refreshStudents?.(),
+      ]).then(() => {
         if (this._currentCourseId !== subjId) return; // user navigated away
         // Re-render banner stats
         const sess2 = Auth.getStudentSession();
@@ -720,8 +726,9 @@ const ExamApp = {
           statEls[1].textContent = activeCount;
           statEls[2].textContent = submittedCount;
         }
-        // Re-render the active exam tab
+        // Re-render whichever tab is currently open
         if (this._currentCourseTab === 'exams') this._renderCourseExams();
+        else if (this._currentCourseTab === 'people') this._renderCoursePeople();
       }).catch(() => {});
     };
 
@@ -1007,7 +1014,15 @@ const ExamApp = {
 
     this._renderDashboard(sess);
     if (this._dashInterval) clearInterval(this._dashInterval);
-    this._dashInterval = setInterval(() => this._renderDashboard(Auth.getStudentSession()), 5000);
+    // Re-fetch exams/sessions from Supabase on every tick (not just re-render the
+    // local cache) so a professor flipping an exam to ready/active, or allowing a
+    // retake, still shows up here even if the realtime socket silently dropped.
+    this._dashInterval = setInterval(() => {
+      const sync = window.SupabaseSync;
+      Promise.all([sync?.refreshExams?.(), sync?.refreshSessions?.()])
+        .catch(() => {})
+        .then(() => this._renderDashboard(Auth.getStudentSession()));
+    }, 5000);
 
     const route = this._readPortalRoute();
     if (route.view === 'settings') {
@@ -1461,7 +1476,11 @@ const ExamApp = {
 
   startWaitingPoll() {
     this.stopPoll();
-    this.pollInterval = setInterval(() => {
+    this.pollInterval = setInterval(async () => {
+      // Re-fetch from Supabase, not just the local cache, so the exam still
+      // auto-starts here even if the realtime socket silently dropped.
+      const sync = window.SupabaseSync;
+      await Promise.all([sync?.refreshExams?.(), sync?.refreshSessions?.()]).catch(() => {});
       const latestExam = DB.getExam(this.exam.id);
       if (!latestExam) return;
       this.exam = latestExam;
@@ -1525,10 +1544,11 @@ const ExamApp = {
     // Initialize camera if exam requires it
     if (this.exam && this.exam.requireCamera) {
       this.initCamera();
-    } else {
-      // No camera — verify display brightness with a perceptual check instead
-      this._startBrightnessCheck();
     }
+    // Verify display brightness with a perceptual check at the start of every
+    // exam — the camera's ambient-light monitor only catches a dim screen
+    // after the fact, so this check still runs even when the camera is on.
+    this._startBrightnessCheck();
 
     // Update header
     const subject = this.exam.subjectId ? DB.getSubject(this.exam.subjectId) : null;
@@ -1801,7 +1821,14 @@ const ExamApp = {
 
     // ── Keyboard shortcuts blocked ───────────────────────────────
     const keyHandler = e => {
-      if (e.key === 'PrintScreen') e.preventDefault();
+      if (e.key === 'PrintScreen') {
+        // The OS-level Win+PrintScreen capture (and PrintScreen alone) fires
+        // outside the browser's control — preventDefault() can't stop the
+        // capture itself, but the PrintScreen keydown still reaches us and
+        // is a reliable signal that a screenshot was just taken.
+        e.preventDefault();
+        this.issueWarning('screenshot', 'PrintScreen key pressed — possible screenshot attempt');
+      }
       if (e.key === 'F11') { e.preventDefault(); } // block fullscreen toggle
       if (e.key === 'Escape') {
         // If exam is running and fullscreen is active, prevent escape from exiting
@@ -2170,13 +2197,20 @@ const ExamApp = {
   },
 
   // ── Brightness detection ─────────────────────────────────────
+  // This measures luminance of the CAMERA feed (the student's face/room),
+  // not the display's backlight — so it's really a "can the professor see
+  // you" check, not a "is your screen bright enough" check (that's the
+  // separate perceptual _startBrightnessCheck below). The live prompt asks
+  // the student to improve room lighting; turning up display brightness
+  // only helps because the prompt overlay itself is rendered near-white
+  // while it's showing, turning the screen into an extra light source.
   // Two layers:
   //  1. Absolute level — camera luminance must stay above _MIN_LUMINANCE.
-  //     Below it, a live prompt tells the student to turn their screen
-  //     brightness up; ignoring it for _LOW_LIGHT_WARN_SEC becomes a strike.
+  //     Below it, a live prompt appears; ignoring it for _LOW_LIGHT_WARN_SEC
+  //     becomes a strike.
   //  2. Relative drop — a luminance baseline is recorded at exam start and
-  //     a drop below 75% of it flags the student dimming their screen
-  //     regardless of room lighting conditions.
+  //     a drop below 75% of it flags a darkened room/camera view regardless
+  //     of the absolute level.
   _checkAmbientBrightness(frameData, pixelCount) {
     let lum = 0;
     for (let i = 0; i < frameData.length; i += 4) {
@@ -2193,7 +2227,7 @@ const ExamApp = {
       }
       if (this._lowLightSeconds >= this._LOW_LIGHT_WARN_SEC && !this._lowLightWarningIssued) {
         this._lowLightWarningIssued = true;
-        this.issueWarning('low_brightness', 'Screen brightness too low — professor cannot see the display clearly');
+        this.issueWarning('low_brightness', 'Room too dark — professor cannot clearly see the student on camera');
       }
     } else if (this._lowLightSeconds > 0) {
       this._lowLightSeconds = 0;
@@ -2228,7 +2262,7 @@ const ExamApp = {
       }
       if (this._darkSeconds >= 10 && !this._brightnessWarningIssued) {
         this._brightnessWarningIssued = true;
-        this.issueWarning('low_brightness', 'Screen brightness dropped below 75% — please restore your display brightness');
+        this.issueWarning('low_brightness', 'Camera view dimmed below 75% of its baseline — please restore your lighting');
       }
     } else {
       if (this._darkSeconds > 0) {
@@ -2264,7 +2298,7 @@ const ExamApp = {
 
     if (overlay.style.display === 'none' || !overlay.style.display) {
       overlay.style.display = 'flex';
-      this._recordActivity('low_brightness_prompt', `Display too dark (${currentPct}% luminance) — student prompted to increase brightness`);
+      this._recordActivity('low_brightness_prompt', `Camera view too dark (${currentPct}% luminance) — student prompted to improve lighting`);
     }
   },
 
@@ -2273,12 +2307,13 @@ const ExamApp = {
     if (overlay && overlay.style.display !== 'none') overlay.style.display = 'none';
   },
 
-  // ── Perceptual brightness check (no-camera exams) ────────────
-  // Browsers cannot read the OS screen-brightness setting, so when the
-  // exam has no camera we verify brightness perceptually: one of four
-  // near-black tiles contains a faint symbol that is only visible when
-  // the display is bright enough. Two randomized correct picks prove
-  // the student's brightness is at an acceptable level.
+  // ── Perceptual brightness check (runs at the start of every exam) ────
+  // Browsers cannot read the OS screen-brightness setting, so we verify
+  // brightness perceptually: one of four near-black tiles contains a
+  // faint symbol that is only visible when the display is bright enough.
+  // Two randomized correct picks prove the student's brightness is at an
+  // acceptable level. Runs regardless of whether the camera is required,
+  // since the camera's ambient-light monitor only reacts after the fact.
   _startBrightnessCheck() {
     if (!this.session) return;
     // Don't repeat the check on page refresh / exam resume
@@ -2599,7 +2634,7 @@ const ExamApp = {
       fullscreen_exit: 'You exited fullscreen mode.',
       screenshot:      'Screenshot attempt detected.',
       no_person:       'No person detected in the camera frame.',
-      low_brightness:  'Your display is too dark — turn up your screen brightness so your professor can see you.',
+      low_brightness:  'The camera view is too dark — improve your room lighting so your professor can see you clearly.',
       camera_off:      'Your webcam was turned off or blocked. Camera monitoring is required during the exam.',
     };
 

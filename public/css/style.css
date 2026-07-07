@@ -891,6 +891,25 @@
   border-color: var(--border) !important;
   color: var(--text-muted) !important;
 }
+[data-theme="dark"] .nav-q-btn.answered {
+  background: #1a4d2a !important;
+  border-color: #1a4d2a !important;
+  color: #fff !important;
+}
+[data-theme="dark"] .nav-q-btn.review {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+[data-theme="dark"] .nav-q-btn.current {
+  background: var(--surface) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+}
+[data-theme="dark"] .nav-q-btn.current.answered {
+  background: #1a4d2a !important;
+}
 
 /* Exam-taking question card + answer inputs (examv2) */
 [data-theme="dark"] .question-card,
@@ -3012,6 +3031,8 @@ tr:hover td { background: #F8FDF8; }
 
 .answer-row.correct { border-color: #0f2d1a; background: #ffffff; }
 .answer-row.wrong { border-color: #fca5a5; background: #fff5f5; }
+[data-theme="dark"] .answer-row.correct { border-color: var(--primary); background: var(--surface) !important; }
+[data-theme="dark"] .answer-row.wrong { border-color: #fca5a5; background: rgba(220,38,38,0.12) !important; }
 
 .student-ans { font-weight: 600; color: var(--text); }
 .correct-ans { font-weight: 600; color: var(--success); }
@@ -5046,8 +5067,9 @@ body.exam-page {
   }
 
   .course-banner-inner { padding: 22px 20px; }
-  .course-banner-title { font-size: 24px; }
+  .course-banner-title { font-size: 24px; max-width: calc(100% - 80px); }
   .course-banner-stats { gap: 16px; flex-wrap: wrap; }
+  .course-banner-unenroll-btn { top: 12px; right: 12px; padding: 5px 10px; font-size: 11px; }
   .course-tabs-bar { overflow-x: auto; }
   .question-header { flex-wrap: wrap; }
   .question-points { margin-left: 48px; }
@@ -5787,6 +5809,7 @@ body.exam-page {
   background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.35);
   color: #fff; font-size: 12px; font-weight: 700;
   padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s ease;
 }
 .course-banner-unenroll-btn:hover { background: rgba(0,0,0,0.36); }
@@ -5794,6 +5817,8 @@ body.exam-page {
   font-size: 30px; font-weight: 800; color: #fff;
   margin-bottom: 8px; letter-spacing: -0.5px;
   text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  max-width: calc(100% - 100px);
+  overflow-wrap: break-word;
 }
 .course-banner-desc {
   max-width: 760px;
@@ -6708,6 +6733,15 @@ body.exam-page {
   transform: translateY(-1px);
 }
 
+.enroll-code-tag-on-color {
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+}
+.enroll-code-tag-on-color:hover {
+  background: rgba(255,255,255,0.34);
+  color: #fff;
+}
+
 /* Enrollment notice banner */
 .enroll-banner {
   background: linear-gradient(135deg, #f0f7f2 0%, #e8f4ea 100%);
@@ -6883,7 +6917,7 @@ input[type="password"]::-ms-clear {
 /* ── Stats strip ─────────────────────────────────────────── */
 .monitor-stats-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
@@ -6894,6 +6928,7 @@ input[type="password"]::-ms-clear {
   box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
   display: flex; align-items: center; gap: 14px;
   border-left: 4px solid transparent;
+  min-width: 0;
 }
 .msc-icon {
   width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
@@ -8072,6 +8107,19 @@ tr:hover td { background: #fafbfc !important; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .exam-editor-topbar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+/* Course detail topbar tinted with the course's card color */
+#course-detail-topbar.course-detail-colored-topbar { border-bottom: none; }
+.course-detail-colored-topbar .exam-editor-name { color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.25); }
+.course-detail-colored-topbar #course-detail-enroll:empty { display: none; }
+.course-detail-colored-topbar .exam-editor-back { color: rgba(255,255,255,0.85); }
+.course-detail-colored-topbar .exam-editor-back:hover { background: rgba(255,255,255,0.16); color: #fff; }
+.course-detail-colored-topbar .btn-secondary {
+  background: rgba(255,255,255,0.18) !important;
+  color: #fff !important;
+  border-color: rgba(255,255,255,0.35) !important;
+}
+.course-detail-colored-topbar .btn-secondary:hover { background: rgba(255,255,255,0.3) !important; }
 
 /* Body */
 .exam-editor-body {

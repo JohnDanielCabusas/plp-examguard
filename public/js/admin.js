@@ -14,6 +14,8 @@ const icTrashStroke = `<svg class="archive-icon" viewBox="0 0 24 24" fill="none"
 let currentSection = 'dashboard';
 let monitorInterval = null;
 let monitorExamId = null;
+let reportInterval = null;
+let sectionPollInterval = null;
 let currentQBuilderExamId = null;
 let confirmResolve = null;
 let adminBootstrapped = false;
@@ -295,9 +297,36 @@ function initCustomDropdowns(root) {
   ctx.querySelectorAll('select.form-control, select.form-filter').forEach(makeCustomDropdown);
 }
 
+// Sections whose data (mainly students enrolling/unenrolling) can change from
+// outside this tab and has no dedicated poll of its own yet. Each entry
+// re-fetches from Supabase (in case the realtime socket silently dropped)
+// then re-renders using the section's own render function, preserving any
+// active search/filter state. Settings is intentionally excluded — it holds
+// live-editable form fields that a blind re-render would clobber mid-edit.
+const SECTION_POLL_CONFIG = {
+  dashboard: { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderDashboard() },
+  subjects:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderSubjects() },
+  students:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderStudents(document.getElementById('student-search')?.value || '') },
+};
+
+function startSectionPoll(name) {
+  stopSectionPoll();
+  const cfg = SECTION_POLL_CONFIG[name];
+  if (!cfg) return;
+  sectionPollInterval = setInterval(() => {
+    Promise.resolve(cfg.refresh()).catch(() => {}).then(() => cfg.render());
+  }, 5000);
+}
+
+function stopSectionPoll() {
+  if (sectionPollInterval) { clearInterval(sectionPollInterval); sectionPollInterval = null; }
+}
+
 function showSection(name) {
-  // Stop monitoring if leaving that section
+  // Stop monitoring/reports/section polling if leaving those sections
   if (currentSection === 'monitoring' && name !== 'monitoring') stopMonitoring();
+  if (currentSection === 'reports' && name !== 'reports') stopReports();
+  stopSectionPoll();
 
   document.querySelectorAll('.admin-section').forEach(s => s.classList.add('hidden'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -320,11 +349,13 @@ function showSection(name) {
     case 'students': renderStudents(); break;
     case 'exams': renderExams(); break;
     case 'monitoring': loadMonitoringExams(); startMonitoring(); break;
-    case 'reports': loadReportExams(); break;
+    case 'reports': loadReportExams(); startReports(); break;
     case 'statistics': loadStatsExams(); break;
     case 'settings': loadSettings(); break;
     case 'archive': renderArchive(); break;
   }
+
+  startSectionPoll(name);
 
   // Convert any new selects in the revealed section
   const secEl = document.getElementById('section-' + name);
@@ -734,6 +765,18 @@ function viewEnrolledStudents(subjectId) {
   document.getElementById('course-detail-sub').textContent =
     `${subj.code}${subj.schoolYear ? ' · S.Y. ' + subj.schoolYear : ''} · ${students.length} student${students.length !== 1 ? 's' : ''} · ${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
 
+  const [detailC1, detailC2] = courseCardColor(subj);
+  const topbar = document.getElementById('course-detail-topbar');
+  topbar.classList.add('course-detail-colored-topbar');
+  topbar.style.setProperty('background', `linear-gradient(135deg,${detailC1} 0%,${detailC2} 100%)`, 'important');
+
+  document.getElementById('course-detail-enroll').innerHTML = subj.enrollmentCode
+    ? `<button type="button" class="enroll-code-tag enroll-code-tag-on-color" title="Click to copy enrollment code" onclick="event.stopPropagation();copyEnrollCode('${subj.enrollmentCode}','${escHtml(subj.name)}')">
+        ${subj.enrollmentCode}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>`
+    : '';
+
   const studentsHtml = students.length
     ? `<div class="table-wrapper"><table>
         <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th style="text-align:center;">Actions</th></tr></thead>
@@ -754,7 +797,7 @@ function viewEnrolledStudents(subjectId) {
 
   const examsHtml = exams.length
     ? `<div class="table-wrapper"><table>
-        <thead><tr><th>Title</th><th style="text-align:center;">Code</th><th style="text-align:center;">Questions</th><th style="text-align:center;">Time</th><th style="text-align:center;">Status</th></tr></thead>
+        <thead><tr><th>Title</th><th style="text-align:center;">Code</th><th style="text-align:center;">Questions</th><th style="text-align:center;">Time</th><th style="text-align:center;">Status</th><th style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${exams.map(e => `
             <tr>
@@ -763,6 +806,9 @@ function viewEnrolledStudents(subjectId) {
               <td style="text-align:center;">${e.questions.length}</td>
               <td style="text-align:center;">${e.timeLimit} min</td>
               <td style="text-align:center;">${statusBadge(e.status)}</td>
+              <td style="text-align:center;">
+                <button class="btn btn-secondary btn-sm" onclick="showSection('exams');openExamEditor('${e.id}');">Open</button>
+              </td>
             </tr>`).join('')}
         </tbody>
       </table></div>`
@@ -1970,6 +2016,99 @@ async function hideScoreByExam(examId) {
   renderExams();
 }
 
+// ── Archive bulk selection (Select All / Clear Selected) ──────────────────
+const ARCHIVE_SELECTION = {
+  exams:    { set: new Set(), noun: 'exam',    recoverVerb: 'Recover', getItems: () => DB.getExams().filter(e => e.status === 'archived') },
+  students: { set: new Set(), noun: 'student', recoverVerb: 'Restore', getItems: () => DB.getArchivedStudents() },
+  courses:  { set: new Set(), noun: 'course',  recoverVerb: 'Recover', getItems: () => DB.getSubjects().filter(s => s.archived) },
+};
+
+function archiveRowCheckbox(tab, id, checked) {
+  return `<div class="checkbox-wrapper-30"><div class="checkbox" style="--size:0.78;--stroke:#1a6b35;">
+    <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleArchivedRowSelect('${tab}','${id}',this.checked)" />
+    <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
+  </div></div>`;
+}
+
+function toggleArchivedRowSelect(tab, id, checked) {
+  const cfg = ARCHIVE_SELECTION[tab];
+  if (checked) cfg.set.add(id); else cfg.set.delete(id);
+  updateArchiveSelectionUI(tab);
+}
+
+function updateArchiveSelectionUI(tab) {
+  const cfg = ARCHIVE_SELECTION[tab];
+  const items = cfg.getItems();
+  const validIds = new Set(items.map(i => i.id));
+  [...cfg.set].forEach(id => { if (!validIds.has(id)) cfg.set.delete(id); });
+  const total = items.length;
+  const count = cfg.set.size;
+
+  const selectAllBtn = document.getElementById(`archive-${tab}-select-all-btn`);
+  if (selectAllBtn) {
+    selectAllBtn.textContent = total > 0 && count === total ? 'Deselect All' : 'Select All';
+    selectAllBtn.disabled = total === 0;
+  }
+  const countEl = document.getElementById(`archive-${tab}-selected-count`);
+  if (countEl) countEl.textContent = count > 0 ? `${count} of ${total} selected` : `${total} archived`;
+  const clearBtn = document.getElementById(`archive-${tab}-clear-btn`);
+  if (clearBtn) clearBtn.style.display = count > 0 ? '' : 'none';
+  const recoverBtn = document.getElementById(`archive-${tab}-bulk-recover-btn`);
+  if (recoverBtn) {
+    recoverBtn.style.display = count > 0 ? '' : 'none';
+    const recoverLabel = document.getElementById(`archive-${tab}-bulk-recover-label`);
+    if (recoverLabel) recoverLabel.textContent = count > 0 ? `${cfg.recoverVerb} Selected (${count})` : `${cfg.recoverVerb} Selected`;
+  }
+  const deleteBtn = document.getElementById(`archive-${tab}-bulk-delete-btn`);
+  if (deleteBtn) {
+    deleteBtn.style.display = count > 0 ? '' : 'none';
+    const deleteLabel = document.getElementById(`archive-${tab}-bulk-delete-label`);
+    if (deleteLabel) deleteLabel.textContent = count > 0 ? `Delete Selected (${count})` : 'Delete Selected';
+  }
+}
+
+function selectAllArchived(tab) {
+  const cfg = ARCHIVE_SELECTION[tab];
+  const items = cfg.getItems();
+  if (!items.length) return;
+  if (cfg.set.size === items.length) cfg.set.clear();
+  else { cfg.set.clear(); items.forEach(item => cfg.set.add(item.id)); }
+  renderArchive(tab);
+}
+
+function clearArchivedSelection(tab) {
+  ARCHIVE_SELECTION[tab].set.clear();
+  renderArchive(tab);
+}
+
+async function bulkRecoverArchived(tab) {
+  const cfg = ARCHIVE_SELECTION[tab];
+  const ids = [...cfg.set];
+  if (!ids.length) return;
+  const ok = await showConfirm(`${cfg.recoverVerb} ${ids.length} selected ${cfg.noun}${ids.length !== 1 ? 's' : ''}?`);
+  if (!ok) return;
+  if (tab === 'exams') ids.forEach(id => DB.updateExam(id, { status: 'draft' }));
+  else if (tab === 'courses') ids.forEach(id => DB.updateSubject(id, { archived: false, archivedAt: null }));
+  else ids.forEach(id => DB.restoreStudent(id));
+  cfg.set.clear();
+  renderArchive(tab);
+  showToast(`${ids.length} ${cfg.noun}${ids.length !== 1 ? 's' : ''} ${tab === 'students' ? 'restored' : 'recovered'}.`, 'success');
+}
+
+async function bulkDeleteArchived(tab) {
+  const cfg = ARCHIVE_SELECTION[tab];
+  const ids = [...cfg.set];
+  if (!ids.length) return;
+  const ok = await showConfirm(`Permanently delete ${ids.length} selected ${cfg.noun}${ids.length !== 1 ? 's' : ''}? This cannot be undone.`);
+  if (!ok) return;
+  if (tab === 'exams') ids.forEach(id => DB.deleteExam(id));
+  else if (tab === 'courses') ids.forEach(id => DB.deleteSubject(id));
+  else ids.forEach(id => DB.deleteStudent(id));
+  cfg.set.clear();
+  renderArchive(tab);
+  showToast(`${ids.length} ${cfg.noun}${ids.length !== 1 ? 's' : ''} permanently deleted.`, 'success');
+}
+
 function renderArchive(tab) {
   const activeTab = tab || document.getElementById('archive-active-tab')?.value || 'exams';
   document.getElementById('archive-active-tab').value = activeTab;
@@ -1991,15 +2130,18 @@ function renderArchivedExams() {
 
   const exams = DB.getExams().filter(e => e.status === 'archived');
   const subjects = DB.getSubjects();
+  const selected = ARCHIVE_SELECTION.exams.set;
   const tbody = document.getElementById('archive-tbody');
   if (!exams.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No archived exams.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>No archived exams.</p></div></td></tr>`;
+    updateArchiveSelectionUI('exams');
     return;
   }
   tbody.innerHTML = exams.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
     return `
       <tr>
+        <td style="text-align:center;width:36px;">${archiveRowCheckbox('exams', e.id, selected.has(e.id))}</td>
         <td data-label="Title"><strong>${escHtml(e.title)}</strong><br/><span class="text-muted" style="font-size:11px;">${formatDate(e.createdAt)}</span></td>
         <td data-label="Subject">${subject ? escHtml(formatCourseNameDisplay(subject.name)) : '<span class="text-muted">N/A</span>'}</td>
         <td data-label="Code" style="text-align:center;">${e.code ? `<span class="code-tag">${e.code}</span>` : '—'}</td>
@@ -2015,6 +2157,7 @@ function renderArchivedExams() {
       </tr>
     `;
   }).join('');
+  updateArchiveSelectionUI('exams');
 }
 
 function renderArchivedStudents() {
@@ -2023,13 +2166,16 @@ function renderArchivedStudents() {
   document.getElementById('archive-courses-table').classList.add('hidden');
 
   const students = DB.getArchivedStudents();
+  const selected = ARCHIVE_SELECTION.students.set;
   const tbody = document.getElementById('archive-students-tbody');
   if (!students.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No archived students.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No archived students.</p></div></td></tr>`;
+    updateArchiveSelectionUI('students');
     return;
   }
   tbody.innerHTML = students.map(s => `
     <tr>
+      <td style="text-align:center;width:36px;">${archiveRowCheckbox('students', s.id, selected.has(s.id))}</td>
       <td data-label="Student ID"><span class="code-tag">${escHtml(s.studentId)}</span></td>
       <td data-label="Name"><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
       <td data-label="Year Level" style="text-align:center;">${escHtml(s.yearLevel || '—')}</td>
@@ -2043,6 +2189,7 @@ function renderArchivedStudents() {
       </td>
     </tr>
   `).join('');
+  updateArchiveSelectionUI('students');
 }
 
 async function recoverExam(id) {
@@ -2069,9 +2216,11 @@ function renderArchivedCourses() {
   document.getElementById('archive-courses-table').classList.remove('hidden');
 
   const courses = DB.getSubjects().filter(s => s.archived);
+  const selected = ARCHIVE_SELECTION.courses.set;
   const tbody = document.getElementById('archive-courses-tbody');
   if (!courses.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>No archived courses.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No archived courses.</p></div></td></tr>`;
+    updateArchiveSelectionUI('courses');
     return;
   }
   tbody.innerHTML = courses.map(s => {
@@ -2079,6 +2228,7 @@ function renderArchivedCourses() {
     const sections = (s.sections   || []).join(', ') || 'All';
     return `
       <tr>
+        <td style="text-align:center;width:36px;">${archiveRowCheckbox('courses', s.id, selected.has(s.id))}</td>
         <td><span class="code-tag">${escHtml(s.code)}</span></td>
         <td><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
         <td>${escHtml(years)}</td>
@@ -2092,6 +2242,7 @@ function renderArchivedCourses() {
         </td>
       </tr>`;
   }).join('');
+  updateArchiveSelectionUI('courses');
 }
 
 async function archiveCourse(id) {
@@ -2226,9 +2377,10 @@ async function handleExamEditorUnready() {
 }
 
 function openExamEditor(id) {
-  const subjects = DB.getSubjects();
+  const existingExam = id ? DB.getExam(id) : null;
+  const subjects = DB.getSubjects().filter(s => !s.archived || s.id === existingExam?.subjectId);
   const sel = document.getElementById('exam-subject-field');
-  sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(formatCourseNameDisplay(s.name))}</option>`).join('');
+  sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(formatCourseNameDisplay(s.name))}${s.archived ? ' (Archived)' : ''}</option>`).join('');
   sel.onchange = handleExamEditorSubjectChange;
 
   // Reset form
@@ -2254,7 +2406,7 @@ function openExamEditor(id) {
   currentQBuilderExamId = null;
 
   if (id) {
-    const e = DB.getExam(id);
+    const e = existingExam;
     if (!e) return;
     document.getElementById('exam-id').value = e.id;
     document.getElementById('exam-title-field').value = e.title;
@@ -3514,7 +3666,7 @@ function buildQuestionBlock(q, idx) {
                 <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
               </div>
             </div>
-            <span style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;line-height:1;user-select:none;">Required</span>
+            <span style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;line-height:1;user-select:none;" title="Student must answer this question to submit the exam">Required<span style="color:#dc2626;">*</span></span>
           </div>
           <span class="qe-badge" style="background:${typeColor}">Q${idx+1}</span>
           <div class="qe-type-dd" id="qtd-${idx}">
@@ -3818,7 +3970,7 @@ function viewExamResults(examId) {
               <td>${s.maxScore ? pct + '%' : '—'}</td>
               <td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td>
               <td>${s.autoSubmitted ? '<span class="badge badge-warning">Auto</span>' : '<span class="badge badge-success">Manual</span>'}</td>
-              <td><button class="btn btn-secondary btn-sm" onclick="viewStudentAnswers('${s.id}')">Review</button></td>
+              <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button></div></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -3860,23 +4012,23 @@ function viewStudentAnswers(sessionId) {
         aiScanJobs.push({ badgeId: aiId, questionId: q.id, text: studentAns });
       }
       html += `
-        <div class="answer-row" style="border-color:#e2e8f0;">
+        <div class="answer-row" style="border-color:var(--border);">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
             <strong style="font-size:14px;">Q${idx+1} (Essay): ${escHtml(q.content)}</strong>
           </div>
-          ${q.rubric ? `<div style="font-size:11px;color:#6b7280;background:#f9fafb;border-radius:6px;padding:6px 10px;margin-bottom:8px;"><strong>Rubric:</strong> ${escHtml(q.rubric)}</div>` : ''}
-          <div style="font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;white-space:pre-wrap;line-height:1.6;min-height:60px;margin-bottom:10px;" id="essay-text-${session.id}-${q.id}">${escHtml(studentAns || '(no answer)')}</div>
+          ${q.rubric ? `<div style="font-size:11px;color:var(--text-muted);background:var(--surface-2);border-radius:6px;padding:6px 10px;margin-bottom:8px;"><strong>Rubric:</strong> ${escHtml(q.rubric)}</div>` : ''}
+          <div style="font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px;white-space:pre-wrap;line-height:1.6;min-height:60px;margin-bottom:10px;" id="essay-text-${session.id}-${q.id}">${escHtml(studentAns || '(no answer)')}</div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-            <span style="font-size:12px;color:#9ca3af;">${wordCount} words &nbsp;·&nbsp; max ${q.points} pts</span>
+            <span style="font-size:12px;color:var(--text-muted);">${wordCount} words &nbsp;·&nbsp; max ${q.points} pts</span>
             ${requireAI && studentAns ? `
               <div style="display:flex;align-items:center;gap:8px;">
-                <div id="${aiId}-bar-wrap" style="width:120px;height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
-                  <div id="${aiId}-bar" style="height:100%;width:${cachedAIDetection ? cachedAIDetection.score : 0}%;border-radius:99px;background:${cachedAIDetection ? getAIDetectionBarColor(cachedAIDetection.label) : '#9ca3af'};transition:width 0.4s;"></div>
+                <div id="${aiId}-bar-wrap" style="width:120px;height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
+                  <div id="${aiId}-bar" style="height:100%;width:${cachedAIDetection ? cachedAIDetection.score : 0}%;border-radius:99px;background:${cachedAIDetection ? getAIDetectionBarColor(cachedAIDetection.label) : 'var(--text-muted)'};transition:width 0.4s;"></div>
                 </div>
                 <span id="${aiId}" class="ai-badge ${cachedAIDetection ? `ai-badge-${cachedAIDetection.label}` : 'ai-badge-scanning'}" style="cursor:pointer;" title="${escHtml(cachedAIDetection?.reason || 'Auto-scanning essay answer')}" onclick="detectAIContentDetailed(document.getElementById('essay-text-${session.id}-${q.id}').textContent,'${aiId}','${session.id}','${q.id}', true)">
                   ${cachedAIDetection ? `AI: <strong>${cachedAIDetection.score}%</strong> <span style="font-weight:400;">(${cachedAIDetection.label})</span>` : 'Scanning...'}
                 </span>
-              </div>` : requireAI ? '<span style="font-size:12px;color:#9ca3af;">No answer to scan</span>' : ''}
+              </div>` : requireAI ? '<span style="font-size:12px;color:var(--text-muted);">No answer to scan</span>' : ''}
           </div>
         </div>`;
     } else if (q.type === 'checkbox') {
@@ -4459,9 +4611,9 @@ function renderExamStats() {
     const cnt = scores.filter(s => s>=r.mn && s<=r.mx).length;
     const h = Math.max(4, Math.round(cnt/maxCount*80));
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
-      <div style="font-size:11px;font-weight:700;color:#0f2d1a;">${cnt||''}</div>
-      <div style="width:100%;height:${h}px;background:#0f2d1a;opacity:0.8;border-radius:4px 4px 0 0;min-height:4px;"></div>
-      <div style="font-size:9px;color:#9ca3af;">${r.l}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--primary);">${cnt||''}</div>
+      <div style="width:100%;height:${h}px;background:var(--primary);opacity:0.8;border-radius:4px 4px 0 0;min-height:4px;"></div>
+      <div style="font-size:9px;color:var(--text-muted);">${r.l}</div>
     </div>`;
   }).join('');
 
@@ -4484,30 +4636,30 @@ function renderExamStats() {
     <!-- Overview Strip -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:24px;">
       ${[
-        {label:'Average',value:avg+'%',color:'#0f2d1a'},
+        {label:'Average',value:avg+'%',color:'var(--primary)'},
         {label:'Median',value:median+'%',color:'#1d4ed8'},
         {label:'Highest',value:max+'%',color:'#15803d'},
         {label:'Lowest',value:min+'%',color:'#dc2626'},
         {label:'Pass Rate (≥75%)',value:Math.round(passing/sessions.length*100)+'%',color:'#0d9488'},
         {label:'Auto-Submitted',value:autoSub,color:'#d97706'},
         {label:'Flagged (≥2 warn)',value:flagged,color:'#dc2626'},
-        {label:'Total Submitted',value:sessions.length,color:'#374151'},
-      ].map(c=>`<div style="background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+        {label:'Total Submitted',value:sessions.length,color:'var(--text)'},
+      ].map(c=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
         <div style="font-size:28px;font-weight:900;color:${c.color};font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-1px;">${c.value}</div>
-        <div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.7px;margin-top:4px;">${c.label}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.7px;margin-top:4px;">${c.label}</div>
       </div>`).join('')}
     </div>
 
     <!-- Two column: Distribution + Question Analysis -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
       <!-- Score Distribution -->
-      <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
         <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Score Distribution</div>
         <div style="display:flex;align-items:flex-end;gap:6px;height:100px;">${distBars}</div>
       </div>
 
       <!-- Question Difficulty -->
-      <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:220px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:220px;">
         <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Question Difficulty</div>
         ${qStats.length ? qStats.map(({qi,q,correct,pct})=>`
           <div style="margin-bottom:10px;">
@@ -4515,15 +4667,15 @@ function renderExamStats() {
               <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">Q${qi+1}: ${escHtml(q.content.substring(0,40))}${q.content.length>40?'…':''}</span>
               <span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span>
             </div>
-            <div style="height:5px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
+            <div style="height:5px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
               <div style="width:${pct}%;height:100%;background:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};border-radius:99px;"></div>
             </div>
-          </div>`).join('') : '<div style="color:#9ca3af;font-size:13px;">No auto-graded questions.</div>'}
+          </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;">No auto-graded questions.</div>'}
       </div>
     </div>
 
     <!-- Leaderboard -->
-    <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
       <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Student Results</div>
       <div class="table-wrapper">
         <table>
@@ -4538,7 +4690,7 @@ function renderExamStats() {
                 <td><span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span></td>
                 <td>${s.warnings>0?`<span class="badge badge-danger">${s.warnings}</span>`:'0'}</td>
                 <td>${s.autoSubmitted?'<span class="badge badge-warning">Auto</span>':'<span class="badge badge-success">Manual</span>'}</td>
-                <td><button class="btn btn-secondary btn-sm" onclick="viewStudentAnswers('${s.id}')">Review</button></td>
+                <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button></div></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -4553,9 +4705,24 @@ function renderExamStats() {
 function loadReportExams() {
   const exams = DB.getExams().filter(e => e.status === 'closed' || e.status === 'archived' || e.status === 'active');
   const sel = document.getElementById('report-exam-select');
+  const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +
-    exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
+    exams.map(e => `<option value="${e.id}" ${e.id === cur ? 'selected' : ''}>${escHtml(e.title)} [${e.status}]</option>`).join('');
+  if (cur) sel.value = cur;
   renderReportTable();
+}
+
+function startReports() {
+  stopReports();
+  reportInterval = setInterval(() => {
+    loadReportExams();
+  }, 3000);
+  document.getElementById('report-live-badge')?.classList.remove('hidden');
+}
+
+function stopReports() {
+  if (reportInterval) { clearInterval(reportInterval); reportInterval = null; }
+  document.getElementById('report-live-badge')?.classList.add('hidden');
 }
 
 function renderReportTable() {

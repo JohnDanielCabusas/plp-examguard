@@ -659,6 +659,26 @@ export default function SuperAdminPage() {
     writeSuperAdminSectionToUrl(section);
   }, [section]);
 
+  // Keep the professor list/stats live while viewing the Dashboard — re-fetches
+  // from Supabase (in case the realtime socket silently dropped) rather than
+  // just re-rendering a stale cache. Scoped to "dashboard" only: loadData()
+  // also repopulates the Settings tab's editable admin-profile fields, and
+  // polling those while the sysadmin is mid-edit would overwrite their typing.
+  useEffect(() => {
+    if (!ready || section !== "dashboard") return;
+    const poll = () => {
+      const sync = window.SupabaseSync;
+      Promise.all([
+        sync?.refreshProfessors?.(),
+        sync?.refreshStudents?.(),
+        sync?.refreshExams?.(),
+        sync?.refreshSubjects?.(),
+      ]).catch(() => {}).then(() => loadData());
+    };
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
+  }, [ready, section, loadData]);
+
   const doLogout = async () => {
     setConfirm({
       title: "Sign Out",
@@ -1109,7 +1129,16 @@ export default function SuperAdminPage() {
               <div className="sa-topbar-main">
                 <button
                   className="hamburger-btn"
-                  onClick={() => setSidebarOpen((v) => !v)}
+                  onClick={() => {
+                    if (window.innerWidth <= 768) {
+                      setSidebarOpen((v) => !v);
+                      return;
+                    }
+                    const sidebar = document.getElementById("sidebar");
+                    const main = document.querySelector(".main-content");
+                    sidebar?.classList.toggle("collapsed");
+                    main?.classList.toggle("sidebar-collapsed");
+                  }}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1558,7 +1587,10 @@ export default function SuperAdminPage() {
                                     setConfirm({
                                       message:
                                         "Remove the current school logo? This action cannot be undone.",
-                                      onConfirm: removeSystemLogo,
+                                      onConfirm: async () => {
+                                        await removeSystemLogo();
+                                        setConfirm(null);
+                                      },
                                     });
                                   }
                                 }}

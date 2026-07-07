@@ -282,6 +282,7 @@ const SupabaseSync = {
     if (this._channel) return;
     const { admin, sysadmin } = this._getSessions();
     const ownerFilter = admin?.id && !sysadmin ? `owner_admin_id=eq.${admin.id}` : null;
+    const professorFilter = admin?.id && !sysadmin ? `id=eq.${admin.id}` : null;
 
     const applyChange = (table, lsKey, normalizer) => (payload) => {
       const { eventType, new: row, old } = payload;
@@ -333,6 +334,10 @@ const SupabaseSync = {
         applyChange('exams', 'acs_exams', r => this._dbToJsExam(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('sessions', 'acs_sessions', r => this._dbToJsSession(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students', ...(ownerFilter ? { filter: ownerFilter } : {}) },
+        applyChange('students', 'acs_students', r => this._dbToJsStudent(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'professors', ...(professorFilter ? { filter: professorFilter } : {}) },
+        applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('logs', 'acs_logs', r => this._dbToJsLog(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'professor_activity_log' },
@@ -362,6 +367,53 @@ const SupabaseSync = {
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
+  },
+
+  // Sessions carry submitted/answers/warnings state that professors mutate
+  // (e.g. "Allow Retake") and students mutate while taking an exam — both
+  // sides need this refetched, not just re-rendered from a stale cache, in
+  // case the realtime socket silently dropped.
+  async refreshSessions() {
+    if (!this._client) return;
+    const { admin, sysadmin, student } = this._getSessions();
+    let query = this._client.from('sessions').select('*');
+    if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+    else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
+    const { data: sessions } = await query;
+    if (sessions) {
+      this._writeLocal('acs_sessions', sessions.map(r => this._dbToJsSession(r)));
+    }
+  },
+
+  async refreshStudents() {
+    if (!this._client) return;
+    const { admin, sysadmin, student } = this._getSessions();
+    const cols = 'id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at';
+    if (admin?.id && !sysadmin) {
+      const { data } = await this._client.from('students').select(cols).eq('owner_admin_id', admin.id);
+      if (data) this._writeLocal('acs_students', data.map(r => this._dbToJsStudent(r)));
+      return;
+    }
+    if (student?.studentId && !sysadmin) {
+      const { data: ownRow } = await this._client.from('students').select(cols).eq('student_id', student.studentId).maybeSingle();
+      const enrolledSubjectIds = Array.isArray(ownRow?.enrolled_subjects) ? ownRow.enrolled_subjects : [];
+      const { data: classmates } = enrolledSubjectIds.length
+        ? await this._client.from('students').select(cols).overlaps('enrolled_subjects', enrolledSubjectIds)
+        : { data: ownRow ? [ownRow] : [] };
+      this._writeLocal('acs_students', (classmates || []).map(r => this._dbToJsStudent(r)));
+      return;
+    }
+    const { data } = await this._client.from('students').select(cols);
+    if (data) this._writeLocal('acs_students', data.map(r => this._dbToJsStudent(r)));
+  },
+
+  async refreshProfessors() {
+    if (!this._client) return;
+    const { admin, sysadmin } = this._getSessions();
+    let query = this._client.from('professors').select('id, username, name, email, department, created_at');
+    if (admin?.id && !sysadmin) query = query.eq('id', admin.id);
+    const { data } = await query;
+    if (data) this._writeLocal('acs_professors', data.map(r => this._dbToJsAdmin(r)));
   },
 
   async refreshProfessorActivityLog() {

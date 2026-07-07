@@ -599,25 +599,30 @@ export default function ExamPage() {
         <div style={{ fontSize: '13px', opacity: 0.7 }}>Stay visible in front of your camera to continue the exam.</div>
       </div>
 
-      {/* Low Brightness Warning Overlay */}
-      <div id="brightness-warning-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.96)', zIndex: 8900, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff', padding: '24px' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px' }}>
+      {/* Low Brightness Warning Overlay — background is deliberately near-white
+          (not dark) so turning the physical screen brightness up actually
+          floods the room with light the webcam can pick up. A dark overlay
+          here would make the instruction below impossible to follow: a
+          near-black screen emits almost no light no matter how high the
+          backlight is turned up. */}
+      <div id="brightness-warning-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: '#fffdf5', zIndex: 8900, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#1a1a1a', padding: '24px' }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px' }}>
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
           <path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
         </svg>
-        <div style={{ fontSize: '28px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Screen Too Dark</div>
+        <div style={{ fontSize: '28px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Room Too Dark</div>
         <div style={{ fontSize: '16px', opacity: 0.85, marginBottom: '24px', maxWidth: '440px', lineHeight: 1.5 }}>
-          Please turn up your screen brightness.<br />Your professor cannot clearly see your display and camera feed.
+          Your professor cannot clearly see you on camera. Turn on a room light if you can — this screen is now lit up brightly on purpose to help, so turning your display brightness all the way up also helps.
         </div>
         <div style={{ width: 'min(340px, 80vw)', marginBottom: '10px' }}>
-          <div style={{ position: 'relative', height: '14px', borderRadius: '99px', background: 'rgba(255,255,255,0.15)', overflow: 'visible' }}>
-            <div id="brightness-meter-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', borderRadius: '99px', background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.4s ease' }} />
-            <div id="brightness-meter-marker" style={{ position: 'absolute', top: '-4px', bottom: '-4px', left: '20%', width: '3px', background: '#4ade80', borderRadius: '2px' }} />
+          <div style={{ position: 'relative', height: '14px', borderRadius: '99px', background: 'rgba(0,0,0,0.1)', overflow: 'visible' }}>
+            <div id="brightness-meter-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '0%', borderRadius: '99px', background: 'linear-gradient(90deg, #f59e0b, #d97706)', transition: 'width 0.4s ease' }} />
+            <div id="brightness-meter-marker" style={{ position: 'absolute', top: '-4px', bottom: '-4px', left: '20%', width: '3px', background: '#15803d', borderRadius: '2px' }} />
           </div>
         </div>
-        <div id="brightness-level-text" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: '#fbbf24' }}>Current level: 0%</div>
-        <div id="brightness-warn-countdown" style={{ fontSize: '13px', opacity: 0.7 }}>Increase your brightness to continue without a warning.</div>
+        <div id="brightness-level-text" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', color: '#b45309' }}>Current level: 0%</div>
+        <div id="brightness-warn-countdown" style={{ fontSize: '13px', opacity: 0.7 }}>Increase the light reaching your camera to continue without a warning.</div>
       </div>
 
       {/* Brightness Check Overlay (no-camera exams) — pure black background is required for the perceptual test */}

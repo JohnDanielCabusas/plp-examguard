@@ -435,13 +435,14 @@ export default function AdminPage() {
 
               {/* VIEW 2: Inline course detail page */}
               <div id="course-detail-view" className="hidden">
-                <div className="exam-editor-topbar">
+                <div id="course-detail-topbar" className="exam-editor-topbar">
                   <button className="exam-editor-back" onClick={() => window.closeCourseDetail()}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
                     Courses
                   </button>
                   <div className="exam-editor-topbar-center">
                     <span id="course-detail-name" className="exam-editor-name">Course</span>
+                    <span id="course-detail-enroll"></span>
                   </div>
                   <div className="exam-editor-topbar-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => window.editCurrentCourseDetail()}>Edit Course</button>
@@ -764,9 +765,14 @@ export default function AdminPage() {
             {/* REPORTS */}
             <section id="section-reports" className="admin-section hidden">
               <div className="section-header">
-                <div>
-                  <div className="section-title">Reports</div>
-                  <div className="section-subtitle">Exam results and analytics</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div>
+                    <div className="section-title">Reports</div>
+                    <div className="section-subtitle">Exam results and analytics</div>
+                  </div>
+                  <span id="report-live-badge" className="hidden monitor-live-chip">
+                    <span className="live-dot" />LIVE
+                  </span>
                 </div>
               </div>
               <div className="toolbar reports-toolbar" style={{ marginBottom: '20px' }}>
@@ -902,23 +908,68 @@ export default function AdminPage() {
                 <button className="tab-btn" id="archive-tab-courses" onClick={() => window.renderArchive('courses')}>Courses</button>
               </div>
               <div id="archive-exams-table" className="card">
+                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                  <span className="card-title" id="archive-exams-selected-count">0 archived</span>
+                  <span style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button type="button" id="archive-exams-select-all-btn" className="btn btn-secondary btn-sm" onClick={() => window.selectAllArchived('exams')}>Select All</button>
+                    <button type="button" id="archive-exams-clear-btn" className="btn btn-secondary btn-sm" style={{ display: 'none' }} onClick={() => window.clearArchivedSelection('exams')}>Clear Selected</button>
+                    <button type="button" id="archive-exams-bulk-recover-btn" className="btn-action btn-action-ghost" style={{ display: 'none' }} onClick={() => window.bulkRecoverArchived('exams')}>
+                      <span id="archive-exams-bulk-recover-label">Recover Selected</span>
+                      <svg className="edit-icon" viewBox="0 0 512 512"><path d="M125.7 160H176c17.7 0 32 14.3 32 32s-14.3 32-32 32H48c-17.7 0-32-14.3-32-32V64c0-17.7 14.3-32 32-32s32 14.3 32 32v51.2l17.6-17.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"/></svg>
+                    </button>
+                    <button type="button" id="archive-exams-bulk-delete-btn" className="tbl-btn tbl-btn-archive" style={{ display: 'none' }} onClick={() => window.bulkDeleteArchived('exams')}>
+                      <span id="archive-exams-bulk-delete-label">Delete Selected</span>
+                      <svg className="archive-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
+                  </span>
+                </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-tbody" /></table>
+                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-tbody" /></table>
                   </div>
                 </div>
               </div>
               <div id="archive-courses-table" className="card hidden">
+                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                  <span className="card-title" id="archive-courses-selected-count">0 archived</span>
+                  <span style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button type="button" id="archive-courses-select-all-btn" className="btn btn-secondary btn-sm" onClick={() => window.selectAllArchived('courses')}>Select All</button>
+                    <button type="button" id="archive-courses-clear-btn" className="btn btn-secondary btn-sm" style={{ display: 'none' }} onClick={() => window.clearArchivedSelection('courses')}>Clear Selected</button>
+                    <button type="button" id="archive-courses-bulk-recover-btn" className="btn-action btn-action-ghost" style={{ display: 'none' }} onClick={() => window.bulkRecoverArchived('courses')}>
+                      <span id="archive-courses-bulk-recover-label">Recover Selected</span>
+                      <svg className="edit-icon" viewBox="0 0 512 512"><path d="M125.7 160H176c17.7 0 32 14.3 32 32s-14.3 32-32 32H48c-17.7 0-32-14.3-32-32V64c0-17.7 14.3-32 32-32s32 14.3 32 32v51.2l17.6-17.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"/></svg>
+                    </button>
+                    <button type="button" id="archive-courses-bulk-delete-btn" className="tbl-btn tbl-btn-archive" style={{ display: 'none' }} onClick={() => window.bulkDeleteArchived('courses')}>
+                      <span id="archive-courses-bulk-delete-label">Delete Selected</span>
+                      <svg className="archive-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
+                  </span>
+                </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th>Code</th><th>Course Name</th><th>Year Level</th><th>Sections</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
+                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Code</th><th>Course Name</th><th>Year Level</th><th>Sections</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
                   </div>
                 </div>
               </div>
               <div id="archive-students-table" className="card hidden">
+                <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                  <span className="card-title" id="archive-students-selected-count">0 archived</span>
+                  <span style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button type="button" id="archive-students-select-all-btn" className="btn btn-secondary btn-sm" onClick={() => window.selectAllArchived('students')}>Select All</button>
+                    <button type="button" id="archive-students-clear-btn" className="btn btn-secondary btn-sm" style={{ display: 'none' }} onClick={() => window.clearArchivedSelection('students')}>Clear Selected</button>
+                    <button type="button" id="archive-students-bulk-recover-btn" className="btn-action btn-action-ghost" style={{ display: 'none' }} onClick={() => window.bulkRecoverArchived('students')}>
+                      <span id="archive-students-bulk-recover-label">Restore Selected</span>
+                      <svg className="edit-icon" viewBox="0 0 512 512"><path d="M125.7 160H176c17.7 0 32 14.3 32 32s-14.3 32-32 32H48c-17.7 0-32-14.3-32-32V64c0-17.7 14.3-32 32-32s32 14.3 32 32v51.2l17.6-17.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"/></svg>
+                    </button>
+                    <button type="button" id="archive-students-bulk-delete-btn" className="tbl-btn tbl-btn-archive" style={{ display: 'none' }} onClick={() => window.bulkDeleteArchived('students')}>
+                      <span id="archive-students-bulk-delete-label">Delete Selected</span>
+                      <svg className="archive-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
+                  </span>
+                </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-students-tbody" /></table>
+                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-students-tbody" /></table>
                   </div>
                 </div>
               </div>
