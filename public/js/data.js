@@ -126,6 +126,89 @@ const DB = {
     return fallbackOwnerId || null;
   },
 
+  _resolveStudentOwner(student, fallbackOwnerId = this._getDefaultOwnerAdminId()) {
+    const subjects = this._read(this.KEYS.subjects, []);
+    return this._deriveStudentOwner(student, subjects, fallbackOwnerId) || '';
+  },
+
+  _replaceStudentRecord(student) {
+    if (!student?.id) return null;
+    const students = this.getAllStudentsRaw().map(entry => entry.id === student.id ? student : entry);
+    this._write(this.KEYS.students, students);
+    return students.find(entry => entry.id === student.id) || null;
+  },
+
+  _syncStudentRecord(student) {
+    if (!student) return;
+    SupabaseSync.syncDoc('students', student);
+    this._saveStudentToSupabase(student).catch(error => {
+      console.warn('[Supabase] Unable to sync updated student record:', error.message || error);
+    });
+  },
+
+  _detachStudentFromProfessor(id, ownerAdminId) {
+    const student = this.getStudentById(id);
+    if (!student || !ownerAdminId) return null;
+
+    const ownedSubjectIds = new Set(
+      this._read(this.KEYS.subjects, [])
+        .filter(subject => subject?.ownerAdminId === ownerAdminId)
+        .map(subject => subject.id)
+    );
+
+    const remainingEnrolledSubjects = (student.enrolledSubjects || []).filter(subjectId => !ownedSubjectIds.has(subjectId));
+    const nextStudent = this._sanitizeStudentRecord({
+      ...student,
+      enrolledSubjects: remainingEnrolledSubjects,
+      ownerAdminId: this._resolveStudentOwner({ ...student, ownerAdminId: '', enrolledSubjects: remainingEnrolledSubjects }, null),
+      archived: false,
+      archivedAt: null,
+    });
+
+    const persistedStudent = this._replaceStudentRecord(nextStudent);
+    if (persistedStudent) this._syncStudentRecord(persistedStudent);
+
+    const exams = this._read(this.KEYS.exams, []);
+    let examsChanged = false;
+    const nextExams = exams.map(exam => {
+      if (exam?.ownerAdminId !== ownerAdminId) return exam;
+      const nextExcludedStudentIds = (exam.excludedStudentIds || []).filter(studentId => studentId !== id);
+      if (nextExcludedStudentIds.length === (exam.excludedStudentIds || []).length) return exam;
+      examsChanged = true;
+      const updatedExam = { ...exam, excludedStudentIds: nextExcludedStudentIds };
+      SupabaseSync.syncDoc('exams', updatedExam);
+      return updatedExam;
+    });
+    if (examsChanged) this._write(this.KEYS.exams, nextExams);
+
+    const removedSessionIds = new Set();
+    const remainingSessions = this._read(this.KEYS.sessions, []).filter(session => {
+      const matchesStudent = session?.studentId === student.studentId;
+      const matchesOwner = session?.ownerAdminId === ownerAdminId;
+      if (matchesStudent && matchesOwner) {
+        if (session?.id) removedSessionIds.add(session.id);
+        SupabaseSync.deleteDoc('sessions', session.id);
+        return false;
+      }
+      return true;
+    });
+    this._write(this.KEYS.sessions, remainingSessions);
+
+    const remainingLogs = this._read(this.KEYS.logs, []).filter(log => {
+      const matchesStudent = log?.studentId === student.studentId;
+      const matchesSession = log?.sessionId && removedSessionIds.has(log.sessionId);
+      const matchesOwner = log?.ownerAdminId === ownerAdminId;
+      if ((matchesStudent || matchesSession) && matchesOwner) {
+        SupabaseSync.deleteDoc('logs', log.id);
+        return false;
+      }
+      return true;
+    });
+    this._write(this.KEYS.logs, remainingLogs);
+
+    return persistedStudent;
+  },
+
   _migrateOwnerScope() {
     const currentAdminId = this._getCurrentAdminId();
     if (!currentAdminId) return;
@@ -684,12 +767,13 @@ const DB = {
   },
   addStudent(data) {
     const students = [...this.getAllStudentsRaw()];
-    const newStudent = this._sanitizeStudentRecord(this._withOwner({
+    const newStudent = this._sanitizeStudentRecord({
       id: this.generateId(),
       ...data,
       studentId: this._normalizeStudentIdValue(data.studentId),
       email: this._normalizeStudentEmailValue(data.email),
-    }));
+    });
+    newStudent.ownerAdminId = this._resolveStudentOwner(newStudent, newStudent.ownerAdminId || this._getDefaultOwnerAdminId());
     this._assertUniqueStudent({ studentId: newStudent.studentId, email: newStudent.email });
     students.push(newStudent);
     this._write(this.KEYS.students, students);
@@ -717,15 +801,17 @@ const DB = {
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'studentId')) normalizedUpdates.studentId = nextStudentId;
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'email')) normalizedUpdates.email = nextEmail;
 
-    const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, ...normalizedUpdates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
+    const students = this.getAllStudentsRaw().map(s => {
+      if (s.id !== id) return s;
+      const mergedStudent = { ...s, ...normalizedUpdates };
+      return {
+        ...mergedStudent,
+        ownerAdminId: this._resolveStudentOwner(mergedStudent, mergedStudent.ownerAdminId || this._getDefaultOwnerAdminId()),
+      };
+    });
     this._write(this.KEYS.students, students);
     const updated = students.find(s => s.id === id);
-    if (updated) SupabaseSync.syncDoc('students', updated);
-    if (updated) {
-      this._saveStudentToSupabase(updated).catch(error => {
-        console.warn('[Supabase] Unable to sync updated student record:', error.message || error);
-      });
-    }
+    if (updated) this._syncStudentRecord(updated);
   },
   syncStudentReferences(previousStudentId, nextStudent) {
     if (!previousStudentId || !nextStudent) return;
@@ -771,6 +857,15 @@ const DB = {
   },
   deleteStudent(id) {
     const student = this.getStudentById(id);
+    if (!student) return;
+
+    const ownerAdminId = this._getCurrentAdminId();
+    if (ownerAdminId) {
+      this._detachStudentFromProfessor(id, ownerAdminId);
+      this._logProfessorActivity('student_deleted', 'student', student?.name || student?.studentId);
+      return;
+    }
+
     const students = this.getAllStudentsRaw().filter(s => s.id !== id);
     this._write(this.KEYS.students, students);
     SupabaseSync.deleteDoc('students', id);
