@@ -29,6 +29,13 @@ const SupabaseSync = {
     window.DB?._write?.(key, value);
   },
 
+  // Lets the UI react to a realtime push the instant it lands, instead of
+  // waiting for the next section poll — see admin.js's 'acsDataChanged' listener.
+  _notifyDataChanged(table) {
+    if (typeof document === 'undefined') return;
+    document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
+  },
+
   _getSessions() {
     return {
       admin: window.Auth?.getAdminSession?.() || null,
@@ -93,6 +100,25 @@ const SupabaseSync = {
   },
 
   // ── Pull all tables into the in-memory cache ───────────────
+  // Students are visible to a professor either because the professor's own
+  // record created them (owner_admin_id) or — the common case for self-service
+  // enrollment — because they joined one of this professor's courses via an
+  // enrollment code, which only appends to their enrolled_subjects array and
+  // never reassigns owner_admin_id (a student can be enrolled with multiple
+  // professors at once, so a single-owner column can't express "mine"). Filter
+  // on both so a student who joined a *different* professor's course first
+  // still shows up here once they enroll in this professor's course too.
+  _studentsQueryForAdmin(c, adminId, subjectIds) {
+    const cols = 'id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at';
+    const query = c.from('students').select(cols);
+    if (!subjectIds || !subjectIds.length) return query.eq('owner_admin_id', adminId);
+    // enrolled_subjects is jsonb, so PostgREST's array-overlap ("ov") operator doesn't
+    // apply to it (jsonb has no && operator) — use one jsonb-containment ("cs") clause
+    // per subject id instead, OR'd together with the owner_admin_id check.
+    const subjectClauses = subjectIds.map(id => `enrolled_subjects.cs.["${id}"]`);
+    return query.or([`owner_admin_id.eq.${adminId}`, ...subjectClauses].join(','));
+  },
+
   async _pullFromSupabase() {
     const c = this._client;
     const { admin, sysadmin, student } = this._getSessions();
@@ -101,18 +127,17 @@ const SupabaseSync = {
       const [
         { data: settings },
         { data: admins },
-        { data: students },
         { data: subjects },
         { data: exams },
         { data: sessions },
       ] = await Promise.all([
         c.from('settings').select('*').eq('id', 'main').maybeSingle(),
         c.from('professors').select('id, username, name, email, department, created_at').eq('id', admin.id),
-        c.from('students').select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at').eq('owner_admin_id', admin.id),
         c.from('subjects').select('*').eq('owner_admin_id', admin.id).order('created_at'),
         c.from('exams').select('*').eq('owner_admin_id', admin.id).order('created_at'),
         c.from('sessions').select('*').eq('owner_admin_id', admin.id).order('created_at'),
       ]);
+      const { data: students } = await this._studentsQueryForAdmin(c, admin.id, (subjects || []).map(s => s.id));
 
       if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
       this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
@@ -304,6 +329,35 @@ const SupabaseSync = {
         }
         return;
       }
+      // Students table has no per-professor filter (see subscription below — a
+      // student can be enrolled with multiple professors, which the "eq owner_admin_id"
+      // filter Realtime supports can't express), so every professor's browser receives
+      // every change to this table. Enforce visibility here, client-side, before any
+      // row touches local cache/UI: this professor may see the row either because they
+      // own it directly or because it's enrolled in one of their own courses.
+      if (table === 'students' && admin?.id && !sysadmin) {
+        if (eventType === 'DELETE') {
+          this._writeLocal(lsKey, current.filter(r => r.id !== old.id));
+          this._notifyDataChanged(table);
+          return;
+        }
+        const mySubjectIds = new Set((window.DB?.getSubjects?.() || []).map(s => s.id));
+        const enrolledSubjectIds = Array.isArray(row?.enrolled_subjects) ? row.enrolled_subjects : [];
+        const visible = row?.owner_admin_id === admin.id || enrolledSubjectIds.some(id => mySubjectIds.has(id));
+        if (!visible) {
+          // Not (or no longer) visible to this professor — drop it if it was cached.
+          const idx = current.findIndex(r => r.id === row?.id);
+          if (idx >= 0) this._writeLocal(lsKey, current.filter(r => r.id !== row.id));
+          this._notifyDataChanged(table);
+          return;
+        }
+        const normalized = normalizer(row);
+        const idx = current.findIndex(r => r.id === normalized.id);
+        if (idx >= 0) { current[idx] = normalized; this._writeLocal(lsKey, current); }
+        else { this._writeLocal(lsKey, [...current, normalized]); }
+        this._notifyDataChanged(table);
+        return;
+      }
       if (eventType === 'DELETE') {
         this._writeLocal(lsKey, current.filter(r => r.id !== old.id));
       } else {
@@ -323,6 +377,7 @@ const SupabaseSync = {
         if (idx >= 0) { current[idx] = normalized; this._writeLocal(lsKey, current); }
         else { this._writeLocal(lsKey, [...current, normalized]); }
       }
+      this._notifyDataChanged(table);
     };
 
     this._channel = c.channel('acs-realtime')
@@ -334,7 +389,10 @@ const SupabaseSync = {
         applyChange('exams', 'acs_exams', r => this._dbToJsExam(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', ...(ownerFilter ? { filter: ownerFilter } : {}) },
         applyChange('sessions', 'acs_sessions', r => this._dbToJsSession(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students', ...(ownerFilter ? { filter: ownerFilter } : {}) },
+      // No ownerFilter here — a student can belong to more than one professor
+      // (see applyChange's own visibility check above), which a single-column
+      // Realtime filter can't express, so this table is subscribed unfiltered.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' },
         applyChange('students', 'acs_students', r => this._dbToJsStudent(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'professors', ...(professorFilter ? { filter: professorFilter } : {}) },
         applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
@@ -390,7 +448,8 @@ const SupabaseSync = {
     const { admin, sysadmin, student } = this._getSessions();
     const cols = 'id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at';
     if (admin?.id && !sysadmin) {
-      const { data } = await this._client.from('students').select(cols).eq('owner_admin_id', admin.id);
+      const mySubjectIds = (window.DB?.getSubjects?.() || []).map(s => s.id);
+      const { data } = await this._studentsQueryForAdmin(this._client, admin.id, mySubjectIds);
       if (data) this._writeLocal('acs_students', data.map(r => this._dbToJsStudent(r)));
       return;
     }

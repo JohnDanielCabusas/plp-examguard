@@ -322,6 +322,19 @@ function stopSectionPoll() {
   if (sectionPollInterval) { clearInterval(sectionPollInterval); sectionPollInterval = null; }
 }
 
+// Realtime push (e.g. a student enrolling via code) already updated the local
+// cache by the time this fires — just re-render the active section immediately
+// instead of waiting for the next 5s poll tick. Debounced since a burst of
+// realtime events (e.g. several students enrolling back to back) should only
+// trigger one re-render.
+let _dataChangedRenderTimer = null;
+document.addEventListener('acsDataChanged', () => {
+  const cfg = SECTION_POLL_CONFIG[currentSection];
+  if (!cfg) return;
+  clearTimeout(_dataChangedRenderTimer);
+  _dataChangedRenderTimer = setTimeout(() => cfg.render(), 150);
+});
+
 function showSection(name) {
   // Stop monitoring/reports/section polling if leaving those sections
   if (currentSection === 'monitoring' && name !== 'monitoring') stopMonitoring();
@@ -758,7 +771,7 @@ function viewEnrolledStudents(subjectId) {
   const subj = DB.getSubject(subjectId);
   if (!subj) return;
   currentCourseDetailId = subjectId;
-  const students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjectId));
+  const students = DB.getAllStudentsRaw().filter(s => !s.archived && (s.enrolledSubjects || []).includes(subjectId));
   const exams    = DB.getExams().filter(e => e.subjectId === subjectId);
 
   document.getElementById('course-detail-name').textContent = formatCourseNameDisplay(subj.name);
@@ -873,7 +886,7 @@ function renderSubjects() {
     return;
   }
   const allExams = DB.getExams();
-  const allStudents = DB.getStudents();
+  const allStudents = DB.getAllStudentsRaw().filter(s => !s.archived);
 
   grid.innerHTML = subjects.map(s => {
     const [c1, c2] = courseCardColor(s);
@@ -1367,90 +1380,6 @@ function ensureStudentModalForm() {
   }
 }
 
-function renderStudents(filter) {
-  // Only show students enrolled in at least one of this professor's courses
-  const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
-  let students = DB.getStudents().filter(s =>
-    (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
-  );
-
-  // Populate section filter dropdown
-  const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
-  const secSel = document.getElementById('filter-section');
-  const prevSec = secSel.value;
-  secSel.innerHTML = '<option value="">All Sections</option>' +
-    sections.map(s => `<option value="${escHtml(s)}" ${s === prevSec ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
-
-  const programs = [...new Set(students.map(s => s.program).filter(Boolean))].sort();
-  const programSel = document.getElementById('filter-program');
-  const prevProgram = programSel.value;
-  programSel.innerHTML = '<option value="">All Programs</option>' +
-    programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
-
-  const courseSel = document.getElementById('filter-course');
-  const prevCourse = courseSel ? courseSel.value : '';
-  const myCourses = DB.getSubjects().filter(s => !s.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  if (courseSel) {
-    courseSel.innerHTML = '<option value="">All Courses</option>' +
-      myCourses.map(c => `<option value="${escHtml(c.id)}" ${c.id === prevCourse ? 'selected' : ''}>${escHtml(c.name)}${c.code ? ' (' + escHtml(c.code) + ')' : ''}</option>`).join('');
-  }
-
-  const q = (filter || '').toLowerCase();
-  const yearFilter = document.getElementById('filter-year-level').value;
-  const sectionFilter = secSel.value;
-  const programFilter = programSel.value;
-  const courseFilter = courseSel ? courseSel.value : '';
-
-  if (q) {
-    students = students.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.studentId.toLowerCase().includes(q) ||
-      (s.program || '').toLowerCase().includes(q) ||
-      getStudentSectionDisplay(s).toLowerCase().includes(q) ||
-      getStudentYearLevelLabel(s).toLowerCase().includes(q) ||
-      (s.yearSection || '').toLowerCase().includes(q)
-    );
-  }
-  if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
-  if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
-  if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
-  if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
-
-  const tbody = document.getElementById('students-tbody');
-  if (!students.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
-    return;
-  }
-  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4', '5th Year':'yl-5' };
-  tbody.innerHTML = students.map(s => {
-    const yl = getStudentYearLevelLabel(s);
-    const ylDisplay = getStudentYearLevelDisplay(s) || 'â€”';
-    const sectionDisplay = getStudentSectionDisplay(s) || 'â€”';
-    const initials = (s.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-    const ylClass = ylColors[yl] || 'yl-1';
-    return `
-    <tr>
-      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
-      <td data-label="Name">
-        <div class="student-name-cell">
-          <div class="student-avatar">${initials}</div>
-          <span class="student-name-text">${escHtml(s.name)}</span>
-        </div>
-      </td>
-      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(yl)}</span></td>
-      <td data-label="Section"><span class="section-text">${escHtml(s.section || '—')}</span></td>
-      <td data-label="Email" class="email-cell">${escHtml(s.email || '—')}</td>
-      <td data-label="Program"><span class="section-text">${escHtml(s.program || '—')}</span></td>
-      <td data-label="">
-        <div class="table-actions">
-          <button class="btn-action btn-action-ghost" onclick="openStudentModal('${s.id}')">Edit${icEditFill}</button>
-          <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
 let studentFilterFrame = 0;
 function filterStudents() {
   const q = document.getElementById('student-search').value;
@@ -1610,90 +1539,6 @@ function getStudentSectionDisplay(student) {
   return parts.section || normalizeSectionValue(student?.section || '');
 }
 
-function renderStudents(filter) {
-  // Only show students enrolled in at least one of this professor's courses
-  const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
-  let students = DB.getStudents().filter(s =>
-    (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
-  );
-
-  const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
-  const secSel = document.getElementById('filter-section');
-  const prevSec = secSel.value;
-  secSel.innerHTML = '<option value="">All Sections</option>' +
-    sections.map(s => `<option value="${escHtml(s)}" ${s === prevSec ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
-
-  const programs = [...new Set(students.map(s => s.program).filter(Boolean))].sort();
-  const programSel = document.getElementById('filter-program');
-  const prevProgram = programSel.value;
-  programSel.innerHTML = '<option value="">All Programs</option>' +
-    programs.map(p => `<option value="${escHtml(p)}" ${p === prevProgram ? 'selected' : ''}>${escHtml(p)}</option>`).join('');
-
-  const courseSel = document.getElementById('filter-course');
-  const prevCourse = courseSel ? courseSel.value : '';
-  const myCourses = DB.getSubjects().filter(s => !s.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  if (courseSel) {
-    courseSel.innerHTML = '<option value="">All Courses</option>' +
-      myCourses.map(c => `<option value="${escHtml(c.id)}" ${c.id === prevCourse ? 'selected' : ''}>${escHtml(c.name)}${c.code ? ' (' + escHtml(c.code) + ')' : ''}</option>`).join('');
-  }
-
-  const q = (filter || '').toLowerCase();
-  const yearFilter = document.getElementById('filter-year-level').value;
-  const sectionFilter = secSel.value;
-  const programFilter = programSel.value;
-  const courseFilter = courseSel ? courseSel.value : '';
-
-  if (q) {
-    students = students.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.studentId.toLowerCase().includes(q) ||
-      (s.program || '').toLowerCase().includes(q) ||
-      getStudentSectionDisplay(s).toLowerCase().includes(q) ||
-      getStudentYearLevelLabel(s).toLowerCase().includes(q) ||
-      (s.yearSection || '').toLowerCase().includes(q)
-    );
-  }
-  if (yearFilter) students = students.filter(s => getStudentYearLevelLabel(s) === yearFilter);
-  if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
-  if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
-  if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
-
-  const tbody = document.getElementById('students-tbody');
-  if (!students.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><p>No students found.</p></div></td></tr>`;
-    return;
-  }
-
-  const ylColors = { '1st Year':'yl-1','2nd Year':'yl-2','3rd Year':'yl-3','4th Year':'yl-4', '5th Year':'yl-5' };
-  tbody.innerHTML = students.map(s => {
-    const yl = getStudentYearLevelLabel(s);
-    const ylDisplay = getStudentYearLevelDisplay(s) || '-';
-    const sectionDisplay = getStudentSectionDisplay(s) || '-';
-    const initials = (s.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-    const ylClass = ylColors[yl] || 'yl-1';
-    return `
-    <tr>
-      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
-      <td data-label="Name">
-        <div class="student-name-cell">
-          <div class="student-avatar">${initials}</div>
-          <span class="student-name-text">${escHtml(s.name)}</span>
-        </div>
-      </td>
-      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(ylDisplay)}</span></td>
-      <td data-label="Section"><span class="section-text">${escHtml(sectionDisplay)}</span></td>
-      <td data-label="Email" class="email-cell">${escHtml(s.email || 'â€”')}</td>
-      <td data-label="Program"><span class="section-text">${escHtml(s.program || 'â€”')}</span></td>
-      <td data-label="">
-        <div class="table-actions">
-          <button class="btn-action btn-action-ghost" onclick="openStudentModal('${s.id}')">Edit${icEditFill}</button>
-          <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
 function openStudentModal(id) {
   ensureStudentModalForm();
   document.getElementById('stu-id').value = '';
@@ -1775,7 +1620,7 @@ function saveStudent() {
 function renderStudents(filter) {
   // Only show students enrolled in at least one of this professor's courses
   const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
-  let students = DB.getStudents().filter(s =>
+  let students = DB.getAllStudentsRaw().filter(s => !s.archived).filter(s =>
     (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
   );
 
@@ -2353,8 +2198,8 @@ function updateExamAbsenteeSummary(examId) {
 
 function getExamAttendanceStudents(subjectId) {
   if (!subjectId) return [];
-  return DB.getStudents()
-    .filter(student => (student.enrolledSubjects || []).includes(subjectId))
+  return DB.getAllStudentsRaw()
+    .filter(student => !student.archived && (student.enrolledSubjects || []).includes(subjectId))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
