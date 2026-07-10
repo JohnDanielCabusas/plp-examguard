@@ -70,6 +70,7 @@ alter table if exists public.superadmin alter column email drop not null;
 
 -- ── Feature columns ──
 alter table if exists public.sessions add column if not exists ai_detections jsonb not null default '{}'::jsonb;
+alter table if exists public.sessions add column if not exists camera_snapshots jsonb not null default '[]'::jsonb;
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.subjects add column if not exists school_year text;

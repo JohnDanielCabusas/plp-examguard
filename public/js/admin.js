@@ -309,6 +309,16 @@ const SECTION_POLL_CONFIG = {
   students:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderStudents(document.getElementById('student-search')?.value || '') },
 };
 
+function renderMonitoringSectionLive() {
+  loadMonitoringExams();
+  renderMonitoringTable(monitorExamId);
+  setMonitorView(_monitorView);
+}
+
+function renderReportsSectionLive() {
+  loadReportExams();
+}
+
 function startSectionPoll(name) {
   stopSectionPoll();
   const cfg = SECTION_POLL_CONFIG[name];
@@ -330,9 +340,12 @@ function stopSectionPoll() {
 let _dataChangedRenderTimer = null;
 document.addEventListener('acsDataChanged', () => {
   const cfg = SECTION_POLL_CONFIG[currentSection];
-  if (!cfg) return;
+  const render = cfg?.render
+    || (currentSection === 'monitoring' ? renderMonitoringSectionLive : null)
+    || (currentSection === 'reports' ? renderReportsSectionLive : null);
+  if (!render) return;
   clearTimeout(_dataChangedRenderTimer);
-  _dataChangedRenderTimer = setTimeout(() => cfg.render(), 150);
+  _dataChangedRenderTimer = setTimeout(() => render(), 150);
 });
 
 function showSection(name) {
@@ -4060,18 +4073,19 @@ function onMonitorExamChange() {
 
 function startMonitoring() {
   stopMonitoring();
-  monitorInterval = setInterval(() => {
-    loadMonitoringExams();
-    if (monitorExamId) {
-      renderMonitoringTable(monitorExamId);
-      if (_monitorView === 'camera') {
-        renderCameraGrid(monitorExamId);
-        // Re-hide stats strip after renderMonitoringTable re-shows it
-        const strip = document.getElementById('monitor-stats-strip');
-        if (strip) strip.style.display = 'none';
-      }
-    }
-  }, 3000);
+  const refresh = () => {
+    const sync = window.SupabaseSync;
+    Promise.all([
+      sync?.refreshExams?.(),
+      sync?.refreshSessions?.(),
+      sync?.refreshStudents?.(),
+    ]).catch(() => {}).then(() => {
+      if (currentSection !== 'monitoring') return;
+      renderMonitoringSectionLive();
+    });
+  };
+  refresh();
+  monitorInterval = setInterval(refresh, 3000);
   document.getElementById('monitor-live-badge').classList.remove('hidden');
 }
 
@@ -4577,9 +4591,18 @@ function loadReportExams() {
 
 function startReports() {
   stopReports();
-  reportInterval = setInterval(() => {
-    loadReportExams();
-  }, 3000);
+  const refresh = () => {
+    const sync = window.SupabaseSync;
+    Promise.all([
+      sync?.refreshExams?.(),
+      sync?.refreshSessions?.(),
+    ]).catch(() => {}).then(() => {
+      if (currentSection !== 'reports') return;
+      renderReportsSectionLive();
+    });
+  };
+  refresh();
+  reportInterval = setInterval(refresh, 3000);
   document.getElementById('report-live-badge')?.classList.remove('hidden');
 }
 

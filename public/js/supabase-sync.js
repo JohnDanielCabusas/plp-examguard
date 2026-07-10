@@ -14,6 +14,7 @@ const SupabaseSync = {
   _deferredHydrationPromise: null,
   _readyEmitted: false,
   _sessionAiDetectionsSupported: true,
+  _sessionCameraSnapshotsSupported: true,
   // Serialize writes per table/id so rapid local edits (for example absent -> present ->
   // draft -> ready on the same exam) cannot reach Supabase out of order and resurrect
   // stale state on other clients.
@@ -34,6 +35,60 @@ const SupabaseSync = {
   _notifyDataChanged(table) {
     if (typeof document === 'undefined') return;
     document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
+  },
+
+  _getSessionSnapshotTimestamp(snapshots) {
+    if (!Array.isArray(snapshots) || !snapshots.length) return 0;
+    return snapshots.reduce((latest, snapshot) => {
+      const time = snapshot?.timestamp ? new Date(snapshot.timestamp).getTime() : 0;
+      return Number.isFinite(time) ? Math.max(latest, time) : latest;
+    }, 0);
+  },
+
+  _isSessionResetState(session) {
+    if (!session) return false;
+    const answers = session.answers && typeof session.answers === 'object' ? Object.keys(session.answers) : [];
+    const activities = Array.isArray(session.activities) ? session.activities : [];
+    return !session.submitted
+      && !session.startTime
+      && !session.endTime
+      && (session.score === null || typeof session.score === 'undefined')
+      && !answers.length
+      && !activities.length
+      && !(session.warnings || 0);
+  },
+
+  _mergeIncomingSessionWithLocal(incoming, prior) {
+    if (!prior) return incoming;
+
+    const merged = { ...prior, ...incoming };
+    if (this._isSessionResetState(incoming)) return merged;
+
+    const priorActivities = Array.isArray(prior.activities) ? prior.activities : [];
+    const incomingActivities = Array.isArray(incoming.activities) ? incoming.activities : [];
+    if (priorActivities.length > incomingActivities.length) {
+      merged.activities = priorActivities;
+    }
+
+    const priorWarnings = Number(prior.warnings || 0);
+    const incomingWarnings = Number(incoming.warnings || 0);
+    if (priorWarnings > incomingWarnings && priorActivities.length >= incomingActivities.length) {
+      merged.warnings = priorWarnings;
+    }
+
+    const priorSnapshots = Array.isArray(prior.cameraSnapshots) ? prior.cameraSnapshots : [];
+    const incomingSnapshots = Array.isArray(incoming.cameraSnapshots) ? incoming.cameraSnapshots : [];
+    const priorSnapshotTime = this._getSessionSnapshotTimestamp(priorSnapshots);
+    const incomingSnapshotTime = this._getSessionSnapshotTimestamp(incomingSnapshots);
+    if (
+      priorSnapshots.length &&
+      !incoming.submitted &&
+      (!incomingSnapshots.length || priorSnapshotTime > incomingSnapshotTime)
+    ) {
+      merged.cameraSnapshots = priorSnapshots;
+    }
+
+    return merged;
   },
 
   _getSessions() {
@@ -373,9 +428,12 @@ const SupabaseSync = {
             normalized.excludedStudentIds = prior.excludedStudentIds;
           }
         }
-        const idx = current.findIndex(r => r.id === normalized.id);
-        if (idx >= 0) { current[idx] = normalized; this._writeLocal(lsKey, current); }
-        else { this._writeLocal(lsKey, [...current, normalized]); }
+        const nextRow = table === 'sessions'
+          ? this._mergeIncomingSessionWithLocal(normalized, current.find(r => r.id === normalized.id))
+          : normalized;
+        const idx = current.findIndex(r => r.id === nextRow.id);
+        if (idx >= 0) { current[idx] = nextRow; this._writeLocal(lsKey, current); }
+        else { this._writeLocal(lsKey, [...current, nextRow]); }
       }
       this._notifyDataChanged(table);
     };
@@ -439,7 +497,13 @@ const SupabaseSync = {
     else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
     const { data: sessions } = await query;
     if (sessions) {
-      this._writeLocal('acs_sessions', sessions.map(r => this._dbToJsSession(r)));
+      const localSessions = this._localArray('acs_sessions');
+      const localById = new Map(localSessions.map(session => [session.id, session]));
+      const mergedSessions = sessions.map(row => {
+        const normalized = this._dbToJsSession(row);
+        return this._mergeIncomingSessionWithLocal(normalized, localById.get(normalized.id));
+      });
+      this._writeLocal('acs_sessions', mergedSessions);
     }
   },
 
@@ -456,10 +520,28 @@ const SupabaseSync = {
     if (student?.studentId && !sysadmin) {
       const { data: ownRow } = await this._client.from('students').select(cols).eq('student_id', student.studentId).maybeSingle();
       const enrolledSubjectIds = Array.isArray(ownRow?.enrolled_subjects) ? ownRow.enrolled_subjects : [];
-      const { data: classmates } = enrolledSubjectIds.length
-        ? await this._client.from('students').select(cols).overlaps('enrolled_subjects', enrolledSubjectIds)
-        : { data: ownRow ? [ownRow] : [] };
-      this._writeLocal('acs_students', (classmates || []).map(r => this._dbToJsStudent(r)));
+      if (!ownRow) {
+        this._writeLocal('acs_students', []);
+        return;
+      }
+
+      let classmates = [ownRow];
+      if (enrolledSubjectIds.length) {
+        // enrolled_subjects is jsonb, so PostgREST's overlap operator is unreliable
+        // here. Use one containment clause per subject and explicitly include the
+        // current student so the portal never "loses" its own account record.
+        const subjectClauses = enrolledSubjectIds.map(id => `enrolled_subjects.cs.["${id}"]`);
+        const { data } = await this._client
+          .from('students')
+          .select(cols)
+          .or([`student_id.eq.${student.studentId}`, ...subjectClauses].join(','));
+        if (Array.isArray(data) && data.length) classmates = data;
+      }
+
+      const uniqueRows = Array.from(new Map(
+        [ownRow, ...classmates].map(row => [row.id, row])
+      ).values());
+      this._writeLocal('acs_students', uniqueRows.map(r => this._dbToJsStudent(r)));
       return;
     }
     const { data } = await this._client.from('students').select(cols);
@@ -564,13 +646,26 @@ const SupabaseSync = {
         this._examIdsWithUnsyncedExclusions.delete(row.id);
       }
 
-      if (error && this._isMissingSessionAiDetectionsError(table, error)) {
-        this._sessionAiDetectionsSupported = false;
-        const fallbackRow = this._withoutSessionAiDetections(row);
-        const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
-        if (!retryError) return;
-        error = retryError;
+      let retryRow = row;
+      let retryError = error;
+      while (retryError) {
+        if (this._isMissingSessionAiDetectionsError(table, retryError) && this._sessionAiDetectionsSupported !== false) {
+          this._sessionAiDetectionsSupported = false;
+          retryRow = this._withoutSessionAiDetections(retryRow);
+          ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+          if (!retryError) return;
+          continue;
+        }
+        if (this._isMissingSessionCameraSnapshotsError(table, retryError) && this._sessionCameraSnapshotsSupported !== false) {
+          this._sessionCameraSnapshotsSupported = false;
+          retryRow = this._withoutSessionCameraSnapshots(retryRow);
+          ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+          if (!retryError) return;
+          continue;
+        }
+        break;
       }
+      error = retryError;
 
       if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
         // PostgREST's schema cache is (probably temporarily) out of sync with the real
@@ -743,6 +838,9 @@ const SupabaseSync = {
       camera_snapshots: Array.isArray(d.cameraSnapshots) ? d.cameraSnapshots : [],
       owner_admin_id: d.ownerAdminId || null,
     };
+    if (this._sessionCameraSnapshotsSupported === false) {
+      delete row.camera_snapshots;
+    }
     if (this._sessionAiDetectionsSupported !== false) {
       row.ai_detections = d.aiDetections || {};
     }
@@ -939,6 +1037,17 @@ const SupabaseSync = {
   _withoutSessionAiDetections(row) {
     const next = { ...row };
     delete next.ai_detections;
+    return next;
+  },
+
+  _isMissingSessionCameraSnapshotsError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'sessions' && message.includes(`Could not find the 'camera_snapshots' column`);
+  },
+
+  _withoutSessionCameraSnapshots(row) {
+    const next = { ...row };
+    delete next.camera_snapshots;
     return next;
   },
 

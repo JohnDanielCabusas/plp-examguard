@@ -2138,7 +2138,7 @@ tr:hover td {
    ============================================================ */
 #toast-container {
   position: fixed;
-  top: 20px;
+  bottom: 20px;
   right: 20px;
   z-index: 10000;
   display: flex;
@@ -4980,7 +4980,7 @@ body.exam-page {
   #toast-container {
     left: 12px;
     right: 12px;
-    top: 12px;
+    bottom: 12px;
   }
   .toast.toast-settings {
     min-width: 0;
@@ -6593,7 +6593,7 @@ tr:hover td {
 
 .sa-toast {
   position: fixed;
-  top: 20px;
+  bottom: 20px;
   right: 20px;
   display: flex;
   align-items: center;
@@ -6850,7 +6850,7 @@ tr:hover td {
   }
 
   .sa-toast {
-    top: 12px;
+    bottom: 12px;
     left: 12px;
     right: 12px;
     min-width: 0;

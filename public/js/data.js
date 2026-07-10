@@ -1047,7 +1047,21 @@ const DB = {
     return this.getSessions().filter(s => s.examId === examId);
   },
   getStudentSession(examId, studentId) {
-    return this.getSessions().find(s => s.examId === examId && s.studentId === studentId) || null;
+    const matches = this.getSessions().filter(s => s.examId === examId && s.studentId === studentId);
+    if (!matches.length) return null;
+
+    const getTimestamp = session => {
+      const raw = session?.endTime || session?.startTime || session?.createdAt || null;
+      const time = raw ? new Date(raw).getTime() : 0;
+      return Number.isFinite(time) ? time : 0;
+    };
+
+    return matches
+      .slice()
+      .sort((a, b) => {
+        if (!!a.submitted !== !!b.submitted) return a.submitted ? 1 : -1;
+        return getTimestamp(b) - getTimestamp(a);
+      })[0];
   },
   addSession(data) {
     const sessions = [...this._read(this.KEYS.sessions, [])];
