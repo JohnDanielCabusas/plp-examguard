@@ -268,7 +268,7 @@ export default function ExamPage() {
                       <input type="text" className="form-control" id="dash-enroll-code" placeholder="Course enrollment code" autoComplete="off" style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1.5px', flex: 1 }} maxLength={8} />
                       <button className="btn btn-secondary" onClick={() => window.ExamApp.dashEnrollCourse()} style={{ whiteSpace: 'nowrap' }}>Enroll</button>
                     </div>
-                    <div id="dash-enroll-msg" style={{ marginTop: '6px', fontSize: '12px', minHeight: '16px' }} />
+                    <div id="dash-enroll-msg" className="enroll-status" />
                   </div>
                 </div>
                 <div id="dash-subjects-list" />

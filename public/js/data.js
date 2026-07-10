@@ -713,6 +713,60 @@ const DB = {
   _normalizeStudentEmailValue(email) {
     return String(email || '').trim().toLowerCase();
   },
+  _yearLabelToNumber(value) {
+    const normalized = String(value || '').trim();
+    if (/^[1-5]$/.test(normalized)) return normalized;
+    const match = normalized.match(/^([1-5])(st|nd|rd|th)\s+year$/i);
+    return match ? match[1] : '';
+  },
+  _normalizeSectionValue(value) {
+    return String(value || '').trim().replace(/^section\s+/i, '').toUpperCase();
+  },
+  // Mirrors admin.js's getStudentYearSectionParts: prefer the combined
+  // "Y-SECTION" field (set once by admin.js when both are known), falling
+  // back to the separate yearLevel/section fields.
+  getStudentEffectiveYearSection(student) {
+    const storedYearSection = String(student?.yearSection || '').trim().toUpperCase();
+    const match = storedYearSection.match(/^([1-5])-(.+)$/);
+    if (match) return { year: match[1], section: match[2].trim() };
+    return {
+      year: this._yearLabelToNumber(student?.yearLevel || ''),
+      section: this._normalizeSectionValue(student?.section || ''),
+    };
+  },
+  // A course can restrict enrollment to specific year levels and/or sections
+  // (subject.yearLevels / subject.sections). Mirrors admin.js's
+  // buildCourseYearSectionMeta pairing rules so "eligible to enroll" always
+  // matches what the course card displays as its target year(s)/section(s).
+  isStudentEligibleForCourse(student, subject) {
+    const rawYears = Array.isArray(subject?.yearLevels) && subject.yearLevels.length
+      ? subject.yearLevels
+      : (subject?.yearLevel ? [subject.yearLevel] : []);
+    const rawSections = Array.isArray(subject?.sections) ? subject.sections : [];
+
+    const years = rawYears.map(y => this._yearLabelToNumber(y)).filter(Boolean);
+    const sections = rawSections.map(s => this._normalizeSectionValue(s)).filter(Boolean);
+
+    if (!years.length && !sections.length) return true;
+
+    const { year: studentYear, section: studentSection } = this.getStudentEffectiveYearSection(student);
+
+    if (years.length && sections.length) {
+      let pairs;
+      if (years.length === sections.length) {
+        pairs = years.map((y, i) => [y, sections[i]]);
+      } else if (years.length === 1) {
+        pairs = sections.map(s => [years[0], s]);
+      } else if (sections.length === 1) {
+        pairs = years.map(y => [y, sections[0]]);
+      } else {
+        pairs = years.flatMap(y => sections.map(s => [y, s]));
+      }
+      return pairs.some(([y, s]) => y === studentYear && !!studentSection && s === studentSection);
+    }
+    if (years.length) return years.includes(studentYear);
+    return sections.includes(studentSection);
+  },
   findStudentConflict({ studentId, email, excludeId = null } = {}) {
     const normalizedStudentId = this._normalizeStudentIdValue(studentId);
     const normalizedEmail = this._normalizeStudentEmailValue(email);

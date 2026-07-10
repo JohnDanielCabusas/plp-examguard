@@ -2,6 +2,18 @@
 // EXAM APP - Student Exam Logic
 // ============================================================
 
+const ENROLL_STATUS_ICONS = {
+  info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  success: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+};
+function setEnrollStatus(el, text, variant) {
+  if (!el) return;
+  if (!text) { el.className = 'enroll-status'; el.innerHTML = ''; return; }
+  el.className = `enroll-status ${variant}`;
+  el.innerHTML = `${ENROLL_STATUS_ICONS[variant] || ENROLL_STATUS_ICONS.info}<span>${_esc(text)}</span>`;
+}
+
 const ExamApp = {
   session: null,            // DB session object
   exam: null,               // DB exam object
@@ -1286,9 +1298,9 @@ const ExamApp = {
   async dashEnrollCourse() {
     const code = (document.getElementById('dash-enroll-code').value || '').trim().toUpperCase();
     const msgEl = document.getElementById('dash-enroll-msg');
-    if (!code) { msgEl.textContent = 'Please enter an enrollment code.'; msgEl.style.color = '#dc2626'; return; }
+    if (!code) { setEnrollStatus(msgEl, 'Please enter an enrollment code.', 'error'); return; }
 
-    msgEl.textContent = 'Checking code…'; msgEl.style.color = '#6b7280';
+    setEnrollStatus(msgEl, 'Checking code…', 'info');
 
     // Refresh local cache from Supabase first
     if (window.SupabaseSync?.refreshSubjects) {
@@ -1310,25 +1322,32 @@ const ExamApp = {
       }
     }
 
-    if (!subject) { msgEl.textContent = 'Invalid code. Please check with your instructor.'; msgEl.style.color = '#dc2626'; return; }
+    if (!subject) { setEnrollStatus(msgEl, 'Invalid code. Please check with your instructor.', 'error'); return; }
 
     const sess = Auth.getStudentSession();
     const student = DB.getStudent(sess.studentId);
     if (student) {
       const enrolled = student.enrolledSubjects || [];
       if (enrolled.includes(subject.id)) {
-        msgEl.textContent = `You're already enrolled in "${subject.name}".`;
-        msgEl.style.color = '#6b7280';
+        setEnrollStatus(msgEl, `You're already enrolled in "${subject.name}".`, 'info');
+      } else if (!DB.isStudentEligibleForCourse(student, subject)) {
+        const years = Array.isArray(subject.yearLevels) && subject.yearLevels.length
+          ? subject.yearLevels
+          : (subject.yearLevel ? [subject.yearLevel] : []);
+        const sections = (subject.sections || []).map(s => DB._normalizeSectionValue(s)).filter(Boolean);
+        const reqParts = [];
+        if (years.length) reqParts.push(years.join('/'));
+        if (sections.length) reqParts.push('Section ' + sections.join('/'));
+        const reqText = reqParts.length ? ` This course is only open to ${reqParts.join(', ')}.` : '';
+        setEnrollStatus(msgEl, `Your year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error');
       } else {
         DB.updateStudent(student.id, { enrolledSubjects: [...enrolled, subject.id] });
-        msgEl.textContent = `Successfully enrolled in "${subject.name}"!`;
-        msgEl.style.color = '#15803d';
+        setEnrollStatus(msgEl, `Successfully enrolled in "${subject.name}"!`, 'success');
         document.getElementById('dash-enroll-code').value = '';
         this._renderDashboard(sess);
       }
     } else {
-      msgEl.textContent = 'Student record not found. Please contact your instructor.';
-      msgEl.style.color = '#dc2626';
+      setEnrollStatus(msgEl, 'Student record not found. Please contact your instructor.', 'error');
     }
   },
 
@@ -1410,9 +1429,8 @@ const ExamApp = {
       // Show error as a transient banner in the dashboard
       const msgEl = document.getElementById('dash-enroll-msg');
       if (msgEl) {
-        msgEl.textContent = msg;
-        msgEl.style.color = '#dc2626';
-        setTimeout(() => { if (msgEl.textContent === msg) { msgEl.textContent = ''; } }, 5000);
+        setEnrollStatus(msgEl, msg, 'error');
+        setTimeout(() => { if (msgEl.textContent === msg) { setEnrollStatus(msgEl, '', 'error'); } }, 5000);
       }
     } else {
       this.showState('entry');

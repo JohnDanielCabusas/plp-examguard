@@ -1517,6 +1517,13 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   transform: scale(1.01);
 }
 
+/* Count badges (e.g. course tabs) share the same dark-green fill as the pill
+   itself, so they'd vanish once their tab goes active — lighten them then. */
+.tab-btn.active .exam-q-badge {
+  background: rgba(255,255,255,0.25) !important;
+  color: var(--white) !important;
+}
+
 /* Tab Content — grid overlap for smooth cross-fade + slide */
 .tab-content {
   display: grid;
@@ -6732,6 +6739,13 @@ body.exam-page {
   color: #0f2d1a;
   transform: translateY(-1px);
 }
+/* Light mode darkens the code slightly on hover (#0f2d1a on a light card),
+   but that same near-black would vanish against dark mode's dark cards —
+   go brighter instead of darker there. */
+[data-theme="dark"] .enroll-code-tag:hover {
+  background: rgba(34,197,94,0.16) !important;
+  color: #4ade80 !important;
+}
 
 .enroll-code-tag-on-color {
   background: rgba(255,255,255,0.22);
@@ -6740,6 +6754,59 @@ body.exam-page {
 .enroll-code-tag-on-color:hover {
   background: rgba(255,255,255,0.34);
   color: #fff;
+}
+
+/* Enroll-in-a-course result message (info while checking, success, error) */
+.enroll-status {
+  display: none;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  border-left-width: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.enroll-status.info, .enroll-status.success, .enroll-status.error { display: flex; }
+.enroll-status svg { flex-shrink: 0; margin-top: 1px; }
+
+.enroll-status.info {
+  background: rgba(107,114,128,0.08);
+  border-color: rgba(107,114,128,0.22);
+  border-left-color: #6b7280;
+  color: #4b5563;
+}
+.enroll-status.success {
+  background: rgba(21,128,61,0.08);
+  border-color: rgba(21,128,61,0.22);
+  border-left-color: #15803d;
+  color: #15803d;
+}
+.enroll-status.error {
+  background: rgba(220,38,38,0.08);
+  border-color: rgba(220,38,38,0.22);
+  border-left-color: #dc2626;
+  color: #dc2626;
+}
+[data-theme="dark"] .enroll-status.info {
+  background: rgba(139,148,158,0.1);
+  border-color: rgba(139,148,158,0.28);
+  border-left-color: #8b949e;
+  color: #c9d1d9;
+}
+[data-theme="dark"] .enroll-status.success {
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.3);
+  border-left-color: #22c55e;
+  color: #4ade80;
+}
+[data-theme="dark"] .enroll-status.error {
+  background: rgba(248,113,113,0.12);
+  border-color: rgba(248,113,113,0.3);
+  border-left-color: #f87171;
+  color: #f87171;
 }
 
 /* Enrollment notice banner */

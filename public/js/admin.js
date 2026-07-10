@@ -799,9 +799,11 @@ function viewEnrolledStudents(subjectId) {
               <td><span class="code-tag">${escHtml(s.studentId)}</span></td>
               <td><strong>${escHtml(s.name)}</strong></td>
               <td>${escHtml(s.yearLevel || '—')}</td>
-              <td>${escHtml(s.section || '—')}</td>
+              <td>${escHtml(getStudentSectionDisplay(s) || '—')}</td>
               <td style="text-align:center;">
-                <button class="btn btn-danger btn-sm" onclick="removeStudentFromCourse('${s.id}','${subjectId}')">Remove</button>
+                <div class="table-actions">
+                  <button class="tbl-btn tbl-btn-archive" onclick="removeStudentFromCourse('${s.id}','${subjectId}')">Remove${icTrashStroke}</button>
+                </div>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -820,7 +822,9 @@ function viewEnrolledStudents(subjectId) {
               <td style="text-align:center;">${e.timeLimit} min</td>
               <td style="text-align:center;">${statusBadge(e.status)}</td>
               <td style="text-align:center;">
-                <button class="btn btn-secondary btn-sm" onclick="showSection('exams');openExamEditor('${e.id}');">Open</button>
+                <div class="table-actions">
+                  <button class="btn-action btn-action-ghost" onclick="showSection('exams');openExamEditor('${e.id}');">Open${icEditFill}</button>
+                </div>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -828,15 +832,13 @@ function viewEnrolledStudents(subjectId) {
     : `<div class="empty-state"><p>No exams created for this course yet.</p></div>`;
 
   document.getElementById('course-detail-body').innerHTML = `
-    <div style="border-bottom:1.5px solid #e5e7eb;">
-      <div style="display:flex;padding:0 8px;">
-        <button class="exam-tab-btn active" id="etab-btn-students" onclick="switchEnrolledTab('students')" style="padding:12px 20px;">
-          Students <span class="exam-q-badge" style="background:#0f2d1a;">${students.length}</span>
-        </button>
-        <button class="exam-tab-btn" id="etab-btn-exams" onclick="switchEnrolledTab('exams')" style="padding:12px 20px;">
-          Exams <span class="exam-q-badge" style="background:#0f2d1a;">${exams.length}</span>
-        </button>
-      </div>
+    <div class="tab-switcher" style="margin:16px 20px 20px;">
+      <button class="tab-btn active" id="etab-btn-students" onclick="switchEnrolledTab('students')">
+        Students <span class="exam-q-badge" style="background:#0f2d1a;">${students.length}</span>
+      </button>
+      <button class="tab-btn" id="etab-btn-exams" onclick="switchEnrolledTab('exams')">
+        Exams <span class="exam-q-badge" style="background:#0f2d1a;">${exams.length}</span>
+      </button>
     </div>
     <div id="etab-students">${studentsHtml}</div>
     <div id="etab-exams" class="hidden">${examsHtml}</div>`;
@@ -1085,6 +1087,19 @@ function bindYearLevelInput(input) {
     const digits = String(input.value || '').replace(/\D/g, '');
     const nextValue = digits ? digits.charAt(0) : '';
     input.value = /^[1-5]$/.test(nextValue) ? nextValue : '';
+  });
+}
+
+function bindSectionInput(input) {
+  if (!input || input.dataset.sectionBound === 'true') return;
+  input.dataset.sectionBound = 'true';
+  input.maxLength = 1;
+  input.placeholder = 'e.g. B';
+  input.setAttribute('pattern', '[A-Za-z]');
+
+  input.addEventListener('input', () => {
+    const letters = String(input.value || '').replace(/[^a-zA-Z]/g, '');
+    input.value = letters ? letters.charAt(0).toUpperCase() : '';
   });
 }
 
@@ -1355,6 +1370,9 @@ function ensureStudentModalForm() {
     input.placeholder = 'e.g. B';
     input.autocomplete = 'off';
     sectionField.replaceWith(input);
+    bindSectionInput(input);
+  } else if (sectionField) {
+    bindSectionInput(sectionField);
   }
 
   if (!document.getElementById('stu-program')) {
@@ -2024,7 +2042,7 @@ function renderArchivedStudents() {
       <td data-label="Student ID"><span class="code-tag">${escHtml(s.studentId)}</span></td>
       <td data-label="Name"><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
       <td data-label="Year Level" style="text-align:center;">${escHtml(s.yearLevel || '—')}</td>
-      <td data-label="Section" style="text-align:center;">${escHtml(s.section || '—')}</td>
+      <td data-label="Section" style="text-align:center;">${escHtml(getStudentSectionDisplay(s) || '—')}</td>
       <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt)}</span></td>
       <td data-label="">
         <div class="table-actions">
