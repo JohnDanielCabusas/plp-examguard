@@ -857,8 +857,100 @@
     radial-gradient(circle at top, rgba(34,197,94,0.12), transparent 32%),
     linear-gradient(180deg, #0f141c 0%, #0b1016 100%) !important;
 }
+[data-theme="dark"] .review-topbar {
+  background: linear-gradient(135deg, #0b2616 0%, #114126 55%, #0d321d 100%) !important;
+  box-shadow: 0 18px 34px rgba(0,0,0,0.34) !important;
+}
+[data-theme="dark"] .review-topbar-title {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .review-topbar-meta {
+  color: rgba(226,232,240,0.78) !important;
+}
 [data-theme="dark"] .review-score-chip {
   border-color: rgba(74,222,128,0.25) !important;
+}
+[data-theme="dark"] .review-score-chip-pending {
+  background: linear-gradient(180deg, rgba(20,83,45,0.55) 0%, rgba(15,61,33,0.8) 100%) !important;
+  border-color: rgba(74,222,128,0.22) !important;
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .review-question-card {
+  background: rgba(15,23,42,0.82) !important;
+  border-color: rgba(148,163,184,0.18) !important;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.26) !important;
+}
+[data-theme="dark"] .review-question-title,
+[data-theme="dark"] .review-enum-expected,
+[data-theme="dark"] .review-matching-term,
+[data-theme="dark"] .review-matching-student {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .review-question-type {
+  background: rgba(34,197,94,0.12) !important;
+  border-color: rgba(74,222,128,0.2) !important;
+  color: #86efac !important;
+}
+[data-theme="dark"] .review-question-image {
+  background: rgba(15,23,42,0.72) !important;
+  border-color: rgba(148,163,184,0.18) !important;
+}
+[data-theme="dark"] .review-answer-row + .review-answer-row {
+  border-top-color: rgba(148,163,184,0.12) !important;
+}
+[data-theme="dark"] .review-answer-label,
+[data-theme="dark"] .review-answer-note,
+[data-theme="dark"] .review-enum-student,
+[data-theme="dark"] .review-matching-note {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .review-answer-value.is-neutral {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .review-answer-value.is-empty,
+[data-theme="dark"] .review-answer-value.is-hidden {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .review-answer-essay,
+[data-theme="dark"] .review-matching-term,
+[data-theme="dark"] .review-matching-answer {
+  background: rgba(15,23,42,0.72) !important;
+  border-color: rgba(148,163,184,0.18) !important;
+}
+[data-theme="dark"] .review-answer-essay {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .review-enum-item,
+[data-theme="dark"] .review-matching-item {
+  border-color: rgba(148,163,184,0.18) !important;
+}
+[data-theme="dark"] .review-enum-item.is-correct,
+[data-theme="dark"] .review-matching-item.is-correct {
+  background: rgba(20,83,45,0.32) !important;
+  border-color: rgba(74,222,128,0.2) !important;
+}
+[data-theme="dark"] .review-enum-item.is-wrong,
+[data-theme="dark"] .review-matching-item.is-wrong {
+  background: rgba(127,29,29,0.2) !important;
+  border-color: rgba(248,113,113,0.18) !important;
+}
+[data-theme="dark"] .review-matching-correct {
+  color: #86efac !important;
+}
+[data-theme="dark"] .review-footer {
+  background: rgba(2,6,23,0.82) !important;
+  border-top-color: rgba(148,163,184,0.18) !important;
+}
+[data-theme="dark"] .review-back-btn {
+  background: rgba(15,23,42,0.92) !important;
+  color: #d1fae5 !important;
+  border-color: rgba(74,222,128,0.28) !important;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.24) !important;
+}
+[data-theme="dark"] .review-back-btn:hover {
+  background: rgba(20,83,45,0.4) !important;
+  border-color: rgba(74,222,128,0.44) !important;
+  box-shadow: 0 16px 28px rgba(0,0,0,0.28) !important;
 }
 [data-theme="dark"] .examv2-topbar,
 [data-theme="dark"] .examv2-stats-bar,
@@ -943,9 +1035,7 @@
 }
 [data-theme="dark"] .q-required-badge,
 [data-theme="dark"] .examv2-question-wrap .q-required-badge {
-  background: rgba(248,113,113,0.14) !important;
   color: #f87171 !important;
-  border-color: rgba(248,113,113,0.35) !important;
 }
 [data-theme="dark"] .examv2-question-wrap .mcq-option,
 [data-theme="dark"] .examv2-question-wrap .tf-btn,
@@ -980,10 +1070,6 @@
 [data-theme="dark"] .id-input::placeholder,
 [data-theme="dark"] .examv2-question-wrap .id-input::placeholder {
   color: var(--text-muted) !important;
-}
-[data-theme="dark"] .examv2-nav-footer {
-  background: var(--surface) !important;
-  border-top-color: var(--border) !important;
 }
 [data-theme="dark"] .examv2-mark-review {
   color: var(--text) !important;
@@ -3761,24 +3847,6 @@ body.exam-page {
   border: 1px solid rgba(255,255,255,0.15);
 }
 
-/* Submit button in header (white ghost style) */
-.btn-exam-submit {
-  background: rgba(255,255,255,0.15);
-  color: var(--white);
-  border: 1.5px solid rgba(255,255,255,0.3);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  letter-spacing: 0.3px;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.btn-exam-submit:hover {
-  background: rgba(255,255,255,0.25);
-  border-color: rgba(255,255,255,0.5);
-}
 
 /* Meta bar (student info + answered count) */
 .exam-meta-bar {
@@ -4112,6 +4180,10 @@ body.exam-page {
 /* ============================================================
    REVIEW ANSWERS
    ============================================================ */
+.review-page,
+.review-page * {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
 .review-page {
   min-height: 100vh;
   background:
@@ -4171,14 +4243,14 @@ body.exam-page {
   color: #f8fafc;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.12);
 }
-.review-score-chip.score-high {
-  background: linear-gradient(180deg, rgba(22, 74, 41, 0.92) 0%, rgba(17, 61, 33, 0.96) 100%);
-}
-.review-score-chip.score-mid {
-  background: linear-gradient(180deg, rgba(22, 74, 41, 0.92) 0%, rgba(17, 61, 33, 0.96) 100%);
-}
+.review-score-chip.score-high,
+.review-score-chip.score-mid,
 .review-score-chip.score-low {
   background: linear-gradient(180deg, rgba(22, 74, 41, 0.92) 0%, rgba(17, 61, 33, 0.96) 100%);
+}
+.review-score-chip.review-score-chip-pending {
+  background: linear-gradient(180deg, rgba(22, 74, 41, 0.6) 0%, rgba(17, 61, 33, 0.85) 100%);
+  border-color: rgba(145, 197, 158, 0.18);
 }
 .review-score-chip-stats {
   display: flex;
@@ -4320,6 +4392,9 @@ body.exam-page {
 .review-answer-value.is-empty {
   color: #98a2b3;
 }
+.review-answer-value.is-hidden {
+  color: #64748b;
+}
 .review-answer-value.is-neutral {
   color: #344256;
 }
@@ -4427,6 +4502,11 @@ body.exam-page {
   font-size: 12px;
   color: #1f7a3f;
 }
+.review-matching-note {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #6b7688;
+}
 .review-footer {
   position: fixed;
   left: 0;
@@ -4452,9 +4532,16 @@ body.exam-page {
   justify-content: center;
   padding: 0 26px;
   box-shadow: 0 8px 18px rgba(15,23,42,0.05);
+  transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
 }
 .review-back-btn:hover {
   background: #f7fbf8;
+  border-color: rgba(27,94,48,0.42);
+  box-shadow: 0 12px 22px rgba(15,23,42,0.08);
+  transform: translateY(-1px);
+}
+.review-back-btn:active {
+  transform: translateY(0);
 }
 
 /* Waiting room */
@@ -4541,35 +4628,142 @@ body.exam-page {
 .warning-count {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 15px;
   font-weight: 700;
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.85);
-  padding: 5px 12px;
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 6px 14px;
   border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.18);
+  border: 1px solid #fecaca;
   transition: all 0.3s ease;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
+.warning-count svg { width: 15px; height: 15px; flex-shrink: 0; }
 .warning-count.warning-level-1 {
-  background: rgba(251,191,36,0.25);
-  color: #fef3c7;
-  border-color: rgba(251,191,36,0.4);
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
 }
 .warning-count.warning-level-2 {
-  background: rgba(249,115,22,0.3);
-  color: #fed7aa;
-  border-color: rgba(249,115,22,0.5);
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fed7aa;
   font-weight: 800;
 }
 .warning-count.warning-level-3 {
-  background: rgba(239,68,68,0.35);
-  color: #fecaca;
-  border-color: rgba(239,68,68,0.55);
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
   font-weight: 800;
   animation: pulse 0.9s infinite;
 }
+[data-theme="dark"] .warning-count {
+  background: rgba(248,113,113,0.12) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248,113,113,0.3) !important;
+}
+[data-theme="dark"] .warning-count.warning-level-1 {
+  background: rgba(251,191,36,0.14) !important;
+  color: #fcd34d !important;
+  border-color: rgba(251,191,36,0.32) !important;
+}
+[data-theme="dark"] .warning-count.warning-level-2 {
+  background: rgba(249,115,22,0.16) !important;
+  color: #fdba74 !important;
+  border-color: rgba(249,115,22,0.36) !important;
+}
+[data-theme="dark"] .warning-count.warning-level-3 {
+  background: rgba(239,68,68,0.2) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(239,68,68,0.4) !important;
+}
+
+/* Floating exam tools (text zoom + violations info) — bottom-left, mirrors
+   the camera widget's floating position on the bottom-right. */
+.exam-tools-container {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Exam text-size (zoom) control */
+.exam-zoom-control {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+  flex-shrink: 0;
+}
+.exam-zoom-btn {
+  border: none;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+  width: 32px;
+  height: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+.exam-zoom-btn:hover { background: #f3f4f6; }
+.exam-zoom-btn:first-child { border-right: 1px solid #e5e7eb; font-size: 11px; }
+[data-theme="dark"] .exam-zoom-control { border-color: var(--border); }
+[data-theme="dark"] .exam-zoom-btn { background: var(--surface); color: var(--text); }
+[data-theme="dark"] .exam-zoom-btn:first-child { border-right-color: var(--border); }
+[data-theme="dark"] .exam-zoom-btn:hover { background: var(--surface-2); }
+
+/* Exam violations-info button */
+.exam-info-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #b45309;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.exam-info-btn:hover { background: #fffbeb; color: #92400e; border-color: #f59e0b; }
+[data-theme="dark"] .exam-info-btn { background: var(--surface); border-color: var(--border); color: #fbbf24; }
+[data-theme="dark"] .exam-info-btn:hover { background: var(--surface-2); color: #fcd34d; border-color: #fbbf24; }
+
+/* Violations info modal list */
+.violations-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  margin-top: 4px;
+}
+.violations-info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+}
+.violations-info-item svg { flex-shrink: 0; margin-top: 1px; color: #b91c1c; }
+.violations-info-text { font-size: 13px; color: #374151; line-height: 1.5; }
+[data-theme="dark"] .violations-info-item { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.28); }
+[data-theme="dark"] .violations-info-item svg { color: #fca5a5; }
+[data-theme="dark"] .violations-info-text { color: var(--text); }
 
 /* ============================================================
    PROGRESS BAR
@@ -4613,20 +4807,15 @@ body.exam-page {
   box-shadow: 0 2px 12px rgba(15,45,26,0.06), 0 0 0 1px rgba(15,45,26,0.1);
 }
 
-/* Required badge on exam question cards */
+/* Required marker on exam question cards — a bold red asterisk, not a pill */
 .q-required-badge {
   display: inline-block;
-  margin-left: 8px;
-  font-size: 10px;
-  font-weight: 700;
+  margin-left: 5px;
+  font-size: 22px;
+  font-weight: 900;
   color: #dc2626;
-  background: #fee2e2;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
-  padding: 1px 6px;
+  line-height: 1;
   vertical-align: middle;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .question-card.q-required-missing {
@@ -5904,6 +6093,13 @@ body.exam-page {
 
 /* ── Subject card ─────────────────────────────────────── */
 .dash-subject-card { margin-bottom: 12px; overflow: hidden; }
+.dash-subject-card-clickable {
+  cursor: pointer;
+}
+.dash-subject-card-clickable:focus-visible {
+  outline: 2px solid #1a6b35;
+  outline-offset: 2px;
+}
 .dash-subject-header {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 18px 12px; border-bottom: 1px solid #f3f4f6;
@@ -6407,6 +6603,19 @@ body.exam-page {
   font-size: 9px; background: #e6ede8; color: #0f2d1a;
   padding: 1px 7px; border-radius: 10px; font-weight: 700;
   vertical-align: middle; margin-left: 6px; letter-spacing: 0.3px;
+}
+[data-theme="dark"] .people-name {
+  color: #f0f6fc !important;
+}
+[data-theme="dark"] .people-meta {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .people-you-badge {
+  background: rgba(74, 222, 128, 0.14) !important;
+  color: #bbf7d0 !important;
+}
+[data-theme="dark"] .dash-section-label {
+  color: #94a3b8 !important;
 }
 
 /* Topbar breadcrumb */
@@ -9967,24 +10176,24 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 
 /* Left nav panel */
 .examv2-nav-panel {
-  width: 200px; flex-shrink: 0;
+  width: 264px; flex-shrink: 0;
   background: #fff; border-right: 1px solid #e5e7eb;
   display: flex; flex-direction: column;
   overflow-y: auto; padding: 16px;
 }
 .examv2-nav-header {
-  font-size: 11px; font-weight: 800; color: #9ca3af;
+  font-size: 12px; font-weight: 800; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 0.08em;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .examv2-nav-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
-  margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(4, 44px); justify-content: center; gap: 12px;
+  margin-bottom: 20px;
 }
 .nav-q-btn {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   border: 1.5px solid #d1d5db; background: #fff;
-  font-size: 12px; font-weight: 700; color: #6b7280;
+  font-size: 16px; font-weight: 700; color: #6b7280;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
@@ -10005,13 +10214,15 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .nav-q-btn.review { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
 .nav-q-btn.current { background: #fff; border: 2.5px solid #1a4d2a; color: #1a4d2a; box-shadow: 0 0 0 3px rgba(26,77,42,0.12); }
 .nav-q-btn.current.answered { background: #e8f5ec; }
-.examv2-nav-legend { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.examv2-nav-legend { display: flex; flex-direction: column; gap: 11px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
 
-/* Right main */
+/* Right main — this element scrolls (not the question wrap) so the nav
+   controls sit flush under the question card instead of pinned to the
+   bottom of the viewport regardless of how short the card is. */
 .examv2-main {
-  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  flex: 1; display: flex; flex-direction: column; overflow-y: auto;
 }
-.examv2-question-wrap { flex: 1; overflow-y: auto; padding: 24px 28px 12px; }
+.examv2-question-wrap { padding: 24px 28px 12px; --exam-font-scale: 1; }
 
 /* ── Coding question (exam v2) ── */
 .coding-expected-wrap { margin-bottom: 16px; }
@@ -10094,7 +10305,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   font-size: 13px; font-weight: 800; flex-shrink: 0;
 }
 .examv2-question-wrap .question-content {
-  font-size: 16px; font-weight: 600; color: #111827; line-height: 1.6; flex: 1;
+  font-size: calc(16px * var(--exam-font-scale, 1)); font-weight: 600; color: #111827; line-height: 1.6; flex: 1;
 }
 .examv2-question-wrap .question-points {
   font-size: 11px; font-weight: 700; color: #1a4d2a;
@@ -10115,7 +10326,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   display: flex; align-items: center; gap: 12px;
   padding: 13px 16px; border-radius: 10px;
   border: 1.5px solid #e5e7eb; background: #fafafa;
-  cursor: pointer; transition: all 0.15s; font-size: 14px; color: #374151;
+  cursor: pointer; transition: all 0.15s; font-size: calc(14px * var(--exam-font-scale, 1)); color: #374151;
 }
 .examv2-question-wrap .mcq-option:hover { border-color: #1a4d2a; background: #f0f7f2; color: #0f2d1a; }
 .examv2-question-wrap .mcq-option.selected { border-color: #1a4d2a; background: #e8f5ec; color: #0f2d1a; }
@@ -10135,7 +10346,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   flex: 1; padding: 16px; border-radius: 10px;
   border: 1.5px solid #e5e7eb; background: #fafafa;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  cursor: pointer; font-size: 15px; font-weight: 700; color: #374151;
+  cursor: pointer; font-size: calc(15px * var(--exam-font-scale, 1)); font-weight: 700; color: #374151;
   transition: all 0.15s;
 }
 .examv2-question-wrap .tf-btn:hover { border-color: #1a4d2a; background: #f0f7f2; color: #0f2d1a; }
@@ -10145,18 +10356,19 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .examv2-question-wrap .id-input,
 .examv2-question-wrap .essay-textarea {
   width: 100%; border: 1.5px solid #e5e7eb; border-radius: 10px;
-  padding: 12px 16px; font-size: 14px; font-family: inherit;
+  padding: 12px 16px; font-size: calc(14px * var(--exam-font-scale, 1)); font-family: inherit;
   outline: none; resize: vertical; transition: border-color 0.15s;
 }
 .examv2-question-wrap .id-input:focus,
 .examv2-question-wrap .essay-textarea:focus { border-color: #1a4d2a; }
 .examv2-question-wrap .essay-textarea { min-height: 140px; }
 
-/* Nav footer */
-.examv2-nav-footer {
+/* Question nav controls — sits directly under the question card; no boxed
+   background, just the Mark-for-Review/Previous/Next controls on the page. */
+.examv2-nav-controls {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 32px; background: #fff;
-  border-top: 1px solid #e5e7eb; flex-shrink: 0;
+  padding: 14px 32px; background: transparent;
+  flex-shrink: 0;
 }
 .examv2-mark-review {
   display: flex; align-items: center; gap: 8px;
@@ -10164,11 +10376,10 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .examv2-mark-review input { width: 16px; height: 16px; accent-color: #f59e0b; cursor: pointer; }
 
-/* Required badge */
+/* Required marker — bold red asterisk */
 .examv2-question-wrap .q-required-badge {
-  display: inline-block; font-size: 10px; font-weight: 700;
-  background: #fef3c7; color: #92400e; border-radius: 4px;
-  padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+  display: inline-block; font-size: 22px; font-weight: 900;
+  color: #dc2626; line-height: 1; margin-left: 5px; vertical-align: middle;
 }
 .examv2-question-wrap .q-required-missing { border-color: #dc2626 !important; }
 
@@ -10178,7 +10389,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   display: flex; align-items: center; gap: 12px;
   padding: 13px 16px; border-radius: 10px;
   border: 1.5px solid #e5e7eb; background: #fafafa;
-  cursor: pointer; transition: all 0.15s; font-size: 14px; color: #374151;
+  cursor: pointer; transition: all 0.15s; font-size: calc(14px * var(--exam-font-scale, 1)); color: #374151;
 }
 .examv2-question-wrap .checkbox-option:hover { border-color: #1a4d2a; background: #f0f7f2; }
 .examv2-question-wrap .checkbox-option.selected { border-color: #1a4d2a; background: #e8f5ec; }

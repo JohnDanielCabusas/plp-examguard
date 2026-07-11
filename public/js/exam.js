@@ -7,11 +7,23 @@ const ENROLL_STATUS_ICONS = {
   success: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
 };
-function setEnrollStatus(el, text, variant) {
+function setEnrollStatus(el, text, variant, options = {}) {
   if (!el) return;
+  if (el._statusTimer) {
+    clearTimeout(el._statusTimer);
+    el._statusTimer = null;
+  }
   if (!text) { el.className = 'enroll-status'; el.innerHTML = ''; return; }
   el.className = `enroll-status ${variant}`;
   el.innerHTML = `${ENROLL_STATUS_ICONS[variant] || ENROLL_STATUS_ICONS.info}<span>${_esc(text)}</span>`;
+  if (options.autoClearMs) {
+    const expectedText = text;
+    el._statusTimer = setTimeout(() => {
+      if (el.textContent && el.textContent.includes(expectedText)) {
+        setEnrollStatus(el, '', variant);
+      }
+    }, options.autoClearMs);
+  }
 }
 
 const ExamApp = {
@@ -716,15 +728,29 @@ const ExamApp = {
     // present/absent, or allowing a retake (which mutates a session, not an exam).
     const refreshCourseState = () => {
       const sync = window.SupabaseSync;
-      if (!sync?.refreshExams) return;
       Promise.all([
-        sync.refreshExams(),
+        sync?.refreshExams?.(),
         sync.refreshSessions?.(),
+        sync.refreshSubjects?.(),
         sync.refreshStudents?.(),
+        sync.refreshProfessors?.(),
       ]).then(() => {
         if (this._currentCourseId !== subjId) return; // user navigated away
-        // Re-render banner stats
         const sess2 = Auth.getStudentSession();
+        // Re-apply the course color in case the professor changed it while this
+        // student had the course open — subjects were just re-pulled above, but
+        // the banner/sidebar chip color was otherwise only ever set once, at
+        // showCourseView() open time.
+        const freshSubj = DB.getSubjects().find(s => s.id === subjId);
+        if (freshSubj) {
+          const { c1, c2 } = this._subjectColor(freshSubj);
+          if (bannerEl) bannerEl.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
+          const student = sess2 && DB.getStudent(sess2.studentId);
+          const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
+          const enrolledSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && !s.archived);
+          this._renderSidebarCourses(enrolledSubjects);
+        }
+        // Re-render banner stats
         const allExamsForBanner = DB.getExams().filter(e => e.subjectId === subjId);
         const activeCount    = allExamsForBanner.filter(e => e.status === 'active').length;
         const submittedCount = allExamsForBanner.filter(e => {
@@ -891,7 +917,7 @@ const ExamApp = {
             </div>
             ${dbSess
               ? `<button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>`
-              : `<button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Closed</span></button>`}
+              : `<button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Unavailable</span></button>`}
           </div>`;
         } else {
           accentLabel = 'Draft';
@@ -937,21 +963,24 @@ const ExamApp = {
     const listEl = document.getElementById('course-tab-people');
     if (!listEl) return;
 
+    const subject = DB.getSubjects().find(s => s.id === subjId) || null;
     const settings = DB.getSettings();
+    const professors = DB.getAdmins();
+    const professor = professors.find(p => p.id === subject?.ownerAdminId) || null;
     const students = DB.getStudents().filter(s => (s.enrolledSubjects || []).includes(subjId));
 
     const teacherColor = '#0f2d1a';
-    const teacherLetter = (settings.adminName || 'A').charAt(0).toUpperCase();
+    const teacherName = professor?.name || settings.adminName || 'Administrator';
+    const teacherLetter = teacherName.charAt(0).toUpperCase();
 
     let html = `
       <div class="people-section">
-        <div class="dash-section-label">Teachers</div>
+        <div class="dash-section-label">Professor</div>
         <div class="people-card-list">
           <div class="people-card">
             <div class="people-avatar" style="background:${teacherColor};">${teacherLetter}</div>
             <div>
-              <div class="people-name">${_esc(settings.adminName || 'Administrator')}</div>
-              <div class="people-meta">${_esc(settings.adminEmail || '')}</div>
+              <div class="people-name">${_esc(teacherName)}</div>
             </div>
           </div>
         </div>
@@ -1031,7 +1060,13 @@ const ExamApp = {
     // retake, still shows up here even if the realtime socket silently dropped.
     this._dashInterval = setInterval(() => {
       const sync = window.SupabaseSync;
-      Promise.all([sync?.refreshExams?.(), sync?.refreshSessions?.()])
+      Promise.all([
+        sync?.refreshExams?.(),
+        sync?.refreshSessions?.(),
+        sync?.refreshSubjects?.(),
+        sync?.refreshStudents?.(),
+        sync?.refreshProfessors?.(),
+      ])
         .catch(() => {})
         .then(() => this._renderDashboard(Auth.getStudentSession()));
     }, 5000);
@@ -1155,16 +1190,16 @@ const ExamApp = {
 
         if (dbSession && dbSession.submitted) {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Submitted</span>`;
-          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">View Result</button>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">View Result</button>`;
         } else if (e.status === 'active') {
           statusHtml = `<span class="badge badge-success" style="font-size:10px;display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite;display:inline-block;"></span><span>Active</span></span>`;
-          actionHtml = `<button class="btn btn-primary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">Take Exam</button>`;
+          actionHtml = `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">Take Exam</button>`;
         } else if (e.status === 'ready') {
           statusHtml = `<span class="badge badge-info" style="font-size:10px;">Waiting</span>`;
-          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="ExamApp.dashSelectExam('${e.code}')">Join Room</button>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">Join Room</button>`;
         } else if (e.status === 'closed') {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Closed</span>`;
-          actionHtml = `<button class="btn btn-secondary btn-sm" style="opacity:0.5;cursor:not-allowed;" disabled>Closed</button>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" style="opacity:0.5;cursor:not-allowed;" disabled>Unavailable</button>`;
         }
 
         const metaParts = [
@@ -1192,7 +1227,7 @@ const ExamApp = {
         </div>`;
 
       const { c1: sc1, c2: sc2 } = this._subjectColor(subj);
-      html += `<div class="dash-subject-card" id="course-card-${subj.id}">
+      html += `<div class="dash-subject-card dash-subject-card-clickable" id="course-card-${subj.id}" tabindex="0" role="button" onclick="ExamApp.showCourseView('${subj.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ExamApp.showCourseView('${subj.id}');}">
         <div class="dash-subject-header">
           <div class="dash-subject-icon" style="background:linear-gradient(135deg,${sc1},${sc2});">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -1201,7 +1236,7 @@ const ExamApp = {
             <div class="dash-subject-name">${_esc(subj.name)}</div>
             <span class="dash-subject-code">${_esc(subj.code)}</span>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm dash-unenroll-btn" title="Unenroll from this course" onclick="ExamApp.requestUnenroll('${subj.id}')">Unenroll</button>
+          <button type="button" class="btn btn-secondary btn-sm dash-unenroll-btn" title="Unenroll from this course" onclick="event.stopPropagation();ExamApp.requestUnenroll('${subj.id}')">Unenroll</button>
         </div>
         ${examsHtml}
       </div>`;
@@ -1273,11 +1308,13 @@ const ExamApp = {
 
   dashEnterExamCode() {
     const code = (document.getElementById('dash-exam-code-input').value || '').trim().toUpperCase();
+    const msgEl = document.getElementById('dash-exam-code-msg');
     if (!code) return;
     const exam = DB.getExamByCode(code);
     const el = document.getElementById('dash-exam-code-input');
     if (!exam) {
       el.style.borderColor = '#dc2626';
+      setEnrollStatus(msgEl, 'Invalid exam code. Please check and try again.', 'error', { autoClearMs: 4000 });
       el.placeholder = 'Invalid code — try again';
       setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
       return;
@@ -1288,17 +1325,18 @@ const ExamApp = {
       el.style.borderColor = '#dc2626';
       el.value = '';
       el.placeholder = 'Not enrolled in that course';
-      this._showToast('You are not enrolled in the course for this exam.', 'error');
+      setEnrollStatus(msgEl, 'You are not enrolled in the course for this exam.', 'error', { autoClearMs: 4500 });
       setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
       return;
     }
+    setEnrollStatus(msgEl, '', 'info');
     this.dashSelectExam(code);
   },
 
   async dashEnrollCourse() {
     const code = (document.getElementById('dash-enroll-code').value || '').trim().toUpperCase();
     const msgEl = document.getElementById('dash-enroll-msg');
-    if (!code) { setEnrollStatus(msgEl, 'Please enter an enrollment code.', 'error'); return; }
+    if (!code) { setEnrollStatus(msgEl, 'Please enter an enrollment code.', 'error', { autoClearMs: 4000 }); return; }
 
     setEnrollStatus(msgEl, 'Checking code…', 'info');
 
@@ -1322,14 +1360,14 @@ const ExamApp = {
       }
     }
 
-    if (!subject) { setEnrollStatus(msgEl, 'Invalid code. Please check with your instructor.', 'error'); return; }
+    if (!subject) { setEnrollStatus(msgEl, 'Invalid code. Please check with your instructor.', 'error', { autoClearMs: 4500 }); return; }
 
     const sess = Auth.getStudentSession();
     const student = DB.getStudent(sess.studentId);
     if (student) {
       const enrolled = student.enrolledSubjects || [];
       if (enrolled.includes(subject.id)) {
-        setEnrollStatus(msgEl, `You're already enrolled in "${subject.name}".`, 'info');
+        setEnrollStatus(msgEl, `You're already enrolled in "${subject.name}".`, 'info', { autoClearMs: 4000 });
       } else if (!DB.isStudentEligibleForCourse(student, subject)) {
         const years = Array.isArray(subject.yearLevels) && subject.yearLevels.length
           ? subject.yearLevels
@@ -1339,15 +1377,15 @@ const ExamApp = {
         if (years.length) reqParts.push(years.join('/'));
         if (sections.length) reqParts.push('Section ' + sections.join('/'));
         const reqText = reqParts.length ? ` This course is only open to ${reqParts.join(', ')}.` : '';
-        setEnrollStatus(msgEl, `Your year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error');
+        setEnrollStatus(msgEl, `Your year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
       } else {
         DB.updateStudent(student.id, { enrolledSubjects: [...enrolled, subject.id] });
-        setEnrollStatus(msgEl, `Successfully enrolled in "${subject.name}"!`, 'success');
+        setEnrollStatus(msgEl, `Successfully enrolled in "${subject.name}"!`, 'success', { autoClearMs: 4000 });
         document.getElementById('dash-enroll-code').value = '';
         this._renderDashboard(sess);
       }
     } else {
-      setEnrollStatus(msgEl, 'Student record not found. Please contact your instructor.', 'error');
+      setEnrollStatus(msgEl, 'Student record not found. Please contact your instructor.', 'error', { autoClearMs: 5000 });
     }
   },
 
@@ -1366,6 +1404,19 @@ const ExamApp = {
 
   cancelLogout() {
     const modal = document.getElementById('confirm-logout-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+  },
+
+  showViolationsInfo() {
+    const modal = document.getElementById('violations-info-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  closeViolationsInfo() {
+    const modal = document.getElementById('violations-info-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
   },
@@ -1421,6 +1472,13 @@ const ExamApp = {
     });
     const target = document.getElementById('state-' + name);
     if (target) target.classList.remove('hidden');
+
+    // Defensive: the floating exam tools (zoom/violations-info) live inside
+    // #state-exam but must never leak onto other screens (e.g. dashboard
+    // after a mid-exam refresh), so tie their visibility directly to the
+    // active state rather than relying solely on the ancestor's display.
+    const tools = document.getElementById('exam-tools-container');
+    if (tools) tools.style.display = name === 'exam' ? '' : 'none';
   },
 
   _showError(msg) {
@@ -1433,10 +1491,9 @@ const ExamApp = {
       sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
       this.showDashboard(updated);
       // Show error as a transient banner in the dashboard
-      const msgEl = document.getElementById('dash-enroll-msg');
+      const msgEl = document.getElementById('dash-exam-code-msg');
       if (msgEl) {
-        setEnrollStatus(msgEl, msg, 'error');
-        setTimeout(() => { if (msgEl.textContent === msg) { setEnrollStatus(msgEl, '', 'error'); } }, 5000);
+        setEnrollStatus(msgEl, msg, 'error', { autoClearMs: 5000 });
       }
     } else {
       this.showState('entry');
@@ -1560,9 +1617,10 @@ const ExamApp = {
     this._initConnectionMonitor();
     this.requestFullscreen();
     this.initAntiCheat();
+    this.showState('exam');
     this.startTimer();
     this.renderQuestions();
-    this.showState('exam');
+    this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
 
     // Initialize camera if exam requires it
@@ -2750,7 +2808,11 @@ const ExamApp = {
       startTime = Date.now();
       DB.updateSession(this.session.id, { startTime: new Date(startTime).toISOString() });
     }
-    const totalSeconds = this.exam.timeLimit * 60;
+    // Fall back to a sane default rather than letting a missing/invalid
+    // timeLimit turn the whole countdown into NaN (which would silently
+    // never reach the auto-submit check below, since NaN <= 0 is false).
+    const timeLimitMinutes = Number(this.exam?.timeLimit) > 0 ? Number(this.exam.timeLimit) : 60;
+    const totalSeconds = timeLimitMinutes * 60;
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     this.timeRemaining = Math.max(0, totalSeconds - elapsed);
 
@@ -2761,6 +2823,7 @@ const ExamApp = {
 
     const timerEl = document.getElementById('exam-timer');
     const display = document.getElementById('timer-display');
+    if (!timerEl || !display) return;
 
     const tick = () => {
       if (this.timeRemaining <= 0) {
@@ -2849,7 +2912,7 @@ const ExamApp = {
       : '';
 
     const requiredBadge = q.required !== false
-      ? `<span class="q-required-badge">Required</span>`
+      ? `<span class="q-required-badge" title="Required" aria-label="Required question">*</span>`
       : '';
 
     return `
@@ -3389,6 +3452,33 @@ const ExamApp = {
     this._updateAnsweredStatus();
   },
 
+  // ── Question text zoom ─────────────────────────────────────
+  _examFontScaleMin: 0.85,
+  _examFontScaleMax: 1.4,
+  _examFontScaleStep: 0.1,
+
+  _applyFontScale(scale) {
+    const wrap = document.getElementById('questions-container');
+    if (wrap) wrap.style.setProperty('--exam-font-scale', scale);
+    this._examFontScale = scale;
+    try { localStorage.setItem('examFontScale', String(scale)); } catch (_) {}
+  },
+
+  _restoreFontScale() {
+    let scale = 1;
+    try {
+      const saved = parseFloat(localStorage.getItem('examFontScale'));
+      if (!isNaN(saved)) scale = Math.min(this._examFontScaleMax, Math.max(this._examFontScaleMin, saved));
+    } catch (_) {}
+    this._applyFontScale(scale);
+  },
+
+  adjustFontScale(direction) {
+    const current = this._examFontScale || 1;
+    const next = Math.round(Math.min(this._examFontScaleMax, Math.max(this._examFontScaleMin, current + direction * this._examFontScaleStep)) * 100) / 100;
+    this._applyFontScale(next);
+  },
+
   // ────────────────────────────────────────────────────────────
 
   _updateAnsweredStatus() {
@@ -3489,6 +3579,7 @@ const ExamApp = {
     const sess = this.session ? DB.getSession(this.session.id) : null;
     const exam = this.exam;
     if (!sess || !exam) return;
+    const scoreReleased = !!sess.scoreReleased;
 
     this.showState('review');
     const titleEl = document.getElementById('review-exam-title');
@@ -3506,20 +3597,30 @@ const ExamApp = {
     if (!container) return;
 
     if (nameEl) nameEl.textContent = `${sess.studentName} - ${sess.studentId}`;
-    const totalScore = Number(sess.score || 0);
-    const maxScore = Number(sess.maxScore || 0);
-    const pct = maxScore ? Math.round(totalScore / maxScore * 100) : 0;
     if (scoreEl) {
       scoreEl.removeAttribute('style');
-      scoreEl.className = `review-score-chip ${pct >= 75 ? 'score-high' : pct >= 60 ? 'score-mid' : 'score-low'}`;
-      scoreEl.innerHTML = `
-        <div class="review-score-chip-stats">
-          <span id="review-score-value">${totalScore}/${maxScore}</span>
-          <span class="review-score-chip-divider"></span>
-          <span id="review-score-pct">${pct}%</span>
-        </div>
-        <div class="review-score-chip-label">Total Score</div>
-      `;
+      if (scoreReleased && sess.score !== null && sess.maxScore !== null) {
+        const totalScore = Number(sess.score || 0);
+        const maxScore = Number(sess.maxScore || 0);
+        const pct = maxScore ? Math.round(totalScore / maxScore * 100) : 0;
+        scoreEl.className = `review-score-chip ${pct >= 75 ? 'score-high' : pct >= 60 ? 'score-mid' : 'score-low'}`;
+        scoreEl.innerHTML = `
+          <div class="review-score-chip-stats">
+            <span id="review-score-value">${totalScore}/${maxScore}</span>
+            <span class="review-score-chip-divider"></span>
+            <span id="review-score-pct">${pct}%</span>
+          </div>
+          <div class="review-score-chip-label">Total Score</div>
+        `;
+      } else {
+        scoreEl.className = 'review-score-chip review-score-chip-pending';
+        scoreEl.innerHTML = `
+          <div class="review-score-chip-stats">
+            <span>Score Hidden</span>
+          </div>
+          <div class="review-score-chip-label">Your professor will release scores when ready</div>
+        `;
+      }
     }
 
     const typeLabel = { mcq: 'MCQ', checkbox: 'Checkbox', tf: 'T/F', identification: 'ID', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay' };
@@ -3542,27 +3643,50 @@ const ExamApp = {
         const studentItemsRaw = (ans || '').split('\n').map((s) => s.trim()).filter(Boolean);
         const studentItems = studentItemsRaw.map((s) => s.toUpperCase());
         const matched = expected.filter((e) => studentItems.includes(e.toUpperCase()));
-        resultHtml = `
-          <div class="review-answer-group">
-            <div class="review-answer-row">
-              <div class="review-answer-label">Your answer</div>
-              <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
-            </div>
-            <div class="review-enum-list">
-              ${expected.map((e, i) => {
-                const got = studentItems.includes(e.toUpperCase());
-                const studentValue = studentItemsRaw[i] || '';
-                return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
-                  <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
-                  <div class="review-enum-copy">
-                    <div class="review-enum-expected">${_esc(e)}</div>
-                    ${!got && studentValue ? `<div class="review-enum-student">You wrote: ${_esc(studentValue)}</div>` : ''}
-                  </div>
-                </div>`;
-              }).join('')}
-            </div>
-            <div class="review-answer-note">${matched.length}/${expected.length} correct item(s)</div>
-          </div>`;
+        if (scoreReleased) {
+          resultHtml = `
+            <div class="review-answer-group">
+              <div class="review-answer-row">
+                <div class="review-answer-label">Your answer</div>
+                <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
+              </div>
+              <div class="review-enum-list">
+                ${expected.map((e, i) => {
+                  const got = studentItems.includes(e.toUpperCase());
+                  const studentValue = studentItemsRaw[i] || '';
+                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                    <div class="review-enum-copy">
+                      <div class="review-enum-expected">${_esc(e)}</div>
+                      ${!got && studentValue ? `<div class="review-enum-student">You wrote: ${_esc(studentValue)}</div>` : ''}
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>
+              <div class="review-answer-note">${matched.length}/${expected.length} correct item(s)</div>
+            </div>`;
+        } else {
+          resultHtml = `
+            <div class="review-answer-group">
+              <div class="review-answer-row">
+                <div class="review-answer-label">Your answer</div>
+                <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
+              </div>
+              <div class="review-enum-list">
+                ${studentItemsRaw.length ? studentItemsRaw.map((item) => {
+                  const got = expected.some((e) => e.toUpperCase() === item.toUpperCase());
+                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                    <div class="review-enum-copy">
+                      <div class="review-enum-expected">${_esc(item)}</div>
+                      <div class="review-enum-student">${got ? 'This submitted item is correct.' : 'This submitted item is incorrect.'}</div>
+                    </div>
+                  </div>`;
+                }).join('') : `<div class="review-answer-note">(no answer)</div>`}
+              </div>
+              <div class="review-answer-note">${matched.length} correct submitted item(s). Remaining answers stay hidden until your professor releases scores.</div>
+            </div>`;
+        }
       } else if (q.type === 'matching') {
         const pairs = q.pairs || [];
         const studentAns = (() => { try { return JSON.parse(ans || '{}'); } catch { return {}; } })();
@@ -3577,7 +3701,9 @@ const ExamApp = {
                   <div class="review-matching-arrow">${this._portalIcon('arrowRight', { size: 14, stroke: '#8fa0b6' })}</div>
                   <div class="review-matching-answer">
                     <div class="review-matching-student">${_esc(studentValue || '(no answer)')}</div>
-                    ${!correct ? `<div class="review-matching-correct">Correct: ${_esc(p.match)}</div>` : ''}
+                    ${scoreReleased
+                      ? (!correct ? `<div class="review-matching-correct">Correct: ${_esc(p.match)}</div>` : '')
+                      : `<div class="review-matching-note">${correct ? 'Matched correctly.' : studentValue ? 'Correct match hidden until scores are released.' : 'No answer submitted.'}</div>`}
                   </div>
                 </div>`;
               }).join('')}
@@ -3587,24 +3713,45 @@ const ExamApp = {
         let given = [];
         try { given = JSON.parse(ans || '[]') || []; } catch (_) {}
         const correctIndices = q.correctAnswerIndices || [];
-        resultHtml = `
-          <div class="review-answer-group">
-            <div class="review-enum-list">
-              ${(q.options || []).map((opt, oi) => {
-                const wasGiven = given.includes(oi);
-                const shouldBeGiven = correctIndices.includes(oi);
-                const got = wasGiven === shouldBeGiven;
-                if (!wasGiven && !shouldBeGiven) return '';
-                return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
-                  <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
-                  <div class="review-enum-copy">
-                    <div class="review-enum-expected">${_esc(opt)}</div>
-                    ${!got ? `<div class="review-enum-student">${wasGiven ? 'You selected this, but it\'s not correct' : 'You missed this correct option'}</div>` : ''}
-                  </div>
-                </div>`;
-              }).join('') || `<div class="review-answer-note">(no answer)</div>`}
-            </div>
-          </div>`;
+        if (scoreReleased) {
+          resultHtml = `
+            <div class="review-answer-group">
+              <div class="review-enum-list">
+                ${(q.options || []).map((opt, oi) => {
+                  const wasGiven = given.includes(oi);
+                  const shouldBeGiven = correctIndices.includes(oi);
+                  const got = wasGiven === shouldBeGiven;
+                  if (!wasGiven && !shouldBeGiven) return '';
+                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                    <div class="review-enum-copy">
+                      <div class="review-enum-expected">${_esc(opt)}</div>
+                      ${!got ? `<div class="review-enum-student">${wasGiven ? 'You selected this, but it\'s not correct' : 'You missed this correct option'}</div>` : ''}
+                    </div>
+                  </div>`;
+                }).join('') || `<div class="review-answer-note">(no answer)</div>`}
+              </div>
+            </div>`;
+        } else {
+          const missedCount = correctIndices.filter((oi) => !given.includes(oi)).length;
+          resultHtml = `
+            <div class="review-answer-group">
+              <div class="review-enum-list">
+                ${given.length ? given.map((oi) => {
+                  const opt = (q.options || [])[oi];
+                  const got = correctIndices.includes(oi);
+                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
+                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                    <div class="review-enum-copy">
+                      <div class="review-enum-expected">${_esc(opt || 'Selected option')}</div>
+                      <div class="review-enum-student">${got ? 'This selected option is correct.' : 'This selected option is incorrect.'}</div>
+                    </div>
+                  </div>`;
+                }).join('') : `<div class="review-answer-note">(no answer)</div>`}
+              </div>
+              <div class="review-answer-note">${missedCount > 0 ? `${missedCount} correct option(s) remain hidden until your professor releases scores.` : 'Full answer details will appear once scores are released.'}</div>
+            </div>`;
+        }
       } else {
         const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
         const answerClass = !ans ? 'is-empty' : correct ? 'is-correct' : 'is-wrong';
@@ -3617,10 +3764,12 @@ const ExamApp = {
                 ${ans ? `<span class="review-answer-status-icon">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</span>` : ''}
               </div>
             </div>
-            <div class="review-answer-row">
-              <div class="review-answer-label">Correct answer</div>
-              <div class="review-answer-value is-correct">${_esc(q.correctAnswer || '-')}</div>
-            </div>
+            ${scoreReleased
+              ? `<div class="review-answer-row">
+                  <div class="review-answer-label">Correct answer</div>
+                  <div class="review-answer-value is-correct">${_esc(q.correctAnswer || '-')}</div>
+                </div>`
+              : ''}
           </div>`;
       }
 

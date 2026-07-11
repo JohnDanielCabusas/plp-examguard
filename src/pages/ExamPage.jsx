@@ -251,16 +251,6 @@ export default function ExamPage() {
                 <div className="dash-quick-row">
                   <div className="dash-quick-card">
                     <div className="dash-quick-card-title">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                      Enter Exam Code
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input type="text" className="form-control" id="dash-exam-code-input" placeholder="e.g. EXAM01" autoComplete="off" style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1.5px', flex: 1 }} />
-                      <button className="btn btn-primary" onClick={() => window.ExamApp.dashEnterExamCode()} style={{ whiteSpace: 'nowrap', padding: '0 20px' }}>Go</button>
-                    </div>
-                  </div>
-                  <div className="dash-quick-card">
-                    <div className="dash-quick-card-title">
                       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg>
                       Enroll in a Course
                     </div>
@@ -269,6 +259,17 @@ export default function ExamPage() {
                       <button className="btn btn-secondary" onClick={() => window.ExamApp.dashEnrollCourse()} style={{ whiteSpace: 'nowrap' }}>Enroll</button>
                     </div>
                     <div id="dash-enroll-msg" className="enroll-status" />
+                  </div>
+                  <div className="dash-quick-card">
+                    <div className="dash-quick-card-title">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      Enter Exam Code
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input type="text" className="form-control" id="dash-exam-code-input" placeholder="e.g. EXAM01" autoComplete="off" style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1.5px', flex: 1 }} />
+                      <button className="btn btn-primary" onClick={() => window.ExamApp.dashEnterExamCode()} style={{ whiteSpace: 'nowrap', padding: '0 20px' }}>Go</button>
+                    </div>
+                    <div id="dash-exam-code-msg" className="enroll-status" />
                   </div>
                 </div>
                 <div id="dash-subjects-list" />
@@ -480,11 +481,11 @@ export default function ExamPage() {
             <span className="examv2-stat-label">Skipped</span>
           </div>
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'12px' }}>
-            <div className="warning-count" id="warning-count-display" style={{ fontSize:'12px', color:'#dc2626', fontWeight:700, display:'flex', alignItems:'center', gap:'4px' }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div className="warning-count" id="warning-count-display">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
               <span id="warning-num">0</span>/3
             </div>
-            <button type="button" data-exam-control="true" className="btn btn-primary btn-exam-submit examv2-interactive" onClick={() => window.ExamApp.confirmSubmit()}
+            <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.confirmSubmit()}
               style={{ border:'none', padding:'8px 20px', borderRadius:'8px', fontWeight:700, fontSize:'13px', cursor:'pointer' }}>
               Finish Exam
             </button>
@@ -499,14 +500,14 @@ export default function ExamPage() {
             <div className="examv2-nav-header">Questions</div>
             <div id="question-nav-grid" className="examv2-nav-grid" />
             <div className="examv2-nav-legend">
-              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
-                <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:'#1a4d2a', display:'inline-block' }} /> Answered
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+                <span style={{ width:'15px', height:'15px', borderRadius:'50%', background:'#1a4d2a', display:'inline-block', flexShrink:0 }} /> Answered
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
-                <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:'#f59e0b', display:'inline-block' }} /> For Review
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+                <span style={{ width:'15px', height:'15px', borderRadius:'50%', background:'#f59e0b', display:'inline-block', flexShrink:0 }} /> For Review
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'#6b7280' }}>
-                <span style={{ width:'10px', height:'10px', borderRadius:'50%', border:'1.5px solid #d1d5db', display:'inline-block' }} /> Unanswered
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+                <span style={{ width:'15px', height:'15px', borderRadius:'50%', border:'1.5px solid #d1d5db', display:'inline-block', flexShrink:0 }} /> Unanswered
               </div>
             </div>
           </aside>
@@ -522,7 +523,7 @@ export default function ExamPage() {
 
             <div id="questions-container" className="examv2-question-wrap" />
 
-            <div className="examv2-nav-footer">
+            <div className="examv2-nav-controls">
               <label className="examv2-mark-review" id="mark-review-label">
                 <input type="checkbox" id="mark-review-cb" data-exam-control="true" onChange={() => window.ExamApp.toggleMarkReview()} />
                 <span>Mark for Review</span>
@@ -699,6 +700,21 @@ export default function ExamPage() {
         </div>
       </div>
 
+      {/* Floating exam tools: text zoom + violations info */}
+      <div id="exam-tools-container" className="exam-tools-container" style={{ display: 'none' }}>
+        <div className="exam-zoom-control" title="Adjust question text size">
+          <button type="button" data-exam-control="true" className="exam-zoom-btn examv2-interactive" onClick={() => window.ExamApp.adjustFontScale(-1)} aria-label="Decrease text size">A−</button>
+          <button type="button" data-exam-control="true" className="exam-zoom-btn examv2-interactive" onClick={() => window.ExamApp.adjustFontScale(1)} aria-label="Increase text size">A+</button>
+        </div>
+        <button type="button" data-exam-control="true" className="exam-info-btn examv2-interactive" onClick={() => window.ExamApp.showViolationsInfo()} title="What counts as a violation?" aria-label="View exam monitoring rules">
+          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2 4 5v6c0 5.25 3.4 9.74 8 11 4.6-1.26 8-5.75 8-11V5z"/>
+            <line x1="12" y1="8" x2="12" y2="13"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </button>
+      </div>
+
       {/* Confirm Submit Modal */}
       <div id="confirm-submit-modal" className="modal-backdrop hidden">
         <div className="modal-dialog modal-sm">
@@ -749,6 +765,42 @@ export default function ExamPage() {
               <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelUnenroll()}>Cancel</button>
               <button type="button" data-exam-control="true" className="btn btn-danger examv2-interactive" onClick={() => window.ExamApp.confirmUnenroll()}>Unenroll</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Violations Info Modal */}
+      <div id="violations-info-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-lg">
+          <div className="modal-header">
+            <span className="modal-title">What Counts as a Violation?</span>
+            <button type="button" data-exam-control="true" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
+          </div>
+          <div className="modal-body">
+            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px', lineHeight: 1.6 }}>
+              This exam is monitored for academic integrity. Your camera, focus, and clipboard activity are tracked, and repeated violations may automatically submit your exam. Avoid the following:
+            </p>
+            <div className="violations-info-list">
+              {[
+                'Switching to another tab or browser window',
+                'Exiting fullscreen mode',
+                'Opening another application while the exam is open',
+                'Copying or cutting exam content',
+                'Pasting content into an answer',
+                'Taking a screenshot',
+                'Having no face visible in the camera',
+                'Poor camera lighting — your face too dark to see clearly',
+                'Turning off or blocking your webcam',
+              ].map((text) => (
+                <div className="violations-info-item" key={text}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+                  <span className="violations-info-text">{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>Got It</button>
           </div>
         </div>
       </div>
