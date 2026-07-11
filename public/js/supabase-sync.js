@@ -788,13 +788,14 @@ const SupabaseSync = {
   },
 
   _jsToDbExam(d) {
+    const normalizedCode = String(d.code || '').trim().toUpperCase();
     const row = {
       id: d.id,
       subject_id: d.subjectId,
       title: d.title,
       description: d.description || null,
       time_limit: d.timeLimit || 60,
-      code: d.code || ('D-' + (d.id || '').slice(-8).toUpperCase()),
+      code: normalizedCode || null,
       status: d.status || 'draft',
       shuffle_questions: !!d.shuffleQuestions,
       shuffle_answers: !!d.shuffleAnswers,
@@ -945,7 +946,7 @@ const SupabaseSync = {
       title: r.title,
       description: r.description || '',
       timeLimit: r.time_limit,
-      code: r.code,
+      code: r.code || '',
       status: r.status,
       shuffleQuestions: !!r.shuffle_questions,
       shuffleAnswers: !!r.shuffle_answers,

@@ -492,7 +492,6 @@ export default function AdminPage() {
                       <option value="">All Courses</option>
                     </select>
                   </div>
-                  <button className="btn btn-primary" onClick={() => window.openStudentModal()}>+ Add Student</button>
                 </div>
               </div>
               <div className="toolbar" style={{ gap: '10px', marginBottom: '16px' }}>
@@ -587,16 +586,16 @@ export default function AdminPage() {
                     <div className="form-row cols-2">
                       <div className="form-group"><label>Time Limit (minutes) *</label><input type="number" className="form-control" id="exam-timelimit-field" defaultValue="60" min="1" max="300" /></div>
                       <div className="form-group">
-                        <label>Exam Code</label>
+                        <label>Access Code <span className="text-muted" style={{ fontWeight: 400 }}>(Optional)</span></label>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <input type="text" className="form-control" id="exam-code-field" placeholder="Auto-generated on Ready" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
-                          <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate</button>
+                          <input type="text" className="form-control" id="exam-code-field" placeholder="Leave blank to keep this exam unlocked" maxLength={10} style={{ textTransform: 'uppercase', flex: 1 }} />
+                          <button type="button" className="btn btn-secondary" onClick={() => window.generateAndSetCode()} style={{ whiteSpace: 'nowrap' }}>Generate Code</button>
                           <button
                             type="button"
                             className="btn btn-secondary"
                             onClick={() => window.copyExamCodeFromField()}
-                            title="Copy exam code"
-                            aria-label="Copy exam code"
+                            title="Copy access code"
+                            aria-label="Copy access code"
                             style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '42px', paddingInline: '12px' }}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -605,24 +604,26 @@ export default function AdminPage() {
                             </svg>
                           </button>
                         </div>
+                        <div className="text-muted" style={{ fontSize: '12px', marginTop: '6px' }}>If you set a code, students must type it on their side before they can enter this exam.</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap' }}>
                       {[
-                        ['exam-shuffle-q',     'Shuffle Questions', null],
-                        ['exam-shuffle-a',     'Shuffle Answers', null],
-                        ['exam-require-camera','Motion Detection', {text:'REMOTE', bg:'#dbeafe', color:'#1e40af'}],
-                        ['exam-ai-detect',     'AI Detection', {text:'ESSAYS', bg:'#fef9c3', color:'#92400e'}],
-                        ['exam-allow-review',  'Allow Review',  {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
-                      ].map(([id, label, badge]) => (
-                        <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        ['exam-shuffle-q',     'Shuffle Questions', 'Randomizes question order for each student.', null],
+                        ['exam-shuffle-a',     'Shuffle Answers', 'Randomizes answer choices for each student.', null],
+                        ['exam-require-camera','Motion Detection', 'Monitors student movement through the camera during the exam.', {text:'REMOTE', bg:'#dbeafe', color:'#1e40af'}],
+                        ['exam-ai-detect',     'AI Detection', 'Flags essay responses that look AI-generated.', {text:'ESSAYS', bg:'#fef9c3', color:'#92400e'}],
+                        ['exam-allow-review',  'Allow Review', 'After submission, students only see which item numbers were right or wrong.', {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
+                      ].map(([id, label, tooltip, badge]) => (
+                        <label key={id} className="exam-detail-toggle">
                           <div className="checkbox-wrapper-30">
                             <div className="checkbox" style={{'--size':'1.0','--stroke':'#1a6b35'}}>
                               <input type="checkbox" id={id} />
                               <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" className="cb-border"/><polyline points="20,6 9,17 4,12" className="cb-check"/></svg>
                             </div>
                           </div>
-                          <span>{label}{badge && <span style={{ fontSize: '10px', background: badge.bg, color: badge.color, padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '4px' }}>{badge.text}</span>}</span>
+                          <span className="exam-detail-toggle-text">{label}{badge && <span style={{ fontSize: '10px', background: badge.bg, color: badge.color, padding: '1px 6px', borderRadius: '10px', fontWeight: 700, marginLeft: '4px' }}>{badge.text}</span>}</span>
+                          <span className="exam-detail-tooltip" role="tooltip">{tooltip}</span>
                         </label>
                       ))}
                     </div>

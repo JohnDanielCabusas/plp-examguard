@@ -197,13 +197,13 @@ const Auth = {
   // Legacy: studentSetup used by old exam.js entry form
   studentSetup(studentId, examCode) {
     if (!studentId || !studentId.trim()) return { success: false, message: 'Student ID is required.' };
-    if (!examCode || !examCode.trim()) return { success: false, message: 'Exam code is required.' };
+    if (!examCode || !examCode.trim()) return { success: false, message: 'Exam access code is required.' };
 
     const student = DB.getStudent(studentId.trim().toUpperCase());
     if (!student) return { success: false, message: 'Student ID not found. Please contact your instructor.' };
 
     const exam = DB.getExamByCode(examCode.trim().toUpperCase());
-    if (!exam) return { success: false, message: 'Invalid exam code.' };
+    if (!exam) return { success: false, message: 'Invalid exam access code.' };
     if (!(student.enrolledSubjects || []).includes(exam.subjectId)) {
       return { success: false, message: 'You are not enrolled in the course for this exam.' };
     }

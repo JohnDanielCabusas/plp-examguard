@@ -263,10 +263,10 @@ export default function ExamPage() {
                   <div className="dash-quick-card">
                     <div className="dash-quick-card-title">
                       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                      Enter Exam Code
+                      Enter Access Code
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <input type="text" className="form-control" id="dash-exam-code-input" placeholder="e.g. EXAM01" autoComplete="off" style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1.5px', flex: 1 }} />
+                      <input type="text" className="form-control" id="dash-exam-code-input" placeholder="Enter exam access code" autoComplete="off" style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1.5px', flex: 1 }} />
                       <button className="btn btn-primary" onClick={() => window.ExamApp.dashEnterExamCode()} style={{ whiteSpace: 'nowrap', padding: '0 20px' }}>Go</button>
                     </div>
                     <div id="dash-exam-code-msg" className="enroll-status" />
@@ -408,14 +408,14 @@ export default function ExamPage() {
         <div className="state-card">
           <img src="/plp-logo.png" alt="PLP" style={{ height: '64px', objectFit: 'contain', marginBottom: '12px' }} />
           <h2>Enter Exam</h2>
-          <p>Enter your Student ID and the exam code provided by your instructor.</p>
+          <p>Enter your Student ID and the exam access code provided by your instructor.</p>
           <div className="form-group" style={{ textAlign: 'left' }}>
             <label>Student ID</label>
             <input type="text" className="form-control" id="entry-student-id" placeholder="e.g. STU001" style={{ textTransform: 'uppercase' }} />
           </div>
           <div className="form-group" style={{ textAlign: 'left' }}>
-            <label>Exam Code</label>
-            <input type="text" className="form-control" id="entry-exam-code" placeholder="e.g. EXAM01" style={{ textTransform: 'uppercase' }} />
+            <label>Access Code</label>
+            <input type="text" className="form-control" id="entry-exam-code" placeholder="Exam access code" style={{ textTransform: 'uppercase' }} />
           </div>
           <div id="entry-error" className="text-danger mb-12" style={{ fontSize: '13px', display: 'none' }} />
           <button className="btn btn-primary btn-block btn-lg" onClick={() => window.ExamApp.submitEntry()}>Proceed</button>

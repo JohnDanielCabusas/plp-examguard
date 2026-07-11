@@ -75,6 +75,17 @@ alter table if exists public.settings add column if not exists claude_api_key te
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.subjects add column if not exists school_year text;
 
+-- Exams may optionally require an access code. When blank, students can open
+-- the exam directly from their course page; when present, the code remains
+-- globally unique and acts as a lock.
+alter table if exists public.exams alter column code drop not null;
+update public.exams set code = null where btrim(coalesce(code, '')) = '';
+alter table if exists public.exams drop constraint if exists exams_code_key;
+drop index if exists public.exams_code_key;
+create unique index if not exists exams_code_key
+on public.exams using btree (code)
+where code is not null;
+
 -- Course code uniqueness: a professor may reuse the same course code across
 -- different year-level/section offerings — enforced at the app layer
 -- (saveSubject() in admin.js), not in the database.

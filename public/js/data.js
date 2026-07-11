@@ -128,6 +128,22 @@ const DB = {
     return records.filter(record => record?.ownerAdminId === ownerAdminId);
   },
 
+  _filterStudentsVisibleToCurrentAdmin(records) {
+    const ownerAdminId = this._getCurrentAdminId();
+    if (!ownerAdminId) return records;
+
+    const ownedSubjectIds = new Set(
+      this._read(this.KEYS.subjects, [])
+        .filter(subject => subject?.ownerAdminId === ownerAdminId)
+        .map(subject => subject.id)
+    );
+
+    return records.filter(student =>
+      student?.ownerAdminId === ownerAdminId
+      || (student?.enrolledSubjects || []).some(subjectId => ownedSubjectIds.has(subjectId))
+    );
+  },
+
   _deriveStudentOwner(student, subjects, fallbackOwnerId) {
     const matchedSubject = (student?.enrolledSubjects || [])
       .map(subjectId => subjects.find(subject => subject.id === subjectId))
@@ -687,14 +703,15 @@ const DB = {
   // ---- Students ----
   getStudents() {
     this._migrateOwnerScope();
-    return this._filterByOwner(this.getAllStudentsRaw()).filter(s => !s.archived);
+    return this._filterStudentsVisibleToCurrentAdmin(this.getAllStudentsRaw()).filter(s => !s.archived);
   },
   getAllStudentsRaw() {
     this._migrateOwnerScope();
     return this._read(this.KEYS.students, []).map(student => this._sanitizeStudentRecord(student));
   },
   getArchivedStudents() {
-    return this._filterByOwner(this.getAllStudentsRaw()).filter(s => s.archived);
+    this._migrateOwnerScope();
+    return this._filterStudentsVisibleToCurrentAdmin(this.getAllStudentsRaw()).filter(s => s.archived);
   },
   getStudent(studentId) {
     const normalizedStudentId = this._normalizeStudentIdValue(studentId);
@@ -999,7 +1016,9 @@ const DB = {
     return exam;
   },
   getExamByCode(code) {
-    return this._read(this.KEYS.exams, []).find(e => e.code === code.toUpperCase()) || null;
+    const normalized = String(code || '').trim().toUpperCase();
+    if (!normalized) return null;
+    return this._read(this.KEYS.exams, []).find(e => String(e.code || '').trim().toUpperCase() === normalized) || null;
   },
   addExam(data) {
     const exams = [...this._read(this.KEYS.exams, [])];

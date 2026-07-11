@@ -301,8 +301,64 @@ const ExamApp = {
     if (footerMeta) footerMeta.textContent = this._formatFooterMeta(sess);
   },
 
+  _getPortalStudent(studentId) {
+    const student = DB.getStudent(studentId);
+    return student && !student.archived ? student : null;
+  },
+
+  _isPortalStudentArchived(studentId) {
+    return !!DB.getStudent(studentId)?.archived;
+  },
+
+  _renderCourseAccessRemovedState() {
+    const listEl = document.getElementById('dash-subjects-list');
+    if (!listEl) return;
+    this._renderSidebarCourses([]);
+    listEl.innerHTML = `<div class="dash-empty">
+      <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
+      <div class="dash-empty-title">Course Access Removed</div>
+      <div class="dash-empty-sub">Your professor has temporarily archived your student record. Your enrolled courses and exams are hidden until that record is restored.</div>
+    </div>`;
+  },
+
+  _isExamLockedByCode(exam) {
+    return !!String(exam?.code || '').trim();
+  },
+
+  _resolveExamFromSession(studentSession) {
+    if (!studentSession) return null;
+    if (studentSession.examId) return DB.getExam(studentSession.examId);
+    if (studentSession.examCode) return DB.getExamByCode(studentSession.examCode);
+    return null;
+  },
+
+  _openExamDirectly(examId) {
+    if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
+    if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
+    this._returnCourseId = this._currentCourseId || null;
+    const sess = Auth.getStudentSession();
+    const updated = { ...sess, examId };
+    delete updated.examCode;
+    sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
+    this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+    this._startExamFlow(updated);
+  },
+
+  _promptForExamAccessCode(exam) {
+    const input = document.getElementById('dash-exam-code-input');
+    const msgEl = document.getElementById('dash-exam-code-msg');
+    if (msgEl) {
+      setEnrollStatus(msgEl, `This exam is locked. Enter the access code for "${exam.title}" to continue.`, 'info', { autoClearMs: 5000 });
+    }
+    if (input) {
+      input.value = '';
+      input.focus();
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  },
+
   _isStudentEnrolledInExam(student, exam) {
-    if (!student || !exam?.subjectId) return false;
+    if (!student || student.archived || !exam?.subjectId) return false;
     return (student.enrolledSubjects || []).includes(exam.subjectId);
   },
 
@@ -320,13 +376,13 @@ const ExamApp = {
 
     this._repairStudentEmail(studentSession);
 
-    // If no exam code selected yet, show dashboard
-    if (!studentSession.examCode) {
+    // If no exam has been selected yet, show dashboard
+    if (!studentSession.examCode && !studentSession.examId) {
       this.showDashboard(studentSession);
       return;
     }
 
-    // We have an examCode — proceed with exam flow
+    // We have an exam target — proceed with exam flow
     this._startExamFlow(studentSession);
   },
 
@@ -335,9 +391,9 @@ const ExamApp = {
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
 
-    const exam = DB.getExamByCode(studentSession.examCode);
+    const exam = this._resolveExamFromSession(studentSession);
     if (!exam) {
-      // Exam code invalid — clear it and go back to dashboard
+      // Exam target invalid — clear it and go back to dashboard
       const sess = { ...studentSession };
       delete sess.examCode;
       delete sess.examId;
@@ -347,6 +403,16 @@ const ExamApp = {
     }
 
     this.exam = exam;
+
+    const portalStudent = this._getPortalStudent(studentSession.studentId);
+    if (!portalStudent) {
+      this._showError(
+        this._isPortalStudentArchived(studentSession.studentId)
+          ? 'Your professor has temporarily removed your access to this course and its exams.'
+          : 'Student record not found. Please contact your instructor.'
+      );
+      return;
+    }
 
     // Check if there's an existing DB session for this student+exam
     const existingSession = DB.getStudentSession(exam.id, studentSession.studentId);
@@ -371,12 +437,11 @@ const ExamApp = {
     // Enrollment + attendance checks only block brand-new joins. Students who already
     // have a session are grandfathered in so mid-exam changes do not strand them.
     if (!existingSession) {
-      const student = DB.getStudent(studentSession.studentId);
-      if (!this._isStudentEnrolledInExam(student, exam)) {
+      if (!this._isStudentEnrolledInExam(portalStudent, exam)) {
         this._showError('You are not enrolled in the course for this exam. Please contact your instructor if this is a mistake.');
         return;
       }
-      if (student && (exam.excludedStudentIds || []).includes(student.id)) {
+      if ((exam.excludedStudentIds || []).includes(portalStudent.id)) {
         this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
         return;
       }
@@ -391,14 +456,13 @@ const ExamApp = {
 
     if (exam.status === 'active') {
       if (!this.session) {
-        const student = DB.getStudent(studentSession.studentId);
         this.session = DB.addSession({
           examId: exam.id,
           examCode: exam.code,
           studentId: studentSession.studentId,
           studentName: studentSession.studentName || studentSession.studentId,
-          yearLevel: studentSession.yearLevel || (student ? student.yearLevel : ''),
-          section: studentSession.section || (student ? student.section : ''),
+          yearLevel: studentSession.yearLevel || (portalStudent ? portalStudent.yearLevel : ''),
+          section: studentSession.section || (portalStudent ? portalStudent.section : ''),
           startTime: new Date().toISOString(),
           endTime: null,
           answers: {},
@@ -654,7 +718,12 @@ const ExamApp = {
 
   showCourseView(subjId) {
     const subj = DB.getSubjects().find(s => s.id === subjId);
-    if (!subj || subj.archived) return;
+    const sess = Auth.getStudentSession();
+    const student = sess ? this._getPortalStudent(sess.studentId) : null;
+    if (!subj || subj.archived || !student || !(student.enrolledSubjects || []).includes(subjId)) {
+      this.showPortalTab('home');
+      return;
+    }
     this._currentCourseId = subjId;
     // Stop dashboard poll while in course view — it was re-rendering
     // every 5 seconds and destroying the tab active state
@@ -742,10 +811,14 @@ const ExamApp = {
         // the banner/sidebar chip color was otherwise only ever set once, at
         // showCourseView() open time.
         const freshSubj = DB.getSubjects().find(s => s.id === subjId);
+        const student = sess2 ? this._getPortalStudent(sess2.studentId) : null;
+        if (!freshSubj || !student || !(student.enrolledSubjects || []).includes(subjId)) {
+          this.showPortalTab('home');
+          return;
+        }
         if (freshSubj) {
           const { c1, c2 } = this._subjectColor(freshSubj);
           if (bannerEl) bannerEl.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
-          const student = sess2 && DB.getStudent(sess2.studentId);
           const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
           const enrolledSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && !s.archived);
           this._renderSidebarCourses(enrolledSubjects);
@@ -803,7 +876,11 @@ const ExamApp = {
     const listEl = document.getElementById('course-tab-exams');
     if (!listEl) return;
 
-    const student = DB.getStudent(sess.studentId);
+    const student = this._getPortalStudent(sess.studentId);
+    if (!student || !(student.enrolledSubjects || []).includes(subjId)) {
+      this.showPortalTab('home');
+      return;
+    }
     // Mirrors the join-time enforcement in _startExamFlow: a student is blocked from an
     // exam if they're marked absent — unless they already have a session (in progress or
     // submitted), which is grandfathered in.
@@ -843,6 +920,7 @@ const ExamApp = {
       exams.forEach(e => {
         const dbSess = DB.getStudentSession(e.id, sess.studentId);
         const blocked = !dbSess && (e.status === 'active' || e.status === 'ready') && isBlockedForStudent(e);
+        const requiresAccessCode = this._isExamLockedByCode(e);
         let panelHtml = '';
         let stateHtml = '';
         let accentLabel = g.label;
@@ -858,6 +936,9 @@ const ExamApp = {
         if (e.requireCamera) {
           chips.push(`<span class="course-meta-chip chip-camera">${this._portalLabel('camera', 'Camera Proctored', { size: 13, gap: 5 })}</span>`);
         }
+        if (requiresAccessCode && !dbSess) {
+          chips.push(`<span class="course-meta-chip">${this._portalLabel('clipboard', 'Access Code Required', { size: 13, gap: 5 })}</span>`);
+        }
 
         if (dbSess && dbSess.submitted) {
           const pct = dbSess.maxScore ? Math.round(dbSess.score / dbSess.maxScore * 100) : 0;
@@ -872,7 +953,7 @@ const ExamApp = {
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(dbSess.endTime || dbSess.startTime || e.closedAt || e.startedAt || e.createdAt)}</div>
               <div class="course-exam-panel-note">${scoreHtml}</div>
             </div>
-            <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
+            <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp._openExamDirectly('${e.id}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (blocked) {
           accentLabel = 'Absent';
@@ -891,9 +972,9 @@ const ExamApp = {
             <div class="course-exam-panel-top">
               ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.startedAt || e.createdAt)}</div>
-              <div class="course-exam-panel-note">You can enter this exam right now.</div>
+              <div class="course-exam-panel-note">${requiresAccessCode ? 'This exam is locked until you enter the access code from your professor.' : 'You can enter this exam right now.'}</div>
             </div>
-            <button class="course-exam-cta course-exam-cta-primary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>Take Exam</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
+            <button class="course-exam-cta course-exam-cta-primary" onclick="${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}"><span>${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (e.status === 'ready') {
           accentLabel = 'Scheduled';
@@ -902,9 +983,9 @@ const ExamApp = {
             <div class="course-exam-panel-top">
               ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.createdAt)}</div>
-              <div class="course-exam-panel-note">This exam room is ready and waiting for activation.</div>
+              <div class="course-exam-panel-note">${requiresAccessCode ? 'This exam is ready, but it stays locked until you enter the access code.' : 'This exam room is ready and waiting for activation.'}</div>
             </div>
-            <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>Join Room</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
+            <button class="course-exam-cta course-exam-cta-secondary" onclick="${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}"><span>${requiresAccessCode ? 'Enter Code' : 'Join Room'}</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
           </div>`;
         } else if (e.status === 'closed') {
           accentLabel = 'Closed';
@@ -916,7 +997,7 @@ const ExamApp = {
               <div class="course-exam-panel-note">This exam is no longer accepting submissions.</div>
             </div>
             ${dbSess
-              ? `<button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp.dashSelectExam('${e.code}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>`
+              ? `<button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp._openExamDirectly('${e.id}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>`
               : `<button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Unavailable</span></button>`}
           </div>`;
         } else {
@@ -1077,7 +1158,7 @@ const ExamApp = {
       return;
     }
     if (route.view === 'course') {
-      const student = DB.getStudent(sess.studentId);
+      const student = this._getPortalStudent(sess.studentId);
       const enrolled = student?.enrolledSubjects || [];
       const courseSubj = DB.getSubjects().find(s => s.id === route.courseId);
       if (enrolled.includes(route.courseId) && courseSubj && !courseSubj.archived) {
@@ -1090,7 +1171,12 @@ const ExamApp = {
 
   _renderDashboard(sess) {
     if (!sess) return;
-    const student = DB.getStudent(sess.studentId);
+    const rawStudent = DB.getStudent(sess.studentId);
+    if (rawStudent?.archived) {
+      this._renderCourseAccessRemovedState();
+      return;
+    }
+    const student = this._getPortalStudent(sess.studentId);
     const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
     const allSubjects = DB.getSubjects();
     const enrolledSubjects = allSubjects.filter(s => enrolledIds.includes(s.id) && !s.archived);
@@ -1107,7 +1193,7 @@ const ExamApp = {
       html += `<div class="dash-empty">
         <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
         <div class="dash-empty-title">No Enrolled Courses Yet</div>
-        <div class="dash-empty-sub">Use the "Enroll in a Course" field above, or enter an exam code directly.</div>
+        <div class="dash-empty-sub">Use the "Enroll in a Course" field above, or enter an exam access code directly.</div>
       </div>`;
       listEl.innerHTML = html;
       return;
@@ -1137,6 +1223,7 @@ const ExamApp = {
     if (activeExams.length) {
       html += `<div class="dash-section-label">Active Now</div>`;
       activeExams.forEach(({ exam: e, subject: subj }) => {
+        const requiresAccessCode = this._isExamLockedByCode(e);
         const camTag = e.requireCamera
           ? `<span style="color:rgba(255,255,255,0.7);font-weight:600;">${this._portalLabel('camera', 'Camera required', { size: 13, gap: 5, stroke: 'rgba(255,255,255,0.8)' })}</span>`
           : '';
@@ -1147,8 +1234,8 @@ const ExamApp = {
               <div class="dash-active-exam-title">${_esc(e.title)}</div>
               <div class="dash-active-exam-meta">${_esc(subj.name)} &nbsp;·&nbsp; ${e.questions.length} questions &nbsp;·&nbsp; ${e.timeLimit} min ${camTag ? '&nbsp;·&nbsp;' + camTag : ''}</div>
             </div>
-            <button class="btn-take-exam-pill" onclick="ExamApp.dashSelectExam('${e.code}')">
-              <span class="btep-text">Take Exam</span>
+            <button class="btn-take-exam-pill" onclick="${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">
+              <span class="btep-text">${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</span>
               <span class="btep-icon">
                 <svg width="16" height="19" viewBox="0 0 16 19" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <circle cx="1.61321" cy="1.61321" r="1.5" fill="#fff"/>
@@ -1186,17 +1273,18 @@ const ExamApp = {
 
       const examsHtml = subjectExams.length ? subjectExams.map(e => {
         const dbSession = DB.getStudentSession(e.id, sess.studentId);
+        const requiresAccessCode = this._isExamLockedByCode(e);
         let actionHtml = '', statusHtml = '';
 
         if (dbSession && dbSession.submitted) {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Submitted</span>`;
-          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">View Result</button>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp._openExamDirectly('${e.id}')">View Result</button>`;
         } else if (e.status === 'active') {
           statusHtml = `<span class="badge badge-success" style="font-size:10px;display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite;display:inline-block;"></span><span>Active</span></span>`;
-          actionHtml = `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">Take Exam</button>`;
+          actionHtml = `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</button>`;
         } else if (e.status === 'ready') {
           statusHtml = `<span class="badge badge-info" style="font-size:10px;">Waiting</span>`;
-          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp.dashSelectExam('${e.code}')">Join Room</button>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">${requiresAccessCode ? 'Enter Code' : 'Join Room'}</button>`;
         } else if (e.status === 'closed') {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Closed</span>`;
           actionHtml = `<button class="btn btn-secondary btn-sm" style="opacity:0.5;cursor:not-allowed;" disabled>Unavailable</button>`;
@@ -1207,6 +1295,7 @@ const ExamApp = {
           `<span>${_esc(`${e.timeLimit} min`)}</span>`,
         ];
         if (e.requireCamera) metaParts.push(this._portalLabel('camera', 'Camera', { size: 13, gap: 5 }));
+        if (requiresAccessCode && !dbSession) metaParts.push('Access code required');
 
         return `<div class="dash-exam-row">
           <div style="min-width:0;flex:1;">
@@ -1249,11 +1338,20 @@ const ExamApp = {
     const render = () => {
       const sess = Auth.getStudentSession();
       if (!sess) return;
-      const student = DB.getStudent(sess.studentId);
-      const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
-      const archivedSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && s.archived);
+      const rawStudent = DB.getStudent(sess.studentId);
       const listEl = document.getElementById('archived-subjects-list');
       if (!listEl) return;
+      if (rawStudent?.archived) {
+        listEl.innerHTML = `<div class="dash-empty">
+          <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
+          <div class="dash-empty-title">Course Access Removed</div>
+          <div class="dash-empty-sub">Your student record is archived right now, so course access is temporarily hidden.</div>
+        </div>`;
+        return;
+      }
+      const student = this._getPortalStudent(sess.studentId);
+      const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
+      const archivedSubjects = DB.getSubjects().filter(s => enrolledIds.includes(s.id) && s.archived);
 
       if (!archivedSubjects.length) {
         listEl.innerHTML = `<div class="dash-empty">
@@ -1295,12 +1393,17 @@ const ExamApp = {
   },
 
   dashSelectExam(examCode) {
+    const exam = DB.getExamByCode(examCode);
+    if (!exam) return;
+    if (!this._isExamLockedByCode(exam)) {
+      this._openExamDirectly(exam.id);
+      return;
+    }
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
-    // Remember where to return after the exam (course view or home)
     this._returnCourseId = this._currentCourseId || null;
     const sess = Auth.getStudentSession();
-    const updated = { ...sess, examCode };
+    const updated = { ...sess, examId: exam.id, examCode: String(exam.code || '').trim().toUpperCase() };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
     this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
     this._startExamFlow(updated);
@@ -1314,19 +1417,27 @@ const ExamApp = {
     const el = document.getElementById('dash-exam-code-input');
     if (!exam) {
       el.style.borderColor = '#dc2626';
-      setEnrollStatus(msgEl, 'Invalid exam code. Please check and try again.', 'error', { autoClearMs: 4000 });
+      setEnrollStatus(msgEl, 'Invalid access code. Please check and try again.', 'error', { autoClearMs: 4000 });
       el.placeholder = 'Invalid code — try again';
-      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
+      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
       return;
     }
     const sess = Auth.getStudentSession();
-    const student = sess ? DB.getStudent(sess.studentId) : null;
-    if (student && !this._isStudentEnrolledInExam(student, exam)) {
+    if (sess && this._isPortalStudentArchived(sess.studentId)) {
+      el.style.borderColor = '#dc2626';
+      el.value = '';
+      el.placeholder = 'Access removed';
+      setEnrollStatus(msgEl, 'Your professor has temporarily removed your access to courses and exams.', 'error', { autoClearMs: 4500 });
+      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
+      return;
+    }
+    const student = sess ? this._getPortalStudent(sess.studentId) : null;
+    if (sess && !this._isStudentEnrolledInExam(student, exam)) {
       el.style.borderColor = '#dc2626';
       el.value = '';
       el.placeholder = 'Not enrolled in that course';
       setEnrollStatus(msgEl, 'You are not enrolled in the course for this exam.', 'error', { autoClearMs: 4500 });
-      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'e.g. EXAM01'; }, 2000);
+      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
       return;
     }
     setEnrollStatus(msgEl, '', 'info');
@@ -1363,7 +1474,11 @@ const ExamApp = {
     if (!subject) { setEnrollStatus(msgEl, 'Invalid code. Please check with your instructor.', 'error', { autoClearMs: 4500 }); return; }
 
     const sess = Auth.getStudentSession();
-    const student = DB.getStudent(sess.studentId);
+    if (this._isPortalStudentArchived(sess.studentId)) {
+      setEnrollStatus(msgEl, 'Your professor has temporarily removed your course access. Enrollment is disabled until you are restored.', 'error', { autoClearMs: 5500 });
+      return;
+    }
+    const student = this._getPortalStudent(sess.studentId);
     if (student) {
       const enrolled = student.enrolledSubjects || [];
       if (enrolled.includes(subject.id)) {
@@ -1525,7 +1640,7 @@ const ExamApp = {
     if (errEl) errEl.style.display = 'none';
 
     if (!studentId || !examCode) {
-      if (errEl) { errEl.textContent = 'Please enter your Student ID and Exam Code.'; errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = 'Please enter your Student ID and Access Code.'; errEl.style.display = 'block'; }
       return;
     }
 
@@ -1548,7 +1663,7 @@ const ExamApp = {
       box.innerHTML = `
         <div class="info-row"><span class="info-label">Student</span><span class="info-value">${_esc(studentSession.studentName || studentSession.studentId)}</span></div>
         <div class="info-row"><span class="info-label">Exam</span><span class="info-value">${_esc(exam.title)}</span></div>
-        <div class="info-row"><span class="info-label">Exam Code</span><span class="info-value">${_esc(exam.code)}</span></div>
+        <div class="info-row"><span class="info-label">${this._isExamLockedByCode(exam) ? 'Access Code' : 'Access'}</span><span class="info-value">${this._isExamLockedByCode(exam) ? _esc(exam.code) : 'Unlocked'}</span></div>
         <div class="info-row"><span class="info-label">Time Limit</span><span class="info-value">${exam.timeLimit} minutes</span></div>
         <div class="info-row"><span class="info-label">Questions</span><span class="info-value">${exam.questions.length}</span></div>
       `;
@@ -3398,7 +3513,11 @@ const ExamApp = {
     const prevBtn = document.getElementById('btn-prev');
     const nextBtn = document.getElementById('btn-next');
     if (prevBtn) prevBtn.disabled = idx === 0;
-    if (nextBtn) nextBtn.disabled = idx === questions.length - 1;
+    if (nextBtn) {
+      const isLastQuestion = idx === questions.length - 1;
+      nextBtn.disabled = isLastQuestion;
+      nextBtn.style.display = isLastQuestion ? 'none' : '';
+    }
 
     const cb = document.getElementById('mark-review-cb');
     if (cb) cb.checked = this.markedForReview.has(idx);

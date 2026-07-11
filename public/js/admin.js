@@ -860,7 +860,7 @@ function viewEnrolledStudents(subjectId) {
               <td>${escHtml(getStudentSectionDisplay(s) || '—')}</td>
               <td style="text-align:center;">
                 <div class="table-actions">
-                  <button class="tbl-btn tbl-btn-archive" onclick="removeStudentFromCourse('${s.id}','${subjectId}')">Remove${icTrashStroke}</button>
+                  <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
                 </div>
               </td>
             </tr>`).join('')}
@@ -921,17 +921,6 @@ function switchEnrolledTab(tab) {
     document.getElementById('etab-' + t).classList.toggle('hidden', t !== tab);
     document.getElementById('etab-btn-' + t).classList.toggle('active', t === tab);
   });
-}
-
-async function removeStudentFromCourse(studentId, subjectId) {
-  const student = DB.getStudentById(studentId);
-  if (!student) return;
-  const ok = await showConfirm(`Remove "${student.name}" from this course? They will no longer see this course's exams.`);
-  if (!ok) return;
-  const updated = (student.enrolledSubjects || []).filter(id => id !== subjectId);
-  DB.updateStudent(student.id, { enrolledSubjects: updated });
-  viewEnrolledStudents(subjectId); // refresh modal
-  showToast(`${student.name} removed from course.`, 'success');
 }
 
 function renderSubjects() {
@@ -1118,10 +1107,10 @@ function copyTextToClipboard(text, successMessage) {
 function copyExamCode(code) {
   const cleanCode = String(code || '').trim().toUpperCase();
   if (!cleanCode) {
-    showToast('No exam code available.', 'error');
+    showToast('No access code available.', 'error');
     return;
   }
-  copyTextToClipboard(cleanCode, `Exam code copied: ${cleanCode}`);
+  copyTextToClipboard(cleanCode, `Access code copied: ${cleanCode}`);
 }
 
 function copyExamCodeFromField() {
@@ -1415,60 +1404,6 @@ function getStudentSectionDisplay(student) {
   return parts.section || normalizeSectionValue(student?.section || '');
 }
 
-function ensureStudentModalForm() {
-  const yearField = document.getElementById('stu-year');
-  if (yearField && yearField.tagName === 'SELECT') {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'form-control';
-    input.id = 'stu-year';
-    input.autocomplete = 'off';
-    yearField.replaceWith(input);
-    bindYearLevelInput(input);
-  } else if (!yearField) {
-    return;
-  } else {
-    yearField.autocomplete = 'off';
-    bindYearLevelInput(yearField);
-  }
-
-  const sectionField = document.getElementById('stu-section');
-  if (sectionField && sectionField.tagName === 'SELECT') {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'form-control';
-    input.id = 'stu-section';
-    input.placeholder = 'e.g. B';
-    input.autocomplete = 'off';
-    sectionField.replaceWith(input);
-    bindSectionInput(input);
-  } else if (sectionField) {
-    bindSectionInput(sectionField);
-  }
-
-  if (!document.getElementById('stu-program')) {
-    const emailGroup = document.getElementById('stu-email')?.closest('.form-group');
-    if (!emailGroup) return;
-    const emailRow = emailGroup.parentElement;
-    if (emailRow?.classList.contains('form-row')) {
-      const programGroup = document.createElement('div');
-      programGroup.className = 'form-group';
-      programGroup.innerHTML = '<label>Program</label><input type="text" class="form-control" id="stu-program" placeholder="e.g. BSCS" />';
-      emailRow.appendChild(programGroup);
-    } else {
-      const row = document.createElement('div');
-      row.className = 'form-row cols-2';
-      const detachedEmailGroup = emailGroup.cloneNode(true);
-      row.appendChild(detachedEmailGroup);
-      emailGroup.replaceWith(row);
-      const programGroup = document.createElement('div');
-      programGroup.className = 'form-group';
-      programGroup.innerHTML = '<label>Program</label><input type="text" class="form-control" id="stu-program" placeholder="e.g. BSCS" />';
-      row.appendChild(programGroup);
-    }
-  }
-}
-
 let studentFilterFrame = 0;
 function filterStudents() {
   const q = document.getElementById('student-search').value;
@@ -1504,60 +1439,6 @@ function populateStudentDropdowns(savedYear, savedSection) {
   if (savedSection && !allSections.includes(savedSection)) {
     secSel.innerHTML += `<option value="${escHtml(savedSection)}" selected>${escHtml(savedSection)}</option>`;
   }
-}
-
-function openStudentModal(id) {
-  document.getElementById('stu-id').value = '';
-  document.getElementById('stu-student-id').value = '';
-  document.getElementById('stu-name').value = '';
-  document.getElementById('stu-email').value = '';
-  document.getElementById('modal-student-title').textContent = 'Add Student';
-  document.getElementById('stu-student-id').disabled = false;
-
-  if (id) {
-    const s = DB.getStudentById(id);
-    if (!s) return;
-    document.getElementById('modal-student-title').textContent = 'Edit Student';
-    document.getElementById('stu-id').value = s.id;
-    document.getElementById('stu-student-id').value = s.studentId;
-    document.getElementById('stu-student-id').disabled = true;
-    document.getElementById('stu-name').value = s.name;
-    document.getElementById('stu-email').value = s.email || '';
-    populateStudentDropdowns(s.yearLevel || '', s.section || '');
-  } else {
-    populateStudentDropdowns('', '');
-  }
-  openModal('modal-student');
-}
-
-function saveStudent() {
-  const id = document.getElementById('stu-id').value;
-  const studentId = document.getElementById('stu-student-id').value.trim().toUpperCase();
-  const name = document.getElementById('stu-name').value.trim();
-  const yearLevel = document.getElementById('stu-year').value.trim();
-  const section = document.getElementById('stu-section').value.trim();
-  const email = document.getElementById('stu-email').value.trim().toLowerCase();
-
-  if (!studentId || !name) { showToast('Student ID and name are required.', 'error'); return; }
-  const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
-  if (!idMatch) { showToast('Student ID must be in YY-NNNNN format (e.g. 23-00218).', 'error'); return; }
-  const yr = parseInt(idMatch[1]);
-  if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
-
-  try {
-    if (id) {
-      DB.updateStudent(id, { name, yearLevel, section, email });
-      showToast('Student updated.', 'success');
-    } else {
-      DB.addStudent({ studentId, name, yearLevel, section, email });
-      showToast('Student added.', 'success');
-    }
-  } catch (error) {
-    showToast(error?.message || 'Unable to save student right now.', 'error');
-    return;
-  }
-  closeModal('modal-student');
-  renderStudents();
 }
 
 function yearNumberToLabel(value) {
@@ -1626,84 +1507,6 @@ function getStudentYearLevelDisplay(student) {
 function getStudentSectionDisplay(student) {
   const parts = getStudentYearSectionParts(student);
   return parts.section || normalizeSectionValue(student?.section || '');
-}
-
-function openStudentModal(id) {
-  ensureStudentModalForm();
-  document.getElementById('stu-id').value = '';
-  document.getElementById('stu-student-id').value = '';
-  document.getElementById('stu-name').value = '';
-  document.getElementById('stu-year').value = '';
-  document.getElementById('stu-section').value = '';
-  document.getElementById('stu-email').value = '';
-  document.getElementById('stu-program').value = '';
-  document.getElementById('modal-student-title').textContent = 'Add Student';
-
-  if (id) {
-    const s = DB.getStudentById(id);
-    if (!s) return;
-    document.getElementById('modal-student-title').textContent = 'Edit Student';
-    document.getElementById('stu-id').value = s.id;
-    document.getElementById('stu-student-id').value = s.studentId;
-    document.getElementById('stu-name').value = s.name;
-    document.getElementById('stu-year').value = getStudentYearLevelDisplay(s) || '';
-    document.getElementById('stu-section').value = getStudentSectionDisplay(s) || '';
-    document.getElementById('stu-email').value = s.email || '';
-    document.getElementById('stu-program').value = s.program || '';
-  }
-  openModal('modal-student');
-}
-
-function saveStudent() {
-  ensureStudentModalForm();
-  const id = document.getElementById('stu-id').value;
-  const studentId = document.getElementById('stu-student-id').value.trim().toUpperCase();
-  const name = document.getElementById('stu-name').value.trim();
-  const yearInput = document.getElementById('stu-year').value.trim();
-  const sectionInput = document.getElementById('stu-section').value.trim();
-  const email = document.getElementById('stu-email').value.trim().toLowerCase();
-  const program = document.getElementById('stu-program').value.trim().toUpperCase();
-
-  if (!studentId || !name) { showToast('Student ID and name are required.', 'error'); return; }
-  const idMatch = studentId.match(/^(\d{2})-\d{5}$/);
-  if (!idMatch) { showToast('Student ID must be in YY-NNNNN format (e.g. 23-00218).', 'error'); return; }
-  const yr = parseInt(idMatch[1]);
-  if (yr < 18 || yr > 26) { showToast('Student ID year must be between 2018 (18) and 2026 (26).', 'error'); return; }
-
-  const normalizedYear = yearLabelToNumber(yearInput);
-  if (yearInput && !normalizedYear) { showToast('Year level must be a number from 1 to 5.', 'error'); return; }
-  const normalizedSection = normalizeSectionValue(sectionInput);
-  const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
-  const section = normalizedSection || sectionInput;
-  const yearSection = normalizedYear && normalizedSection ? `${normalizedYear}-${normalizedSection}` : '';
-  const existingStudent = id ? DB.getStudentById(id) : null;
-
-  try {
-    if (id) {
-      DB.updateStudent(id, { studentId, name, yearLevel, section, yearSection, email, program });
-      if (existingStudent) {
-        DB.syncStudentReferences(existingStudent.studentId, {
-          ...existingStudent,
-          studentId,
-          name,
-          yearLevel,
-          section,
-          yearSection,
-          email,
-          program,
-        });
-      }
-      showToast('Student updated.', 'success');
-    } else {
-      DB.addStudent({ studentId, name, yearLevel, section, yearSection, email, program });
-      showToast('Student added.', 'success');
-    }
-  } catch (error) {
-    showToast(error?.message || 'Unable to save student right now.', 'error');
-    return;
-  }
-  closeModal('modal-student');
-  renderStudents();
 }
 
 function renderStudents(filter) {
@@ -1784,7 +1587,6 @@ function renderStudents(filter) {
       <td data-label="Program"><span class="section-text">${escHtml(programDisplay)}</span></td>
       <td data-label="">
         <div class="table-actions">
-          <button class="btn-action btn-action-ghost" onclick="openStudentModal('${s.id}')">Edit${icEditFill}</button>
           <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
         </div>
       </td>
@@ -1799,7 +1601,11 @@ async function archiveStudent(id) {
   if (!ok) return;
   DB.archiveStudent(id);
   showToast('Student archived.', 'success');
-  renderStudents();
+  renderStudents(document.getElementById('student-search')?.value || '');
+  if (currentCourseDetailId && (s.enrolledSubjects || []).includes(currentCourseDetailId)) {
+    viewEnrolledStudents(currentCourseDetailId);
+    renderSubjects();
+  }
 }
 
 // ============================================================
@@ -1837,7 +1643,7 @@ function renderExams() {
         <div style="position:relative;z-index:1;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
             ${statusBadge(e.status)}
-            ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy exam code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
+            ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy access code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
           </div>
           <div class="exam-card-title">${escHtml(e.title)}</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">${subjectName}</div>
@@ -3045,6 +2851,8 @@ function generateAndSetCode() {
 async function setExamStatus(id, status) {
   const exam = DB.getExam(id);
   if (!exam) return;
+  const accessCode = String(exam.code || '').trim().toUpperCase();
+  const isLockedByCode = !!accessCode;
 
   if (status === 'draft') {
     if (exam.status !== 'ready') { showToast('Only a Ready exam can be reverted to Draft.', 'error'); return; }
@@ -3069,13 +2877,12 @@ async function setExamStatus(id, status) {
       }
       return;
     }
-    const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will be able to enter the waiting room.`);
+    const ok = await showConfirm(`Set "${exam.title}" to Ready? Students will ${isLockedByCode ? `need the access code ${accessCode} to enter.` : 'be able to enter directly from their course page.'}`);
     if (!ok) return;
-    const code = exam.code || generateUniqueExamCode();
-    DB.updateExam(id, { status: 'ready', code });
-    showToast(`Exam set to Ready. Code: ${code}`, 'success');
+    DB.updateExam(id, { status: 'ready', code: accessCode });
+    showToast(isLockedByCode ? `Exam set to Ready. Access code: ${accessCode}` : 'Exam set to Ready. No access code required.', 'success');
   } else if (status === 'active') {
-    const ok = await showConfirm(`Activate exam "${exam.title}"? Students can now enter with code ${exam.code}.`);
+    const ok = await showConfirm(`Activate exam "${exam.title}"? Students can now ${isLockedByCode ? `enter with access code ${accessCode}.` : 'open it directly from their course page.'}`);
     if (!ok) return;
     DB.updateExam(id, { status: 'active', startedAt: new Date().toISOString() });
     showToast('Exam is now ACTIVE.', 'success');
