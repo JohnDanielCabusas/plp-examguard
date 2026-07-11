@@ -1,4 +1,20 @@
 // ============================================================
+// BODY SCROLL LOCK — shared across admin/exam/super-admin pages
+// so an open modal always blocks background scrolling.
+// ============================================================
+function lockBodyScroll() {
+  const count = (parseInt(document.body.dataset.modalOpenCount, 10) || 0) + 1;
+  document.body.dataset.modalOpenCount = String(count);
+  document.body.style.overflow = 'hidden';
+}
+
+function unlockBodyScroll() {
+  const count = Math.max(0, (parseInt(document.body.dataset.modalOpenCount, 10) || 0) - 1);
+  document.body.dataset.modalOpenCount = String(count);
+  if (count === 0) document.body.style.overflow = '';
+}
+
+// ============================================================
 // DATA LAYER - in-memory cache + Supabase sync
 // ============================================================
 

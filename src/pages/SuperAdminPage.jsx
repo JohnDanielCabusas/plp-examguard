@@ -331,6 +331,12 @@ function ConfirmDialog({
     icon === "signout" ? "#0f5132" : icon === "danger" ? "#dc2626" : "#d97706";
   const iconBg =
     icon === "signout" ? "#e8f5ec" : icon === "danger" ? "#fee2e2" : "#fef3c7";
+
+  useEffect(() => {
+    window.lockBodyScroll?.();
+    return () => window.unlockBodyScroll?.();
+  }, []);
+
   return (
     <div className="sa-modal-overlay">
       <div className="sa-modal sa-modal-sm">
@@ -391,6 +397,11 @@ function ProfessorModal({ professor, onSave, onClose }) {
   const [error, setError] = useState("");
   const [showPass, setShowPass] = useState(false);
   const isEdit = !!professor;
+
+  useEffect(() => {
+    window.lockBodyScroll?.();
+    return () => window.unlockBodyScroll?.();
+  }, []);
 
   const handleSave = async () => {
     const name = (nameRef.current?.value || "").trim();

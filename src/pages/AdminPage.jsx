@@ -261,6 +261,12 @@ export default function AdminPage() {
     }
   }, [aiCustomPrompt, aiMode]);
 
+  // Quick/Custom each mount their own #ai-file-info node — repopulate the
+  // freshly-mounted node's file chips after switching modes.
+  useEffect(() => {
+    window.renderAIFileChips?.();
+  }, [aiMode]);
+
   useEffect(() => {
     const handlePromptReset = () => {
       setAiCustomPrompt('');
@@ -573,7 +579,11 @@ export default function AdminPage() {
                       <div className="form-group"><label>Exam Title *</label><input type="text" className="form-control" id="exam-title-field" placeholder="e.g. Midterm Examination" onInput={() => { const v = document.getElementById('exam-title-field').value; const el = document.getElementById('exam-editor-title-display'); if(el) el.textContent = v || 'New Exam'; }} /></div>
                       <div className="form-group"><label>Subject/Course *</label><select className="form-control" id="exam-subject-field" /></div>
                     </div>
-                    <div className="form-group"><label>Description</label><textarea className="form-control" id="exam-desc-field" rows="2" placeholder="Optional exam description" /></div>
+                    <div className="form-group">
+                      <label>Description</label>
+                      <textarea className="form-control" id="exam-desc-field" rows="2" maxLength={100} placeholder="Optional exam description" onInput={() => window.updateCharCounter('exam-desc-field', 'exam-desc-counter', 100)} />
+                      <div className="char-counter" id="exam-desc-counter">0/100</div>
+                    </div>
                     <div className="form-row cols-2">
                       <div className="form-group"><label>Time Limit (minutes) *</label><input type="number" className="form-control" id="exam-timelimit-field" defaultValue="60" min="1" max="300" /></div>
                       <div className="form-group">
@@ -1013,13 +1023,17 @@ export default function AdminPage() {
               <div className="form-group"><label>Course Code *</label><input type="text" className="form-control" id="subj-code" placeholder="e.g. CS101" /></div>
               <div className="form-group"><label>Course Name *</label><input type="text" className="form-control" id="subj-name" placeholder="e.g. Introduction to Computing" /></div>
             </div>
-            <div className="form-group"><label>Description</label><textarea className="form-control" id="subj-desc" rows="2" placeholder="Brief description..." /></div>
-            <div className="form-group"><label>School Year</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
+            <div className="form-group">
+              <label>Description <span className="label-hint">(Optional)</span></label>
+              <textarea className="form-control" id="subj-desc" rows="2" maxLength={100} placeholder="Brief description..." onInput={() => window.updateCharCounter('subj-desc', 'subj-desc-counter', 100)} />
+              <div className="char-counter" id="subj-desc-counter">0/100</div>
+            </div>
+            <div className="form-group"><label>School Year *</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
             <div className="form-row cols-2" style={{ marginBottom: 0 }}>
               <div className="form-group">
-                <label>Year Level</label>
+                <label>Year Level *</label>
                 <select className="form-control" id="subj-year-level">
-                  <option value="">— All Year Levels —</option>
+                  <option value="">— Select Year Level —</option>
                   <option value="1st Year">1st Year</option>
                   <option value="2nd Year">2nd Year</option>
                   <option value="3rd Year">3rd Year</option>
@@ -1027,7 +1041,7 @@ export default function AdminPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Section</label>
+                <label>Section *</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: '10px', background: '#f9fafb' }}>
                   {['A','B','C','D','E'].map(s => (
                     <label key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, minWidth: '48px' }}>
@@ -1106,6 +1120,14 @@ export default function AdminPage() {
           <div className="modal-header"><span className="modal-title" id="modal-answers-title">Student Answers</span><button className="modal-close" onClick={() => window.closeModal('modal-student-answers')}>&#10005;</button></div>
           <div className="modal-body" id="modal-answers-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-student-answers')}>Close</button></div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-question-breakdown">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header"><span className="modal-title" id="modal-qbreak-title">Question Breakdown</span><button className="modal-close" onClick={() => window.closeModal('modal-question-breakdown')}>&#10005;</button></div>
+          <div className="modal-body" id="modal-qbreak-body" />
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-question-breakdown')}>Close</button></div>
         </div>
       </div>
 
@@ -1336,27 +1358,23 @@ export default function AdminPage() {
                 onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ai-file-drop-hover'); }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('ai-file-drop-hover')}
                 onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('ai-file-drop-hover'); window.handleAIFileDrop(e.dataTransfer.files); }}>
-                <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
-                  {/* File zone — expands to show chip when file attached */}
-                  <div id="ai-file-info" style={{ display:'none', flex:1, alignItems:'center', gap:'8px', background:aiTheme.accentBg, border:`1.5px solid ${aiTheme.accentBorder}`, borderRadius:'12px', padding:'10px 14px' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                    <span id="ai-file-name" style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:'13px', fontWeight:600, color:aiTheme.accentText }} />
-                    <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:aiTheme.textMuted, fontSize:'15px', lineHeight:1, padding:0, flexShrink:0 }}>x</button>
-                  </div>
+                <div className="ai-quick-actions-row" style={{ display:'flex', gap:'10px', alignItems:'center' }}>
+                  {/* File zone — populated with one chip per attached file (each independently removable) */}
+                  <div id="ai-file-info" className="ai-file-info-chip ai-file-info-chip-quick" style={{ display:'none', flex:1, flexWrap:'wrap', alignItems:'center', gap:'6px' }} />
                   {/* Attach button — shown when no file */}
-                  <label id="ai-attach-btn" htmlFor="ai-file-input"
+                  <label id="ai-attach-btn" htmlFor="ai-file-input" className="ai-quick-action ai-quick-attach-btn"
                     style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', border:`1.5px dashed ${aiTheme.accentBorder}`, borderRadius:'12px', padding:'11px 14px', cursor:'pointer', background:aiTheme.surfaceMuted, transition:'all 0.15s', color:aiTheme.accentStrong, fontWeight:600, fontSize:'13px' }}
                     onMouseEnter={(e) => { e.currentTarget.style.background=aiTheme.surfaceSoft; e.currentTarget.style.borderColor=aiTheme.accentStrong; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background=aiTheme.surfaceMuted; e.currentTarget.style.borderColor=aiTheme.accentBorder; }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     Attach or drop files
                   </label>
-                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()}
+                  <button id="ai-gen-btn" onClick={() => window.runAIGenerate()} className="ai-quick-action ai-quick-generate-btn"
                     style={{ height:'42px', padding:'0 20px', background:aiTheme.primaryBg, border:'none', borderRadius:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
                     Generate with AI
                   </button>
-                  <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
+                  <button id="ai-import-btn" onClick={() => window.importAIQuestions()} className="ai-quick-action ai-quick-generate-btn"
                     style={{ display:'none', height:'42px', padding:'0 18px', background:aiTheme.primaryBg, border:'none', borderRadius:'12px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
                   </button>
@@ -1412,13 +1430,7 @@ export default function AdminPage() {
                       </div>
                     )}
 
-                    <div id="ai-file-info" style={{ display:'none', alignItems:'center', padding:'14px 14px 0' }}>
-                      <div style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:aiTheme.composerFieldBg, border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'999px', padding:'8px 12px', fontSize:'12px', fontWeight:600, color:aiTheme.text }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={aiTheme.accentStrong} strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                        <span id="ai-file-name" style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'340px' }} />
-                        <button onClick={() => window.clearAIFile()} style={{ background:'none', border:'none', cursor:'pointer', color:aiTheme.textMuted, fontSize:'14px', lineHeight:1, padding:0 }}>×</button>
-                      </div>
-                    </div>
+                    <div id="ai-file-info" className="ai-file-info-inline-wrap" style={{ display:'none', flexWrap:'wrap', alignItems:'center', gap:'6px', padding:'14px 14px 0' }} />
 
                     <textarea id="ai-custom-prompt-custom" rows={1}
                       value={aiCustomPrompt}
@@ -1501,6 +1513,19 @@ export default function AdminPage() {
         #ai-custom-prompt-custom::placeholder { color:${aiTheme.textMuted}; }
         #ai-custom-prompt-custom::selection { background:${isDark ? 'rgba(74,222,128,0.22)' : 'rgba(34,197,94,0.18)'}; color:${aiTheme.textStrong}; }
         #ai-custom-prompt-custom:focus { background:${aiTheme.composerBg}; }
+        .ai-quick-actions-row { flex-wrap:wrap; }
+        .ai-file-info-chip { min-width:0; }
+        .ai-file-info-chip-quick { flex:1 1 100%; min-width:0; }
+        .ai-file-info-inline-wrap { min-width:0; }
+        .ai-quick-action { min-width:0; }
+        .ai-quick-attach-btn { flex:1 1 220px; min-width:180px; }
+        .ai-quick-generate-btn { flex:0 1 auto; }
+        @media (max-width: 900px) {
+          .ai-quick-attach-btn,
+          .ai-quick-generate-btn {
+            flex:1 1 100%;
+          }
+        }
       `}</style>
     </>
   );

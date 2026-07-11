@@ -435,7 +435,19 @@ function renderDashboard() {
     (student.enrolledSubjects || []).some(subjectId => subjectIds.has(subjectId))
   );
   const activeExams = exams.filter(e => e.status === 'active');
+  const readyExams = exams.filter(e => e.status === 'ready');
   const submittedSessions = sessions.filter(s => s.submitted);
+
+  const formatLiveDuration = (startTime) => {
+    if (!startTime) return 'Just started';
+    const elapsedMs = Date.now() - new Date(startTime).getTime();
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return 'Just started';
+    const mins = Math.floor(elapsedMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    if (hrs > 0) return `${hrs}h ${mins % 60}m live`;
+    if (mins > 0) return `${mins}m live`;
+    return 'Just started';
+  };
 
   const now = new Date();
   const refreshEl = document.getElementById('dash-refresh-time');
@@ -461,15 +473,48 @@ function renderDashboard() {
   document.getElementById('dash-recent-exams').innerHTML = recentHtml;
 
   // Active sessions
-  const activeSessions = sessions.filter(s => !s.submitted);
+  const activeSessions = sessions
+    .filter(s => !s.submitted && (s.startTime || s.createdAt))
+    .sort((a, b) => new Date(b.startTime || b.createdAt || 0) - new Date(a.startTime || a.createdAt || 0));
   const sessHtml = activeSessions.length
-    ? `<table style="width:100%;"><thead><tr><th>Student</th><th>Exam</th><th>Warnings</th></tr></thead><tbody>
+    ? `<table style="width:100%;"><thead><tr><th>Student</th><th>Exam</th><th>Live</th><th>Warnings</th></tr></thead><tbody>
         ${activeSessions.map(s => {
           const exam = DB.getExam(s.examId);
-          return `<tr><td>${escHtml(s.studentName)}</td><td>${escHtml(exam ? exam.title : s.examCode)}</td><td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td></tr>`;
+          return `<tr>
+            <td>${escHtml(s.studentName)}</td>
+            <td>${escHtml(exam ? exam.title : s.examCode)}</td>
+            <td>${escHtml(formatLiveDuration(s.startTime || s.createdAt))}</td>
+            <td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td>
+          </tr>`;
         }).join('')}
        </tbody></table>`
-    : `<div class="empty-state"><p>No active sessions</p></div>`;
+    : activeExams.length
+      ? `<div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:12px;color:var(--text-muted);">No students are taking an exam right now, but these exams are live and ready for joins.</div>
+          ${activeExams.slice(0, 5).map(exam => {
+            const liveCount = sessions.filter(session => session.examId === exam.id && !session.submitted).length;
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+              <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(exam.title)}</div>
+                <div style="font-size:12px;color:var(--text-muted);">${exam.code ? `Code ${escHtml(exam.code)} · ` : ''}${exam.questions.length} question${exam.questions.length !== 1 ? 's' : ''} · ${exam.timeLimit} min</div>
+              </div>
+              <span class="badge badge-success">${liveCount} live</span>
+            </div>`;
+          }).join('')}
+        </div>`
+      : readyExams.length
+        ? `<div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
+            <div style="font-size:12px;color:var(--text-muted);">No active sessions yet. These exams are ready and waiting for activation.</div>
+            ${readyExams.slice(0, 5).map(exam => `
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+                <div style="min-width:0;">
+                  <div style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(exam.title)}</div>
+                  <div style="font-size:12px;color:var(--text-muted);">${exam.code ? `Code ${escHtml(exam.code)} · ` : ''}${exam.questions.length} question${exam.questions.length !== 1 ? 's' : ''} · ${exam.timeLimit} min</div>
+                </div>
+                <span class="badge badge-info">Ready</span>
+              </div>`).join('')}
+          </div>`
+        : `<div class="empty-state"><p>No active or ready exam activity yet</p></div>`;
   document.getElementById('dash-active-sessions').innerHTML = sessHtml;
 }
 
@@ -937,6 +982,7 @@ function renderSubjects() {
           <div style="position:relative;z-index:1;">
             <div class="course-card-code-label">${escHtml(s.code)}${s.schoolYear ? ` · S.Y. ${escHtml(s.schoolYear)}` : ''}</div>
             <div class="course-card-name">${escHtml(courseName)}</div>
+            ${s.description ? `<div class="course-card-desc">${escHtml(s.description)}</div>` : ''}
           </div>
         </div>
         <div style="padding:14px 18px 0;">
@@ -1182,7 +1228,7 @@ function ensureSubjectModalTextFields() {
 
   if (!document.getElementById('subj-section')) {
     const sectionLabel = [...document.querySelectorAll('#modal-subject .form-group > label')]
-      .find(label => label.textContent.trim() === 'Section');
+      .find(label => label.textContent.replace('*', '').trim() === 'Section');
     const sectionField = sectionLabel ? sectionLabel.nextElementSibling : null;
     if (sectionField) {
       const input = document.createElement('input');
@@ -1201,6 +1247,7 @@ function openSubjectModal(id) {
   document.getElementById('subj-code').value = '';
   document.getElementById('subj-name').value = '';
   document.getElementById('subj-desc').value = '';
+  updateCharCounter('subj-desc', 'subj-desc-counter', 100);
   document.getElementById('subj-year-level').value = '';
   document.getElementById('subj-section').value = '';
   document.getElementById('subj-school-year').value = '';
@@ -1215,6 +1262,7 @@ function openSubjectModal(id) {
     document.getElementById('subj-code').value = s.code;
     document.getElementById('subj-name').value = formatCourseNameDisplay(s.name);
     document.getElementById('subj-desc').value = s.description || '';
+    updateCharCounter('subj-desc', 'subj-desc-counter', 100);
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
     document.getElementById('subj-school-year').value = s.schoolYear || '';
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
@@ -1236,8 +1284,19 @@ function saveSubject() {
   const yearLevels = normalizeCourseYearLevelsInput(rawYearLevel);
   const sections = normalizeCourseSectionsInput(document.getElementById('subj-section').value);
   const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
+  const schoolYear = document.getElementById('subj-school-year').value.trim();
 
-  if (!code || !name) { showToast('Course code and name are required.', 'error'); return; }
+  const missingFields = [];
+  if (!code) missingFields.push('course code');
+  if (!name) missingFields.push('course name');
+  if (!schoolYear) missingFields.push('school year');
+  if (!rawYearLevel) missingFields.push('year level');
+  if (!sections.length) missingFields.push('section');
+  if (missingFields.length) {
+    showToast(`Please complete all course fields first: ${missingFields.join(', ')}.`, 'error');
+    return;
+  }
+  if (description.length > 100) { showToast('Description must be 100 characters or fewer.', 'error'); return; }
 
   const conflict = DB.getSubjects().find(s => s.code === code && s.id !== id && !s.archived);
   if (conflict) {
@@ -1245,7 +1304,6 @@ function saveSubject() {
     return;
   }
 
-  const schoolYear = document.getElementById('subj-school-year').value.trim();
   if (schoolYear && !/^\d{4}-\d{4}$/.test(schoolYear)) {
     showToast('School year must be in the format 2025-2026.', 'error');
     return;
@@ -2263,6 +2321,7 @@ function openExamEditor(id) {
   document.getElementById('exam-id').value = '';
   document.getElementById('exam-title-field').value = '';
   document.getElementById('exam-desc-field').value = '';
+  updateCharCounter('exam-desc-field', 'exam-desc-counter', 100);
   document.getElementById('exam-timelimit-field').value = '60';
   document.getElementById('exam-code-field').value = '';
   document.getElementById('exam-shuffle-q').checked = false;
@@ -2278,6 +2337,7 @@ function openExamEditor(id) {
   const qCard = document.getElementById('exam-editor-questions-card');
   const questionsList = document.getElementById('questions-list');
   const questionCountBadge = document.getElementById('exam-q-count');
+  const totalPointsBadge = document.getElementById('exam-total-points');
 
   currentQBuilderExamId = null;
 
@@ -2287,6 +2347,7 @@ function openExamEditor(id) {
     document.getElementById('exam-id').value = e.id;
     document.getElementById('exam-title-field').value = e.title;
     document.getElementById('exam-desc-field').value = e.description || '';
+    updateCharCounter('exam-desc-field', 'exam-desc-counter', 100);
     document.getElementById('exam-timelimit-field').value = e.timeLimit;
     document.getElementById('exam-code-field').value = e.code || '';
     document.getElementById('exam-shuffle-q').checked = e.shuffleQuestions || false;
@@ -2307,6 +2368,10 @@ function openExamEditor(id) {
     if (qCard) qCard.style.display = '';
     refreshExamEditorStatusUI(null);
     if (questionCountBadge) questionCountBadge.textContent = '';
+    if (totalPointsBadge) {
+      totalPointsBadge.textContent = '';
+      totalPointsBadge.style.display = 'none';
+    }
     if (questionsList) {
       questionsList.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Start by saving this exam, then add questions.</p></div>`;
     }
@@ -2737,6 +2802,7 @@ function saveExamFromEditor() {
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
   if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
+  if (description.length > 100) { showToast('Description must be 100 characters or fewer.', 'error'); return; }
 
   const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
 
@@ -2801,11 +2867,18 @@ function switchExamTab(tab) {
 function updateQBadge(examId) {
   const e = DB.getExam(examId);
   const badge = document.getElementById('exam-q-count');
-  if (badge && e) badge.textContent = e.questions.length || '';
+  if (badge) badge.textContent = e ? (e.questions.length || '') : '';
   const ptsBadge = document.getElementById('exam-total-points');
-  if (ptsBadge && e) {
+  if (ptsBadge) {
+    if (!e) {
+      ptsBadge.textContent = '';
+      ptsBadge.style.display = 'none';
+      return;
+    }
     const total = e.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
-    ptsBadge.textContent = e.questions.length ? `${total} pt${total !== 1 ? 's' : ''} total` : '';
+    const shouldShow = e.questions.length > 0 && total > 0;
+    ptsBadge.textContent = shouldShow ? `${total} pt${total !== 1 ? 's' : ''} total` : '';
+    ptsBadge.style.display = shouldShow ? 'inline-flex' : 'none';
   }
 }
 
@@ -2827,6 +2900,7 @@ function saveExam() {
   if (!subjectId) { showToast('Please select a subject.', 'error'); return; }
   if (!timeLimit || timeLimit < 1) { showToast('Please enter a valid time limit.', 'error'); return; }
   if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
+  if (description.length > 100) { showToast('Description must be 100 characters or fewer.', 'error'); return; }
 
   const allowReview  = document.getElementById('exam-allow-review').checked;
   const audienceData = { targetYearLevels, targetSections };
@@ -2913,7 +2987,7 @@ function openExamAbsenteesModal() {
       : `<div class="empty-state" style="padding:20px;"><p>No students are enrolled in this course yet.</p></div>`;
   }
 
-  document.getElementById('modal-exam-absentees').classList.remove('hidden');
+  openModal('modal-exam-absentees');
 }
 
 function toggleAllAbsentees(checked) {
@@ -3084,9 +3158,11 @@ function showReopenDialog(exam) {
         </div>
       </div>`;
     document.body.appendChild(modal);
-    modal.querySelector('#reopen-new-btn').onclick  = () => { modal.remove(); resolve('new'); };
-    modal.querySelector('#reopen-all-btn').onclick  = () => { modal.remove(); resolve('all'); };
-    modal.querySelector('#reopen-cancel-btn').onclick = () => { modal.remove(); resolve(null); };
+    lockBodyScroll();
+    const closeReopenDialog = (value) => { unlockBodyScroll(); modal.remove(); resolve(value); };
+    modal.querySelector('#reopen-new-btn').onclick  = () => closeReopenDialog('new');
+    modal.querySelector('#reopen-all-btn').onclick  = () => closeReopenDialog('all');
+    modal.querySelector('#reopen-cancel-btn').onclick = () => closeReopenDialog(null);
   });
 }
 
@@ -3535,15 +3611,6 @@ function buildQuestionBlock(q, idx) {
               <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;" onclick="event.stopPropagation()">
-            <div class="checkbox-wrapper-30">
-              <div class="checkbox" style="--size:0.78;--stroke:#1a6b35">
-                <input type="checkbox" ${q.required !== false ? 'checked' : ''} onchange="updateQField(${idx},'required',this.checked)" />
-                <svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="3" class="cb-border"/><polyline points="20,6 9,17 4,12" class="cb-check"/></svg>
-              </div>
-            </div>
-            <span style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;line-height:1;user-select:none;" title="Student must answer this question to submit the exam">Required<span style="color:#dc2626;">*</span></span>
-          </div>
           <span class="qe-badge" style="background:${typeColor}">Q${idx+1}</span>
           <div class="qe-type-dd" id="qtd-${idx}">
             <button class="qe-type-trigger" onclick="event.stopPropagation();toggleTypeDD(${idx})">
@@ -3561,6 +3628,10 @@ function buildQuestionBlock(q, idx) {
           <button class="qe-del-btn" onclick="removeQuestion(${idx})" title="Delete question">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
+          <div class="qe-required-group" onclick="event.stopPropagation()">
+            <span class="qe-required-label" title="Student must answer this question to submit the exam"><span class="qe-required-star" aria-hidden="true">*</span> Required</span>
+            <button type="button" class="qe-required-toggle${q.required !== false ? ' active' : ''}" onclick="toggleQuestionRequired(${idx},this)" title="Student must answer this question to submit the exam" aria-label="Toggle required"></button>
+          </div>
         </div>
       </div>
       <div class="qe-card-body">
@@ -3728,6 +3799,15 @@ function updateQField(idx, field, value) {
   DB.updateExam(currentQBuilderExamId, { questions });
   refreshQuestionIssue(idx);
   if (field === 'points') updateQBadge(currentQBuilderExamId);
+}
+
+function toggleQuestionRequired(idx, btn) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const q = exam?.questions?.[idx];
+  if (!q) return;
+  const next = !(q.required !== false);
+  updateQField(idx, 'required', next);
+  if (btn) btn.classList.toggle('active', next);
 }
 
 function updateOption(qIdx, oIdx, value) {
@@ -3957,6 +4037,86 @@ function viewStudentAnswers(sessionId) {
   aiScanJobs.forEach(job => {
     detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
   });
+}
+
+// Full per-question, per-choice answer breakdown for the "Question Difficulty"
+// stats card — shows the untruncated question text plus how many students
+// picked each choice (or each distinct free-text response for open questions).
+function viewQuestionBreakdown(examId) {
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  if (!sessions.length) return;
+
+  const rows = exam.questions.map((q, idx) => {
+    if (q.type === 'essay') return null;
+
+    const totalResponses = sessions.length;
+    let choiceStats = [];
+
+    if (q.type === 'checkbox') {
+      const counts = (q.options || []).map(() => 0);
+      sessions.forEach(s => {
+        let given = [];
+        try { given = JSON.parse((s.answers || {})[q.id] || '[]') || []; } catch (_) {}
+        given.forEach(i => { if (counts[i] !== undefined) counts[i]++; });
+      });
+      const correctIndices = new Set(q.correctAnswerIndices || []);
+      choiceStats = (q.options || []).map((opt, i) => ({ label: opt, count: counts[i] || 0, isCorrect: correctIndices.has(i) }));
+    } else if (q.type === 'mcq' || q.type === 'tf') {
+      const counts = {};
+      let noAnswer = 0;
+      sessions.forEach(s => {
+        const ans = ((s.answers || {})[q.id] || '').toString().trim();
+        if (!ans) { noAnswer++; return; }
+        counts[ans] = (counts[ans] || 0) + 1;
+      });
+      const correctAnswer = (q.correctAnswer || '').toString().trim();
+      choiceStats = (q.options || []).map(opt => ({
+        label: opt,
+        count: counts[opt.toString().trim()] || 0,
+        isCorrect: opt.toString().trim().toUpperCase() === correctAnswer.toUpperCase(),
+      }));
+      if (noAnswer) choiceStats.push({ label: '(No answer)', count: noAnswer, isCorrect: false, muted: true });
+    } else {
+      // Free-text types (identification, enumeration, matching, etc.) have no
+      // fixed choices — group by the raw response students actually typed.
+      const counts = {};
+      let noAnswer = 0;
+      sessions.forEach(s => {
+        const raw = ((s.answers || {})[q.id] || '').toString().trim();
+        if (!raw) { noAnswer++; return; }
+        counts[raw] = (counts[raw] || 0) + 1;
+      });
+      const correctAnswer = (q.correctAnswer || '').toString().trim().toUpperCase();
+      choiceStats = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => ({ label, count, isCorrect: label.toUpperCase() === correctAnswer }));
+      if (noAnswer) choiceStats.push({ label: '(No answer)', count: noAnswer, isCorrect: false, muted: true });
+    }
+
+    const maxCount = Math.max(1, ...choiceStats.map(c => c.count));
+
+    return `
+      <div class="qbreak-item">
+        <div class="qbreak-q">Q${idx + 1}: ${escHtml(q.content)}</div>
+        <div class="qbreak-choices">
+          ${choiceStats.map(c => {
+            const pct = totalResponses ? Math.round(c.count / totalResponses * 100) : 0;
+            return `
+            <div class="qbreak-choice-row${c.isCorrect ? ' correct' : ''}${c.muted ? ' muted' : ''}">
+              <div class="qbreak-choice-label">${escHtml(c.label)}${c.isCorrect ? ' <span class="qbreak-correct-badge">Correct</span>' : ''}</div>
+              <div class="qbreak-bar-wrap"><div class="qbreak-bar" style="width:${Math.round(c.count / maxCount * 100)}%"></div></div>
+              <div class="qbreak-count">${c.count} <span class="qbreak-pct">(${pct}%)</span></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).filter(Boolean).join('');
+
+  document.getElementById('modal-qbreak-title').textContent = `Question Breakdown — ${exam.title}`;
+  document.getElementById('modal-qbreak-body').innerHTML = rows || `<div style="color:var(--text-muted);font-size:13px;">No auto-graded questions.</div>`;
+  openModal('modal-question-breakdown');
 }
 
 // ============================================================
@@ -4482,15 +4642,26 @@ function renderExamStats() {
   const flagged = sessions.filter(s => s.warnings >= 2).length;
 
   // Score distribution
+  const totalPoints = exam.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
   const ranges = [{l:'0–49',mn:0,mx:49},{l:'50–59',mn:50,mx:59},{l:'60–74',mn:60,mx:74},{l:'75–84',mn:75,mx:84},{l:'85–94',mn:85,mx:94},{l:'95–100',mn:95,mx:100}];
   const maxCount = Math.max(1, ...ranges.map(r => scores.filter(s => s>=r.mn && s<=r.mx).length));
   const distBars = ranges.map(r => {
     const cnt = scores.filter(s => s>=r.mn && s<=r.mx).length;
-    const h = Math.max(4, Math.round(cnt/maxCount*80));
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+    // Points equivalent of this percentage bucket — raw percentages alone
+    // don't tell a professor what score a student actually needs.
+    const pointsLabel = totalPoints > 0
+      ? `${Math.round(r.mn/100*totalPoints)}–${Math.round(r.mx/100*totalPoints)} pts`
+      : '';
+    // Bar height is a flex-grow ratio (not a fixed px value) so it always
+    // fills whatever vertical space the card ends up with.
+    const barGrow = Math.max(cnt, maxCount * 0.03);
+    const spacerGrow = Math.max(0, maxCount - cnt);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;height:100%;">
+      <div style="flex:${spacerGrow} 0 0;width:100%;"></div>
       <div style="font-size:11px;font-weight:700;color:var(--primary);">${cnt||''}</div>
-      <div style="width:100%;height:${h}px;background:var(--primary);opacity:0.8;border-radius:4px 4px 0 0;min-height:4px;"></div>
-      <div style="font-size:9px;color:var(--text-muted);">${r.l}</div>
+      <div style="flex:${barGrow} 0 0;width:100%;background:var(--primary);opacity:0.8;border-radius:4px 4px 0 0;"></div>
+      <div style="font-size:9px;color:var(--text-muted);text-align:center;">${r.l}%</div>
+      ${pointsLabel ? `<div style="font-size:9px;color:var(--text-muted);opacity:0.7;text-align:center;">${pointsLabel}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -4530,14 +4701,19 @@ function renderExamStats() {
     <!-- Two column: Distribution + Question Analysis -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
       <!-- Score Distribution -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
-        <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Score Distribution</div>
-        <div style="display:flex;align-items:flex-end;gap:6px;height:100px;">${distBars}</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;flex-direction:column;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:16px;flex-shrink:0;">Score Distribution</div>
+        <div style="display:flex;align-items:stretch;gap:6px;flex:1;min-height:160px;">${distBars}</div>
       </div>
 
       <!-- Question Difficulty -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:220px;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Question Difficulty</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-size:14px;font-weight:700;">Question Difficulty</div>
+          ${qStats.length ? `<button class="qbreak-expand-btn" onclick="viewQuestionBreakdown('${examId}')" title="View full question and answer breakdown">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> Expand
+          </button>` : ''}
+        </div>
         ${qStats.length ? qStats.map(({qi,q,correct,pct})=>`
           <div style="margin-bottom:10px;">
             <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
@@ -5308,21 +5484,39 @@ function openModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
   modal.classList.remove('hidden');
+  lockBodyScroll();
   requestAnimationFrame(() => initCustomDropdowns(modal));
 }
 
 function closeModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
+  if (!modal.classList.contains('hidden')) unlockBodyScroll();
   modal.classList.add('hidden');
 }
 
 // Close modal on backdrop click
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
   backdrop.addEventListener('click', function(e) {
-    if (e.target === this) this.classList.add('hidden');
+    if (e.target === this && !this.classList.contains('hidden')) {
+      unlockBodyScroll();
+      this.classList.add('hidden');
+    }
   });
 });
+
+// ============================================================
+// CHARACTER COUNTER HELPER (description fields, etc.)
+// ============================================================
+function updateCharCounter(fieldId, counterId, max) {
+  const field = document.getElementById(fieldId);
+  const counter = document.getElementById(counterId);
+  if (!field || !counter) return;
+  const len = field.value.length;
+  counter.textContent = `${len}/${max}`;
+  counter.classList.toggle('char-counter-warn', len >= max * 0.9 && len < max);
+  counter.classList.toggle('char-counter-error', len >= max);
+}
 
 // ============================================================
 // CONFIRM DIALOG
@@ -5688,7 +5882,7 @@ function openAIGen() {
     aiBox.style.height = '100%'; aiBox.style.borderRadius = '16px';
     aiBox.dataset.fullscreen = '0';
   }
-  if (aiBackdrop) aiBackdrop.classList.remove('hidden');
+  if (aiBackdrop) { aiBackdrop.classList.remove('hidden'); lockBodyScroll(); }
   scrollAIChat();
   requestAnimationFrame(() => document.getElementById('ai-custom-prompt')?.focus());
 }
@@ -5700,7 +5894,9 @@ function closeAIGen() {
   if (backdrop) { backdrop.style.padding = ''; }
   const icon = document.getElementById('ai-gen-expand-icon');
   if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
-  document.getElementById('modal-ai-gen').classList.add('hidden');
+  const modal = document.getElementById('modal-ai-gen');
+  if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+  modal.classList.add('hidden');
 }
 
 function toggleAIGenFullscreen() {
@@ -5800,19 +5996,47 @@ function setAIFiles(files) {
   }
 
   aiSelectedFiles = dedupeAIFiles([...aiSelectedFiles, ...acceptedFiles]);
-  const fileInfo = document.getElementById('ai-file-info');
-  if (fileInfo) fileInfo.style.display = 'flex';
-  document.getElementById('ai-file-name').textContent = getAIFileSummary(aiSelectedFiles);
+  renderAIFileChips();
   if (input) input.value = '';
   if (validationError) showToast(validationError, 'error');
   scrollAIChat();
 }
 
+// Renders one independently-removable chip per attached file, so a professor
+// can drop a single file from the batch without clearing the whole attachment.
+function renderAIFileChips() {
+  const fileInfo = document.getElementById('ai-file-info');
+  if (!fileInfo) return;
+  if (!aiSelectedFiles.length) {
+    fileInfo.style.display = 'none';
+    fileInfo.innerHTML = '';
+    return;
+  }
+  fileInfo.style.display = 'flex';
+  fileInfo.innerHTML = aiSelectedFiles.map((file, i) => {
+    const label = `${file.name} (${formatAIFileSize(file.size)})`;
+    return `
+      <span class="ai-file-chip" title="${escHtml(label)}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        <span class="ai-file-chip-name">${escHtml(file.name)}</span>
+        <button type="button" class="ai-file-chip-remove" onclick="removeAIFile(${i})" title="Remove ${escHtml(file.name)}" aria-label="Remove ${escHtml(file.name)}">&times;</button>
+      </span>`;
+  }).join('');
+}
+
+// Removes a single attached file by index, keeping the rest attached.
+function removeAIFile(index) {
+  aiSelectedFiles = aiSelectedFiles.filter((_, i) => i !== index);
+  renderAIFileChips();
+  const attachBtn = document.getElementById('ai-attach-btn');
+  if (!aiSelectedFiles.length && attachBtn) attachBtn.style.display = '';
+  document.getElementById('ai-file-input').value = '';
+}
+
 function clearAIFile() {
   aiSelectedFiles = [];
-  const fileInfo = document.getElementById('ai-file-info');
+  renderAIFileChips();
   const attachBtn = document.getElementById('ai-attach-btn');
-  if (fileInfo) fileInfo.style.display = 'none';
   if (attachBtn) attachBtn.style.display = '';
   document.getElementById('ai-file-input').value = '';
 }

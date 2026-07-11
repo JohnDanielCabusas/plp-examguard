@@ -1355,6 +1355,7 @@ const ExamApp = {
     const modal = document.getElementById('confirm-logout-modal');
     if (modal) {
       modal.classList.remove('hidden');
+      lockBodyScroll();
       return;
     }
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
@@ -1364,7 +1365,9 @@ const ExamApp = {
   },
 
   cancelLogout() {
-    document.getElementById('confirm-logout-modal')?.classList.add('hidden');
+    const modal = document.getElementById('confirm-logout-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
   },
 
   confirmLogout() {
@@ -1384,11 +1387,14 @@ const ExamApp = {
     const msgEl = document.getElementById('confirm-unenroll-msg');
     if (msgEl) msgEl.textContent = `Unenroll from "${subj.name}"? You will lose access to its exams and materials unless you rejoin with an enrollment code.`;
     document.getElementById('confirm-unenroll-modal')?.classList.remove('hidden');
+    lockBodyScroll();
   },
 
   cancelUnenroll() {
     this._unenrollTargetId = null;
-    document.getElementById('confirm-unenroll-modal')?.classList.add('hidden');
+    const modal = document.getElementById('confirm-unenroll-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
   },
 
   confirmUnenroll() {
@@ -3456,6 +3462,7 @@ const ExamApp = {
 
     document.getElementById('confirm-submit-msg').textContent = msg;
     document.getElementById('confirm-submit-modal').classList.remove('hidden');
+    lockBodyScroll();
   },
 
   _showRequiredError(msg) {
@@ -3473,7 +3480,9 @@ const ExamApp = {
   },
 
   cancelSubmit() {
-    document.getElementById('confirm-submit-modal').classList.add('hidden');
+    const modal = document.getElementById('confirm-submit-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal.classList.add('hidden');
   },
 
   showReview() {
@@ -3736,7 +3745,9 @@ const ExamApp = {
       this._flashReconnectNotice('Reconnect to submit your exam.');
       return;
     }
-    document.getElementById('confirm-submit-modal').classList.add('hidden');
+    const submitModal = document.getElementById('confirm-submit-modal');
+    if (submitModal && !submitModal.classList.contains('hidden')) unlockBodyScroll();
+    submitModal.classList.add('hidden');
 
     this.stopTimer();
     this.destroyAntiCheat(); // also calls stopCamera()
