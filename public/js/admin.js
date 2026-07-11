@@ -3834,7 +3834,7 @@ function viewExamResults(examId) {
     </div>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit Type</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit Type</th><th style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${sorted.map((s, i) => {
             const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
@@ -4556,7 +4556,7 @@ function renderExamStats() {
       <div style="font-size:14px;font-weight:700;margin-bottom:14px;">Student Results</div>
       <div class="table-wrapper">
         <table>
-          <thead><tr><th>Rank</th><th>Student</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Student</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit</th><th style="text-align:center;">Actions</th></tr></thead>
           <tbody>
             ${ranked.map((s,i)=>{
               const pct = s.maxScore?Math.round(s.score/s.maxScore*100):0;

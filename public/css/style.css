@@ -38,6 +38,7 @@
   --primary-dark: #16a34a;
   --primary-hover: #4ade80;
   --accent: #f0c040;
+  --success: #22c55e;
   --bg: #0e1117;
   --bg-sidebar: #0f2d1a;
   --white: #161b22;
@@ -2888,10 +2889,13 @@ tr:hover td { background: #F8FDF8; }
   display: flex;
   flex-direction: column;
   max-height: 600px;
+  position: sticky;
+  top: 76px;
+  align-self: start;
 }
 
 .activity-log-header {
-  padding: 14px 16px;
+  padding: 16px 20px;
   background: #fff;
   font-weight: 700;
   font-size: 13px;
@@ -5012,7 +5016,7 @@ body.exam-page {
   .dashboard-panels-grid,
   .settings-main-grid { grid-template-columns: 1fr; }
   .monitoring-grid { grid-template-columns: 1fr; }
-  .activity-log { max-height: none; min-height: 320px; }
+  .activity-log { max-height: none; min-height: 320px; position: static; }
   .course-exam-shell { grid-template-columns: 1fr; }
   .course-exam-actions-pane { padding: 0 22px 22px; }
   .course-exam-panel { padding: 18px 0 0; border-left: none; border-top: 1px solid #e7edf4; }
