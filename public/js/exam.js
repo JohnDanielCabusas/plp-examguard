@@ -362,6 +362,11 @@ const ExamApp = {
     return (student.enrolledSubjects || []).includes(exam.subjectId);
   },
 
+  _isStudentAbsentForExam(student, exam) {
+    if (!student || !exam) return false;
+    return (exam.excludedStudentIds || []).includes(student.id);
+  },
+
   // ============================================================
   // INIT
   // ============================================================
@@ -386,10 +391,18 @@ const ExamApp = {
     this._startExamFlow(studentSession);
   },
 
-  _startExamFlow(studentSession) {
+  async _startExamFlow(studentSession) {
     // Stop any running dashboard/course-view poll
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
+
+    const sync = window.SupabaseSync;
+    await Promise.all([
+      sync?.refreshExams?.(),
+      sync?.refreshSessions?.(),
+      sync?.refreshStudents?.(),
+      sync?.refreshSubjects?.(),
+    ]).catch(() => {});
 
     const exam = this._resolveExamFromSession(studentSession);
     if (!exam) {
@@ -434,17 +447,13 @@ const ExamApp = {
       return;
     }
 
-    // Enrollment + attendance checks only block brand-new joins. Students who already
-    // have a session are grandfathered in so mid-exam changes do not strand them.
-    if (!existingSession) {
-      if (!this._isStudentEnrolledInExam(portalStudent, exam)) {
-        this._showError('You are not enrolled in the course for this exam. Please contact your instructor if this is a mistake.');
-        return;
-      }
-      if ((exam.excludedStudentIds || []).includes(portalStudent.id)) {
-        this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
-        return;
-      }
+    if (!existingSession && !this._isStudentEnrolledInExam(portalStudent, exam)) {
+      this._showError('You are not enrolled in the course for this exam. Please contact your instructor if this is a mistake.');
+      return;
+    }
+    if (this._isStudentAbsentForExam(portalStudent, exam)) {
+      this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+      return;
     }
 
     if (exam.status === 'ready') {
@@ -885,9 +894,9 @@ const ExamApp = {
     // exam if they're marked absent — unless they already have a session (in progress or
     // submitted), which is grandfathered in.
     const isBlockedForStudent = (e) => {
-      if (DB.getStudentSession(e.id, sess.studentId)) return false;
-      if (student && (e.excludedStudentIds || []).includes(student.id)) return true;
-      return false;
+      const dbSession = DB.getStudentSession(e.id, sess.studentId);
+      if (dbSession?.submitted) return false;
+      return this._isStudentAbsentForExam(student, e);
     };
 
     const allExams = DB.getExams().filter(e => e.subjectId === subjId && e.status !== 'draft');
@@ -919,7 +928,7 @@ const ExamApp = {
 
       exams.forEach(e => {
         const dbSess = DB.getStudentSession(e.id, sess.studentId);
-        const blocked = !dbSess && (e.status === 'active' || e.status === 'ready') && isBlockedForStudent(e);
+        const blocked = (e.status === 'active' || e.status === 'ready') && isBlockedForStudent(e);
         const requiresAccessCode = this._isExamLockedByCode(e);
         let panelHtml = '';
         let stateHtml = '';
@@ -1135,12 +1144,21 @@ const ExamApp = {
     }
 
     this._renderDashboard(sess);
+    const sync = window.SupabaseSync;
+    Promise.all([
+      sync?.refreshExams?.(),
+      sync?.refreshSessions?.(),
+      sync?.refreshSubjects?.(),
+      sync?.refreshStudents?.(),
+      sync?.refreshProfessors?.(),
+    ])
+      .catch(() => {})
+      .then(() => this._renderDashboard(Auth.getStudentSession()));
     if (this._dashInterval) clearInterval(this._dashInterval);
     // Re-fetch exams/sessions from Supabase on every tick (not just re-render the
     // local cache) so a professor flipping an exam to ready/active, or allowing a
     // retake, still shows up here even if the realtime socket silently dropped.
     this._dashInterval = setInterval(() => {
-      const sync = window.SupabaseSync;
       Promise.all([
         sync?.refreshExams?.(),
         sync?.refreshSessions?.(),
@@ -1203,8 +1221,9 @@ const ExamApp = {
     const audienceMatch = (e) => {
       // Already joined (in progress or submitted) — don't retroactively hide it if
       // the exclusion list changes after the fact.
-      if (DB.getStudentSession(e.id, sess.studentId)) return true;
-      if (student && (e.excludedStudentIds || []).includes(student.id)) return false;
+      const dbSession = DB.getStudentSession(e.id, sess.studentId);
+      if (dbSession?.submitted) return true;
+      if (this._isStudentAbsentForExam(student, e)) return false;
       return true;
     };
 
@@ -1224,15 +1243,21 @@ const ExamApp = {
       html += `<div class="dash-section-label">Active Now</div>`;
       activeExams.forEach(({ exam: e, subject: subj }) => {
         const requiresAccessCode = this._isExamLockedByCode(e);
-        const camTag = e.requireCamera
-          ? `<span style="color:rgba(255,255,255,0.7);font-weight:600;">${this._portalLabel('camera', 'Camera required', { size: 13, gap: 5, stroke: 'rgba(255,255,255,0.8)' })}</span>`
-          : '';
+        const metaItems = [
+          `<span class="dash-meta-item">${_esc(subj.name)}</span>`,
+          `<span class="dash-meta-item">${e.questions.length} question${e.questions.length === 1 ? '' : 's'}</span>`,
+          `<span class="dash-meta-item">${e.timeLimit} min</span>`,
+        ];
+        if (e.requireCamera) {
+          metaItems.push(`<span class="dash-meta-item">${this._portalLabel('camera', 'Camera required', { size: 12, gap: 5 })}</span>`);
+        }
+        const metaHtml = metaItems.join('<span class="dash-meta-divider"></span>');
         html += `
           <div class="dash-active-banner">
             <div class="dash-active-banner-left">
               <div class="dash-active-live"><span class="dash-active-live-dot"></span>Live</div>
               <div class="dash-active-exam-title">${_esc(e.title)}</div>
-              <div class="dash-active-exam-meta">${_esc(subj.name)} &nbsp;·&nbsp; ${e.questions.length} questions &nbsp;·&nbsp; ${e.timeLimit} min ${camTag ? '&nbsp;·&nbsp;' + camTag : ''}</div>
+              <div class="dash-active-exam-meta">${metaHtml}</div>
             </div>
             <button class="btn-take-exam-pill" onclick="${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">
               <span class="btep-text">${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</span>
@@ -1680,18 +1705,25 @@ const ExamApp = {
       const latestExam = DB.getExam(this.exam.id);
       if (!latestExam) return;
       this.exam = latestExam;
+      const studentSession = Auth.getStudentSession();
+      const portalStudent = studentSession ? this._getPortalStudent(studentSession.studentId) : null;
+      const existingSession = studentSession ? DB.getStudentSession(this.exam.id, studentSession.studentId) : null;
+
+      if (this._isStudentAbsentForExam(portalStudent, latestExam) && !existingSession?.submitted) {
+        this.stopPoll();
+        this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+        return;
+      }
 
       if (latestExam.status === 'active') {
         this.stopPoll();
-        const studentSession = Auth.getStudentSession();
-        const student = studentSession ? DB.getStudent(studentSession.studentId) : null;
         if (!this.session) {
-          const existingSession = DB.getStudentSession(this.exam.id, studentSession.studentId);
           if (existingSession && !existingSession.submitted) {
             this.session = existingSession;
             this.warnings = existingSession.warnings || 0;
             this.answers = existingSession.answers || {};
           } else if (!existingSession) {
+            const student = studentSession ? DB.getStudent(studentSession.studentId) : null;
             this.session = DB.addSession({
               examId: this.exam.id,
               examCode: this.exam.code,

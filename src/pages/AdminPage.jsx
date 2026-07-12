@@ -540,7 +540,7 @@ export default function AdminPage() {
                     <span id="exam-editor-status-badge" />
                   </div>
                   <div className="exam-editor-topbar-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={() => window.saveExamFromEditor()}>
+                    <button className="btn btn-secondary btn-sm exam-editor-save-btn" id="exam-editor-save-btn" onClick={() => window.saveExamFromEditor()}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
                       Save Changes
                     </button>
@@ -651,7 +651,7 @@ export default function AdminPage() {
                     <div className="exam-editor-section-label" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                       <span style={{ display: 'flex', alignItems: 'center' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                        Questions <span id="exam-q-count" className="exam-q-badge" style={{ marginLeft: '6px' }} />
+                        Questions <span id="exam-q-count" className="exam-q-badge exam-q-count-badge" style={{ marginLeft: '6px' }} />
                         <span id="exam-total-points" className="exam-q-badge" style={{ marginLeft: '6px', background: '#92400e' }} />
                       </span>
                       <span style={{ display: 'flex', gap: '8px' }}>

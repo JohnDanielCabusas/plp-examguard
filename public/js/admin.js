@@ -17,6 +17,9 @@ let monitorExamId = null;
 let reportInterval = null;
 let sectionPollInterval = null;
 let currentQBuilderExamId = null;
+let examEditorSavedSnapshot = null;
+let examEditorDirtyListenersBound = false;
+let examEditorPersistenceHooksBound = false;
 let confirmResolve = null;
 let adminBootstrapped = false;
 let passwordPromptResolve = null;
@@ -2072,6 +2075,87 @@ function refreshExamEditorStatusUI(examId) {
   updateExamAbsenteeSummary(examId);
 }
 
+function getExamEditorDetailsState() {
+  return {
+    title: document.getElementById('exam-title-field')?.value.trim() || '',
+    subjectId: document.getElementById('exam-subject-field')?.value || '',
+    description: document.getElementById('exam-desc-field')?.value.trim() || '',
+    timeLimit: parseInt(document.getElementById('exam-timelimit-field')?.value, 10) || 0,
+    code: document.getElementById('exam-code-field')?.value.trim().toUpperCase() || '',
+    shuffleQuestions: !!document.getElementById('exam-shuffle-q')?.checked,
+    shuffleAnswers: !!document.getElementById('exam-shuffle-a')?.checked,
+    requireCamera: !!document.getElementById('exam-require-camera')?.checked,
+    requireAIDetection: !!document.getElementById('exam-ai-detect')?.checked,
+    allowReview: !!document.getElementById('exam-allow-review')?.checked,
+  };
+}
+
+function getExamEditorPersistedState() {
+  const examId = currentQBuilderExamId || document.getElementById('exam-id')?.value || '';
+  const exam = examId ? DB.getExam(examId) : null;
+  if (!exam) return null;
+  return {
+    examId,
+    excludedStudentIds: [...(exam.excludedStudentIds || [])],
+    questions: exam.questions || [],
+  };
+}
+
+function getExamEditorSnapshot() {
+  return JSON.stringify({
+    details: getExamEditorDetailsState(),
+    persisted: getExamEditorPersistedState(),
+  });
+}
+
+function isExamEditorDirty() {
+  return examEditorSavedSnapshot !== null && getExamEditorSnapshot() !== examEditorSavedSnapshot;
+}
+
+function updateExamEditorSaveButtonState() {
+  const btn = document.getElementById('exam-editor-save-btn');
+  if (!btn) return;
+  const isDirty = isExamEditorDirty();
+  btn.classList.toggle('exam-editor-save-dirty', isDirty);
+  btn.title = isDirty ? 'You have unsaved exam changes.' : 'All exam changes are saved.';
+}
+
+function bindExamEditorDirtyListeners() {
+  if (examEditorDirtyListenersBound) return;
+  examEditorDirtyListenersBound = true;
+
+  [
+    'exam-title-field',
+    'exam-subject-field',
+    'exam-desc-field',
+    'exam-timelimit-field',
+    'exam-code-field',
+    'exam-shuffle-q',
+    'exam-shuffle-a',
+    'exam-require-camera',
+    'exam-ai-detect',
+    'exam-allow-review',
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', updateExamEditorSaveButtonState);
+    el.addEventListener('change', updateExamEditorSaveButtonState);
+  });
+}
+
+function bindExamEditorPersistenceHooks() {
+  if (examEditorPersistenceHooksBound || !DB?.updateExam) return;
+  examEditorPersistenceHooksBound = true;
+
+  const originalUpdateExam = DB.updateExam.bind(DB);
+  DB.updateExam = function patchedUpdateExam(id, changes) {
+    const result = originalUpdateExam(id, changes);
+    const activeExamId = currentQBuilderExamId || document.getElementById('exam-id')?.value || '';
+    if (activeExamId && id === activeExamId) updateExamEditorSaveButtonState();
+    return result;
+  };
+}
+
 function updateExamAbsenteeSummary(examId) {
   const el = document.getElementById('exam-absentee-summary');
   if (!el) return;
@@ -2120,6 +2204,8 @@ function openExamEditor(id) {
   const existingExam = id ? DB.getExam(id) : null;
   const subjects = DB.getSubjects().filter(s => !s.archived || s.id === existingExam?.subjectId);
   const sel = document.getElementById('exam-subject-field');
+  bindExamEditorDirtyListeners();
+  bindExamEditorPersistenceHooks();
   sel.innerHTML = subjects.map(s => `<option value="${s.id}">${escHtml(s.code)} - ${escHtml(formatCourseNameDisplay(s.name))}${s.archived ? ' (Archived)' : ''}</option>`).join('');
   sel.onchange = handleExamEditorSubjectChange;
 
@@ -2182,6 +2268,8 @@ function openExamEditor(id) {
       questionsList.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Start by saving this exam, then add questions.</p></div>`;
     }
   }
+  examEditorSavedSnapshot = getExamEditorSnapshot();
+  updateExamEditorSaveButtonState();
 
   // Switch views
   document.getElementById('exams-list-view').classList.add('hidden');
@@ -2198,6 +2286,8 @@ function openExamEditor(id) {
 }
 
 function closeExamEditor() {
+  examEditorSavedSnapshot = null;
+  updateExamEditorSaveButtonState();
   document.getElementById('exam-editor-view').classList.add('hidden');
   document.getElementById('exam-editor-scroll-fab')?.classList.add('hidden');
   document.getElementById('exam-outline-nav')?.classList.add('hidden');
@@ -2633,6 +2723,8 @@ function saveExamFromEditor() {
   updateQBadge(examId);
   const titleDisplay = document.getElementById('exam-editor-title-display');
   if (titleDisplay) titleDisplay.textContent = title;
+  examEditorSavedSnapshot = getExamEditorSnapshot();
+  updateExamEditorSaveButtonState();
   refreshExamEditorStatusUI(examId);
 }
 
@@ -2673,7 +2765,10 @@ function switchExamTab(tab) {
 function updateQBadge(examId) {
   const e = DB.getExam(examId);
   const badge = document.getElementById('exam-q-count');
-  if (badge) badge.textContent = e ? (e.questions.length || '') : '';
+  if (badge) {
+    const count = e?.questions?.length || 0;
+    badge.textContent = count > 0 ? `${count} item${count !== 1 ? 's' : ''}` : '';
+  }
   const ptsBadge = document.getElementById('exam-total-points');
   if (ptsBadge) {
     if (!e) {
@@ -2746,8 +2841,8 @@ function saveExam() {
 // ── Manage Absentees (per-exam student exclusion) ──────────
 
 function openExamAbsenteesModal() {
-  // Persist the current form first, in case this exam hasn't been saved yet.
-  saveExamFromEditor();
+  // Persist first only when this is a brand-new exam or there are actual unsaved changes.
+  if (!currentQBuilderExamId || isExamEditorDirty()) saveExamFromEditor();
   if (!currentQBuilderExamId) return;
   const examId = currentQBuilderExamId;
   const exam = DB.getExam(examId);
@@ -2846,6 +2941,7 @@ function generateUniqueExamCode() {
 
 function generateAndSetCode() {
   document.getElementById('exam-code-field').value = generateUniqueExamCode();
+  updateExamEditorSaveButtonState();
 }
 
 async function setExamStatus(id, status) {
