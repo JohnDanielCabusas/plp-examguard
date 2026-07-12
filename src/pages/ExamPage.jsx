@@ -778,12 +778,13 @@ export default function ExamPage() {
           </div>
           <div className="modal-body">
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px', lineHeight: 1.6 }}>
-              This exam is monitored for academic integrity. Your camera, focus, and clipboard activity are tracked, and repeated violations may automatically submit your exam. Avoid the following:
+              This exam is monitored for academic integrity. Your camera, focus, clipboard activity, and refresh attempts are tracked, and repeated or confirmed violations may automatically submit your exam. Avoid the following:
             </p>
             <div className="violations-info-list">
               {[
                 'Switching to another tab or browser window',
                 'Exiting fullscreen mode',
+                'Refreshing or reloading the exam page — if you continue, your exam will be auto-submitted',
                 'Opening another application while the exam is open',
                 'Copying or cutting exam content',
                 'Pasting content into an answer',

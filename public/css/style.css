@@ -9755,6 +9755,28 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .tbl-btn-plain { justify-content: center !important; padding: 0 16px !important; }
 .tbl-btn-plain:hover { color: #fff !important; }
 [data-theme="dark"] .tbl-btn-plain:hover { color: #fff !important; }
+.tbl-btn-warning.tbl-btn-plain {
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 0 14px !important;
+}
+.tbl-btn-warning.tbl-btn-plain svg.warning-icon {
+  position: static;
+  right: auto;
+  transform: none;
+}
+.tbl-btn-warning.tbl-btn-plain:hover {
+  color: #fff !important;
+}
+.tbl-btn-warning.tbl-btn-plain:hover svg.warning-icon {
+  transform: none;
+}
+[data-theme="dark"] .tbl-btn-warning.tbl-btn-plain:hover {
+  color: #111827 !important;
+}
+[data-theme="dark"] .tbl-btn-warning.tbl-btn-plain:hover svg.warning-icon {
+  stroke: #111827 !important;
+}
 
 /* Amber "caution" raised action (e.g. Allow Retake) — same 3D language as
    tbl-btn-archive, distinct color so it doesn't read as destructive. */

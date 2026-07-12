@@ -90,6 +90,10 @@ const ExamApp = {
   _CONN_TIMEOUT_MS: 4000,     // probe request timeout
   _CONN_WEAK_MS: 1500,        // probe latency above this = "weak" signal
   _pendingManualSubmit: false, // true if the student tried to submit while offline
+  _refreshUnloadHandler: null,
+  _refreshPageHideHandler: null,
+  _refreshUnloadCleanupTimer: null,
+  _REFRESH_AUTO_SUBMIT_KEY: 'acs_exam_refresh_auto_submit',
 
   _repairStudentEmail(studentSession) {
     if (!studentSession?.studentId || !studentSession?.email) return;
@@ -99,6 +103,173 @@ const ExamApp = {
     }).catch(error => {
       console.warn('[Supabase] Unable to repair student email:', error.message || error);
     });
+  },
+
+  _calculateScoreFor(exam, answers = {}) {
+    let earned = 0;
+    let max = 0;
+    const questions = exam ? (exam.questions || []) : [];
+
+    for (const q of questions) {
+      max += q.points;
+      if (q.type === 'essay') continue;
+
+      const ans = answers[q.id];
+      if (!ans || ans.toString().trim() === '') continue;
+
+      if (q.type === 'enumeration') {
+        const expected = (q.answers || []).map(a => a.toUpperCase());
+        const given = ans.split('\n').map(s => s.trim().toUpperCase()).filter(Boolean);
+        const correct = expected.filter(e => given.includes(e)).length;
+        if (q.partialScoring === false) {
+          if (correct === expected.length) earned += q.points;
+        } else {
+          earned += expected.length > 0 ? Math.round((correct / expected.length) * q.points) : 0;
+        }
+      } else if (q.type === 'matching') {
+        const pairs = q.pairs || [];
+        let studentAns = {};
+        try { studentAns = JSON.parse(ans); } catch {}
+        const correct = pairs.filter((p, i) => (studentAns[i] || '').toUpperCase() === p.match.toUpperCase()).length;
+        earned += pairs.length > 0 ? Math.round((correct / pairs.length) * q.points) : 0;
+      } else if (q.type === 'checkbox') {
+        let given = [];
+        try { given = JSON.parse(ans) || []; } catch {}
+        const correct = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+        const sortedGiven = given.slice().sort((a, b) => a - b);
+        const exactMatch = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
+        if (exactMatch) earned += q.points;
+      } else {
+        const studentAns = ans.toString().trim().toUpperCase();
+        const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
+        if (studentAns === correctAns) earned += q.points;
+      }
+    }
+
+    return { earned, max };
+  },
+
+  _disableRefreshProtection() {
+    if (this._refreshUnloadHandler) {
+      window.removeEventListener('beforeunload', this._refreshUnloadHandler);
+      this._refreshUnloadHandler = null;
+    }
+    if (this._refreshPageHideHandler) {
+      window.removeEventListener('pagehide', this._refreshPageHideHandler);
+      this._refreshPageHideHandler = null;
+    }
+    if (this._refreshUnloadCleanupTimer) {
+      clearTimeout(this._refreshUnloadCleanupTimer);
+      this._refreshUnloadCleanupTimer = null;
+    }
+    try { sessionStorage.removeItem(this._REFRESH_AUTO_SUBMIT_KEY); } catch (_) {}
+  },
+
+  _buildRefreshAutoSubmitMarker() {
+    const liveSession = this.session ? DB.getSession(this.session.id) : null;
+    if (!this.exam || !liveSession || liveSession.submitted) return null;
+
+    return {
+      examId: this.exam.id,
+      studentId: liveSession.studentId,
+      sessionId: liveSession.id,
+      timestamp: Date.now(),
+      answers: { ...(this.answers || {}) },
+      warnings: this.warnings || 0,
+      session: {
+        ...liveSession,
+        answers: { ...(this.answers || {}) },
+        warnings: this.warnings || 0,
+      },
+    };
+  },
+
+  _applyRefreshAutoSubmitMarker(marker) {
+    if (!marker) return null;
+
+    const exam = marker.examId ? DB.getExam(marker.examId) : null;
+    let liveSession = marker.sessionId ? DB.getSession(marker.sessionId) : null;
+    if (!liveSession && marker.examId && marker.studentId) {
+      liveSession = DB.getStudentSession(marker.examId, marker.studentId);
+    }
+    const baseSession = liveSession || marker.session;
+    if (!baseSession) return null;
+    if (baseSession.submitted) return { exam, session: baseSession };
+
+    const answers = marker.answers || baseSession.answers || {};
+    const score = this._calculateScoreFor(exam, answers);
+    const nextSession = {
+      ...baseSession,
+      answers,
+      warnings: marker.warnings ?? baseSession.warnings ?? 0,
+      submitted: true,
+      autoSubmitted: true,
+      endTime: new Date().toISOString(),
+      score: score.earned,
+      maxScore: score.max || baseSession.maxScore || 0,
+    };
+
+    if (liveSession) {
+      DB.updateSession(liveSession.id, nextSession);
+    } else if (DB?.KEYS?.sessions && typeof DB._read === 'function' && typeof DB._write === 'function') {
+      const sessions = [...DB._read(DB.KEYS.sessions, [])];
+      const existingIndex = sessions.findIndex(s => s.id === nextSession.id);
+      if (existingIndex >= 0) sessions[existingIndex] = nextSession;
+      else sessions.push(nextSession);
+      DB._write(DB.KEYS.sessions, sessions);
+      window.SupabaseSync?.syncDoc?.('sessions', nextSession);
+    }
+
+    if (nextSession.id && exam?.id) {
+      DB.addLog({
+        sessionId: nextSession.id,
+        studentId: nextSession.studentId,
+        examId: exam.id,
+        type: 'auto_submit',
+        details: 'Auto-submitted: exam page refresh or reload was confirmed',
+      });
+    }
+
+    return { exam, session: nextSession };
+  },
+
+  _enableRefreshProtection() {
+    if (this._refreshUnloadHandler) return;
+    this._refreshUnloadHandler = (event) => {
+      const marker = this._buildRefreshAutoSubmitMarker();
+      if (!marker) return;
+
+      try { sessionStorage.setItem(this._REFRESH_AUTO_SUBMIT_KEY, JSON.stringify(marker)); } catch (_) {}
+      if (this._refreshUnloadCleanupTimer) clearTimeout(this._refreshUnloadCleanupTimer);
+      this._refreshUnloadCleanupTimer = setTimeout(() => {
+        try { sessionStorage.removeItem(this._REFRESH_AUTO_SUBMIT_KEY); } catch (_) {}
+        this._refreshUnloadCleanupTimer = null;
+      }, 1500);
+
+      event.preventDefault();
+      event.returnValue = 'Refreshing this exam will auto-submit your answers.';
+      return event.returnValue;
+    };
+    window.addEventListener('beforeunload', this._refreshUnloadHandler);
+    this._refreshPageHideHandler = () => {
+      let marker = null;
+      try { marker = JSON.parse(sessionStorage.getItem(this._REFRESH_AUTO_SUBMIT_KEY) || 'null'); } catch (_) {}
+      if (!marker) return;
+      this._applyRefreshAutoSubmitMarker(marker);
+    };
+    window.addEventListener('pagehide', this._refreshPageHideHandler);
+  },
+
+  _consumePendingRefreshAutoSubmit(studentSession) {
+    let marker = null;
+    try { marker = JSON.parse(sessionStorage.getItem(this._REFRESH_AUTO_SUBMIT_KEY) || 'null'); } catch (_) {}
+    if (!marker) return null;
+    try { sessionStorage.removeItem(this._REFRESH_AUTO_SUBMIT_KEY); } catch (_) {}
+
+    if (!studentSession?.studentId) return null;
+    if (marker.studentId && marker.studentId !== studentSession.studentId) return null;
+    if (marker.timestamp && Date.now() - marker.timestamp > 120000) return null;
+    return this._applyRefreshAutoSubmitMarker(marker);
   },
 
   _recordActivity(type, detail) {
@@ -403,6 +574,16 @@ const ExamApp = {
       sync?.refreshStudents?.(),
       sync?.refreshSubjects?.(),
     ]).catch(() => {});
+    const refreshAutoSubmit = this._consumePendingRefreshAutoSubmit(studentSession);
+
+    if (refreshAutoSubmit?.exam && refreshAutoSubmit?.session) {
+      this.exam = refreshAutoSubmit.exam;
+      this.session = refreshAutoSubmit.session;
+      this.answers = refreshAutoSubmit.session.answers || {};
+      this.warnings = refreshAutoSubmit.session.warnings || 0;
+      this._showSubmitted(true);
+      return;
+    }
 
     const exam = this._resolveExamFromSession(studentSession);
     if (!exam) {
@@ -1105,6 +1286,7 @@ const ExamApp = {
   showDashboard(studentSession) {
     const sess = studentSession || Auth.getStudentSession();
     if (!sess) { window.location.href = 'index.html'; return; }
+    this._disableRefreshProtection();
 
     // Leaving the course view (if any) — stop its poll.
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
@@ -1622,6 +1804,7 @@ const ExamApp = {
   },
 
   _showError(msg) {
+    this._disableRefreshProtection();
     // If student has a session, go back to their dashboard with the error shown briefly
     const sess = Auth.getStudentSession();
     if (sess) {
@@ -1761,6 +1944,7 @@ const ExamApp = {
   // ============================================================
   startExam() {
     this._rememberTrustedInteraction(2000);
+    this._enableRefreshProtection();
     this._initConnectionMonitor();
     this.requestFullscreen();
     this.initAntiCheat();
@@ -4015,6 +4199,7 @@ const ExamApp = {
   },
 
   returnToLogin() {
+    this._disableRefreshProtection();
     const sess = Auth.getStudentSession();
     if (sess) {
       const updated = { ...sess };
@@ -4049,6 +4234,7 @@ const ExamApp = {
     if (submitModal && !submitModal.classList.contains('hidden')) unlockBodyScroll();
     submitModal.classList.add('hidden');
 
+    this._disableRefreshProtection();
     this.stopTimer();
     this.destroyAntiCheat(); // also calls stopCamera()
     this.stopPoll();
@@ -4181,47 +4367,7 @@ const ExamApp = {
   // SCORING
   // ============================================================
   calculateScore() {
-    let earned = 0;
-    let max = 0;
-    const questions = this.exam ? this.exam.questions : [];
-
-    for (const q of questions) {
-      max += q.points;
-      if (q.type === 'essay') continue; // manual grading
-
-      const ans = this.answers[q.id];
-      if (!ans || ans.toString().trim() === '') continue;
-
-      if (q.type === 'enumeration') {
-        const expected = (q.answers || []).map(a => a.toUpperCase());
-        const given    = ans.split('\n').map(s => s.trim().toUpperCase()).filter(Boolean);
-        const correct  = expected.filter(e => given.includes(e)).length;
-        if (q.partialScoring === false) {
-          if (correct === expected.length) earned += q.points;
-        } else {
-          earned += expected.length > 0 ? Math.round((correct / expected.length) * q.points) : 0;
-        }
-      } else if (q.type === 'matching') {
-        const pairs = q.pairs || [];
-        let studentAns = {};
-        try { studentAns = JSON.parse(ans); } catch {}
-        const correct = pairs.filter((p,i) => (studentAns[i]||'').toUpperCase() === p.match.toUpperCase()).length;
-        earned += pairs.length > 0 ? Math.round((correct / pairs.length) * q.points) : 0;
-      } else if (q.type === 'checkbox') {
-        let given = [];
-        try { given = JSON.parse(ans) || []; } catch {}
-        const correct = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
-        const sortedGiven = given.slice().sort((a, b) => a - b);
-        const exactMatch = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
-        if (exactMatch) earned += q.points;
-      } else {
-        const studentAns = ans.toString().trim().toUpperCase();
-        const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
-        if (studentAns === correctAns) earned += q.points;
-      }
-    }
-
-    return { earned, max };
+    return this._calculateScoreFor(this.exam, this.answers);
   },
 
   // ============================================================

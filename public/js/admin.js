@@ -308,7 +308,7 @@ function initCustomDropdowns(root) {
 // live-editable form fields that a blind re-render would clobber mid-edit.
 const SECTION_POLL_CONFIG = {
   dashboard: { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderDashboard() },
-  subjects:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderSubjects() },
+  subjects:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderSubjectsSectionLive() },
   students:  { refresh: () => window.SupabaseSync?.refreshStudents?.(), render: () => renderStudents(document.getElementById('student-search')?.value || '') },
 };
 
@@ -827,10 +827,12 @@ function selectCourseColor(colorIndex) {
 }
 
 let currentCourseDetailId = null;
+let currentEnrolledTab = 'students';
 
 function viewEnrolledStudents(subjectId) {
   const subj = DB.getSubject(subjectId);
   if (!subj) return;
+  if (currentCourseDetailId !== subjectId) currentEnrolledTab = 'students';
   currentCourseDetailId = subjectId;
   const students = DB.getAllStudentsRaw().filter(s => !s.archived && (s.enrolledSubjects || []).includes(subjectId));
   const exams    = DB.getExams().filter(e => e.subjectId === subjectId);
@@ -863,7 +865,7 @@ function viewEnrolledStudents(subjectId) {
               <td>${escHtml(getStudentSectionDisplay(s) || '—')}</td>
               <td style="text-align:center;">
                 <div class="table-actions">
-                  <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
+                  <button class="tbl-btn tbl-btn-warning" onclick="unenrollStudentFromCourse('${s.id}','${subjectId}')">Unenroll${icRedoStroke}</button>
                 </div>
               </td>
             </tr>`).join('')}
@@ -904,6 +906,7 @@ function viewEnrolledStudents(subjectId) {
     <div id="etab-students">${studentsHtml}</div>
     <div id="etab-exams" class="hidden">${examsHtml}</div>`;
 
+  switchEnrolledTab(currentEnrolledTab);
   document.getElementById('courses-list-view').classList.add('hidden');
   document.getElementById('course-detail-view').classList.remove('hidden');
 }
@@ -920,10 +923,20 @@ function editCurrentCourseDetail() {
 }
 
 function switchEnrolledTab(tab) {
+  currentEnrolledTab = tab;
   ['students','exams'].forEach(t => {
     document.getElementById('etab-' + t).classList.toggle('hidden', t !== tab);
     document.getElementById('etab-btn-' + t).classList.toggle('active', t === tab);
   });
+}
+
+// Re-renders the Courses grid and, if a course's enrolled-students/exams detail
+// modal is currently open, refreshes that too — so a student enrolling (or
+// unenrolling) while an admin has that modal open shows up immediately instead
+// of only updating after they close and reopen it.
+function renderSubjectsSectionLive() {
+  renderSubjects();
+  if (currentCourseDetailId) viewEnrolledStudents(currentCourseDetailId);
 }
 
 function renderSubjects() {
@@ -1609,6 +1622,28 @@ async function archiveStudent(id) {
     viewEnrolledStudents(currentCourseDetailId);
     renderSubjects();
   }
+}
+
+async function unenrollStudentFromCourse(studentId, subjectId) {
+  const student = DB.getStudentById(studentId);
+  const subject = DB.getSubject(subjectId);
+  if (!student || !subject) return;
+
+  const enrolledSubjects = student.enrolledSubjects || [];
+  if (!enrolledSubjects.includes(subjectId)) return;
+
+  const ok = await showConfirm(`Unenroll "${student.name}" (${student.studentId}) from "${formatCourseNameDisplay(subject.name)}"? They will lose access to this course and its exams until they enroll again.`);
+  if (!ok) return;
+
+  DB.updateStudent(studentId, {
+    enrolledSubjects: enrolledSubjects.filter(id => id !== subjectId),
+  });
+
+  showToast('Student unenrolled from the course.', 'success');
+
+  if (currentCourseDetailId === subjectId) viewEnrolledStudents(subjectId);
+  renderSubjects();
+  renderStudents(document.getElementById('student-search')?.value || '');
 }
 
 // ============================================================
