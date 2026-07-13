@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('./email-service.cjs');
+const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const {
   createCode,
   normalizeProfessor,
@@ -712,10 +713,11 @@ async function handleAuthRoute(req, res) {
       default: return false;
     }
   } catch (error) {
+    const connectivityIssue = isConnectivityIssue(error);
     const message = error?.code === 'AUTH_DB_CONFIG_MISSING'
       ? error.message
-      : (error instanceof Error ? error.message : 'Unable to process authentication request.');
-    jsonResponse(res, 500, { success: false, message });
+      : toUserMessage(error, 'Unable to process authentication request.', { context: 'auth' });
+    jsonResponse(res, connectivityIssue ? 503 : 500, { success: false, message, connectivityIssue });
     return true;
   }
 }

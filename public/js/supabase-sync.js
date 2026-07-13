@@ -15,6 +15,8 @@ const SupabaseSync = {
   _readyEmitted: false,
   _sessionAiDetectionsSupported: true,
   _sessionCameraSnapshotsSupported: true,
+  _lastSyncErrorKey: '',
+  _lastSyncErrorAt: 0,
   // Serialize writes per table/id so rapid local edits (for example absent -> present ->
   // draft -> ready on the same exam) cannot reach Supabase out of order and resurrect
   // stale state on other clients.
@@ -30,6 +32,32 @@ const SupabaseSync = {
     window.DB?._write?.(key, value);
   },
 
+  _toUserErrorMessage(error, fallback = 'Unable to sync with the server right now.', context = 'sync') {
+    return window.AppErrorUtils?.toUserMessage?.(error, fallback, { context }) || fallback;
+  },
+
+  _isConnectivityIssue(error) {
+    return !!window.AppErrorUtils?.isConnectivityIssue?.(error);
+  },
+
+  _emitSyncError(table, error, fallback = 'Unable to sync with the server right now.') {
+    if (typeof document === 'undefined') return;
+    const message = this._toUserErrorMessage(error, fallback, 'sync');
+    const connectivityIssue = this._isConnectivityIssue(error) || this._isConnectivityIssue(message);
+    const key = `${table || 'sync'}:${message}`;
+    const now = Date.now();
+    if (key === this._lastSyncErrorKey && (now - this._lastSyncErrorAt) < 15000) return;
+    this._lastSyncErrorKey = key;
+    this._lastSyncErrorAt = now;
+    document.dispatchEvent(new CustomEvent('supabaseSyncError', {
+      detail: {
+        table,
+        message,
+        connectivityIssue,
+      },
+    }));
+  },
+
   // Lets the UI react to a realtime push the instant it lands, instead of
   // waiting for the next section poll — see admin.js's 'acsDataChanged' listener.
   _notifyDataChanged(table) {
@@ -43,6 +71,31 @@ const SupabaseSync = {
       const time = snapshot?.timestamp ? new Date(snapshot.timestamp).getTime() : 0;
       return Number.isFinite(time) ? Math.max(latest, time) : latest;
     }, 0);
+  },
+
+  _mergeSessionSnapshots(priorSnapshots, incomingSnapshots) {
+    const allSnapshots = [...(Array.isArray(priorSnapshots) ? priorSnapshots : []), ...(Array.isArray(incomingSnapshots) ? incomingSnapshots : [])]
+      .filter(snapshot => snapshot && snapshot.imageData);
+    if (!allSnapshots.length) return [];
+
+    const byNewest = (a, b) => new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime();
+    const liveSnapshot = allSnapshots
+      .filter(snapshot => (snapshot?.kind || 'live') === 'live')
+      .sort(byNewest)[0] || null;
+
+    const seen = new Set();
+    const violationSnapshots = allSnapshots
+      .filter(snapshot => snapshot?.kind === 'violation')
+      .sort(byNewest)
+      .filter(snapshot => {
+        const key = `${snapshot.timestamp || ''}|${snapshot.violationType || ''}|${snapshot.warningCount || ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 8);
+
+    return liveSnapshot ? [liveSnapshot, ...violationSnapshots] : violationSnapshots;
   },
 
   _isSessionResetState(session) {
@@ -78,14 +131,8 @@ const SupabaseSync = {
 
     const priorSnapshots = Array.isArray(prior.cameraSnapshots) ? prior.cameraSnapshots : [];
     const incomingSnapshots = Array.isArray(incoming.cameraSnapshots) ? incoming.cameraSnapshots : [];
-    const priorSnapshotTime = this._getSessionSnapshotTimestamp(priorSnapshots);
-    const incomingSnapshotTime = this._getSessionSnapshotTimestamp(incomingSnapshots);
-    if (
-      priorSnapshots.length &&
-      !incoming.submitted &&
-      (!incomingSnapshots.length || priorSnapshotTime > incomingSnapshotTime)
-    ) {
-      merged.cameraSnapshots = priorSnapshots;
+    if (priorSnapshots.length || incomingSnapshots.length) {
+      merged.cameraSnapshots = this._mergeSessionSnapshots(priorSnapshots, incomingSnapshots);
     }
 
     return merged;
@@ -117,6 +164,7 @@ const SupabaseSync = {
         this._setupListeners();
       } catch (e) {
         console.warn('[SupabaseSync] Error loading data from Supabase:', e.message || e);
+        this._emitSyncError('connection', e, 'Unable to load the latest data right now.');
       } finally {
         this._emitReady();
         this._hydrateDeferredTables();
@@ -586,7 +634,15 @@ const SupabaseSync = {
       details: details || null,
     };
     this._client.from('professor_activity_log').insert(row)
-      .then(({ error }) => { if (error) console.error('[SupabaseSync] logProfessorActivity:', error.message); });
+      .then(({ error }) => {
+        if (!error) return;
+        console.error('[SupabaseSync] logProfessorActivity:', error.message);
+        this._emitSyncError('professor_activity_log', error, 'Unable to sync professor activity right now.');
+      })
+      .catch((error) => {
+        console.error('[SupabaseSync] logProfessorActivity:', error.message || error);
+        this._emitSyncError('professor_activity_log', error, 'Unable to sync professor activity right now.');
+      });
   },
 
   // ── Write helpers ───────────────────────────────────────────
@@ -594,13 +650,29 @@ const SupabaseSync = {
   syncSettings(data) {
     if (!this._client) return;
     this._client.from('settings').upsert(this._jsToDbSettings(data))
-      .then(({ error }) => { if (error) console.error('[SupabaseSync] syncSettings:', error.message); });
+      .then(({ error }) => {
+        if (!error) return;
+        console.error('[SupabaseSync] syncSettings:', error.message);
+        this._emitSyncError('settings', error, 'Unable to save settings online right now.');
+      })
+      .catch((error) => {
+        console.error('[SupabaseSync] syncSettings:', error.message || error);
+        this._emitSyncError('settings', error, 'Unable to save settings online right now.');
+      });
   },
 
   syncSysAdmin(data) {
     if (!this._client) return;
     this._client.from('superadmin').upsert(this._jsToDbSysAdmin(data))
-      .then(({ error }) => { if (error) console.error('[SupabaseSync] syncSysAdmin:', error.message); });
+      .then(({ error }) => {
+        if (!error) return;
+        console.error('[SupabaseSync] syncSysAdmin:', error.message);
+        this._emitSyncError('superadmin', error, 'Unable to save the administrator profile online right now.');
+      })
+      .catch((error) => {
+        console.error('[SupabaseSync] syncSysAdmin:', error.message || error);
+        this._emitSyncError('superadmin', error, 'Unable to save the administrator profile online right now.');
+      });
   },
 
   _docSyncKey(table, id) {
@@ -625,79 +697,83 @@ const SupabaseSync = {
     const row = this._jsToDb(table, data);
     if (!row) return;
     this._enqueueDocSync(table, data.id, async () => {
-      // Professors are only ever CREATED server-side (server/auth-service.cjs), which
-      // hashes and sets the required `password` column. Client-side syncs of a
-      // professor (e.g. a professor editing their own settings) never carry a
-      // password, so an upsert here would fall through to an INSERT — missing
-      // `password` — and violate the NOT NULL constraint if the row doesn't already
-      // exist (deleted, or never created). A plain UPDATE can only ever touch an
-      // existing row, so a missing/deleted professor just becomes a harmless no-op.
-      let error;
-      if (table === 'professors') {
-        ({ error } = await this._client.from(table).update(row).eq('id', data.id));
-      } else {
-        // onConflict:'id' ensures we always UPDATE existing rows by primary key,
-        // avoiding false conflicts on unique columns like exams.code
-        ({ error } = await this._client.from(table).upsert(row, { onConflict: 'id' }));
-      }
-      if (!error && table === 'exams') {
-        // This write included excluded_student_ids and Postgres accepted it —
-        // the row is now authoritative again, so trust future echoes of it.
-        this._examIdsWithUnsyncedExclusions.delete(row.id);
-      }
-
-      let retryRow = row;
-      let retryError = error;
-      while (retryError) {
-        if (this._isMissingSessionAiDetectionsError(table, retryError) && this._sessionAiDetectionsSupported !== false) {
-          this._sessionAiDetectionsSupported = false;
-          retryRow = this._withoutSessionAiDetections(retryRow);
-          ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
-          if (!retryError) return;
-          continue;
+      try {
+        // Professors are only ever CREATED server-side (server/auth-service.cjs), which
+        // hashes and sets the required `password` column. Client-side syncs of a
+        // professor (e.g. a professor editing their own settings) never carry a
+        // password, so an upsert here would fall through to an INSERT — missing
+        // `password` — and violate the NOT NULL constraint if the row doesn't already
+        // exist (deleted, or never created). A plain UPDATE can only ever touch an
+        // existing row, so a missing/deleted professor just becomes a harmless no-op.
+        let error;
+        if (table === 'professors') {
+          ({ error } = await this._client.from(table).update(row).eq('id', data.id));
+        } else {
+          // onConflict:'id' ensures we always UPDATE existing rows by primary key,
+          // avoiding false conflicts on unique columns like exams.code
+          ({ error } = await this._client.from(table).upsert(row, { onConflict: 'id' }));
         }
-        if (this._isMissingSessionCameraSnapshotsError(table, retryError) && this._sessionCameraSnapshotsSupported !== false) {
-          this._sessionCameraSnapshotsSupported = false;
-          retryRow = this._withoutSessionCameraSnapshots(retryRow);
-          ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
-          if (!retryError) return;
-          continue;
+        if (!error && table === 'exams') {
+          // This write included excluded_student_ids and Postgres accepted it —
+          // the row is now authoritative again, so trust future echoes of it.
+          this._examIdsWithUnsyncedExclusions.delete(row.id);
         }
-        break;
-      }
-      error = retryError;
 
-      if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
-        // PostgREST's schema cache is (probably temporarily) out of sync with the real
-        // table — don't give up on this field forever, just skip it for THIS write and
-        // keep trying on every future save until it succeeds. Meanwhile, mark this exam
-        // so realtime/pull echoes don't clobber the correct local value with Supabase's
-        // stale copy of excluded_student_ids.
-        this._examIdsWithUnsyncedExclusions.add(row.id);
-        const fallbackRow = this._withoutExamExcludedStudentIds(row);
-        const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
-        if (!retryError) {
-          // The rest of the exam saved, but the present/absent list specifically did NOT
-          // reach Supabase this time — say so, instead of letting the generic "saved"
-          // toast imply students on other devices already see the change. Also keep
-          // retrying in the background so it self-heals without needing another save.
-          document.dispatchEvent(new CustomEvent('supabaseSyncError', {
-            detail: {
-              table,
-              message: 'Attendance change saved on this device, but has not synced online yet — students on other devices may not see it until it does. Retrying automatically…',
-            },
-          }));
-          this._scheduleExamExclusionRetry(row.id);
-          return;
+        let retryRow = row;
+        let retryError = error;
+        while (retryError) {
+          if (this._isMissingSessionAiDetectionsError(table, retryError) && this._sessionAiDetectionsSupported !== false) {
+            this._sessionAiDetectionsSupported = false;
+            retryRow = this._withoutSessionAiDetections(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
+          if (this._isMissingSessionCameraSnapshotsError(table, retryError) && this._sessionCameraSnapshotsSupported !== false) {
+            this._sessionCameraSnapshotsSupported = false;
+            retryRow = this._withoutSessionCameraSnapshots(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
+          break;
         }
         error = retryError;
-      }
 
-      if (error) {
-        console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
-        // Surface sync failures as a visible warning
-        const ev = new CustomEvent('supabaseSyncError', { detail: { table, message: error.message } });
-        document.dispatchEvent(ev);
+        if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
+          // PostgREST's schema cache is (probably temporarily) out of sync with the real
+          // table — don't give up on this field forever, just skip it for THIS write and
+          // keep trying on every future save until it succeeds. Meanwhile, mark this exam
+          // so realtime/pull echoes don't clobber the correct local value with Supabase's
+          // stale copy of excluded_student_ids.
+          this._examIdsWithUnsyncedExclusions.add(row.id);
+          const fallbackRow = this._withoutExamExcludedStudentIds(row);
+          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+          if (!retryError) {
+            // The rest of the exam saved, but the present/absent list specifically did NOT
+            // reach Supabase this time — say so, instead of letting the generic "saved"
+            // toast imply students on other devices already see the change. Also keep
+            // retrying in the background so it self-heals without needing another save.
+            document.dispatchEvent(new CustomEvent('supabaseSyncError', {
+              detail: {
+                table,
+                message: 'Attendance change saved on this device, but has not synced online yet — students on other devices may not see it until it does. Retrying automatically…',
+              },
+            }));
+            this._scheduleExamExclusionRetry(row.id);
+            return;
+          }
+          error = retryError;
+        }
+
+        if (error) {
+          console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
+          // Surface sync failures as a visible warning
+          this._emitSyncError(table, error);
+        }
+      } catch (error) {
+        console.error(`[SupabaseSync] syncDoc(${table}):`, error.message || error);
+        this._emitSyncError(table, error);
       }
     });
   },
@@ -705,7 +781,15 @@ const SupabaseSync = {
   deleteDoc(table, id) {
     if (!this._client || !id) return;
     this._client.from(table).delete().eq('id', id)
-      .then(({ error }) => { if (error) console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message); });
+      .then(({ error }) => {
+        if (!error) return;
+        console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message);
+        this._emitSyncError(table, error);
+      })
+      .catch((error) => {
+        console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message || error);
+        this._emitSyncError(table, error);
+      });
   },
 
   // ── JS → DB normalizers ─────────────────────────────────────

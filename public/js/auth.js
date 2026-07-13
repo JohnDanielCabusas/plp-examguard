@@ -2,6 +2,74 @@
 // AUTH - Session management
 // ============================================================
 
+if (!window.AppErrorUtils) {
+  window.AppErrorUtils = (() => {
+    const CONNECTIVITY_PATTERNS = [
+      /\bgetaddrinfo\s+enotfound\b/i,
+      /\benotfound\b/i,
+      /\beai_again\b/i,
+      /\beconnrefused\b/i,
+      /\beconnreset\b/i,
+      /\betimedout\b/i,
+      /\bfetch failed\b/i,
+      /\bfailed to fetch\b/i,
+      /\bnetwork\s?(error|request)\b/i,
+      /\bnetworkerror\b/i,
+      /\berr_internet_disconnected\b/i,
+      /\berr_network_changed\b/i,
+      /\berr_name_not_resolved\b/i,
+      /\berr_connection_(closed|refused|reset|timed_out)\b/i,
+      /\bsocket hang up\b/i,
+      /\bload failed\b/i,
+      /\bconnection terminated unexpectedly\b/i,
+      /\bserver closed the connection unexpectedly\b/i,
+      /\bname or service not known\b/i,
+      /\bcould not translate host name\b/i,
+    ];
+
+    const extractMessage = (error, fallback = '') => {
+      if (typeof error === 'string') return error;
+      if (error && typeof error.message === 'string' && error.message.trim()) return error.message;
+      if (error && typeof error.details === 'string' && error.details.trim()) return error.details;
+      if (error && typeof error.code === 'string' && error.code.trim()) return error.code;
+      return fallback;
+    };
+
+    const isConnectivityIssue = (error) => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+      const message = extractMessage(error).trim();
+      if (!message) return false;
+      return CONNECTIVITY_PATTERNS.some((pattern) => pattern.test(message));
+    };
+
+    const connectivityMessage = (context = 'general') => {
+      switch (context) {
+        case 'auth':
+          return 'No internet connection detected. Please connect to Wi-Fi or mobile data, then try again.';
+        case 'sync':
+          return 'Your device is not connected to Wi-Fi or the internet, so changes cannot sync right now. Please reconnect and try again.';
+        default:
+          return 'Your device is not connected to Wi-Fi or the internet. Please reconnect and try again.';
+      }
+    };
+
+    const toUserMessage = (error, fallback = 'Something went wrong.', options = {}) => {
+      const message = (extractMessage(error, fallback) || fallback || '').trim() || fallback;
+      if (isConnectivityIssue(error) || isConnectivityIssue(message)) {
+        return options.offlineMessage || connectivityMessage(options.context || 'general');
+      }
+      return message;
+    };
+
+    return {
+      extractMessage,
+      isConnectivityIssue,
+      connectivityMessage,
+      toUserMessage,
+    };
+  })();
+}
+
 const Auth = {
   ADMIN_RESET_KEY: 'acs_admin_reset',
   STUDENT_VERIFY_KEY: 'acs_student_email_verify',
@@ -16,14 +84,22 @@ const Auth = {
         body: JSON.stringify(payload || {}),
       });
     } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : 'Unable to reach the authentication server.' };
+      const message = window.AppErrorUtils.toUserMessage(error, 'Unable to reach the authentication server.', { context: 'auth' });
+      return {
+        success: false,
+        connectivityIssue: window.AppErrorUtils.isConnectivityIssue(error),
+        message,
+      };
     }
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data?.success === false) {
+      const rawMessage = data?.message || 'Unable to complete the request right now.';
+      const connectivityIssue = Boolean(data?.connectivityIssue) || window.AppErrorUtils.isConnectivityIssue(rawMessage);
       return {
         success: false,
-        message: data?.message || 'Unable to complete the request right now.',
+        connectivityIssue,
+        message: window.AppErrorUtils.toUserMessage(rawMessage, 'Unable to complete the request right now.', { context: 'auth' }),
       };
     }
     return data;
@@ -85,6 +161,7 @@ const Auth = {
 
   async validateAdminSession() {
     const result = await this._post('/api/auth/professor/session', {});
+    if (result?.connectivityIssue) return this.getAdminSession();
     if (!result?.success || !result.admin) {
       this.clearAdminSession();
       return null;
@@ -156,6 +233,7 @@ const Auth = {
 
   async validateStudentSession() {
     const result = await this._post('/api/auth/student/session', {});
+    if (result?.connectivityIssue) return this.getStudentSession();
     if (!result?.success || !result.session) {
       this.clearStudentSession();
       return null;
@@ -374,6 +452,7 @@ const Auth = {
 
   async validateSysAdminSession() {
     const result = await this._post('/api/auth/sysadmin/session', {});
+    if (result?.connectivityIssue) return this.getSysAdminSession();
     if (!result?.success || !result.session) {
       this.clearSysAdminSession();
       return null;

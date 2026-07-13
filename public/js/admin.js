@@ -111,6 +111,26 @@ function getBehaviorLabel(type) {
   return BEHAVIOR_LABELS[type] || String(type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
+const CAMERA_GRID_VIOLATION_TYPES = new Set(['no_person', 'low_brightness', 'camera_off']);
+
+function getSessionCameraGridSnapshots(session) {
+  const snapshots = Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots : [];
+  return snapshots
+    .filter(snapshot => snapshot?.kind === 'violation' && CAMERA_GRID_VIOLATION_TYPES.has(snapshot.violationType))
+    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+}
+
+function getSessionSnapshotByTimestamp(session, timestamp) {
+  const snapshots = Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots : [];
+  if (timestamp) {
+    const exact = snapshots.find(snapshot => snapshot?.timestamp === timestamp);
+    if (exact) return exact;
+  }
+  return [...snapshots]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())[0] || null;
+}
+
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
@@ -142,7 +162,12 @@ function renderBehaviorSummary(activities) {
 // Surface Supabase sync failures visibly
 document.addEventListener('supabaseSyncError', (e) => {
   const msg = e.detail?.message || 'Unknown error';
-  showToast('Sync error (' + e.detail?.table + '): ' + msg, 'error');
+  if (e.detail?.connectivityIssue) {
+    showToast(msg, 'error', { context: 'sync' });
+    return;
+  }
+  const table = e.detail?.table ? ` (${e.detail.table})` : '';
+  showToast(`Sync error${table}: ${msg}`, 'error', { context: 'sync' });
 });
 
 // ── Dark mode ────────────────────────────────────────────────
@@ -226,7 +251,13 @@ function makeCustomDropdown(sel) {
   // Wrapper takes select's place in layout
   const wrap = document.createElement('div');
   const isFilter = sel.classList.contains('filter-select');
-  wrap.className = 'sys-dd qe-type-dd' + (isFilter ? ' filter-dd' : '');
+  const isExamContext = sel.classList.contains('exam-context-select');
+  wrap.className = 'sys-dd qe-type-dd'
+    + (isFilter ? ' filter-dd' : '')
+    + (isExamContext ? ' exam-context-dd' : '');
+  ['width', 'minWidth', 'maxWidth', 'flex', 'flexGrow', 'flexShrink', 'flexBasis', 'alignSelf'].forEach((prop) => {
+    if (sel.style[prop]) wrap.style[prop] = sel.style[prop];
+  });
   const uid = 'sdd-' + Math.random().toString(36).slice(2);
   wrap.id = uid;
   sel.parentNode.insertBefore(wrap, sel);
@@ -237,6 +268,7 @@ function makeCustomDropdown(sel) {
   const trigger = document.createElement('button');
   trigger.type = 'button';
   trigger.className = 'qe-type-trigger sys-dd-trigger';
+  if (isExamContext) trigger.classList.add('exam-context-trigger');
   const labelSpan = document.createElement('span');
   labelSpan.className = 'qtd-label';
   const chevron = document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -256,16 +288,49 @@ function makeCustomDropdown(sel) {
   panel.className = 'qtd-panel sys-dd-panel';
   wrap.appendChild(panel);
 
+  const renderExamContextMarkup = (opt) => {
+    if (!opt) return '';
+    if (!opt.value || !opt.dataset.title) return `<span class="exam-dd-placeholder">${escHtml(opt.text || '')}</span>`;
+    const title = escHtml(opt.dataset.title || opt.text || '');
+    const metaParts = [];
+    const meta = metaParts.join(' · ');
+    const status = escHtml(opt.dataset.status || '');
+    const statusTone = escHtml((opt.dataset.statusTone || '').toLowerCase());
+    const course = escHtml(opt.dataset.course || '');
+    const code = escHtml(opt.dataset.code || '');
+    return `<span class="exam-dd-copy">
+      <span class="exam-dd-title">${title}</span>
+      <span class="exam-dd-meta-row">
+        <span class="exam-dd-meta">
+          ${course ? `<span class="exam-dd-meta-text">${course}</span>` : ''}
+          ${course && code ? `<span class="exam-dd-meta-sep" aria-hidden="true">&middot;</span>` : ''}
+          ${code ? `<span class="exam-dd-meta-code">${code}</span>` : ''}
+        </span>
+        ${status ? `<span class="exam-dd-status exam-dd-status-${statusTone}">${status}</span>` : ''}
+      </span>
+    </span>`;
+  };
+
   const syncLabel = () => {
     const opt = sel.options[sel.selectedIndex];
+    if (isExamContext) {
+      labelSpan.innerHTML = renderExamContextMarkup(opt);
+      return;
+    }
     labelSpan.textContent = opt ? opt.text : '';
   };
   const buildPanel = () => {
     panel.innerHTML = '';
     Array.from(sel.options).forEach((opt, i) => {
       const div = document.createElement('div');
-      div.className = 'qtd-opt' + (sel.selectedIndex === i ? ' qtd-active' : '');
-      div.textContent = opt.text;
+      div.className = 'qtd-opt'
+        + (sel.selectedIndex === i ? ' qtd-active' : '')
+        + (isExamContext && opt.value ? ' exam-context-opt' : '');
+      if (isExamContext) {
+        div.innerHTML = renderExamContextMarkup(opt);
+      } else {
+        div.textContent = opt.text;
+      }
       div.onclick = (e) => {
         e.stopPropagation();
         sel.value = opt.value;
@@ -315,11 +380,45 @@ const SECTION_POLL_CONFIG = {
 function renderMonitoringSectionLive() {
   loadMonitoringExams();
   renderMonitoringTable(monitorExamId);
-  setMonitorView(_monitorView);
+  setMonitorView(monitorExamId ? _monitorView : 'table');
 }
 
 function renderReportsSectionLive() {
   loadReportExams();
+}
+
+function formatExamContextLabel(exam) {
+  if (!exam) return '';
+  const subject = exam.subjectId ? DB.getSubject(exam.subjectId) : null;
+  const courseName = subject?.name ? String(subject.name).trim() : 'Unknown course';
+  const courseCode = subject?.code ? String(subject.code).trim() : '';
+  const status = String(exam.status || '').trim().toUpperCase();
+  const summaryParts = [courseName, courseCode, status].filter(Boolean);
+  return `${exam.title} - ${summaryParts.join(' · ')}`;
+}
+
+function getExamContextParts(exam) {
+  if (!exam) return null;
+  const subject = exam.subjectId ? DB.getSubject(exam.subjectId) : null;
+  const status = String(exam.status || '').trim().toUpperCase();
+  return {
+    title: String(exam.title || 'Untitled Exam').trim(),
+    course: String(subject?.name || 'Unknown course').trim(),
+    code: String(subject?.code || '').trim(),
+    status,
+    statusTone: status.toLowerCase(),
+  };
+}
+
+function buildExamContextOption(exam, selected = false) {
+  const parts = getExamContextParts(exam);
+  const fallbackText = formatExamContextLabel(exam);
+  return `<option value="${exam.id}" ${selected ? 'selected' : ''}
+    data-title="${escHtml(parts?.title || '')}"
+    data-course="${escHtml(parts?.course || '')}"
+    data-code="${escHtml(parts?.code || '')}"
+    data-status-tone="${escHtml(parts?.statusTone || '')}"
+    data-status="${escHtml(parts?.status || '')}">${escHtml(fallbackText)}</option>`;
 }
 
 function startSectionPoll(name) {
@@ -3053,8 +3152,10 @@ async function reopenExam(id) {
         score: null,
         scoreReleased: false,
         answers: {},
+        aiDetections: {},
         warnings: 0,
         activities: [],
+        cameraSnapshots: [],
       });
     });
     DB.updateExam(id, { status: 'active', reopenedAt: new Date().toISOString(), scoringReleased: false });
@@ -4065,8 +4166,13 @@ function loadMonitoringExams() {
   const sel = document.getElementById('monitor-exam-select');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to monitor</option>' +
-    exams.map(e => `<option value="${e.id}" ${e.id === cur ? 'selected' : ''}>${escHtml(e.title)} [${e.status.toUpperCase()}]</option>`).join('');
-  if (cur) sel.value = cur;
+    exams.map(e => buildExamContextOption(e, e.id === cur)).join('');
+  if (cur && exams.some(e => e.id === cur)) {
+    sel.value = cur;
+  } else {
+    monitorExamId = '';
+    sel.value = '';
+  }
 }
 
 let _monitorView = 'table'; // 'table' | 'camera'
@@ -4160,13 +4266,92 @@ function renderCameraGrid(examId) {
   }).join('');
 }
 
+function renderCameraGrid(examId) {
+  const container = document.getElementById('camera-grid-container');
+  const empty = document.getElementById('camera-grid-empty');
+  if (!container) return;
+
+  if (!examId) {
+    container.innerHTML = '';
+    if (empty) { empty.style.display = ''; container.style.display = 'none'; }
+    return;
+  }
+
+  const exam = DB.getExam(examId);
+  if (!exam?.requireCamera) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    if (empty) {
+      empty.style.display = '';
+      empty.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">Camera Grid is only used for camera-proctored exams</div>
+        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Enable camera monitoring on the exam to collect camera-rule evidence snapshots here</div>`;
+    }
+    return;
+  }
+
+  const entries = DB.getSessionsByExam(examId)
+    .flatMap(session => getSessionCameraGridSnapshots(session).map(snapshot => ({ session, snapshot })))
+    .sort((a, b) => new Date(b.snapshot?.timestamp || 0).getTime() - new Date(a.snapshot?.timestamp || 0).getTime());
+
+  if (!entries.length) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    if (empty) {
+      empty.style.display = '';
+      empty.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">No camera-rule violations captured yet</div>
+        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Violation snapshots appear here when students are flagged for camera issues such as no person found, low brightness, or camera off</div>`;
+    }
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  container.style.display = 'grid';
+
+  container.innerHTML = entries.map(({ session, snapshot }) => {
+    const warningCount = Number(snapshot?.warningCount ?? session.warnings ?? 0);
+    const warnColor = warningCount >= 3 ? '#dc2626' : warningCount >= 2 ? '#f59e0b' : '#eab308';
+    const warnBadge = `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${warningCount}/3</div>`;
+    const violationLabel = getBehaviorLabel(snapshot?.violationType || 'camera_off');
+
+    const timeAgo = snapshot?.timestamp ? (() => {
+      const secs = Math.floor((Date.now() - new Date(snapshot.timestamp).getTime()) / 1000);
+      if (secs < 60) return secs + 's ago';
+      return Math.floor(secs / 60) + 'm ago';
+    })() : '';
+
+    const initial = (session.studentName || '?').charAt(0).toUpperCase();
+
+    return `<button type="button" onclick="viewCameraSnapshot('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:#111827;overflow:hidden;border-radius:4px;border:none;padding:0;cursor:pointer;text-align:left;">
+      <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
+        style="width:100%;height:100%;object-fit:cover;display:block;"
+        onerror="this.style.display='none'" />
+      ${warnBadge}
+      <div style="position:absolute;top:10px;left:10px;background:rgba(15,23,42,0.76);color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:20px;backdrop-filter:blur(4px);text-transform:uppercase;letter-spacing:0.05em;">${escHtml(violationLabel)}</div>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:26px;height:26px;border-radius:50%;background:#1a4d2a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">${initial}</div>
+          <div style="min-width:0;">
+            <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(session.studentName)}</div>
+            <div style="color:rgba(255,255,255,0.82);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(violationLabel)}</div>
+            <div style="color:rgba(255,255,255,0.5);font-size:10px;">${escHtml(session.studentId)} · ${escHtml(timeAgo)}</div>
+          </div>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
   document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   renderMonitoringTable(monitorExamId);
-  // Re-apply view mode (renderMonitoringTable may have re-shown the stats strip)
-  setMonitorView(_monitorView);
+  // With no selected exam, keep the compact sessions layout visible.
+  setMonitorView(monitorExamId ? _monitorView : 'table');
 }
 
 function startMonitoring() {
@@ -4545,11 +4730,13 @@ async function forceSubmitStudent(sessionId) {
 // STATISTICS (full page per exam)
 // ============================================================
 function loadStatsExams() {
-  const exams = DB.getExams().filter(e => ['active','closed','archived'].includes(e.status));
+  const exams = DB.getExams().filter(e => ['active','closed'].includes(e.status));
   const sel = document.getElementById('stats-exam-select');
   if (!sel) return;
+  const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to explore analytics</option>' +
-    exams.map(e => `<option value="${e.id}">${escHtml(e.title)} [${e.status}]</option>`).join('');
+    exams.map(e => buildExamContextOption(e, e.id === cur)).join('');
+  if (cur) sel.value = cur;
 }
 
 function renderExamStats() {
@@ -4694,11 +4881,11 @@ function renderExamStats() {
 // REPORTS
 // ============================================================
 function loadReportExams() {
-  const exams = DB.getExams().filter(e => e.status === 'closed' || e.status === 'archived' || e.status === 'active');
+  const exams = DB.getExams().filter(e => e.status === 'closed' || e.status === 'active');
   const sel = document.getElementById('report-exam-select');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +
-    exams.map(e => `<option value="${e.id}" ${e.id === cur ? 'selected' : ''}>${escHtml(e.title)} [${e.status}]</option>`).join('');
+    exams.map(e => buildExamContextOption(e, e.id === cur)).join('');
   if (cur) sel.value = cur;
   renderReportTable();
 }
@@ -5177,8 +5364,10 @@ async function allowStudentRetake(sessionId) {
     aiDetections:  {},
     warnings:      0,
     activities:    [],
+    cameraSnapshots: [],
   });
   showToast(`Retake granted for ${session.studentName}.`, 'success');
+  if (currentSection === 'monitoring') renderMonitoringSectionLive();
   renderReportTable();
 }
 
@@ -5510,13 +5699,16 @@ function showToast(message, type = 'success', options = {}) {
     warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
     info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
   };
+  const safeMessage = type === 'error'
+    ? (window.AppErrorUtils?.toUserMessage?.(message, 'Something went wrong.', { context: options.context || 'general' }) || message)
+    : message;
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   const variant = options.variant || 'default';
   toast.className = `toast ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
   toast.innerHTML = variant === 'settings'
-    ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(message)}</span>`
-    : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(message)}</span>`;
+    ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(safeMessage)}</span>`
+    : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(safeMessage)}</span>`;
   container.appendChild(toast);
   setTimeout(() => {
     toast.classList.add('removing');
@@ -5558,7 +5750,7 @@ function formatDateTime(iso) {
 // ============================================================
 // CAMERA SNAPSHOT VIEWER
 // ============================================================
-function viewCameraSnapshot(sessionId) {
+function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
   const session = DB.getSession(sessionId);
   if (!session) return;
   const modal = document.getElementById('modal-camera-snap');
@@ -5569,10 +5761,11 @@ function viewCameraSnapshot(sessionId) {
   document.getElementById('modal-cam-title').textContent = `Camera — ${session.studentName}`;
   const snaps = session.cameraSnapshots || [];
   if (snaps.length > 0) {
-    const latest = snaps[snaps.length - 1];
-    img.src = latest.imageData;
+    const selected = getSessionSnapshotByTimestamp(session, snapshotTimestamp);
+    img.src = selected?.imageData || '';
     img.style.display = '';
-    timeEl.textContent = 'Captured at ' + formatDateTime(latest.timestamp);
+    const label = selected?.violationType ? `${getBehaviorLabel(selected.violationType)} • ` : '';
+    timeEl.textContent = selected ? `${label}Captured at ${formatDateTime(selected.timestamp)}` : '';
     emptyEl.style.display = 'none';
   } else {
     img.src = '';
@@ -6120,6 +6313,10 @@ async function runAIGenerate() {
     showToast('In Custom mode, describe your questions in the message field.', 'error');
     return;
   }
+  if (mode === 'quick' && selectedTypes.length === 0) {
+    showToast('Select at least one question type before generating.', 'error');
+    return;
+  }
 
   // The exact number of questions we must end up with. Quick mode always has one;
   // Custom mode only has one if the professor's free-form text mentions a number.
@@ -6184,9 +6381,8 @@ ${strictCountRule}- ${schemaRules}
 Course materials:
 ${rawText}`;
   } else {
-    const typeList = selectedTypes.length > 0 ? selectedTypes : ['mcq', 'tf', 'identification'];
+    const typeList = selectedTypes;
     const hasCoding = typeList.includes('coding');
-    const nonCodingTypes = typeList.filter(t => t !== 'coding');
 
     if (typeList.length === 1 && hasCoding) {
       typeInstruction = `All ${count} questions MUST be "coding" type. Every question must be a programming/coding challenge.`;

@@ -43,6 +43,11 @@ const ExamApp = {
   _warningReadTimer: null,  // 3-second read timer after student returns
   _inReadCountdown: false,  // true while the 3-second read overlay is showing
   _lastWarningTime: null,
+  _warningCountdownTimer: null,
+  _warningCountdownToken: 0,
+  _warningCountdownDeadline: 0,
+  _warningCountdownTotalSeconds: 0,
+  _warningCountdownMode: null, // 'focus' | 'read' | 'info'
   _cameraStream: null,      // MediaStream from camera
   _snapInterval: null,      // periodic snapshot interval
   _cameraPrompting: false,  // true while camera permission dialog is open
@@ -53,7 +58,7 @@ const ExamApp = {
   _noMotionSec: 0,
   _MOTION_THRESHOLD: 10,
   _PRESENCE_THRESHOLD: 5,
-  _NO_MOTION_WARN: 20,
+  _NO_MOTION_WARN: 10,
   _faceModel: null,
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
@@ -65,11 +70,14 @@ const ExamApp = {
   _LOW_LIGHT_WARN_SEC: 20,   // seconds below minimum before a formal warning is issued
   _lowLightSeconds: 0,       // consecutive seconds below the absolute minimum
   _lowLightWarningIssued: false, // prevent repeated low-light strike warnings
+  _BLACK_FRAME_LUMINANCE: 8, // nearly-black camera feed threshold; usually means the lens is covered or blocked
+  _cameraObstructed: false,  // true when the stream is live but the camera view is fully blacked out
+  _cameraObstructedSeconds: 0, // consecutive seconds of near-black camera frames
   _cameraWatchdog: null,     // interval verifying the camera stream stays live
   _cameraOffSeconds: 0,      // consecutive seconds with the webcam off/blocked
   _cameraOffWarningIssued: false, // prevent repeated camera-off strike warnings
   _cameraReacquiring: false, // true while attempting to re-open the camera
-  _CAMERA_OFF_WARN_SEC: 15,  // seconds with the camera off before a formal warning
+  _CAMERA_OFF_WARN_SEC: 10,  // seconds with the camera off before a formal warning
   _brightnessCheckRound: 0,  // perceptual check: consecutive correct rounds
   _brightnessCheckFails: 0,  // perceptual check: failed attempts
   _brightnessCheckAnswer: null, // index of the tile holding the symbol
@@ -78,6 +86,10 @@ const ExamApp = {
   _fullscreenInteractionGraceUntil: 0,
   _pendingFullscreenRecovery: null,
   _fullscreenVerifyTimer: null,
+  _fullscreenLockTimer: null,
+  _fullscreenLockToken: 0,
+  _fullscreenLockDeadline: 0,
+  _fullscreenLockTotalSeconds: 0,
   _recentClipboardShortcut: null,
   _intentionalFullscreenExit: false,
   // ── Connectivity monitor ──
@@ -298,6 +310,52 @@ const ExamApp = {
     return activity;
   },
 
+  _isCameraViolationType(type) {
+    return ['no_person', 'low_brightness', 'camera_off'].includes(type);
+  },
+
+  _captureCameraFrameData() {
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('camera-canvas');
+    if (!video || !canvas || !this._cameraStream || video.readyState < 2) return null;
+
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, -320, 0, 320, 240);
+    ctx.restore();
+    return canvas.toDataURL('image/jpeg', 0.6);
+  },
+
+  _buildCameraSnapshots(nextSnapshot) {
+    if (!this.session || !nextSnapshot) return [];
+    const session = DB.getSession(this.session.id);
+    const existing = Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots.filter(Boolean) : [];
+    const liveSnapshot = existing.find(s => (s?.kind || 'live') === 'live');
+    const violationSnapshots = existing.filter(s => s?.kind === 'violation');
+    const maxViolationSnapshots = 8;
+
+    if ((nextSnapshot.kind || 'live') === 'live') {
+      return [nextSnapshot, ...violationSnapshots.slice(0, maxViolationSnapshots)];
+    }
+
+    const nextViolations = [nextSnapshot, ...violationSnapshots].slice(0, maxViolationSnapshots);
+    return liveSnapshot ? [liveSnapshot, ...nextViolations] : nextViolations;
+  },
+
+  _captureCameraViolationSnapshot(type, detail, warningCount) {
+    if (!this.session || !this.exam?.requireCamera || !this._isCameraViolationType(type)) return null;
+    return this.captureSnapshot({
+      kind: 'violation',
+      violationType: type,
+      detail,
+      warningCount,
+      fallbackToLatest: true,
+    });
+  },
+
   _isFullscreenActive() {
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
   },
@@ -388,6 +446,87 @@ const ExamApp = {
     return false;
   },
 
+  _startDeadlineCountdown({
+    timerKey,
+    tokenKey,
+    deadlineKey,
+    totalKey,
+    totalSeconds,
+    preserveExisting = false,
+    onUpdate,
+    onExpire,
+  }) {
+    const now = Date.now();
+    const hasLiveCountdown = preserveExisting && this[deadlineKey] > now + 150;
+    const deadline = hasLiveCountdown ? this[deadlineKey] : (now + (totalSeconds * 1000));
+    const activeTotalSeconds = hasLiveCountdown ? (this[totalKey] || totalSeconds) : totalSeconds;
+
+    if (this[timerKey]) {
+      clearTimeout(this[timerKey]);
+      this[timerKey] = null;
+    }
+
+    this[deadlineKey] = deadline;
+    this[totalKey] = activeTotalSeconds;
+    const token = ++this[tokenKey];
+    const totalMs = activeTotalSeconds * 1000;
+
+    const tick = () => {
+      if (token !== this[tokenKey]) return;
+
+      const msRemaining = Math.max(0, this[deadlineKey] - Date.now());
+      const secondsRemaining = msRemaining > 0 ? Math.ceil(msRemaining / 1000) : 0;
+      onUpdate?.(secondsRemaining, msRemaining, activeTotalSeconds, totalMs);
+
+      if (msRemaining <= 0) {
+        this[timerKey] = null;
+        this[deadlineKey] = 0;
+        this[totalKey] = 0;
+        onExpire?.();
+        return;
+      }
+
+      this[timerKey] = setTimeout(tick, Math.min(250, msRemaining));
+    };
+
+    tick();
+  },
+
+  _stopWarningCountdown({ hideWrap = false, resetMessage = false } = {}) {
+    if (this._warningCountdownTimer) {
+      clearTimeout(this._warningCountdownTimer);
+      this._warningCountdownTimer = null;
+    }
+    this._warningCountdownToken++;
+    this._warningCountdownDeadline = 0;
+    this._warningCountdownTotalSeconds = 0;
+    this._warningCountdownMode = null;
+
+    const overlay = document.getElementById('warning-overlay');
+    if (overlay?._countdownTimer) {
+      clearInterval(overlay._countdownTimer);
+      overlay._countdownTimer = null;
+    }
+
+    const wrapEl = document.getElementById('warning-countdown-wrap');
+    if (hideWrap && wrapEl) wrapEl.style.display = 'none';
+
+    if (resetMessage) {
+      const msgEl = document.getElementById('warning-countdown-msg');
+      if (msgEl) msgEl.textContent = 'Return to this window or your exam will be auto-submitted';
+    }
+  },
+
+  _stopFullscreenLockCountdown() {
+    if (this._fullscreenLockTimer) {
+      clearTimeout(this._fullscreenLockTimer);
+      this._fullscreenLockTimer = null;
+    }
+    this._fullscreenLockToken++;
+    this._fullscreenLockDeadline = 0;
+    this._fullscreenLockTotalSeconds = 0;
+  },
+
   _ensureToastContainer() {
     let container = document.getElementById('toast-container');
     if (!container) {
@@ -405,13 +544,16 @@ const ExamApp = {
       warning: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
       info: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
     };
+    const safeMessage = type === 'error'
+      ? (window.AppErrorUtils?.toUserMessage?.(message, 'Something went wrong.', { context: options.context || 'general' }) || message)
+      : message;
     const container = this._ensureToastContainer();
     const toast = document.createElement('div');
     const variant = options.variant || 'default';
     toast.className = `toast ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
     toast.innerHTML = variant === 'settings'
-      ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(message)}</span>`
-      : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(message)}</span>`;
+      ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(safeMessage)}</span>`
+      : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${_esc(safeMessage)}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
       toast.classList.add('removing');
@@ -516,15 +658,88 @@ const ExamApp = {
   },
 
   _promptForExamAccessCode(exam) {
-    const input = document.getElementById('dash-exam-code-input');
-    const msgEl = document.getElementById('dash-exam-code-msg');
-    if (msgEl) {
-      setEnrollStatus(msgEl, `This exam is locked. Enter the access code for "${exam.title}" to continue.`, 'info', { autoClearMs: 5000 });
+    if (!exam) return;
+    this._accessCodeExamId = exam.id;
+    const modal = document.getElementById('exam-access-code-modal');
+    const titleEl = document.getElementById('exam-access-code-title');
+    const noteEl = document.getElementById('exam-access-code-note');
+    const input = document.getElementById('exam-access-code-input');
+    const msgEl = document.getElementById('exam-access-code-msg');
+    if (titleEl) titleEl.textContent = `Enter access code for "${exam.title}"`;
+    if (noteEl) {
+      noteEl.textContent = exam.status === 'active'
+        ? 'This exam is active now. Enter the access code from your professor to continue.'
+        : 'This exam is ready. Enter the access code from your professor to open it.';
     }
+    if (msgEl) setEnrollStatus(msgEl, '', 'info');
     if (input) {
       input.value = '';
+      input.style.borderColor = '';
+      input.placeholder = 'Enter exam access code';
+    }
+    if (modal) {
+      modal.classList.remove('hidden');
+      lockBodyScroll();
+      requestAnimationFrame(() => input?.focus());
+    }
+  },
+
+  closeExamAccessCodeModal() {
+    this._accessCodeExamId = null;
+    const modal = document.getElementById('exam-access-code-modal');
+    const msgEl = document.getElementById('exam-access-code-msg');
+    const input = document.getElementById('exam-access-code-input');
+    if (msgEl) setEnrollStatus(msgEl, '', 'info');
+    if (input) {
+      input.value = '';
+      input.style.borderColor = '';
+      input.placeholder = 'Enter exam access code';
+    }
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+  },
+
+  submitExamAccessCode() {
+    const exam = this._accessCodeExamId ? DB.getExam(this._accessCodeExamId) : null;
+    const input = document.getElementById('exam-access-code-input');
+    const msgEl = document.getElementById('exam-access-code-msg');
+    const code = String(input?.value || '').trim().toUpperCase();
+
+    if (!exam || !input) {
+      this.closeExamAccessCodeModal();
+      return;
+    }
+
+    if (!code) {
+      setEnrollStatus(msgEl, 'Please enter the exam access code.', 'error', { autoClearMs: 4000 });
+      input.style.borderColor = '#dc2626';
       input.focus();
-      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const expectedCode = String(exam.code || '').trim().toUpperCase();
+    if (code !== expectedCode) {
+      input.style.borderColor = '#dc2626';
+      input.value = '';
+      input.placeholder = 'Invalid code - try again';
+      setEnrollStatus(msgEl, 'Invalid access code. Please check and try again.', 'error', { autoClearMs: 4000 });
+      requestAnimationFrame(() => input.focus());
+      setTimeout(() => {
+        input.style.borderColor = '';
+        input.placeholder = 'Enter exam access code';
+      }, 2000);
+      return;
+    }
+
+    input.style.borderColor = '';
+    this.closeExamAccessCodeModal();
+    this._openExamDirectly(exam.id);
+  },
+
+  handleExamAccessCodeKeydown(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.submitExamAccessCode();
     }
   },
 
@@ -905,6 +1120,7 @@ const ExamApp = {
   // ── Course view ─────────────────────────────────────────
   _currentCourseId: null,
   _currentCourseTab: 'exams',
+  _accessCodeExamId: null,
 
   showCourseView(subjId) {
     const subj = DB.getSubjects().find(s => s.id === subjId);
@@ -1312,11 +1528,11 @@ const ExamApp = {
     }
 
     // Input listeners (set once)
-    const codeInput = document.getElementById('dash-exam-code-input');
+    const codeInput = document.getElementById('exam-access-code-input');
     if (codeInput && !codeInput._ls) {
       codeInput._ls = true;
       codeInput.addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
-      codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.dashEnterExamCode(); });
+      codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.submitExamAccessCode(); });
     }
     const enrollInput = document.getElementById('dash-enroll-code');
     if (enrollInput && !enrollInput._ls) {
@@ -1393,8 +1609,8 @@ const ExamApp = {
       html += `<div class="dash-empty">
         <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
         <div class="dash-empty-title">No Enrolled Courses Yet</div>
-        <div class="dash-empty-sub">Use the "Enroll in a Course" field above, or enter an exam access code directly.</div>
-      </div>`;
+          <div class="dash-empty-sub">Use the "Enroll in a Course" field above. Exams that require a code will prompt you when you open them.</div>
+        </div>`;
       listEl.innerHTML = html;
       return;
     }
@@ -1617,38 +1833,7 @@ const ExamApp = {
   },
 
   dashEnterExamCode() {
-    const code = (document.getElementById('dash-exam-code-input').value || '').trim().toUpperCase();
-    const msgEl = document.getElementById('dash-exam-code-msg');
-    if (!code) return;
-    const exam = DB.getExamByCode(code);
-    const el = document.getElementById('dash-exam-code-input');
-    if (!exam) {
-      el.style.borderColor = '#dc2626';
-      setEnrollStatus(msgEl, 'Invalid access code. Please check and try again.', 'error', { autoClearMs: 4000 });
-      el.placeholder = 'Invalid code — try again';
-      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
-      return;
-    }
-    const sess = Auth.getStudentSession();
-    if (sess && this._isPortalStudentArchived(sess.studentId)) {
-      el.style.borderColor = '#dc2626';
-      el.value = '';
-      el.placeholder = 'Access removed';
-      setEnrollStatus(msgEl, 'Your professor has temporarily removed your access to courses and exams.', 'error', { autoClearMs: 4500 });
-      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
-      return;
-    }
-    const student = sess ? this._getPortalStudent(sess.studentId) : null;
-    if (sess && !this._isStudentEnrolledInExam(student, exam)) {
-      el.style.borderColor = '#dc2626';
-      el.value = '';
-      el.placeholder = 'Not enrolled in that course';
-      setEnrollStatus(msgEl, 'You are not enrolled in the course for this exam.', 'error', { autoClearMs: 4500 });
-      setTimeout(() => { el.style.borderColor = ''; el.placeholder = 'Enter exam access code'; }, 2000);
-      return;
-    }
-    setEnrollStatus(msgEl, '', 'info');
-    this.dashSelectExam(code);
+    this.submitExamAccessCode();
   },
 
   async dashEnrollCourse() {
@@ -1801,6 +1986,12 @@ const ExamApp = {
     // active state rather than relying solely on the ancestor's display.
     const tools = document.getElementById('exam-tools-container');
     if (tools) tools.style.display = name === 'exam' ? '' : 'none';
+
+    // Same leak as above, but for the proctoring camera widget: it must
+    // never keep rendering (or keep the webcam stream open) once the
+    // student is off the exam screen, e.g. after a mid-exam refresh routes
+    // straight to 'submitted' or back to 'dashboard'.
+    if (name !== 'exam') this.stopCamera();
   },
 
   _showError(msg) {
@@ -1813,11 +2004,7 @@ const ExamApp = {
       delete updated.examId;
       sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
       this.showDashboard(updated);
-      // Show error as a transient banner in the dashboard
-      const msgEl = document.getElementById('dash-exam-code-msg');
-      if (msgEl) {
-        setEnrollStatus(msgEl, msg, 'error', { autoClearMs: 5000 });
-      }
+      this._showToast(msg, 'error');
     } else {
       this.showState('entry');
       const errEl = document.getElementById('entry-error');
@@ -2026,12 +2213,8 @@ const ExamApp = {
     let overlay = document.getElementById('fs-lock-overlay');
     const COUNTDOWN_SECS = 7;
 
-    const clearCountdown = () => {
-      if (overlay && overlay._cdTimer) { clearInterval(overlay._cdTimer); overlay._cdTimer = null; }
-    };
-
     const doReturn = () => {
-      clearCountdown();
+      this._stopFullscreenLockCountdown();
       this.requestFullscreen().then((ok) => {
         if (ok && this._isFullscreenActive()) {
           if (overlay) overlay.style.display = 'none';
@@ -2079,38 +2262,37 @@ const ExamApp = {
 
     document.getElementById('fs-return-btn').onclick = doReturn;
 
-    // Start 7-second countdown — auto-submit if student doesn't return
-    clearCountdown();
+    // Keep one deadline-based countdown alive even if the browser fires
+    // repeated fullscreen/visibility events while already out of fullscreen.
     if (this.warnings < 3) {
-      let remaining = COUNTDOWN_SECS;
-      const circumference = 238.76;
-      const ring = document.getElementById('fs-cd-ring');
-      const num  = document.getElementById('fs-cd-num');
-
-      const tick = () => {
-        remaining--;
-        if (num) num.textContent = remaining;
-        if (ring) {
-          const offset = circumference * (1 - remaining / COUNTDOWN_SECS);
-          ring.style.strokeDashoffset = String(offset);
-          ring.style.stroke = remaining <= 3 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e';
-        }
-        if (remaining <= 0) {
-          clearCountdown();
+      this._startDeadlineCountdown({
+        timerKey: '_fullscreenLockTimer',
+        tokenKey: '_fullscreenLockToken',
+        deadlineKey: '_fullscreenLockDeadline',
+        totalKey: '_fullscreenLockTotalSeconds',
+        totalSeconds: COUNTDOWN_SECS,
+        preserveExisting: true,
+        onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
+          const ring = document.getElementById('fs-cd-ring');
+          const num = document.getElementById('fs-cd-num');
+          if (num) num.textContent = remaining;
+          if (ring) {
+            const offset = 238.76 * ((totalMs - msRemaining) / totalMs);
+            ring.style.strokeDashoffset = String(offset);
+            ring.style.stroke = remaining <= 3 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e';
+          }
+        },
+        onExpire: () => {
           if (!this._isFullscreenActive()) this.submitExam('auto');
-        }
-      };
-
-      // Set initial ring color to green
-      if (ring) ring.style.stroke = '#22c55e';
-      overlay._cdTimer = setInterval(tick, 1000);
+        },
+      });
     }
   },
 
   _hideFullscreenLock() {
     const overlay = document.getElementById('fs-lock-overlay');
     if (!overlay) return;
-    if (overlay._cdTimer) { clearInterval(overlay._cdTimer); overlay._cdTimer = null; }
+    this._stopFullscreenLockCountdown();
     overlay.style.display = 'none';
   },
 
@@ -2352,7 +2534,7 @@ const ExamApp = {
 
   _isCameraLive() {
     const track = this._cameraStream && this._cameraStream.getVideoTracks()[0];
-    return !!(track && track.readyState === 'live' && !track.muted);
+    return !!(track && track.readyState === 'live' && !track.muted && !this._cameraObstructed);
   },
 
   _checkCameraAlive() {
@@ -2371,11 +2553,11 @@ const ExamApp = {
     }
 
     // Camera is off / blocked / unplugged
-    this._cameraOffSeconds += 1;
     this._showCameraOffOverlay();
     const statusText = document.getElementById('camera-status-text');
     if (statusText) statusText.textContent = 'Camera off';
 
+    this._cameraOffSeconds += 1;
     if (this._cameraOffSeconds >= this._CAMERA_OFF_WARN_SEC && !this._cameraOffWarningIssued) {
       this._cameraOffWarningIssued = true;
       this.issueWarning('camera_off', 'Webcam turned off or blocked during the exam');
@@ -2458,6 +2640,8 @@ const ExamApp = {
     this._brightnessWarningIssued = false;
     this._lowLightSeconds = 0;
     this._lowLightWarningIssued = false;
+    this._cameraObstructed = false;
+    this._cameraObstructedSeconds = 0;
     this._motionInterval = setInterval(() => {
       if (this._faceModelReady && this._faceModel) {
         this._detectFace(video);
@@ -2633,6 +2817,19 @@ const ExamApp = {
 
     // ── Layer 1: absolute minimum brightness ──
     const tick = 0.6; // seconds per detection frame
+    if (avgLuminance <= this._BLACK_FRAME_LUMINANCE) {
+      this._cameraObstructedSeconds += tick;
+      this._cameraObstructed = this._cameraObstructedSeconds >= 1.2;
+      this._lowLightSeconds = 0;
+      this._lowLightWarningIssued = false;
+      this._darkSeconds = 0;
+      this._brightnessWarningIssued = false;
+      this._hideBrightnessPrompt();
+      return;
+    }
+
+    this._cameraObstructed = false;
+    this._cameraObstructedSeconds = 0;
     if (avgLuminance < this._MIN_LUMINANCE) {
       this._lowLightSeconds += tick;
       if (this._lowLightSeconds >= this._LOW_LIGHT_PROMPT_SEC) {
@@ -2819,6 +3016,53 @@ const ExamApp = {
     } catch(e) {}
   },
 
+  captureSnapshot(options = {}) {
+    if (!this.session) return null;
+    const {
+      kind = 'live',
+      violationType = '',
+      detail = '',
+      warningCount = null,
+      fallbackToLatest = false,
+    } = options;
+
+    try {
+      const session = DB.getSession(this.session.id);
+      if (!session) return null;
+
+      let imageData = this._captureCameraFrameData();
+      let usedFallback = false;
+
+      if (!imageData && fallbackToLatest) {
+        const existing = Array.isArray(session.cameraSnapshots) ? session.cameraSnapshots : [];
+        const fallback = existing.find(s => s?.imageData);
+        if (fallback?.imageData) {
+          imageData = fallback.imageData;
+          usedFallback = true;
+        }
+      }
+
+      if (!imageData) return null;
+
+      const snapshot = {
+        timestamp: new Date().toISOString(),
+        imageData,
+        kind,
+      };
+      if (violationType) snapshot.violationType = violationType;
+      if (detail) snapshot.detail = detail;
+      if (Number.isFinite(warningCount)) snapshot.warningCount = warningCount;
+      if (usedFallback) snapshot.usedFallback = true;
+
+      DB.updateSession(this.session.id, {
+        cameraSnapshots: this._buildCameraSnapshots(snapshot),
+      });
+      return snapshot;
+    } catch (e) {
+      return null;
+    }
+  },
+
   stopCamera() {
     this._cameraPrompting = false;
     if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
@@ -2862,43 +3106,47 @@ const ExamApp = {
   // COUNTDOWN (10-second auto-submit window)
   // ============================================================
   startCountdown(totalSeconds) {
-    this.cancelCountdown(false); // clear previous without hiding overlay
+    // If this 10-second return window is already running, keep its original
+    // deadline instead of restarting it from scratch.
+    const reusingExisting = this._warningCountdownMode === 'focus'
+      && this._warningCountdownDeadline > Date.now() + 150;
 
-    const numEl    = document.getElementById('cd-num');
-    const circleEl = document.getElementById('cd-circle');
-    const wrapEl   = document.getElementById('warning-countdown-wrap');
-    const circumference = 163.36; // 2 * PI * 26
+    if (!reusingExisting) {
+      this.cancelCountdown(false); // clear previous without hiding overlay
+    }
 
-    if (wrapEl) wrapEl.style.display = '';
-
-    let remaining = totalSeconds;
-
-    const updateUI = () => {
-      if (numEl) numEl.textContent = remaining;
-      if (circleEl) {
-        // Drain the ring as time runs out
-        const offset = circumference * (totalSeconds - remaining) / totalSeconds;
-        circleEl.style.strokeDashoffset = offset;
-      }
-    };
-
-    updateUI();
-
-    this._countdownInterval = setInterval(() => {
-      remaining--;
-      updateUI();
-      if (remaining <= 0) {
-        clearInterval(this._countdownInterval);
-        this._countdownInterval = null;
-        // Update overlay to show submitting message
+    this._warningCountdownMode = 'focus';
+    this._startDeadlineCountdown({
+      timerKey: '_warningCountdownTimer',
+      tokenKey: '_warningCountdownToken',
+      deadlineKey: '_warningCountdownDeadline',
+      totalKey: '_warningCountdownTotalSeconds',
+      totalSeconds,
+      preserveExisting: reusingExisting,
+      onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
+        const numEl = document.getElementById('cd-num');
+        const circleEl = document.getElementById('cd-circle');
+        const wrapEl = document.getElementById('warning-countdown-wrap');
+        if (wrapEl) wrapEl.style.display = '';
+        if (numEl) numEl.textContent = remaining;
+        if (circleEl) {
+          const offset = 163.36 * ((totalMs - msRemaining) / totalMs);
+          circleEl.style.strokeDashoffset = String(offset);
+        }
+      },
+      onExpire: () => {
+        this._warningCountdownMode = null;
         const msgEl = document.getElementById('warning-overlay-msg');
         const subEl = document.getElementById('warning-overlay-sub');
+        const wrapEl = document.getElementById('warning-countdown-wrap');
         if (msgEl) msgEl.textContent = 'Time expired. Submitting your exam now...';
         if (subEl) subEl.textContent = '';
         if (wrapEl) wrapEl.style.display = 'none';
+        this._countdownInterval = null;
         setTimeout(() => this.submitExam('auto'), 1500);
-      }
-    }, 1000);
+      },
+    });
+    this._countdownInterval = this._warningCountdownTimer;
   },
 
   cancelCountdown(hideOverlay = true) {
@@ -2906,21 +3154,15 @@ const ExamApp = {
     // cancelCountdown call from the same return event pair), don't interrupt it —
     // just stop the 10s interval if it somehow still exists and bail out.
     if (this._inReadCountdown) {
-      if (this._countdownInterval) {
-        clearInterval(this._countdownInterval);
-        this._countdownInterval = null;
-      }
+      if (this._warningCountdownMode === 'focus') this._stopWarningCountdown();
+      this._countdownInterval = null;
       return;
     }
 
-    const hadCountdown = !!this._countdownInterval;
-    if (this._countdownInterval) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-
-    const wrapEl = document.getElementById('warning-countdown-wrap');
-    if (wrapEl) wrapEl.style.display = 'none';
+    const hadCountdown = this._warningCountdownMode === 'focus'
+      && this._warningCountdownDeadline > Date.now();
+    this._stopWarningCountdown({ hideWrap: true });
+    this._countdownInterval = null;
 
     if (hideOverlay && hadCountdown && this.warnings < 3) {
       // Student returned — keep overlay for 3s so they can read the warning
@@ -2929,16 +3171,14 @@ const ExamApp = {
   },
 
   _cancelReadCountdown() {
+    if (this._warningCountdownMode === 'read') {
+      this._stopWarningCountdown({ hideWrap: true, resetMessage: true });
+    }
     if (this._warningReadTimer) {
       clearTimeout(this._warningReadTimer);
       this._warningReadTimer = null;
     }
     this._inReadCountdown = false;
-    const wrapEl = document.getElementById('warning-countdown-wrap');
-    if (wrapEl) wrapEl.style.display = 'none';
-    // Restore the original countdown message for next time
-    const msgEl = document.getElementById('warning-countdown-msg');
-    if (msgEl) msgEl.textContent = 'Return to this window or your exam will be auto-submitted';
   },
 
   _startReadCountdown(totalSeconds) {
@@ -2952,33 +3192,32 @@ const ExamApp = {
     if (!overlay || !wrapEl) return;
 
     this._inReadCountdown = true;
-    if (msgEl) msgEl.textContent = 'Read this warning. The exam will resume shortly.';
-
-    // Reset ring to full
-    if (cdCircle) cdCircle.style.strokeDashoffset = '0';
-    if (cdNum) cdNum.textContent = totalSeconds;
-    wrapEl.style.display = '';
-
-    let remaining = totalSeconds;
-
-    const tick = () => {
-      remaining--;
-      if (cdNum) cdNum.textContent = remaining;
-      if (cdCircle) {
-        cdCircle.style.strokeDashoffset =
-          String(circumference * (totalSeconds - remaining) / totalSeconds);
-      }
-      if (remaining <= 0) {
+    this._warningCountdownMode = 'read';
+    this._startDeadlineCountdown({
+      timerKey: '_warningCountdownTimer',
+      tokenKey: '_warningCountdownToken',
+      deadlineKey: '_warningCountdownDeadline',
+      totalKey: '_warningCountdownTotalSeconds',
+      totalSeconds,
+      onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
+        if (msgEl) msgEl.textContent = 'Read this warning. The exam will resume shortly.';
+        wrapEl.style.display = '';
+        if (cdNum) cdNum.textContent = remaining;
+        if (cdCircle) {
+          cdCircle.style.strokeDashoffset =
+            String(circumference * ((totalMs - msRemaining) / totalMs));
+        }
+        this._warningReadTimer = this._warningCountdownTimer;
+      },
+      onExpire: () => {
         this._inReadCountdown = false;
         this._warningReadTimer = null;
+        this._warningCountdownMode = null;
         wrapEl.style.display = 'none';
         overlay.style.display = 'none';
-        return;
-      }
-      this._warningReadTimer = setTimeout(tick, 1000);
-    };
-
-    this._warningReadTimer = setTimeout(tick, 1000);
+        if (msgEl) msgEl.textContent = 'Return to this window or your exam will be auto-submitted';
+      },
+    });
   },
 
   issueWarning(type, detail) {
@@ -2996,15 +3235,17 @@ const ExamApp = {
     }
     if (this._cameraPrompting) return; // camera permission dialog open — not a violation
 
-    // Clear any in-progress read countdown so the new warning takes over cleanly
-    this._cancelReadCountdown();
-
     // Debounce: prevent double-firing within 1500ms (blur + visibilitychange fire together)
     const now = Date.now();
     if (this._lastWarningTime && (now - this._lastWarningTime) < 1500) return;
     this._lastWarningTime = now;
 
+    this._stopWarningCountdown({ hideWrap: true });
+    // Clear any in-progress read countdown so the new warning takes over cleanly
+    this._cancelReadCountdown();
+
     this.warnings++;
+    this._captureCameraViolationSnapshot(type, detail, this.warnings);
 
     this._recordActivity(type, detail);
     DB.updateSession(this.session.id, { warnings: this.warnings });
@@ -3084,9 +3325,6 @@ const ExamApp = {
     const focusLoss = ['window_blur', 'tab_switch', 'fullscreen_exit'];
     const isFocusLoss = focusLoss.includes(type);
 
-    // Kill any stale overlay countdown timer before starting a new one
-    if (overlay._countdownTimer) { clearInterval(overlay._countdownTimer); overlay._countdownTimer = null; }
-
     if (this.warnings < 3) {
       const secs = isFocusLoss ? 10 : 5;
       const cdWrap = document.getElementById('warning-countdown-wrap');
@@ -3108,18 +3346,26 @@ const ExamApp = {
       // own the interval so only ONE timer updates #cd-num and #cd-circle.
       // Non-focus: run a 5-second dismiss timer here (startCountdown is not called).
       if (!isFocusLoss) {
-        let remaining = secs;
-        overlay._countdownTimer = setInterval(() => {
-          remaining--;
-          if (cdNum) cdNum.textContent = remaining;
-          if (cdCircle) cdCircle.style.strokeDashoffset = String(circumference * (1 - remaining / secs));
-          if (remaining <= 0) {
-            clearInterval(overlay._countdownTimer);
-            overlay._countdownTimer = null;
+        this._warningCountdownMode = 'info';
+        this._startDeadlineCountdown({
+          timerKey: '_warningCountdownTimer',
+          tokenKey: '_warningCountdownToken',
+          deadlineKey: '_warningCountdownDeadline',
+          totalKey: '_warningCountdownTotalSeconds',
+          totalSeconds: secs,
+          onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
+            if (cdWrap) cdWrap.style.display = '';
+            if (cdNum) cdNum.textContent = remaining;
+            if (cdCircle) {
+              cdCircle.style.strokeDashoffset = String(circumference * ((totalMs - msRemaining) / totalMs));
+            }
+          },
+          onExpire: () => {
+            this._warningCountdownMode = null;
             if (cdWrap) cdWrap.style.display = 'none';
             overlay.style.display = 'none';
-          }
-        }, 1000);
+          },
+        });
       }
     }
   },
@@ -4443,6 +4689,11 @@ function formatDateTime(iso) {
 // ============================================================
 // BOOT
 // ============================================================
+document.addEventListener('supabaseSyncError', (e) => {
+  const msg = e.detail?.message || 'Unable to sync with the server right now.';
+  ExamApp._showToast(msg, 'error', { context: 'sync' });
+});
+
 document.addEventListener('dbReady', () => ExamApp.init());
 
 

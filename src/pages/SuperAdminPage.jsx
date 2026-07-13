@@ -590,7 +590,10 @@ export default function SuperAdminPage() {
   }, [theme]);
 
   const showToast = useCallback((message, type = "success") => {
-    setToast({ message, type, key: Date.now() });
+    const normalizedMessage = type === "error"
+      ? (window.AppErrorUtils?.toUserMessage?.(message, "Something went wrong.", { context: "general" }) || message)
+      : message;
+    setToast({ message: normalizedMessage, type, key: Date.now() });
   }, []);
 
   const handleThemeToggle = () => {
@@ -669,6 +672,17 @@ export default function SuperAdminPage() {
   useEffect(() => {
     writeSuperAdminSectionToUrl(section);
   }, [section]);
+
+  useEffect(() => {
+    const handleSyncError = (event) => {
+      showToast(
+        event.detail?.message || "Unable to sync with the server right now.",
+        "error",
+      );
+    };
+    document.addEventListener("supabaseSyncError", handleSyncError);
+    return () => document.removeEventListener("supabaseSyncError", handleSyncError);
+  }, [showToast]);
 
   // Keep the professor list/stats live while viewing the Dashboard — re-fetches
   // from Supabase (in case the realtime socket silently dropped) rather than

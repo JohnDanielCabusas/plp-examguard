@@ -709,28 +709,31 @@ export default function AdminPage() {
 
             {/* MONITORING */}
             <section id="section-monitoring" className="admin-section hidden">
-              <div className="monitor-topbar">
-                <div className="monitor-topbar-left">
-                  <div>
-                    <div className="section-title" style={{ marginBottom: '2px' }}>Live Monitoring</div>
-                    <div className="section-subtitle">Real-time student exam activity</div>
+              <div className="monitor-hero">
+                <div className="monitor-hero-head">
+                  <div className="monitor-hero-copy">
+                    <div className="monitor-hero-title">Real-time student exam activity</div>
                   </div>
                   <span id="monitor-live-badge" className="hidden monitor-live-chip">
                     <span className="live-dot" />LIVE
                   </span>
-                  <select className="form-control filter-select" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()}>
-                    <option value="">Select an exam to monitor</option>
-                  </select>
                 </div>
-                <div className="monitor-view-toggle">
-                  <button id="monitor-view-table" className="monitor-view-btn active" onClick={() => window.setMonitorView('table')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                    Sessions
-                  </button>
-                  <button id="monitor-view-camera" className="monitor-view-btn" onClick={() => window.setMonitorView('camera')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                    Camera Grid
-                  </button>
+                <div className="toolbar monitor-toolbar" style={{ marginBottom: 0 }}>
+                  <div className="reports-toolbar-select">
+                    <select className="form-control exam-context-select" id="monitor-exam-select" onChange={() => window.onMonitorExamChange()}>
+                      <option value="">Select an exam to monitor</option>
+                    </select>
+                  </div>
+                  <div className="monitor-view-toggle">
+                    <button id="monitor-view-table" className="monitor-view-btn active" onClick={() => window.setMonitorView('table')}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                      Sessions
+                    </button>
+                    <button id="monitor-view-camera" className="monitor-view-btn" onClick={() => window.setMonitorView('camera')}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      Camera Grid
+                    </button>
+                  </div>
                 </div>
               </div>
               {/* Camera grid view */}
@@ -788,7 +791,7 @@ export default function AdminPage() {
               </div>
               <div className="toolbar reports-toolbar" style={{ marginBottom: '20px' }}>
                 <div className="reports-toolbar-select">
-                  <select className="form-control" id="report-exam-select" onChange={() => window.renderReportTable()}>
+                  <select className="form-control exam-context-select" id="report-exam-select" onChange={() => window.renderReportTable()}>
                     <option value="">Select an exam to review results</option>
                   </select>
                 </div>
@@ -826,7 +829,7 @@ export default function AdminPage() {
               </div>
               <div style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
                 <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Exam Analytics</label>
-                <select className="form-control" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
+                <select className="form-control exam-context-select" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
                   <option value="">Select an exam to explore analytics</option>
                 </select>
               </div>
