@@ -5059,6 +5059,65 @@ function formatReportSessionTimeRange(session) {
   return `— - ${formatTime(end)}`;
 }
 
+function renderReportSessionTime(session) {
+  const start = session?.startTime ? new Date(session.startTime) : null;
+  const end = session?.endTime ? new Date(session.endTime) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+  if (!hasStart && !hasEnd) {
+    return '<span class="report-session-empty">-</span>';
+  }
+
+  const sameDay = hasStart && hasEnd
+    && start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+
+  const formatDay = (value) => value.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+  const formatTime = (value) => value.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const formatStamp = (value) => value.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  if (hasStart && hasEnd && sameDay) {
+    return `
+      <div class="report-session-time">
+        <span class="report-session-date">${escHtml(formatDay(start))}</span>
+        <span class="report-session-range">${escHtml(`${formatTime(start)} - ${formatTime(end)}`)}</span>
+      </div>
+    `;
+  }
+
+  const rows = [];
+  if (hasStart) {
+    rows.push(`
+      <span class="report-session-stamp">
+        <span class="report-session-label">Start</span>
+        <span class="report-session-value">${escHtml(formatStamp(start))}</span>
+      </span>
+    `);
+  }
+  if (hasEnd) {
+    rows.push(`
+      <span class="report-session-stamp">
+        <span class="report-session-label">${hasStart ? 'End' : 'Submitted'}</span>
+        <span class="report-session-value">${escHtml(formatStamp(end))}</span>
+      </span>
+    `);
+  }
+
+  return `<div class="report-session-time report-session-time-stacked">${rows.join('')}</div>`;
+}
+
 function renderReportTable() {
   const examId = document.getElementById('report-exam-select').value;
   const pdfBtn = document.getElementById('btn-generate-pdf');
@@ -5110,22 +5169,22 @@ function renderReportTable() {
   document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
     const submissionStatus = getSubmissionStatusBadge(s);
-    const timeRange = formatReportSessionTimeRange(s);
+    const sessionTimeHtml = renderReportSessionTime(s);
     return `<tr>
-      <td><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
-      <td><strong>${escHtml(s.studentName)}</strong></td>
-      <td>${escHtml(s.studentId)}</td>
-      <td>${escHtml(getStudentYearSectionSummary(s))}</td>
-      <td>
+      <td data-label="Rank"><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
+      <td data-label="Name"><strong>${escHtml(s.studentName)}</strong></td>
+      <td data-label="Student ID">${escHtml(s.studentId)}</td>
+      <td data-label="Year / Section">${escHtml(getStudentYearSectionSummary(s))}</td>
+      <td data-label="Score">
         <div style="display:flex;align-items:center;gap:8px;">
           <span>${s.score !== null ? s.score : '—'}/${s.maxScore}</span>
           <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${pct}%;"></div></div>
         </div>
       </td>
-      <td>${pct}%</td>
-      <td><span style="white-space:nowrap;">${escHtml(timeRange)}</span></td>
-      <td>${submissionStatus}</td>
-      <td data-label="">
+      <td data-label="Percentage">${pct}%</td>
+      <td data-label="Time" class="report-session-cell">${sessionTimeHtml}</td>
+      <td data-label="Submitted" class="report-status-cell">${submissionStatus}</td>
+      <td data-label="Actions">
         <div class="table-actions">
           <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button>
           <button class="tbl-btn tbl-btn-warning" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake${icRedoStroke}</button>
@@ -5262,12 +5321,13 @@ async function getReportHeaderImage() {
 function drawPdfPageHeader(doc, examTitle, headerImage) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
-  let cursorY = 10;
+  const centerX = pageWidth / 2;
+  let cursorY = 8;
 
   if (headerImage) {
     const headerProps = doc.getImageProperties(headerImage);
     const maxHeaderWidth = pageWidth - (marginLeft * 2);
-    const maxHeaderHeight = 24;
+    const maxHeaderHeight = 34;
     let headerWidth = maxHeaderWidth;
     let headerHeight = (headerProps.height * headerWidth) / headerProps.width;
     if (headerHeight > maxHeaderHeight) {
@@ -5276,28 +5336,23 @@ function drawPdfPageHeader(doc, examTitle, headerImage) {
     }
     const headerX = (pageWidth - headerWidth) / 2;
     doc.addImage(headerImage, 'PNG', headerX, cursorY, headerWidth, headerHeight);
-    cursorY += headerHeight + 4;
+    cursorY += headerHeight + 5;
   } else {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.setTextColor(22, 62, 34);
-    doc.text('Pamantasan ng Lungsod ng Pasig', marginLeft, cursorY + 5);
+    doc.text('Pamantasan ng Lungsod ng Pasig', centerX, cursorY + 5, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
-    doc.text('TUKLAS Official Report', marginLeft, cursorY + 11);
+    doc.text('TUKLAS Official Report', centerX, cursorY + 11, { align: 'center' });
     cursorY += 16;
   }
 
   doc.setDrawColor(22, 62, 34);
   doc.setLineWidth(0.5);
   doc.line(marginLeft, cursorY, pageWidth - marginLeft, cursorY);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(22, 62, 34);
-  doc.text(examTitle, marginLeft, cursorY + 6);
-
-  return cursorY + 10;
+  return cursorY + 2;
 }
 
 function drawPdfPageFooter(doc, settings) {
@@ -5310,7 +5365,7 @@ function drawPdfPageFooter(doc, settings) {
   doc.setDrawColor(203, 213, 225);
   doc.setLineWidth(0.25);
   doc.line(marginLeft, pageHeight - 14, pageWidth - marginLeft, pageHeight - 14);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
   doc.text(settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', marginLeft, pageHeight - 9);
@@ -5329,6 +5384,119 @@ function drawPdfSummaryCard(doc, x, y, width, label, value, accentColor) {
   doc.setFontSize(12);
   doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
   doc.text(String(value), x + 4, y + 13);
+}
+
+function drawPdfMetaCard(doc, x, y, width, label, value) {
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(x, y, width, 13, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(100, 116, 139);
+  doc.text(String(label), x + 4, y + 4.6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.6);
+  doc.setTextColor(51, 65, 85);
+  const valueLines = doc.splitTextToSize(String(value || 'N/A'), width - 8);
+  doc.text(valueLines.slice(0, 2), x + 4, y + 9);
+}
+
+function drawPdfSectionTitle(doc, title, y) {
+  doc.setFont('times', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(30, 41, 59);
+  doc.text(String(title), 14, y);
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.2);
+  doc.line(14, y + 1.6, 196, y + 1.6);
+}
+
+function drawPdfDetailPair(doc, leftLabel, leftValue, rightLabel, rightValue, y) {
+  const labelColor = [71, 85, 105];
+  const valueColor = [15, 23, 42];
+  const leftX = 14;
+  const rightX = 108;
+  const columnWidth = 82;
+
+  doc.setFont('times', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(labelColor[0], labelColor[1], labelColor[2]);
+  doc.text(`${leftLabel}:`, leftX, y);
+  doc.text(`${rightLabel}:`, rightX, y);
+
+  doc.setFont('times', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+  const leftLines = doc.splitTextToSize(String(leftValue || 'N/A'), columnWidth);
+  const rightLines = doc.splitTextToSize(String(rightValue || 'N/A'), columnWidth);
+  doc.text(leftLines, leftX + 24, y);
+  doc.text(rightLines, rightX + 26, y);
+
+  return Math.max(leftLines.length, rightLines.length);
+}
+
+function drawPdfInfoBlock(doc, y, rows) {
+  const startX = 14;
+  const totalWidth = 182;
+  const halfWidth = totalWidth / 2;
+  const labelColor = [71, 85, 105];
+  const valueColor = [15, 23, 42];
+  const innerPadding = 4;
+  const columnGap = 3;
+
+  doc.setFont('times', 'bold');
+  doc.setFontSize(8.4);
+  const leftLabelWidth = Math.min(
+    Math.max(...rows.map(([leftLabel]) => doc.getTextWidth(`${leftLabel}:`))) + 4,
+    34
+  );
+  const rightLabelWidth = Math.min(
+    Math.max(...rows.map(([, , rightLabel]) => doc.getTextWidth(`${rightLabel}:`))) + 4,
+    34
+  );
+
+  const preparedRows = rows.map(([leftLabel, leftValue, rightLabel, rightValue]) => {
+    const leftLines = doc.splitTextToSize(
+      String(leftValue || 'N/A'),
+      halfWidth - ((innerPadding * 2) + leftLabelWidth + columnGap)
+    );
+    const rightLines = doc.splitTextToSize(
+      String(rightValue || 'N/A'),
+      halfWidth - ((innerPadding * 2) + rightLabelWidth + columnGap)
+    );
+    const maxLines = Math.max(leftLines.length, rightLines.length, 1);
+    const rowHeight = Math.max(11, 5 + (maxLines * 4));
+    return { leftLabel, leftLines, rightLabel, rightLines, rowHeight };
+  });
+
+  const totalHeight = preparedRows.reduce((sum, row) => sum + row.rowHeight, 0);
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.2);
+  doc.rect(startX, y, totalWidth, totalHeight);
+  doc.line(startX + halfWidth, y, startX + halfWidth, y + totalHeight);
+
+  let rowY = y;
+  preparedRows.forEach((row, index) => {
+    if (index > 0) {
+      doc.line(startX, rowY, startX + totalWidth, rowY);
+    }
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(8.4);
+    doc.setTextColor(labelColor[0], labelColor[1], labelColor[2]);
+    doc.text(`${row.leftLabel}:`, startX + innerPadding, rowY + 4.8);
+    doc.text(`${row.rightLabel}:`, startX + halfWidth + innerPadding, rowY + 4.8);
+
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(valueColor[0], valueColor[1], valueColor[2]);
+    doc.text(row.leftLines, startX + innerPadding + leftLabelWidth + columnGap, rowY + 4.8);
+    doc.text(row.rightLines, startX + halfWidth + innerPadding + rightLabelWidth + columnGap, rowY + 4.8);
+
+    rowY += row.rowHeight;
+  });
+
+  return y + totalHeight;
 }
 
 async function exportExamReportPdf() {
@@ -5363,45 +5531,39 @@ async function exportExamReportPdf() {
   const generatedBy = adminSession?.name || 'Professor';
   const reportStamp = formatReportDateTime(now);
   const pageHeaderBottomY = drawPdfPageHeader(doc, exam.title, headerImage);
+  const highestMark = topPerformer
+    ? `${topPerformer.maxScore ? Math.round((topPerformer.score / topPerformer.maxScore) * 100) : 0}%`
+    : 'N/A';
+  const needsReviewCount = Math.max(sorted.length - passCount, 0);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(18);
   doc.setTextColor(15, 23, 42);
-  doc.text('Examination Results Report', 105, pageHeaderBottomY + 2, { align: 'center' });
+  doc.text('Examination Results Report', 105, pageHeaderBottomY + 10, { align: 'center' });
 
-  const examTitleLines = doc.splitTextToSize(exam.title, 178);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(22, 62, 34);
-  doc.text(examTitleLines, 14, pageHeaderBottomY + 12);
+  const examTitleLines = doc.splitTextToSize(exam.title, 160);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(33, 37, 41);
+  doc.text(examTitleLines, 105, pageHeaderBottomY + 21, { align: 'center' });
 
-  let detailY = pageHeaderBottomY + 12 + (examTitleLines.length * 5);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Course: ${subject?.name || 'N/A'}`, 14, detailY);
-  doc.text(`Time Limit: ${exam.timeLimit || 0} minutes`, 105, detailY, { align: 'center' });
-  doc.text(`Generated: ${reportStamp}`, 196, detailY, { align: 'right' });
-  detailY += 6;
-  doc.text(`Prepared by: ${generatedBy}`, 14, detailY);
-  doc.text(`Submitted Records: ${sorted.length}`, 105, detailY, { align: 'center' });
-  doc.text(`School: ${settings.schoolName || 'Pamantasan ng Lungsod ng Pasig'}`, 196, detailY, { align: 'right' });
-  detailY += 8;
+  let detailY = pageHeaderBottomY + 27 + (examTitleLines.length * 5);
 
-  drawPdfSummaryCard(doc, 14, detailY, 42, 'Average Score', `${averagePercent}%`, [22, 101, 52]);
-  drawPdfSummaryCard(doc, 61, detailY, 42, 'Passing Students', `${passCount}`, [21, 128, 61]);
-  drawPdfSummaryCard(doc, 108, detailY, 42, 'Needs Review', `${Math.max(sorted.length - passCount, 0)}`, [180, 83, 9]);
-  drawPdfSummaryCard(
-    doc,
-    155,
-    detailY,
-    41,
-    'Highest Mark',
-    topPerformer ? `${topPerformer.maxScore ? Math.round((topPerformer.score / topPerformer.maxScore) * 100) : 0}%` : 'N/A',
-    [30, 64, 175]
-  );
+  drawPdfSectionTitle(doc, 'Examination Information', detailY);
+  detailY = drawPdfInfoBlock(doc, detailY + 4, [
+    ['Examination', exam.title, 'Course', subject?.name || 'N/A'],
+    ['School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Time Limit', `${exam.timeLimit || 0} minutes`],
+    ['Prepared By', generatedBy, 'Date Generated', reportStamp],
+  ]) + 6;
 
-  const tableStartY = detailY + 24;
+  drawPdfSectionTitle(doc, 'Summary', detailY);
+  detailY = drawPdfInfoBlock(doc, detailY + 4, [
+    ['Submitted Records', `${sorted.length}`, 'Highest Mark', highestMark],
+    ['Average Score', `${averagePercent}%`, 'Passing Students', `${passCount}`],
+    ['Needs Review', `${needsReviewCount}`, 'Status', sorted.length ? 'Submitted records available' : 'No submitted records'],
+  ]) + 8;
+
+  const tableStartY = detailY;
   if (sorted.length === 0) {
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
@@ -5421,40 +5583,48 @@ async function exportExamReportPdf() {
       getStudentYearSectionSummary(s, ' / ') || 'N/A',
       `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
       `${pct}%`,
+      formatReportSessionTimeRange(s),
       getSubmissionStatusText(s),
     ];
   });
 
   doc.autoTable({
     startY: tableStartY,
-    margin: { top: 36, right: 14, bottom: 20, left: 14 },
-    head: [['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Status']],
+    margin: { top: 52, right: 14, bottom: 20, left: 14 },
+    head: [['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Time', 'Status']],
     body: tableData,
     styles: {
+      font: 'times',
       fontSize: 8.5,
-      cellPadding: 3,
+      cellPadding: 2.6,
       textColor: [30, 41, 59],
       lineColor: [226, 232, 240],
       lineWidth: 0.1,
       valign: 'middle',
+      overflow: 'linebreak',
     },
     headStyles: {
-      fillColor: [22, 62, 34],
-      textColor: 255,
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
       fontStyle: 'bold',
       halign: 'center',
+      fontSize: 8.2,
+      cellPadding: 2.6,
+      lineWidth: 0.15,
     },
     bodyStyles: {
       minCellHeight: 8,
     },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 12 },
-      2: { halign: 'center', cellWidth: 24 },
-      3: { halign: 'center', cellWidth: 30 },
-      4: { halign: 'center', cellWidth: 18 },
-      5: { halign: 'center', cellWidth: 22 },
-      6: { halign: 'center', cellWidth: 22 },
+      0: { halign: 'center', cellWidth: 17 },
+      1: { cellWidth: 40 },
+      2: { halign: 'center', cellWidth: 22 },
+      3: { halign: 'center', cellWidth: 26 },
+      4: { halign: 'center', cellWidth: 16 },
+      5: { halign: 'center', cellWidth: 18 },
+      6: { halign: 'center', cellWidth: 24 },
+      7: { halign: 'center', cellWidth: 19 },
     },
     didDrawPage: () => {
       if (doc.internal.getCurrentPageInfo().pageNumber > 1) {
