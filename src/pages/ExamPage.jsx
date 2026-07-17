@@ -27,6 +27,9 @@ export default function ExamPage() {
 
   useEffect(() => {
     applyTheme(theme);
+    requestAnimationFrame(() => {
+      window.ExamApp?.applyCodingEditorTheme?.(theme);
+    });
   }, [theme]);
 
   const EyeToggle = ({ show, onToggle }) => (

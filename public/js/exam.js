@@ -566,13 +566,16 @@ const ExamApp = {
     const portal = params.get('portal');
     const courseId = params.get('course');
     const courseTab = params.get('courseTab');
+    const archived = params.get('archived') === '1';
 
     if (portal === 'settings') return { view: 'settings' };
+    if (portal === 'archived') return { view: 'archived' };
     if (portal === 'course' && courseId) {
       return {
         view: 'course',
         courseId,
         courseTab: ['exams', 'people'].includes(courseTab) ? courseTab : 'exams',
+        archived,
       };
     }
     return { view: 'home' };
@@ -582,14 +585,23 @@ const ExamApp = {
     const url = new URL(window.location.href);
     if (route.view === 'settings') {
       url.searchParams.set('portal', 'settings');
+      url.searchParams.delete('archived');
+      url.searchParams.delete('course');
+      url.searchParams.delete('courseTab');
+    } else if (route.view === 'archived') {
+      url.searchParams.set('portal', 'archived');
+      url.searchParams.delete('archived');
       url.searchParams.delete('course');
       url.searchParams.delete('courseTab');
     } else if (route.view === 'course' && route.courseId) {
       url.searchParams.set('portal', 'course');
       url.searchParams.set('course', route.courseId);
       url.searchParams.set('courseTab', ['people', 'exams'].includes(route.courseTab) ? route.courseTab : 'exams');
+      if (route.archived) url.searchParams.set('archived', '1');
+      else url.searchParams.delete('archived');
     } else {
       url.searchParams.delete('portal');
+      url.searchParams.delete('archived');
       url.searchParams.delete('course');
       url.searchParams.delete('courseTab');
     }
@@ -917,18 +929,22 @@ const ExamApp = {
     const titleEl = document.getElementById('portal-topbar-title');
     if (titleEl) titleEl.textContent = titles[tab] || tab;
 
-    this._writePortalRoute({ view: tab === 'settings' ? 'settings' : 'home' });
+    this._writePortalRoute({ view: tab === 'settings' ? 'settings' : tab === 'archived' ? 'archived' : 'home' });
     if (tab === 'settings') this._loadSettingsForm();
     if (tab === 'archived') this._renderArchivedCourses();
 
     // Restart dashboard poll when returning to home (was paused during course view)
     if (tab === 'home') {
       this._currentCourseId = null;
+      this._currentCourseArchivedView = false;
       if (!this._dashInterval) {
         const sess = Auth.getStudentSession();
         this._renderDashboard(sess);
         this._dashInterval = setInterval(() => this._renderDashboard(Auth.getStudentSession()), 5000);
       }
+    } else if (tab !== 'course') {
+      this._currentCourseId = null;
+      this._currentCourseArchivedView = false;
     }
   },
 
@@ -1120,17 +1136,26 @@ const ExamApp = {
   // ── Course view ─────────────────────────────────────────
   _currentCourseId: null,
   _currentCourseTab: 'exams',
+  _currentCourseArchivedView: false,
   _accessCodeExamId: null,
 
-  showCourseView(subjId) {
+  showCourseView(subjId, options = {}) {
     const subj = DB.getSubjects().find(s => s.id === subjId);
     const sess = Auth.getStudentSession();
     const student = sess ? this._getPortalStudent(sess.studentId) : null;
-    if (!subj || subj.archived || !student || !(student.enrolledSubjects || []).includes(subjId)) {
+    const archivedView = !!(options.allowArchived && subj?.archived);
+    const shouldShowCourseExam = (exam, studentId) => {
+      if (!exam || exam.subjectId !== subjId) return false;
+      if (exam.status !== 'draft') return true;
+      const dbSession = DB.getStudentSession(exam.id, studentId);
+      return !!dbSession?.submitted;
+    };
+    if (!subj || (subj.archived && !archivedView) || !student || !(student.enrolledSubjects || []).includes(subjId)) {
       this.showPortalTab('home');
       return;
     }
     this._currentCourseId = subjId;
+    this._currentCourseArchivedView = archivedView;
     // Stop dashboard poll while in course view — it was re-rendering
     // every 5 seconds and destroying the tab active state
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
@@ -1153,7 +1178,7 @@ const ExamApp = {
     const titleEl = document.getElementById('portal-topbar-title');
     if (titleEl) {
       titleEl.innerHTML = `<span class="topbar-breadcrumb">
-        <button class="topbar-breadcrumb-link" onclick="ExamApp.showPortalTab('home')">Home</button>
+        <button class="topbar-breadcrumb-link" onclick="ExamApp.showPortalTab('${archivedView ? 'archived' : 'home'}')">${archivedView ? 'Archived Courses' : 'Home'}</button>
         <span class="topbar-breadcrumb-sep">›</span>
         <span class="topbar-breadcrumb-current">${_esc(subj.name)}</span>
       </span>`;
@@ -1165,20 +1190,22 @@ const ExamApp = {
     if (bannerEl) {
       bannerEl.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
       const sess2 = Auth.getStudentSession();
-      const allExamsForBanner = DB.getExams().filter(e => e.subjectId === subjId);
+      const allExamsForBanner = DB.getExams().filter(e => shouldShowCourseExam(e, sess2.studentId));
       const activeCount    = allExamsForBanner.filter(e => e.status === 'active').length;
       const submittedCount = allExamsForBanner.filter(e => {
         const s = DB.getStudentSession(e.id, sess2.studentId);
         return s && s.submitted;
       }).length;
-      const totalVisible = allExamsForBanner.filter(e => e.status !== 'draft').length;
+      const totalVisible = allExamsForBanner.length;
       const deco = (subj.code || subj.name || '?').charAt(0).toUpperCase();
       bannerEl.innerHTML = `
         <div class="course-banner-deco-circle c1"></div>
         <div class="course-banner-deco-circle c2"></div>
         <div class="course-banner-deco-circle c3"></div>
         <div class="course-banner-deco-letter">${deco}</div>
-        <button type="button" class="course-banner-unenroll-btn" onclick="ExamApp.requestUnenroll('${subj.id}')" title="Unenroll from this course">Unenroll</button>
+        ${archivedView
+          ? `<span class="course-banner-unenroll-btn" style="cursor:default;pointer-events:none;opacity:0.95;">Archived</span>`
+          : `<button type="button" class="course-banner-unenroll-btn" onclick="ExamApp.requestUnenroll('${subj.id}')" title="Unenroll from this course">Unenroll</button>`}
         <div class="course-banner-inner">
           <div class="course-banner-title">${_esc(subj.name)}</div>
           <div class="course-banner-code">${_esc(subj.code)}</div>
@@ -1218,7 +1245,7 @@ const ExamApp = {
         // showCourseView() open time.
         const freshSubj = DB.getSubjects().find(s => s.id === subjId);
         const student = sess2 ? this._getPortalStudent(sess2.studentId) : null;
-        if (!freshSubj || !student || !(student.enrolledSubjects || []).includes(subjId)) {
+        if (!freshSubj || !student || !(student.enrolledSubjects || []).includes(subjId) || (!this._currentCourseArchivedView && freshSubj.archived)) {
           this.showPortalTab('home');
           return;
         }
@@ -1230,13 +1257,13 @@ const ExamApp = {
           this._renderSidebarCourses(enrolledSubjects);
         }
         // Re-render banner stats
-        const allExamsForBanner = DB.getExams().filter(e => e.subjectId === subjId);
+        const allExamsForBanner = DB.getExams().filter(e => shouldShowCourseExam(e, sess2.studentId));
         const activeCount    = allExamsForBanner.filter(e => e.status === 'active').length;
         const submittedCount = allExamsForBanner.filter(e => {
           const s = DB.getStudentSession(e.id, sess2.studentId);
           return s && s.submitted;
         }).length;
-        const totalVisible = allExamsForBanner.filter(e => e.status !== 'draft').length;
+        const totalVisible = allExamsForBanner.length;
         const statEls = bannerEl?.querySelectorAll('.course-stat-value');
         if (statEls && statEls.length >= 3) {
           statEls[0].textContent = totalVisible;
@@ -1272,7 +1299,7 @@ const ExamApp = {
     if (tab === 'exams')  this._renderCourseExams();
     if (tab === 'people') this._renderCoursePeople();
     if (this._currentCourseId) {
-      this._writePortalRoute({ view: 'course', courseId: this._currentCourseId, courseTab: tab });
+      this._writePortalRoute({ view: 'course', courseId: this._currentCourseId, courseTab: tab, archived: this._currentCourseArchivedView });
     }
   },
 
@@ -1287,6 +1314,7 @@ const ExamApp = {
       this.showPortalTab('home');
       return;
     }
+    const readOnlyArchivedCourse = !!this._currentCourseArchivedView;
     // Mirrors the join-time enforcement in _startExamFlow: a student is blocked from an
     // exam if they're marked absent — unless they already have a session (in progress or
     // submitted), which is grandfathered in.
@@ -1296,7 +1324,12 @@ const ExamApp = {
       return this._isStudentAbsentForExam(student, e);
     };
 
-    const allExams = DB.getExams().filter(e => e.subjectId === subjId && e.status !== 'draft');
+    const allExams = DB.getExams().filter(e => {
+      if (e.subjectId !== subjId) return false;
+      if (e.status !== 'draft') return true;
+      const dbSession = DB.getStudentSession(e.id, sess.studentId);
+      return !!dbSession?.submitted;
+    });
     if (!allExams.length) {
       listEl.innerHTML = `<div class="dash-empty">
         <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
@@ -1309,7 +1342,7 @@ const ExamApp = {
     const groups = [
       { label: 'Active Now',              statuses: ['active'],            iconClass: 'icon-active',  cardClass: 'status-active' },
       { label: 'Upcoming',                statuses: ['ready'],             iconClass: 'icon-waiting', cardClass: 'status-waiting' },
-      { label: 'Previous / Inactive Exams', statuses: ['closed','archived'], iconClass: '',           cardClass: 'status-closed' },
+      { label: 'Previous / Inactive Exams', statuses: ['closed','archived','draft'], iconClass: '',           cardClass: 'status-closed' },
     ];
 
     let html = '';
@@ -1348,18 +1381,54 @@ const ExamApp = {
 
         if (dbSess && dbSess.submitted) {
           const pct = dbSess.maxScore ? Math.round(dbSess.score / dbSess.maxScore * 100) : 0;
+          const submittedAt = this._formatExamCardDateTime(dbSess.endTime || dbSess.startTime || e.closedAt || e.startedAt || e.createdAt);
           const scoreHtml = dbSess.scoreReleased
-            ? `<span class="course-score-value">${dbSess.score}/${dbSess.maxScore}</span> <span class="course-score-percent">(${pct}%)</span>`
-            : `<span class="course-score-pending">Awaiting result</span>`;
+            ? `<div class="course-exam-result-card">
+                <div class="course-exam-result-row">
+                  <span class="course-exam-result-label">Date</span>
+                  <span class="course-exam-result-value">${submittedAt}</span>
+                </div>
+                <span class="course-exam-result-divider" aria-hidden="true"></span>
+                <div class="course-exam-result-row course-exam-result-row-score">
+                  <span class="course-exam-result-label">Score</span>
+                  <div class="course-score-inline">
+                    <span class="course-score-value">${dbSess.score}</span>
+                    <span class="course-score-divider">/</span>
+                    <span class="course-score-total">${dbSess.maxScore}</span>
+                    <span class="course-score-percent">(${pct}%)</span>
+                  </div>
+                </div>
+              </div>`
+            : `<div class="course-exam-result-card course-exam-result-card-pending">
+                <div class="course-exam-result-row">
+                  <span class="course-exam-result-label">Date</span>
+                  <span class="course-exam-result-value">${submittedAt}</span>
+                </div>
+                <span class="course-exam-result-divider" aria-hidden="true"></span>
+                <div class="course-exam-result-row course-exam-result-row-score">
+                  <span class="course-exam-result-label">Score</span>
+                  <span class="course-score-pending">Awaiting result</span>
+                </div>
+              </div>`;
           accentLabel = 'Completed';
           stateHtml = `<span class="course-exam-state state-submitted">${this._portalIcon('checkCircle', { size: 12, stroke: '#4b5563' })}<span>Submitted</span></span>`;
           panelHtml = `<div class="course-exam-panel panel-submitted">
             <div class="course-exam-panel-top">
               ${stateHtml}
-              <div class="course-exam-panel-date">${this._formatExamCardDateTime(dbSess.endTime || dbSess.startTime || e.closedAt || e.startedAt || e.createdAt)}</div>
-              <div class="course-exam-panel-note">${scoreHtml}</div>
+              ${scoreHtml}
             </div>
             <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp._openExamDirectly('${e.id}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
+          </div>`;
+        } else if (readOnlyArchivedCourse) {
+          accentLabel = 'Archived';
+          stateHtml = `<span class="course-exam-state state-closed">Archived Course</span>`;
+          panelHtml = `<div class="course-exam-panel panel-closed">
+            <div class="course-exam-panel-top">
+              ${stateHtml}
+              <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.closedAt || e.updatedAt || e.createdAt)}</div>
+              <div class="course-exam-panel-note">This course is archived. You can review results only for exams you already submitted.</div>
+            </div>
+            <button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Unavailable</span></button>
           </div>`;
         } else if (blocked) {
           accentLabel = 'Absent';
@@ -1573,12 +1642,18 @@ const ExamApp = {
       this.showPortalTab('settings');
       return;
     }
+    if (route.view === 'archived') {
+      this.showPortalTab('archived');
+      return;
+    }
     if (route.view === 'course') {
       const student = this._getPortalStudent(sess.studentId);
       const enrolled = student?.enrolledSubjects || [];
       const courseSubj = DB.getSubjects().find(s => s.id === route.courseId);
-      if (enrolled.includes(route.courseId) && courseSubj && !courseSubj.archived) {
-        this.showCourseView(route.courseId);
+      const canOpenActiveCourse = enrolled.includes(route.courseId) && courseSubj && !courseSubj.archived;
+      const canOpenArchivedCourse = enrolled.includes(route.courseId) && courseSubj && courseSubj.archived && route.archived;
+      if (canOpenActiveCourse || canOpenArchivedCourse) {
+        this.showCourseView(route.courseId, { allowArchived: !!canOpenArchivedCourse });
         return;
       }
     }
@@ -1678,6 +1753,8 @@ const ExamApp = {
       });
     }
 
+    const featuredActiveExamIds = new Set(activeExams.map(({ exam }) => exam.id));
+
     // My Courses section
     html += `<div class="dash-section-label" style="margin-top:${activeExams.length ? '8px' : '0'};">My Courses</div>`;
 
@@ -1703,8 +1780,10 @@ const ExamApp = {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Submitted</span>`;
           actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp._openExamDirectly('${e.id}')">View Result</button>`;
         } else if (e.status === 'active') {
-          statusHtml = `<span class="badge badge-success" style="font-size:10px;display:inline-flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite;display:inline-block;"></span><span>Active</span></span>`;
-          actionHtml = `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</button>`;
+          statusHtml = `<span class="dash-exam-active-pill"><span class="dash-exam-active-dot"></span><span>ACTIVE</span></span>`;
+          actionHtml = featuredActiveExamIds.has(e.id)
+            ? ``
+            : `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">${requiresAccessCode ? 'Enter Code' : 'Take Exam'}</button>`;
         } else if (e.status === 'ready') {
           statusHtml = `<span class="badge badge-info" style="font-size:10px;">Waiting</span>`;
           actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();${requiresAccessCode ? `ExamApp._promptForExamAccessCode(DB.getExam('${e.id}'))` : `ExamApp._openExamDirectly('${e.id}')`}">${requiresAccessCode ? 'Enter Code' : 'Join Room'}</button>`;
@@ -1787,7 +1866,12 @@ const ExamApp = {
 
       let html = '';
       archivedSubjects.forEach(subj => {
-        html += `<div class="dash-subject-card" style="opacity:0.75;">
+        const submittedCount = DB.getExams().filter(e => {
+          if (e.subjectId !== subj.id) return false;
+          const session = DB.getStudentSession(e.id, sess.studentId);
+          return !!session?.submitted;
+        }).length;
+        html += `<div class="dash-subject-card dash-subject-card-clickable" style="opacity:0.85;" tabindex="0" role="button" onclick="ExamApp.showCourseView('${subj.id}', { allowArchived: true })" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ExamApp.showCourseView('${subj.id}', { allowArchived: true });}">
           <div class="dash-subject-header">
             <div class="dash-subject-icon" style="background:linear-gradient(135deg,#9ca3af,#d1d5db);">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
@@ -1798,7 +1882,7 @@ const ExamApp = {
             </div>
             <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
           </div>
-          <div class="dash-no-exams" style="color:#9ca3af;">This course has been archived by your professor.</div>
+          <div class="dash-no-exams" style="color:#9ca3af;">Open this course to review its exams${submittedCount ? ` and ${submittedCount === 1 ? 'view your result' : 'view your results'}` : ''}.</div>
         </div>`;
       });
       listEl.innerHTML = html;
@@ -3631,6 +3715,55 @@ const ExamApp = {
       </div>`;
   },
 
+  _getCodingEditorTheme(themeOverride) {
+    const normalized = themeOverride === 'dark'
+      ? 'dark'
+      : themeOverride === 'light'
+        ? 'light'
+        : (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+    return normalized === 'dark' ? 'dracula' : 'default';
+  },
+
+  _applyCodingFallbackTheme(textarea, themeOverride) {
+    if (!textarea) return;
+    const isDark = this._getCodingEditorTheme(themeOverride) === 'dracula';
+    textarea.style.cssText = [
+      'width:100%',
+      'min-height:260px',
+      "font-family:'Fira Code','Cascadia Code','Courier New',monospace",
+      'font-size:13px',
+      'line-height:1.6',
+      'padding:14px 16px',
+      'border-radius:0',
+      'border:none',
+      'outline:none',
+      `background:${isDark ? '#1f2430' : '#f8fafc'}`,
+      `color:${isDark ? '#e5e7eb' : '#111827'}`,
+      'resize:vertical',
+    ].join(';') + ';';
+  },
+
+  applyCodingEditorTheme(themeOverride) {
+    const nextTheme = this._getCodingEditorTheme(themeOverride);
+    document.querySelectorAll('.coding-cm-wrap').forEach(wrap => {
+      if (wrap?._cm) {
+        wrap._cm.setOption('theme', nextTheme);
+        wrap._cm.refresh();
+      }
+    });
+    document.querySelectorAll('.coding-cm-source').forEach(src => {
+      if (src && src.style.display !== 'none') this._applyCodingFallbackTheme(src, themeOverride);
+    });
+  },
+
+  _refreshVisibleCodeEditors() {
+    this.questionOrder.forEach((q, idx) => {
+      if (q.type !== 'coding' || idx !== this.currentQuestionIndex) return;
+      const wrap = document.getElementById('coding-cm-' + q.id);
+      if (wrap?._cm) wrap._cm.refresh();
+    });
+  },
+
   _initCodeEditors() {
     const LANG_MODE = { python:'python', javascript:'javascript', java:'clike', cpp:'clike', c:'clike', php:'php' };
     this.questionOrder.forEach(q => {
@@ -3643,7 +3776,7 @@ const ExamApp = {
       if (!window.CodeMirror) {
         // Fallback: plain textarea if CodeMirror not loaded
         src.style.display = '';
-        src.style.cssText = 'width:100%;min-height:200px;font-family:monospace;font-size:13px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#1e1e2e;color:#cdd6f4;';
+        this._applyCodingFallbackTheme(src);
         src.oninput = () => ExamApp.selectAnswer(q.id, src.value);
         if (this.answers[q.id]) src.value = this.answers[q.id];
         return;
@@ -3652,7 +3785,7 @@ const ExamApp = {
       const cm = window.CodeMirror(wrap, {
         value: (this.answers[q.id] !== undefined ? this.answers[q.id] : src.value) || '',
         mode: LANG_MODE[q.language || 'python'] || 'python',
-        theme: 'dracula',
+        theme: this._getCodingEditorTheme(),
         lineNumbers: true,
         indentUnit: 4,
         tabSize: 4,
@@ -3668,6 +3801,7 @@ const ExamApp = {
         ExamApp.selectAnswer(q.id, cm.getValue());
       });
       wrap._cm = cm;
+      requestAnimationFrame(() => cm.refresh());
     });
   },
 
@@ -3988,7 +4122,10 @@ const ExamApp = {
     if (wrap) wrap.scrollTop = 0;
 
     // Initialize CodeMirror for any coding questions now visible
-    requestAnimationFrame(() => this._initCodeEditors());
+    requestAnimationFrame(() => {
+      this._initCodeEditors();
+      requestAnimationFrame(() => this._refreshVisibleCodeEditors());
+    });
 
     this._updateNavGrid();
   },

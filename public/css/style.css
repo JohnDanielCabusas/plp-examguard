@@ -798,9 +798,25 @@
 [data-theme="dark"] .course-exam-panel-note {
   color: #94a3b8 !important;
 }
+[data-theme="dark"] .course-exam-result-card {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+[data-theme="dark"] .course-exam-result-label {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .course-exam-result-value {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .course-exam-result-divider { background: rgba(148, 163, 184, 0.22) !important; }
 [data-theme="dark"] .course-score-value {
   color: #d1fae5 !important;
   font-weight: 700;
+}
+[data-theme="dark"] .course-score-divider,
+[data-theme="dark"] .course-score-total {
+  color: #cbd5e1 !important;
 }
 [data-theme="dark"] .course-score-percent,
 [data-theme="dark"] .course-score-pending {
@@ -6206,6 +6222,28 @@ body.exam-page {
 }
 .dash-exam-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
 .dash-exam-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.dash-exam-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.dash-exam-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.14);
+  animation: pulse 1.4s infinite;
+  flex-shrink: 0;
+}
 
 .dash-no-exams {
   padding: 16px 18px; font-size: 13px; color: #9ca3af;
@@ -6534,6 +6572,72 @@ body.exam-page {
   font-size: 12px;
   line-height: 1.5;
   color: #64748b;
+}
+.course-exam-result-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+.course-exam-result-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.course-exam-result-row-score { align-items: flex-start; }
+.course-exam-result-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(148, 163, 184, 0.28);
+}
+.course-exam-result-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #8a98ad;
+}
+.course-exam-result-value {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #243447;
+  white-space: nowrap;
+}
+.course-score-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.course-score-value {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 800;
+  color: #86efac;
+}
+.course-score-divider,
+.course-score-total {
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 700;
+  color: #1f2937;
+}
+.course-score-percent {
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+}
+.course-score-pending {
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #334155;
+}
+.course-exam-result-card-pending {
+  grid-template-columns: minmax(0, 1.2fr) auto auto;
 }
 .course-exam-state {
   display: inline-flex;
@@ -10755,13 +10859,114 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 /* ── Coding question (exam v2) ── */
 .coding-expected-wrap { margin-bottom: 16px; }
 .coding-section-label { font-size: 11px; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-.coding-expected-pre { background: #1e1e2e; color: #cdd6f4; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; padding: 12px 16px; border-radius: 8px; margin: 0; white-space: pre-wrap; word-break: break-all; border: 1px solid #313244; }
-.coding-editor-shell { border-radius: 10px; overflow: hidden; border: 1.5px solid #313244; }
-.coding-editor-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: #181825; border-bottom: 1px solid #313244; }
-.coding-lang-badge { font-size: 11px; font-weight: 800; color: #cba6f7; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(203,166,247,0.12); padding: 3px 10px; border-radius: 20px; border: 1px solid rgba(203,166,247,0.25); }
-.coding-editor-hint { font-size: 11px; color: #6c7086; }
-.coding-cm-wrap .CodeMirror { height: 260px; font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace; font-size: 13.5px; line-height: 1.6; }
+.coding-expected-pre {
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border: 1px solid #dbe4ee;
+}
+.coding-editor-shell {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1.5px solid #dbe4ee;
+  background: #ffffff;
+}
+.coding-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #dbe4ee;
+}
+.coding-lang-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #1d4ed8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(37, 99, 235, 0.1);
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+}
+.coding-editor-hint { font-size: 11px; color: #64748b; }
+.coding-cm-wrap .CodeMirror {
+  height: 260px;
+  font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 13.5px;
+  line-height: 1.6;
+  background: #f8fafc;
+  color: #111827;
+}
 .coding-cm-wrap .CodeMirror-scroll { min-height: 260px; }
+.coding-cm-wrap .CodeMirror-gutters {
+  background: #f1f5f9;
+  border-right: 1px solid #dbe4ee;
+  min-width: 52px;
+}
+.coding-cm-wrap .CodeMirror-linenumbers { width: 52px; }
+.coding-cm-wrap .CodeMirror-linenumber {
+  width: 44px;
+  padding: 0 8px 0 0;
+  text-align: right;
+  color: #94a3b8;
+}
+.coding-cm-wrap .CodeMirror-lines {
+  padding: 12px 0 12px 8px;
+}
+.coding-cm-wrap .CodeMirror pre.CodeMirror-line,
+.coding-cm-wrap .CodeMirror pre.CodeMirror-line-like {
+  padding-left: 0;
+}
+.coding-cm-wrap .CodeMirror-cursor { border-left: 1.5px solid #0f172a; }
+.coding-cm-wrap .cm-s-default .CodeMirror-selected,
+.coding-cm-wrap .cm-s-dracula .CodeMirror-selected {
+  background: rgba(37, 99, 235, 0.16);
+}
+[data-theme="dark"] .coding-expected-pre {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-color: #313244;
+}
+[data-theme="dark"] .coding-editor-shell {
+  border-color: #313244;
+  background: #1e1e2e;
+}
+[data-theme="dark"] .coding-editor-header {
+  background: #181825;
+  border-bottom-color: #313244;
+}
+[data-theme="dark"] .coding-lang-badge {
+  color: #cba6f7;
+  background: rgba(203,166,247,0.12);
+  border-color: rgba(203,166,247,0.25);
+}
+[data-theme="dark"] .coding-editor-hint { color: #9399b2; }
+[data-theme="dark"] .coding-cm-wrap .CodeMirror {
+  background: #1f2430;
+  color: #e5e7eb;
+}
+[data-theme="dark"] .coding-cm-wrap .CodeMirror-gutters {
+  background: #181825;
+  border-right-color: #313244;
+}
+[data-theme="dark"] .coding-cm-wrap .CodeMirror-linenumber { color: #7f849c; }
+[data-theme="dark"] .coding-cm-wrap .CodeMirror-cursor { border-left-color: #f9fafb; }
+[data-theme="dark"] .coding-cm-wrap .cm-s-dracula.CodeMirror,
+[data-theme="dark"] .coding-cm-wrap .cm-s-dracula .CodeMirror-gutters {
+  background: #1f2430;
+}
+[data-theme="dark"] .coding-cm-wrap .cm-s-dracula .CodeMirror-gutters {
+  background: #181825;
+}
 
 /* Return button — sliding green arrow panel */
 .btn-submitted-return {

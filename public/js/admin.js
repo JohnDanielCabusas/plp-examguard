@@ -934,7 +934,7 @@ function viewEnrolledStudents(subjectId) {
   if (currentCourseDetailId !== subjectId) currentEnrolledTab = 'students';
   currentCourseDetailId = subjectId;
   const students = DB.getAllStudentsRaw().filter(s => !s.archived && (s.enrolledSubjects || []).includes(subjectId));
-  const exams    = DB.getExams().filter(e => e.subjectId === subjectId);
+  const exams    = DB.getExams().filter(e => e.subjectId === subjectId && e.status !== 'archived');
 
   document.getElementById('course-detail-name').textContent = formatCourseNameDisplay(subj.name);
   document.getElementById('course-detail-sub').textContent =
