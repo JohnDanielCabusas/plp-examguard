@@ -59,9 +59,15 @@ const ExamApp = {
   _MOTION_THRESHOLD: 10,
   _PRESENCE_THRESHOLD: 5,
   _NO_MOTION_WARN: 10,
+  _MULTIPLE_FACE_WARN_SEC: 3,
+  _LOOK_DOWN_WARN_SEC: 6,
   _faceModel: null,
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
+  _multipleFaceSeconds: 0,
+  _multipleFaceWarningIssued: false,
+  _lookDownSeconds: 0,
+  _lookDownWarningIssued: false,
   _brightnessBaseline: null, // luminance baseline recorded at exam start
   _darkSeconds: 0,           // consecutive seconds below brightness threshold
   _brightnessWarningIssued: false, // prevent repeated brightness warnings
@@ -311,7 +317,7 @@ const ExamApp = {
   },
 
   _isCameraViolationType(type) {
-    return ['no_person', 'low_brightness', 'camera_off'].includes(type);
+    return ['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off'].includes(type);
   },
 
   _captureCameraFrameData() {
@@ -2720,6 +2726,10 @@ const ExamApp = {
   _startMotionDetection(video) {
     if (this._motionInterval) clearInterval(this._motionInterval);
     this._noMotionSec = 0;
+    this._multipleFaceSeconds = 0;
+    this._multipleFaceWarningIssued = false;
+    this._lookDownSeconds = 0;
+    this._lookDownWarningIssued = false;
     this._brightnessBaseline = null; // reset baseline so first frames calibrate it
     this._darkSeconds = 0;
     this._brightnessWarningIssued = false;
@@ -2813,12 +2823,48 @@ const ExamApp = {
     }
   },
 
+  _facePoint(point) {
+    if (!point) return null;
+    if (Array.isArray(point) && point.length >= 2) {
+      const x = Number(point[0]);
+      const y = Number(point[1]);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    }
+    if (typeof point.x === 'number' && typeof point.y === 'number') {
+      return { x: point.x, y: point.y };
+    }
+    return null;
+  },
+
+  _isFaceLookingDown(prediction) {
+    if (!prediction?.topLeft || !prediction?.bottomRight) return false;
+    const [x1, y1] = prediction.topLeft;
+    const [x2, y2] = prediction.bottomRight;
+    const faceHeight = Number(y2) - Number(y1);
+    if (!Number.isFinite(faceHeight) || faceHeight < 40) return false;
+
+    const landmarks = Array.isArray(prediction.landmarks) ? prediction.landmarks : [];
+    const rightEye = this._facePoint(landmarks[0]);
+    const leftEye = this._facePoint(landmarks[1]);
+    const nose = this._facePoint(landmarks[2]);
+    const mouth = this._facePoint(landmarks[3]);
+    if (!rightEye || !leftEye || !nose) return false;
+
+    const eyeY = (rightEye.y + leftEye.y) / 2;
+    const noseDropRatio = (nose.y - eyeY) / faceHeight;
+    const noseBoxRatio = (nose.y - Number(y1)) / faceHeight;
+    const mouthBoxRatio = mouth ? (mouth.y - Number(y1)) / faceHeight : noseBoxRatio + 0.16;
+
+    return noseDropRatio >= 0.18 && noseBoxRatio >= 0.5 && mouthBoxRatio >= 0.68;
+  },
+
   async _detectFace(video) {
     if (!this._faceModel || !video || video.readyState < 2 || !this._cameraStream) return;
     const statusText = document.getElementById('camera-status-text');
     const canvas = document.getElementById('camera-canvas');
     try {
       const predictions = await this._faceModel.estimateFaces(video, false);
+      const primaryLookingDown = predictions.length === 1 && this._isFaceLookingDown(predictions[0]);
 
       // Draw video + face boxes on canvas
       if (canvas) {
@@ -2830,27 +2876,79 @@ const ExamApp = {
           const frame = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
           this._checkAmbientBrightness(frame, canvas.width * canvas.height);
         } catch (e) {}
-        predictions.forEach(pred => {
+        predictions.forEach((pred, index) => {
           const [x1, y1] = pred.topLeft;
           const [x2, y2] = pred.bottomRight;
-          ctx.strokeStyle = '#00e676';
+          const isExtraFace = index > 0;
+          const isLookingDownFace = index === 0 && primaryLookingDown;
+          const color = isExtraFace ? '#ffb020' : (isLookingDownFace ? '#f97316' : '#00e676');
+          ctx.strokeStyle = color;
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.roundRect ? ctx.roundRect(x1, y1, x2-x1, y2-y1, 4) : ctx.rect(x1, y1, x2-x1, y2-y1);
           ctx.stroke();
           // Label
-          ctx.fillStyle = '#00e676';
+          ctx.fillStyle = color;
           ctx.font = 'bold 11px sans-serif';
-          ctx.fillText('Person', x1, y1 > 14 ? y1 - 4 : y1 + 14);
+          const label = isExtraFace ? 'Extra person' : (isLookingDownFace ? 'Looking down' : 'Person');
+          ctx.fillText(label, x1, y1 > 14 ? y1 - 4 : y1 + 14);
         });
       }
 
-      if (predictions.length > 0) {
+      if (predictions.length > 1) {
+        this._multipleFaceSeconds += 0.6;
+        this._lookDownSeconds = 0;
+        this._lookDownWarningIssued = false;
+        this._noMotionSec = 0;
+        this._motionBlocked = false;
+        const remaining = Math.max(0, this._MULTIPLE_FACE_WARN_SEC - this._multipleFaceSeconds);
+        if (statusText) {
+          statusText.textContent = this._multipleFaceWarningIssued
+            ? 'Multiple faces detected'
+            : `Multiple faces detected (${Math.ceil(remaining)}s)`;
+        }
+        this._clearMotionWarning();
+        if (this._multipleFaceSeconds >= this._MULTIPLE_FACE_WARN_SEC && !this._multipleFaceWarningIssued) {
+          this._multipleFaceWarningIssued = true;
+          this.issueWarning(
+            'multiple_people',
+            'Another visible face/person was detected beside the student or facing the camera/screen'
+          );
+        }
+      } else if (predictions.length > 0 && primaryLookingDown) {
+        this._multipleFaceSeconds = 0;
+        this._multipleFaceWarningIssued = false;
+        this._lookDownSeconds += 0.6;
+        this._noMotionSec = 0;
+        this._motionBlocked = false;
+        const remaining = Math.max(0, this._LOOK_DOWN_WARN_SEC - this._lookDownSeconds);
+        if (statusText) {
+          statusText.textContent = this._lookDownWarningIssued
+            ? 'Looking down detected'
+            : `Looking down (${Math.ceil(remaining)}s)`;
+        }
+        this._clearMotionWarning();
+        if (this._lookDownSeconds >= this._LOOK_DOWN_WARN_SEC && !this._lookDownWarningIssued) {
+          this._lookDownWarningIssued = true;
+          this.issueWarning(
+            'look_down',
+            'Student looked down away from the screen/camera for an extended period'
+          );
+        }
+      } else if (predictions.length > 0) {
+        this._multipleFaceSeconds = 0;
+        this._multipleFaceWarningIssued = false;
+        this._lookDownSeconds = 0;
+        this._lookDownWarningIssued = false;
         this._noMotionSec = 0;
         this._motionBlocked = false;
         if (statusText) statusText.textContent = 'Person detected';
         this._clearMotionWarning();
       } else {
+        this._multipleFaceSeconds = 0;
+        this._multipleFaceWarningIssued = false;
+        this._lookDownSeconds = 0;
+        this._lookDownWarningIssued = false;
         this._noMotionSec += 0.6;
         const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
         if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
@@ -3156,6 +3254,10 @@ const ExamApp = {
     this._prevFrameData = null;
     this._noMotionSec = 0;
     this._motionBlocked = false;
+    this._multipleFaceSeconds = 0;
+    this._multipleFaceWarningIssued = false;
+    this._lookDownSeconds = 0;
+    this._lookDownWarningIssued = false;
     this._lowLightSeconds = 0;
     this._lowLightWarningIssued = false;
     this._hideBrightnessPrompt();
@@ -3373,6 +3475,8 @@ const ExamApp = {
       fullscreen_exit: 'You exited fullscreen mode.',
       screenshot:      'Screenshot attempt detected.',
       no_person:       'No person detected in the camera frame.',
+      multiple_people: 'Another visible face/person was detected in the camera frame.',
+      look_down:       'Looking down away from the screen/camera for too long was detected.',
       low_brightness:  'The camera view is too dark — improve your room lighting so your professor can see you clearly.',
       camera_off:      'Your webcam was turned off or blocked. Camera monitoring is required during the exam.',
     };

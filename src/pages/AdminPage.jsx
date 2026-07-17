@@ -476,11 +476,6 @@ export default function AdminPage() {
                   <div className="students-filters">
                     <select id="filter-year-level" className="form-control filter-select" onChange={() => window.filterStudents()}>
                       <option value="">All Year Levels</option>
-                      <option value="1st Year">1st Year</option>
-                      <option value="2nd Year">2nd Year</option>
-                      <option value="3rd Year">3rd Year</option>
-                      <option value="4th Year">4th Year</option>
-                      <option value="5th Year">5th Year</option>
                     </select>
                     <select id="filter-section" className="form-control filter-select" onChange={() => window.filterStudents()}>
                       <option value="">All Sections</option>
@@ -737,9 +732,9 @@ export default function AdminPage() {
                 </div>
               </div>
               {/* Camera grid view */}
-              <div id="camera-grid-view" style={{ display: 'none', padding: '0' }}>
-                <div id="camera-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '3px', background: '#0a0a0a', minHeight: '320px', borderRadius: '0 0 12px 12px', padding: '3px' }} />
-                <div id="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: '#9ca3af', background: '#111', borderRadius: '0 0 12px 12px' }}>
+              <div id="camera-grid-view" className="camera-grid-view" style={{ display: 'none' }}>
+                <div id="camera-grid-container" className="camera-grid-container" />
+                <div id="camera-grid-empty" className="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: '#9ca3af' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: '#6b7280' }}>No camera feeds available</div>
                   <div style={{ fontSize: '12px', marginTop: '4px', color: '#4b5563' }}>Camera feeds appear here when students have Motion Detection enabled</div>
@@ -747,24 +742,26 @@ export default function AdminPage() {
               </div>
 
               <div className="monitoring-grid" id="monitoring-grid">
-                <div className="card" style={{ overflow: 'hidden' }}>
-                  <div className="card-header" style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <span className="card-title">Student Sessions</span>
+                <div className="card monitor-panel monitor-sessions-panel">
+                  <div className="card-header monitor-panel-header">
+                    <span className="card-title monitor-panel-title">Student Sessions</span>
                     <span id="monitor-count" className="monitor-count-chip">0 students</span>
                   </div>
-                  <div className="table-wrapper">
+                  <div className="table-wrapper monitor-table-shell">
                     <table>
                       <thead><tr><th>Student</th><th style={{textAlign:'center'}}>Progress</th><th style={{textAlign:'center'}}>Warnings</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Logs</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
                       <tbody id="monitor-tbody" />
                     </table>
                   </div>
                 </div>
-                <div className="activity-log" id="activity-log-panel">
-                  <div className="activity-log-header">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    Activity Log
-                    <span id="log-student-name" style={{ fontWeight: 500, fontSize: '12px', color: '#9ca3af' }} />
-                    <button id="btn-export-log" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as Excel" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: 600, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <div className="activity-log monitor-panel" id="activity-log-panel">
+                  <div className="activity-log-header monitor-panel-header">
+                    <div className="monitor-panel-title-wrap">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <span className="monitor-panel-title">Activity Log</span>
+                      <span id="log-student-name" className="monitor-log-student" />
+                    </div>
+                    <button id="btn-export-log" className="monitor-export-btn" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as Excel">
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       Export Excel
                     </button>

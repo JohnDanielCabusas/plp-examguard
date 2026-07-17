@@ -85,6 +85,8 @@ function getSubmissionStatusBadge(session) {
 
 const BEHAVIOR_LABELS = {
   no_person: 'No Person Detected',
+  multiple_people: 'Multiple Faces Detected',
+  look_down: 'Looking Down Detected',
   low_brightness: 'Low Screen Brightness',
   low_brightness_prompt: 'Brightness Prompt Shown',
   camera_off: 'Camera Turned Off',
@@ -111,7 +113,7 @@ function getBehaviorLabel(type) {
   return BEHAVIOR_LABELS[type] || String(type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
-const CAMERA_GRID_VIOLATION_TYPES = new Set(['no_person', 'low_brightness', 'camera_off']);
+const CAMERA_GRID_VIOLATION_TYPES = new Set(['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off']);
 
 function getSessionCameraGridSnapshots(session) {
   const snapshots = Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots : [];
@@ -157,6 +159,30 @@ function renderBehaviorSummary(activities) {
       `).join('')}
     </div>
   `;
+}
+
+function getStudentMonitorMeta(student) {
+  if (!student) return '';
+  const parts = [
+    student.studentId || '',
+    student.yearLevel || '',
+    getStudentSectionDisplay(student) || '',
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  return parts.join(' · ');
+}
+
+function getStudentYearSectionSummary(student, separator = ' ') {
+  if (!student) return '';
+  const year = getStudentYearLevelLabel(student) || '';
+  const section = getStudentSectionDisplay(student) || '';
+  return [year, section].filter(Boolean).join(separator).trim();
+}
+
+function getActivityTone(type) {
+  if (['brightness_check_passed', 'camera_restored', 'connection_restored'].includes(type)) return 'success';
+  if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
+  if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
+  return 'neutral';
 }
 
 // Surface Supabase sync failures visibly
@@ -1630,6 +1656,21 @@ function renderStudents(filter) {
   let students = DB.getAllStudentsRaw().filter(s => !s.archived).filter(s =>
     (s.enrolledSubjects || []).some(id => mySubjectIds.has(id))
   );
+
+  const yearSel = document.getElementById('filter-year-level');
+  const prevYear = yearSel ? yearSel.value : '';
+  const yearOrder = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+  const years = [...new Set(students.map(s => getStudentYearLevelLabel(s)).filter(Boolean))]
+    .sort((a, b) => {
+      const ai = yearOrder.indexOf(a);
+      const bi = yearOrder.indexOf(b);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return a.localeCompare(b);
+    });
+  if (yearSel) {
+    yearSel.innerHTML = '<option value="">All Year Levels</option>' +
+      years.map(y => `<option value="${escHtml(y)}" ${y === prevYear ? 'selected' : ''}>${escHtml(y)}</option>`).join('');
+  }
 
   const sections = [...new Set(students.map(s => getStudentSectionDisplay(s)).filter(Boolean))].sort();
   const secSel = document.getElementById('filter-section');
@@ -4044,6 +4085,47 @@ function viewStudentAnswers(sessionId) {
             <span>${isCorrect ? '✓ +' + q.points : (given.length ? '✗ 0' : '— 0')} pts</span>
           </div>
         </div>`;
+    } else if (q.type === 'matching') {
+      let given = {};
+      try { given = JSON.parse(studentAns || '{}') || {}; } catch (_) {}
+      const pairs = Array.isArray(q.pairs) ? q.pairs : [];
+      const normalizedPairs = pairs.map(pair => ({
+        term: String(pair?.term || '').trim(),
+        correct: String(pair?.match || '').trim(),
+      }));
+      const correctCount = normalizedPairs.reduce((count, pair, pairIdx) => {
+        const studentValue = String(given?.[pairIdx] || '').trim();
+        return count + (studentValue && studentValue.toUpperCase() === pair.correct.toUpperCase() ? 1 : 0);
+      }, 0);
+      const pairPoints = normalizedPairs.length ? (q.points / normalizedPairs.length) : 0;
+      const earnedPoints = Math.round(correctCount * pairPoints * 100) / 100;
+      const rowClass = normalizedPairs.length && correctCount === normalizedPairs.length
+        ? 'correct'
+        : Object.keys(given).length ? 'wrong' : '';
+      html += `
+        <div class="answer-row ${rowClass}">
+          <div style="font-weight:600;margin-bottom:6px;">Q${idx+1}: ${escHtml(q.content)}</div>
+          <div class="review-answer-note" style="margin-top:0;margin-bottom:8px;">${correctCount}/${normalizedPairs.length || 0} correct · ${earnedPoints}/${q.points} pts</div>
+          <div class="review-matching-list">
+            ${normalizedPairs.map((pair, pairIdx) => {
+              const studentValue = String(given?.[pairIdx] || '').trim();
+              const pairCorrect = studentValue && studentValue.toUpperCase() === pair.correct.toUpperCase();
+              return `
+                <div class="review-matching-item ${pairCorrect ? 'is-correct' : studentValue ? 'is-wrong' : ''}">
+                  <div class="review-matching-term">${escHtml(pair.term || `Term ${pairIdx + 1}`)}</div>
+                  <div class="review-matching-arrow">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  </div>
+                  <div class="review-matching-answer">
+                    <div class="review-matching-student">${escHtml(studentValue || '(no answer)')}</div>
+                    <div class="review-matching-correct">Correct: ${escHtml(pair.correct || '—')}</div>
+                    <div class="review-matching-note">${pairCorrect ? 'Matched correctly.' : 'Student answer did not match the expected pair.'}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>`;
     } else {
       const correctAnswer = q.correctAnswer || '';
       const isCorrect = studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
@@ -4347,7 +4429,7 @@ function renderCameraGrid(examId) {
 
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
-  document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
+  document.getElementById('log-body').innerHTML = `<div class="activity-log-empty"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   renderMonitoringTable(monitorExamId);
   // With no selected exam, keep the compact sessions layout visible.
@@ -4471,7 +4553,7 @@ function renderMonitoringTable(examId) {
           <div class="monitor-avatar" style="background:${color};">${initial}</div>
           <div>
             <div style="font-weight:700;font-size:13px;">${escHtml(s.studentName)}</div>
-            <div style="font-size:11px;color:#9ca3af;">${escHtml(s.studentId)} · ${escHtml(s.yearLevel || '')} ${escHtml(s.section || '')}</div>
+            <div style="font-size:11px;color:#9ca3af;">${escHtml(getStudentMonitorMeta(s))}</div>
           </div>
         </div>
       </td>
@@ -4491,6 +4573,12 @@ function renderMonitoringTable(examId) {
       </td>
     </tr>`;
   }).join('');
+
+  document.querySelectorAll('#monitor-tbody tr td:first-child > div > div:last-child > div:last-child')
+    .forEach((el, index) => {
+      const session = sessions[index];
+      if (el && session) el.textContent = getStudentMonitorMeta(session);
+    });
 }
 
 const EYE_OPEN   = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
@@ -4512,7 +4600,7 @@ function showStudentLog(sessionId) {
     _setEye(sessionId, false);
     _activeLogSessionId = null;
     document.getElementById('log-student-name').textContent = '';
-    document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>Select a student to view activity</p></div>`;
+    document.getElementById('log-body').innerHTML = `<div class="activity-log-empty"><p>Select a student to view activity</p></div>`;
     return;
   }
 
@@ -4527,21 +4615,48 @@ function showStudentLog(sessionId) {
   if (!session) return;
   document.getElementById('log-student-name').textContent = ' — ' + session.studentName;
   const activities = session.activities || [];
+  const studentName = session.studentName || session.studentId || 'Student';
+  const studentMeta = getStudentMonitorMeta(session);
+  const initial = studentName.charAt(0).toUpperCase();
+  document.getElementById('log-student-name').textContent = '';
+
+  const studentCardHtml = `
+    <div class="activity-log-viewing-label">Viewing logs for</div>
+    <div class="activity-log-student-card">
+      <div class="activity-log-student-avatar">${escHtml(initial)}</div>
+      <div class="activity-log-student-copy">
+        <div class="activity-log-student-name">${escHtml(studentName)}</div>
+        <div class="activity-log-student-meta">${escHtml(studentMeta)}</div>
+      </div>
+    </div>
+  `;
+
   if (!activities.length) {
-    document.getElementById('log-body').innerHTML = `<div class="empty-state"><p>No suspicious activity recorded.</p></div>`;
+    document.getElementById('log-body').innerHTML = `
+      ${studentCardHtml}
+      <div class="activity-log-empty"><p>No suspicious activity recorded.</p></div>
+    `;
     return;
   }
   document.getElementById('log-body').innerHTML = `
-    <div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>
+    ${studentCardHtml}
+    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
     ${renderBehaviorSummary(activities)}
-    <div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Activity Timeline</div>
-    ${activities.map(a => `
-      <div class="log-item">
-        <div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div>
-        <div class="log-detail">${escHtml(a.detail)}</div>
-        <div class="log-time">${formatDateTime(a.timestamp)}</div>
-      </div>
-    `).join('')}
+    <div class="activity-log-section-title">Activity Timeline</div>
+    <div class="activity-log-timeline">
+      ${activities.map(a => `
+        <div class="activity-log-timeline-item">
+          <div class="activity-log-timeline-rail">
+            <span class="activity-log-timeline-dot tone-${getActivityTone(a.type)}"></span>
+          </div>
+          <div class="activity-log-timeline-card log-item">
+            <div class="activity-log-timeline-time">${formatDateTime(a.timestamp)}</div>
+            <div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div>
+            <div class="log-detail">${escHtml(a.detail)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
   `;
 }
 
@@ -4559,7 +4674,7 @@ async function exportActivityLog() {
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'low_brightness', 'camera_off', 'copy_attempt', 'screenshot'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', 'copy_attempt', 'screenshot'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
@@ -5000,7 +5115,7 @@ function renderReportTable() {
       <td><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
       <td><strong>${escHtml(s.studentName)}</strong></td>
       <td>${escHtml(s.studentId)}</td>
-      <td>${escHtml(s.yearLevel || '')} ${escHtml(s.section || '')}</td>
+      <td>${escHtml(getStudentYearSectionSummary(s))}</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;">
           <span>${s.score !== null ? s.score : '—'}/${s.maxScore}</span>
@@ -5071,7 +5186,7 @@ function generatePDF() {
 
   const tableData = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
-    return [i + 1, s.studentName, s.studentId, s.yearLevel || '', s.section || '', `${s.score !== null ? s.score : '—'}/${s.maxScore}`, `${pct}%`];
+    return [i + 1, s.studentName, s.studentId, getStudentYearLevelLabel(s) || '', getStudentSectionDisplay(s) || '', `${s.score !== null ? s.score : '—'}/${s.maxScore}`, `${pct}%`];
   });
 
   doc.autoTable({
@@ -5303,7 +5418,7 @@ async function exportExamReportPdf() {
       i + 1,
       s.studentName,
       s.studentId,
-      `${s.yearLevel || 'N/A'} / ${s.section || 'N/A'}`,
+      getStudentYearSectionSummary(s, ' / ') || 'N/A',
       `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
       `${pct}%`,
       getSubmissionStatusText(s),

@@ -820,6 +820,8 @@ export default function ExamPage() {
                 'Pasting content into an answer',
                 'Taking a screenshot',
                 'Having no face visible in the camera',
+                'Having another visible face/person beside you or facing the camera/screen',
+                'Looking down away from the screen/camera for an extended time',
                 'Poor camera lighting — your face too dark to see clearly',
                 'Turning off or blocking your webcam',
               ].map((text) => (
