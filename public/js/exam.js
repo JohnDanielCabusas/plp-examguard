@@ -631,6 +631,13 @@ const ExamApp = {
     return student && !student.archived ? student : null;
   },
 
+  _formatStudentSectionShort(student) {
+    const yearSection = String(student?.yearSection || '').trim().toUpperCase();
+    const yearSectionMatch = yearSection.match(/^[1-5]-(.+)$/);
+    if (yearSectionMatch?.[1]) return yearSectionMatch[1].trim();
+    return String(student?.section || '').replace(/^Section\s+/i, '').trim();
+  },
+
   _isPortalStudentArchived(studentId) {
     return !!DB.getStudent(studentId)?.archived;
   },
@@ -1414,7 +1421,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-submitted">${this._portalIcon('checkCircle', { size: 12, stroke: '#4b5563' })}<span>Submitted</span></span>`;
           panelHtml = `<div class="course-exam-panel panel-submitted">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               ${scoreHtml}
             </div>
             <button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp._openExamDirectly('${e.id}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>
@@ -1424,7 +1430,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-closed">Archived Course</span>`;
           panelHtml = `<div class="course-exam-panel panel-closed">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.closedAt || e.updatedAt || e.createdAt)}</div>
               <div class="course-exam-panel-note">This course is archived. You can review results only for exams you already submitted.</div>
             </div>
@@ -1435,7 +1440,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-closed">Absent</span>`;
           panelHtml = `<div class="course-exam-panel panel-closed">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-note">You've been marked absent for this exam.</div>
             </div>
             <button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.5;cursor:not-allowed;"><span>Not Available</span></button>
@@ -1445,7 +1449,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-live"><span class="course-exam-state-dot"></span><span>Active Now</span></span>`;
           panelHtml = `<div class="course-exam-panel panel-live">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.startedAt || e.createdAt)}</div>
               <div class="course-exam-panel-note">${requiresAccessCode ? 'This exam is locked until you enter the access code from your professor.' : 'You can enter this exam right now.'}</div>
             </div>
@@ -1456,7 +1459,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-ready">Scheduled</span>`;
           panelHtml = `<div class="course-exam-panel panel-ready">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.createdAt)}</div>
               <div class="course-exam-panel-note">${requiresAccessCode ? 'This exam is ready, but it stays locked until you enter the access code.' : 'This exam room is ready and waiting for activation.'}</div>
             </div>
@@ -1467,7 +1469,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-closed">Closed</span>`;
           panelHtml = `<div class="course-exam-panel panel-closed">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.closedAt || e.updatedAt || e.createdAt)}</div>
               <div class="course-exam-panel-note">This exam is no longer accepting submissions.</div>
             </div>
@@ -1480,7 +1481,6 @@ const ExamApp = {
           stateHtml = `<span class="course-exam-state state-closed">Draft</span>`;
           panelHtml = `<div class="course-exam-panel panel-closed">
             <div class="course-exam-panel-top">
-              ${stateHtml}
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.createdAt)}</div>
               <div class="course-exam-panel-note">This exam is not yet available.</div>
             </div>
@@ -1553,11 +1553,12 @@ const ExamApp = {
         const isSelf = s.studentId === sess.studentId;
         const color  = this._chipColor(s.id);
         const letter = (s.name || '?').charAt(0).toUpperCase();
+        const sectionShort = this._formatStudentSectionShort(s);
         html += `<div class="people-card">
           <div class="people-avatar" style="background:${color};">${letter}</div>
           <div>
             <div class="people-name">${_esc(s.name)}${isSelf ? '<span class="people-you-badge">You</span>' : ''}</div>
-            <div class="people-meta">${_esc(s.studentId)}${s.yearLevel ? ' · ' + _esc(s.yearLevel) : ''}${s.section ? ' · ' + _esc(s.section) : ''}</div>
+            <div class="people-meta">${_esc(s.studentId)}${s.yearLevel ? ' · ' + _esc(s.yearLevel) : ''}${sectionShort ? ' · ' + _esc(sectionShort) : ''}</div>
           </div>
         </div>`;
       });

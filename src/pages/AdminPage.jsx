@@ -811,7 +811,7 @@ export default function AdminPage() {
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Year / Section</th><th>Score</th><th>Percentage</th><th>Submitted</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Year / Section</th><th>Score</th><th>Percentage</th><th>Time</th><th>Submitted</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                       <tbody id="report-tbody" />
                     </table>
                   </div>

@@ -4912,6 +4912,38 @@ function stopReports() {
   document.getElementById('report-live-badge')?.classList.add('hidden');
 }
 
+function formatReportSessionTimeRange(session) {
+  const start = session?.startTime ? new Date(session.startTime) : null;
+  const end = session?.endTime ? new Date(session.endTime) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+  if (!hasStart && !hasEnd) return '—';
+
+  const sameDay = hasStart && hasEnd
+    && start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+
+  const formatTime = (value) => value.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const formatDateTime = (value) => value.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  if (hasStart && hasEnd) {
+    return sameDay
+      ? `${formatTime(start)} - ${formatTime(end)}`
+      : `${formatDateTime(start)} - ${formatDateTime(end)}`;
+  }
+  if (hasStart) return `${formatTime(start)} - —`;
+  return `— - ${formatTime(end)}`;
+}
+
 function renderReportTable() {
   const examId = document.getElementById('report-exam-select').value;
   const pdfBtn = document.getElementById('btn-generate-pdf');
@@ -4956,13 +4988,14 @@ function renderReportTable() {
   document.getElementById('report-avg-score').textContent = `Avg: ${avgScore}/${maxScore}`;
 
   if (!sorted.length) {
-    document.getElementById('report-tbody').innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>No submissions yet.</p></div></td></tr>`;
+    document.getElementById('report-tbody').innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>No submissions yet.</p></div></td></tr>`;
     return;
   }
 
   document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
     const submissionStatus = getSubmissionStatusBadge(s);
+    const timeRange = formatReportSessionTimeRange(s);
     return `<tr>
       <td><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
       <td><strong>${escHtml(s.studentName)}</strong></td>
@@ -4975,6 +5008,7 @@ function renderReportTable() {
         </div>
       </td>
       <td>${pct}%</td>
+      <td><span style="white-space:nowrap;">${escHtml(timeRange)}</span></td>
       <td>${submissionStatus}</td>
       <td data-label="">
         <div class="table-actions">

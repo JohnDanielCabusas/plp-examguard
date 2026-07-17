@@ -6435,7 +6435,6 @@ body.exam-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 292px;
   align-items: stretch;
-  min-height: 124px;
 }
 
 .course-exam-card.status-active {
@@ -6453,7 +6452,7 @@ body.exam-page {
   align-items: center;
   gap: 18px;
   min-width: 0;
-  padding: 24px 28px;
+  padding: 20px 28px;
 }
 
 .course-exam-icon {
@@ -6529,7 +6528,7 @@ body.exam-page {
 }
 
 .course-exam-actions-pane {
-  padding: 22px 24px 22px 0;
+  padding: 20px 24px 20px 0;
   display: flex;
   align-items: stretch;
 }
@@ -6541,7 +6540,7 @@ body.exam-page {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   border-left: 1px solid #e7edf4;
   background: transparent;
 }
@@ -6616,7 +6615,7 @@ body.exam-page {
   font-size: 18px;
   line-height: 1;
   font-weight: 800;
-  color: #86efac;
+  color: #0f172a;
 }
 .course-score-divider,
 .course-score-total {
