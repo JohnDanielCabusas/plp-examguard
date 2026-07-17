@@ -20,6 +20,10 @@ let currentQBuilderExamId = null;
 let examEditorSavedSnapshot = null;
 let examEditorDirtyListenersBound = false;
 let examEditorPersistenceHooksBound = false;
+let examEditorDraftExam = null;
+let examEditorPersistBypassDepth = 0;
+let examEditorOriginalGetExam = null;
+let examEditorOriginalUpdateExam = null;
 let confirmResolve = null;
 let adminBootstrapped = false;
 let passwordPromptResolve = null;
@@ -476,7 +480,20 @@ document.addEventListener('acsDataChanged', () => {
   _dataChangedRenderTimer = setTimeout(() => render(), 150);
 });
 
-function showSection(name) {
+async function showSection(name) {
+  const examEditorOpen = currentSection === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
+  if (examEditorOpen && name !== 'exams') {
+    const shouldLeave = await confirmDiscardExamEditorChanges();
+    if (!shouldLeave) return;
+    clearExamEditorDraftExam();
+    examEditorSavedSnapshot = null;
+    currentQBuilderExamId = null;
+    document.getElementById('exam-editor-view')?.classList.add('hidden');
+    document.getElementById('exam-editor-scroll-fab')?.classList.add('hidden');
+    document.getElementById('exam-outline-nav')?.classList.add('hidden');
+    document.getElementById('exams-list-view')?.classList.remove('hidden');
+  }
+
   // Stop monitoring/reports/section polling if leaving those sections
   if (currentSection === 'monitoring' && name !== 'monitoring') stopMonitoring();
   if (currentSection === 'reports' && name !== 'reports') stopReports();
@@ -518,10 +535,10 @@ function showSection(name) {
   // The scroll fab lives outside .admin-section (see JSX comment), so it isn't
   // auto-hidden by the section switch above — sync it to whether the exam
   // editor sub-view is actually the one showing.
-  const examEditorOpen = name === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
-  document.getElementById('exam-editor-scroll-fab')?.classList.toggle('hidden', !examEditorOpen);
-  document.getElementById('exam-outline-nav')?.classList.toggle('hidden', !examEditorOpen);
-  if (examEditorOpen) { updateExamScrollFabDirection(); repositionExamScrollFab(); renderExamOutline(); }
+  const examEditorStillOpen = name === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
+  document.getElementById('exam-editor-scroll-fab')?.classList.toggle('hidden', !examEditorStillOpen);
+  document.getElementById('exam-outline-nav')?.classList.toggle('hidden', !examEditorStillOpen);
+  if (examEditorStillOpen) { updateExamScrollFabDirection(); repositionExamScrollFab(); renderExamOutline(); }
 
   closeSidebar();
 }
@@ -1854,6 +1871,7 @@ function renderExams() {
 
 function buildMoreItems(e) {
   let items = '';
+  items += `<button class="action-dd-item" onclick="openDuplicateExamModal('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Duplicate</button>`;
   if (e.status === 'draft') {
     items += `<button class="action-dd-item" onclick="openQuestionBuilder('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Questions</button>`;
     items += `<button class="action-dd-item" onclick="setExamStatus('${e.id}','ready');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Set Ready</button>`;
@@ -1912,6 +1930,97 @@ function openMoreModal(examId) {
   document.getElementById('modal-more-title').textContent = e.title;
   document.getElementById('modal-more-body').innerHTML = buildMoreItems(e);
   openModal('modal-more-actions');
+}
+
+function getExamDuplicateTargetSubjects(sourceExam) {
+  return DB.getSubjects()
+    .filter(subject => !subject.archived && subject.id !== sourceExam?.subjectId)
+    .sort((a, b) => formatCourseNameDisplay(a.name).localeCompare(formatCourseNameDisplay(b.name)));
+}
+
+function getExamAudienceDataForSubject(subject) {
+  const targetYearLevels = Array.isArray(subject?.yearLevels) && subject.yearLevels.length
+    ? [...subject.yearLevels]
+    : (subject?.yearLevel ? [subject.yearLevel] : []);
+  const targetSections = Array.isArray(subject?.sections) ? [...subject.sections] : [];
+  return { targetYearLevels, targetSections };
+}
+
+function cloneExamQuestionsForDuplicate(questions) {
+  return cloneExamEditorData(questions || []).map(question => ({
+    ...question,
+    id: DB.generateId(),
+  }));
+}
+
+function openDuplicateExamModal(examId) {
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+
+  const sourceSubject = DB.getSubject(exam.subjectId);
+  const availableSubjects = getExamDuplicateTargetSubjects(exam);
+  document.getElementById('duplicate-exam-source-id').value = exam.id;
+  document.getElementById('duplicate-exam-title').value = `${exam.title} Copy`;
+  document.getElementById('duplicate-exam-source-course').textContent = sourceSubject
+    ? `${sourceSubject.code} - ${formatCourseNameDisplay(sourceSubject.name)}`
+    : 'Unknown course';
+
+  const subjectField = document.getElementById('duplicate-exam-subject');
+  subjectField.innerHTML = availableSubjects.length
+    ? `<option value="">— Select Course —</option>${availableSubjects.map(subject => `
+        <option value="${subject.id}">${escHtml(subject.code)} - ${escHtml(formatCourseNameDisplay(subject.name))}</option>
+      `).join('')}`
+    : '<option value="">No other active course available</option>';
+  subjectField.disabled = availableSubjects.length === 0;
+
+  const saveBtn = document.getElementById('duplicate-exam-save-btn');
+  if (saveBtn) saveBtn.disabled = availableSubjects.length === 0;
+
+  closeModal('modal-more-actions');
+  openModal('modal-duplicate-exam');
+  requestAnimationFrame(() => {
+    initCustomDropdowns(document.getElementById('modal-duplicate-exam'));
+    document.getElementById('duplicate-exam-title')?.focus();
+    document.getElementById('duplicate-exam-title')?.select();
+  });
+}
+
+function saveDuplicatedExam() {
+  const sourceExamId = document.getElementById('duplicate-exam-source-id').value;
+  const title = document.getElementById('duplicate-exam-title').value.trim();
+  const subjectId = document.getElementById('duplicate-exam-subject').value;
+
+  const sourceExam = DB.getExam(sourceExamId);
+  if (!sourceExam) { showToast('Original exam could not be found.', 'error'); return; }
+  if (!title) { showToast('Exam title is required.', 'error'); return; }
+  if (!subjectId) { showToast('Please select a course for the duplicated exam.', 'error'); return; }
+  if (subjectId === sourceExam.subjectId) { showToast('Please select a different course for the duplicated exam.', 'error'); return; }
+
+  const subject = DB.getSubject(subjectId);
+  if (!subject || subject.archived) { showToast('Selected course is no longer available.', 'error'); return; }
+
+  const audienceData = getExamAudienceDataForSubject(subject);
+  DB.addExam({
+    title,
+    subjectId,
+    description: sourceExam.description || '',
+    timeLimit: Number(sourceExam.timeLimit) || 60,
+    code: '',
+    shuffleQuestions: !!sourceExam.shuffleQuestions,
+    shuffleAnswers: !!sourceExam.shuffleAnswers,
+    requireCamera: !!sourceExam.requireCamera,
+    requireAIDetection: !!sourceExam.requireAIDetection,
+    allowReview: !!sourceExam.allowReview,
+    status: 'draft',
+    scoringReleased: false,
+    questions: cloneExamQuestionsForDuplicate(sourceExam.questions),
+    excludedStudentIds: [],
+    ...audienceData,
+  });
+
+  closeModal('modal-duplicate-exam');
+  renderExams();
+  showToast('Exam duplicated successfully.', 'success');
 }
 
 async function releaseScoreByExam(examId) {
@@ -2250,6 +2359,51 @@ function refreshExamEditorStatusUI(examId) {
   updateExamAbsenteeSummary(examId);
 }
 
+function cloneExamEditorData(value) {
+  if (value == null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getExamEditorActiveId() {
+  return currentQBuilderExamId || document.getElementById('exam-id')?.value || '';
+}
+
+function getPersistedExamRecord(examId) {
+  if (!examId) return null;
+  return examEditorOriginalGetExam ? examEditorOriginalGetExam(examId) : DB.getExam(examId);
+}
+
+function setExamEditorDraftExam(exam) {
+  examEditorDraftExam = exam ? cloneExamEditorData(exam) : null;
+}
+
+function getExamEditorDraftExam(examId = getExamEditorActiveId()) {
+  if (!examId || !examEditorDraftExam || examEditorDraftExam.id !== examId) return null;
+  return examEditorDraftExam;
+}
+
+function clearExamEditorDraftExam() {
+  examEditorDraftExam = null;
+}
+
+function runExamEditorWithPersistedWrites(callback) {
+  examEditorPersistBypassDepth += 1;
+  try {
+    return callback();
+  } finally {
+    examEditorPersistBypassDepth = Math.max(0, examEditorPersistBypassDepth - 1);
+  }
+}
+
+async function runExamEditorWithPersistedWritesAsync(callback) {
+  examEditorPersistBypassDepth += 1;
+  try {
+    return await callback();
+  } finally {
+    examEditorPersistBypassDepth = Math.max(0, examEditorPersistBypassDepth - 1);
+  }
+}
+
 function getExamEditorDetailsState() {
   return {
     title: document.getElementById('exam-title-field')?.value.trim() || '',
@@ -2295,6 +2449,25 @@ function updateExamEditorSaveButtonState() {
   btn.title = isDirty ? 'You have unsaved exam changes.' : 'All exam changes are saved.';
 }
 
+async function confirmDiscardExamEditorChanges() {
+  if (!isExamEditorDirty()) return true;
+  return showConfirm({
+    title: 'Unsaved Exam Changes',
+    message: 'Are you sure you do not want to save your exam changes? Your unsaved updates will be discarded.',
+    confirmLabel: 'Discard Changes',
+    confirmClass: 'btn btn-warning',
+    cancelLabel: 'Keep Editing',
+    icon: 'warning',
+  });
+}
+
+window.addEventListener('beforeunload', (event) => {
+  const examEditorOpen = currentSection === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
+  if (!examEditorOpen || !isExamEditorDirty()) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
 function bindExamEditorDirtyListeners() {
   if (examEditorDirtyListenersBound) return;
   examEditorDirtyListenersBound = true;
@@ -2319,14 +2492,44 @@ function bindExamEditorDirtyListeners() {
 }
 
 function bindExamEditorPersistenceHooks() {
-  if (examEditorPersistenceHooksBound || !DB?.updateExam) return;
+  if (examEditorPersistenceHooksBound || !DB?.updateExam || !DB?.getExam) return;
   examEditorPersistenceHooksBound = true;
 
-  const originalUpdateExam = DB.updateExam.bind(DB);
+  examEditorOriginalGetExam = DB.getExam.bind(DB);
+  examEditorOriginalUpdateExam = DB.updateExam.bind(DB);
+
+  DB.getExam = function patchedGetExam(id) {
+    if (!examEditorPersistBypassDepth) {
+      const draftExam = getExamEditorDraftExam(id);
+      if (draftExam) return cloneExamEditorData(draftExam);
+    }
+    return examEditorOriginalGetExam(id);
+  };
+
   DB.updateExam = function patchedUpdateExam(id, changes) {
-    const result = originalUpdateExam(id, changes);
-    const activeExamId = currentQBuilderExamId || document.getElementById('exam-id')?.value || '';
-    if (activeExamId && id === activeExamId) updateExamEditorSaveButtonState();
+    const activeExamId = getExamEditorActiveId();
+    const draftExam = !examEditorPersistBypassDepth ? getExamEditorDraftExam(id) : null;
+    if (draftExam) {
+      const subjects = DB.getSubjects();
+      const nextSubject = changes.subjectId ? subjects.find(s => s.id === changes.subjectId) : null;
+      examEditorDraftExam = {
+        ...draftExam,
+        ...cloneExamEditorData(changes),
+        ownerAdminId: nextSubject?.ownerAdminId || draftExam.ownerAdminId || draftExam.ownerAdminId,
+      };
+      if (activeExamId && id === activeExamId) {
+        updateExamEditorSaveButtonState();
+        refreshExamEditorStatusUI(id);
+      }
+      return examEditorDraftExam;
+    }
+
+    const result = examEditorOriginalUpdateExam(id, changes);
+    if (activeExamId && id === activeExamId) {
+      setExamEditorDraftExam(getPersistedExamRecord(id));
+      updateExamEditorSaveButtonState();
+      refreshExamEditorStatusUI(id);
+    }
     return result;
   };
 }
@@ -2376,7 +2579,7 @@ async function handleExamEditorUnready() {
 }
 
 function openExamEditor(id) {
-  const existingExam = id ? DB.getExam(id) : null;
+  const existingExam = id ? getPersistedExamRecord(id) : null;
   const subjects = DB.getSubjects().filter(s => !s.archived || s.id === existingExam?.subjectId);
   const sel = document.getElementById('exam-subject-field');
   bindExamEditorDirtyListeners();
@@ -2425,6 +2628,7 @@ function openExamEditor(id) {
     sel.value = e.subjectId;
     if (titleDisplay) titleDisplay.textContent = e.title;
     currentQBuilderExamId = id;
+    setExamEditorDraftExam(e);
     updateQBadge(id);
     if (qCard) qCard.style.display = '';
     refreshExamEditorStatusUI(id);
@@ -2442,6 +2646,7 @@ function openExamEditor(id) {
     if (questionsList) {
       questionsList.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Start by saving this exam, then add questions.</p></div>`;
     }
+    clearExamEditorDraftExam();
   }
   examEditorSavedSnapshot = getExamEditorSnapshot();
   updateExamEditorSaveButtonState();
@@ -2460,7 +2665,11 @@ function openExamEditor(id) {
   });
 }
 
-function closeExamEditor() {
+async function closeExamEditor() {
+  const shouldLeave = await confirmDiscardExamEditorChanges();
+  if (!shouldLeave) return;
+  clearExamEditorDraftExam();
+  currentQBuilderExamId = null;
   examEditorSavedSnapshot = null;
   updateExamEditorSaveButtonState();
   document.getElementById('exam-editor-view').classList.add('hidden');
@@ -2879,10 +3088,14 @@ function saveExamFromEditor() {
 
   let examId = id;
   if (id) {
-    const existingExam = DB.getExam(id);
-    DB.updateExam(id, {
-      ...data,
-      excludedStudentIds: pruneExamExcludedStudentIds(existingExam?.excludedStudentIds, subjectId),
+    const existingExam = getPersistedExamRecord(id);
+    const draftExam = getExamEditorDraftExam(id) || existingExam;
+    runExamEditorWithPersistedWrites(() => {
+      DB.updateExam(id, {
+        ...data,
+        questions: cloneExamEditorData(draftExam?.questions || []),
+        excludedStudentIds: pruneExamExcludedStudentIds(draftExam?.excludedStudentIds, subjectId),
+      });
     });
     showToast('Exam saved.', 'success');
   } else {
@@ -2892,6 +3105,7 @@ function saveExamFromEditor() {
     showToast('Exam created.', 'success');
   }
   currentQBuilderExamId = examId;
+  setExamEditorDraftExam(getPersistedExamRecord(examId));
   const qCard = document.getElementById('exam-editor-questions-card');
   if (qCard) qCard.style.display = '';
   renderQuestionsList(examId);
@@ -2915,7 +3129,10 @@ async function handleExamEditorStatusAction() {
   // Persist any unsaved field edits before the exam goes live.
   if (status === 'draft') saveExamFromEditor();
 
-  await setExamStatus(examId, nextStatus[status]);
+  await runExamEditorWithPersistedWritesAsync(() => setExamStatus(examId, nextStatus[status]));
+  setExamEditorDraftExam(getPersistedExamRecord(examId));
+  examEditorSavedSnapshot = getExamEditorSnapshot();
+  updateExamEditorSaveButtonState();
   refreshExamEditorStatusUI(examId);
 }
 
@@ -3016,8 +3233,8 @@ function saveExam() {
 // ── Manage Absentees (per-exam student exclusion) ──────────
 
 function openExamAbsenteesModal() {
-  // Persist first only when this is a brand-new exam or there are actual unsaved changes.
-  if (!currentQBuilderExamId || isExamEditorDirty()) saveExamFromEditor();
+  // Brand-new exams must exist before attendance exclusions can be managed.
+  if (!currentQBuilderExamId) saveExamFromEditor();
   if (!currentQBuilderExamId) return;
   const examId = currentQBuilderExamId;
   const exam = DB.getExam(examId);

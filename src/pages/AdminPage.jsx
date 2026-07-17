@@ -1015,6 +1015,34 @@ export default function AdminPage() {
         </div>
       </div>
 
+      <div className="modal-backdrop hidden" id="modal-duplicate-exam">
+        <div className="modal-dialog">
+          <div className="modal-header"><span className="modal-title">Duplicate Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-duplicate-exam')}>&#10005;</button></div>
+          <div className="modal-body">
+            <input type="hidden" id="duplicate-exam-source-id" />
+            <div className="form-group">
+              <label>Current Course</label>
+              <div className="form-control" id="duplicate-exam-source-course" style={{ display: 'flex', alignItems: 'center', background: 'var(--surface-2, #f9fafb)', cursor: 'default' }} />
+            </div>
+            <div className="form-group">
+              <label>Exam Title *</label>
+              <input type="text" className="form-control" id="duplicate-exam-title" placeholder="Enter new exam title" />
+            </div>
+            <div className="form-group">
+              <label>Target Course *</label>
+              <select className="form-control" id="duplicate-exam-subject">
+                <option value="">— Select Course —</option>
+              </select>
+              <p className="text-muted" style={{ fontSize: '12px', marginTop: '6px' }}>The current course is excluded. The duplicated exam will copy the questions but start as a new draft with fresh attendance for the selected course.</p>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-duplicate-exam')}>Cancel</button>
+            <button className="btn btn-primary" id="duplicate-exam-save-btn" onClick={() => window.saveDuplicatedExam()}>Create Duplicated Exam</button>
+          </div>
+        </div>
+      </div>
+
       <div className="modal-backdrop hidden" id="modal-subject">
         <div className="modal-dialog">
           <div className="modal-header"><span className="modal-title" id="modal-subject-title">Add Course</span><button className="modal-close" onClick={() => window.closeModal('modal-subject')}>&#10005;</button></div>

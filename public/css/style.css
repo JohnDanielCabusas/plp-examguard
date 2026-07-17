@@ -338,6 +338,31 @@
 [data-theme="dark"] .student-id-chip,
 [data-theme="dark"] [class*="id-chip"],
 [data-theme="dark"] .badge { background: var(--surface-2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+[data-theme="dark"] .badge-success {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #86efac !important;
+  border: 1px solid rgba(34, 197, 94, 0.28) !important;
+}
+[data-theme="dark"] .badge-warning {
+  background: rgba(245, 158, 11, 0.18) !important;
+  color: #fcd34d !important;
+  border: 1px solid rgba(245, 158, 11, 0.28) !important;
+}
+[data-theme="dark"] .badge-secondary {
+  background: rgba(148, 163, 184, 0.16) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(148, 163, 184, 0.24) !important;
+}
+[data-theme="dark"] .badge-info {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #93c5fd !important;
+  border: 1px solid rgba(59, 130, 246, 0.28) !important;
+}
+[data-theme="dark"] .badge-danger {
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.28) !important;
+}
 
 /* Toolbar & filters */
 [data-theme="dark"] .toolbar { background: transparent !important; }
@@ -9324,6 +9349,17 @@ tr:hover td { background: #fafbfc !important; }
 [data-theme="dark"] .exam-editor-save-btn.exam-editor-save-dirty:hover {
   background: #fbbf24 !important;
   border-color: #fbbf24 !important;
+  color: #111827 !important;
+}
+[data-theme="dark"] .course-detail-colored-topbar .exam-editor-save-btn.exam-editor-save-dirty {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border-color: #fbbf24 !important;
+  color: #111827 !important;
+  box-shadow: 0 12px 30px rgba(245, 158, 11, 0.28), 0 0 0 1px rgba(251, 191, 36, 0.18) inset !important;
+}
+[data-theme="dark"] .course-detail-colored-topbar .exam-editor-save-btn.exam-editor-save-dirty:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  border-color: #fcd34d !important;
   color: #111827 !important;
 }
 
