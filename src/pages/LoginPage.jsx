@@ -211,6 +211,10 @@ export default function LoginPage() {
     return fallbackMessage;
   };
 
+  const getAdminResetEmailValue = () => (adminResetEmail || adminResetEmailRef.current?.value || '').trim().toLowerCase();
+
+  const getStudentEmailValue = () => (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+
   const adminResetBackToLogin = () => {
     setAdminStep('login');
     setAdminError('');
@@ -221,7 +225,7 @@ export default function LoginPage() {
   };
 
   const sendAdminResetCode = async () => {
-    const email = (adminResetEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getAdminResetEmailValue();
     setAdminError('');
     if (!email) {
       const message = 'Please enter your professor email address.';
@@ -355,7 +359,7 @@ export default function LoginPage() {
   };
 
   const doEmailContinue = async () => {
-    const email = (studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     let result = null;
     setStep1Error('');
     try {
@@ -395,7 +399,7 @@ export default function LoginPage() {
   };
 
   const doPasswordLogin = async () => {
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     const password = studentPasswordRef.current?.value || '';
     setStep2aError('');
     if (!password) { setStep2aError('Please enter your password.'); return; }
@@ -411,7 +415,7 @@ export default function LoginPage() {
   };
 
   const startStudentReset = async () => {
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     setStep2aError('');
     setStudentResetMessage('');
     if (!email) {
@@ -438,7 +442,7 @@ export default function LoginPage() {
   };
 
   const resendStudentResetCode = async () => {
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     setStep2aError('');
     if (!email) {
       setStep2aError('Student email is missing. Please start again.');
@@ -463,7 +467,7 @@ export default function LoginPage() {
 
   const verifyStudentResetCode = async () => {
     const code = (studentResetCodeRef.current?.value || '').trim();
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     setStep2aError('');
     if (!/^\d{6}$/.test(code)) {
       setStep2aError('Please enter the 6-digit verification code.');
@@ -480,7 +484,7 @@ export default function LoginPage() {
   };
 
   const saveStudentNewPassword = async () => {
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     const password = studentResetPasswordRef.current?.value || '';
     const confirm = studentResetConfirmRef.current?.value || '';
     setStep2aError('');
@@ -514,7 +518,7 @@ export default function LoginPage() {
   };
 
   const doFirstSetup = async () => {
-    const email = (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+    const email = getStudentEmailValue();
     const studentId = (setupIdRef.current?.value || '').trim().toUpperCase();
     const name = (setupNameRef.current?.value || '').trim();
     const yearSection = (setupYearSectionRef.current?.value || '').trim().toUpperCase();
