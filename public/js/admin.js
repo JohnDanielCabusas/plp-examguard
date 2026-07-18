@@ -599,7 +599,7 @@ function renderDashboard() {
   if (refreshEl) refreshEl.textContent = 'Updated ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   document.getElementById('dash-stats').innerHTML = `
-    <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${subjects.length}</div><div class="stat-label">Subjects</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${subjects.length}</div><div class="stat-label">Courses</div></div></div>
     <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-value">${students.length}</div><div class="stat-label">Students</div></div></div>
     <div class="stat-card"><div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-value">${exams.length}</div><div class="stat-label">Total Exams</div></div></div>
     <div class="stat-card"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
@@ -1498,7 +1498,7 @@ async function deleteSubject(id) {
   if (!s) return;
   const ok = await showConfirm(`Delete subject "${s.name}"? This cannot be undone.`);
   if (!ok) return;
-  DB.deleteSubject(id);
+  await DB.deleteSubject(id);
   showToast('Subject deleted.', 'success');
   renderSubjects();
 }
@@ -2088,6 +2088,13 @@ const ARCHIVE_SELECTION = {
   courses:  { set: new Set(), noun: 'course',  recoverVerb: 'Recover', getItems: () => DB.getSubjects().filter(s => s.archived) },
 };
 
+function canRecoverArchivedExam(exam, subjects = null) {
+  if (!exam || exam.status !== 'archived') return false;
+  const subjectList = Array.isArray(subjects) ? subjects : DB.getSubjects();
+  const subject = subjectList.find(s => s.id === exam.subjectId);
+  return !!subject && !subject.archived;
+}
+
 function archiveRowCheckbox(tab, id, checked) {
   return `<div class="checkbox-wrapper-30"><div class="checkbox" style="--size:0.78;--stroke:#1a6b35;">
     <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleArchivedRowSelect('${tab}','${id}',this.checked)" />
@@ -2120,9 +2127,12 @@ function updateArchiveSelectionUI(tab) {
   if (clearBtn) clearBtn.style.display = count > 0 ? '' : 'none';
   const recoverBtn = document.getElementById(`archive-${tab}-bulk-recover-btn`);
   if (recoverBtn) {
-    recoverBtn.style.display = count > 0 ? '' : 'none';
+    const recoverCount = tab === 'exams'
+      ? [...cfg.set].filter(id => canRecoverArchivedExam(DB.getExam(id))).length
+      : count;
+    recoverBtn.style.display = recoverCount > 0 ? '' : 'none';
     const recoverLabel = document.getElementById(`archive-${tab}-bulk-recover-label`);
-    if (recoverLabel) recoverLabel.textContent = count > 0 ? `${cfg.recoverVerb} Selected (${count})` : `${cfg.recoverVerb} Selected`;
+    if (recoverLabel) recoverLabel.textContent = recoverCount > 0 ? `${cfg.recoverVerb} Selected (${recoverCount})` : `${cfg.recoverVerb} Selected`;
   }
   const deleteBtn = document.getElementById(`archive-${tab}-bulk-delete-btn`);
   if (deleteBtn) {
@@ -2152,9 +2162,30 @@ async function bulkRecoverArchived(tab) {
   if (!ids.length) return;
   const ok = await showConfirm(`${cfg.recoverVerb} ${ids.length} selected ${cfg.noun}${ids.length !== 1 ? 's' : ''}?`);
   if (!ok) return;
-  if (tab === 'exams') ids.forEach(id => DB.updateExam(id, { status: 'draft' }));
-  else if (tab === 'courses') ids.forEach(id => DB.updateSubject(id, { archived: false, archivedAt: null }));
-  else ids.forEach(id => DB.restoreStudent(id));
+  if (tab === 'exams') {
+    const recoverableIds = ids.filter(id => canRecoverArchivedExam(DB.getExam(id)));
+    if (!recoverableIds.length) {
+      showToast('Selected exams cannot be recovered while their course is archived.', 'error');
+      return;
+    }
+    recoverableIds.forEach(id => {
+      DB.updateExam(id, { status: 'draft' });
+      cfg.set.delete(id);
+    });
+    const skipped = ids.length - recoverableIds.length;
+    renderArchive(tab);
+    showToast(
+      skipped
+        ? `${recoverableIds.length} exam${recoverableIds.length !== 1 ? 's' : ''} recovered. ${skipped} still blocked because their course is archived.`
+        : `${recoverableIds.length} exam${recoverableIds.length !== 1 ? 's' : ''} recovered.`,
+      skipped ? 'warning' : 'success'
+    );
+    return;
+  } else if (tab === 'courses') {
+    ids.forEach(id => DB.updateSubject(id, { archived: false, archivedAt: null }));
+  } else {
+    ids.forEach(id => DB.restoreStudent(id));
+  }
   cfg.set.clear();
   renderArchive(tab);
   showToast(`${ids.length} ${cfg.noun}${ids.length !== 1 ? 's' : ''} ${tab === 'students' ? 'restored' : 'recovered'}.`, 'success');
@@ -2166,9 +2197,13 @@ async function bulkDeleteArchived(tab) {
   if (!ids.length) return;
   const ok = await showConfirm(`Permanently delete ${ids.length} selected ${cfg.noun}${ids.length !== 1 ? 's' : ''}? This cannot be undone.`);
   if (!ok) return;
-  if (tab === 'exams') ids.forEach(id => DB.deleteExam(id));
-  else if (tab === 'courses') ids.forEach(id => DB.deleteSubject(id));
-  else ids.forEach(id => DB.deleteStudent(id));
+  if (tab === 'exams') {
+    for (const id of ids) await DB.deleteExam(id);
+  } else if (tab === 'courses') {
+    for (const id of ids) await DB.deleteSubject(id);
+  } else {
+    ids.forEach(id => DB.deleteStudent(id));
+  }
   cfg.set.clear();
   renderArchive(tab);
   showToast(`${ids.length} ${cfg.noun}${ids.length !== 1 ? 's' : ''} permanently deleted.`, 'success');
@@ -2204,6 +2239,10 @@ function renderArchivedExams() {
   }
   tbody.innerHTML = exams.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
+    const canRecover = canRecoverArchivedExam(e, subjects);
+    const recoverAction = canRecover
+      ? `<button class="btn-action btn-action-ghost" onclick="recoverExam('${e.id}')">Recover${icUndoFill}</button>`
+      : `<span class="text-muted" style="font-size:12px;">${subject?.archived ? 'Recover unavailable while course is archived' : 'Recover unavailable'}</span>`;
     return `
       <tr>
         <td style="text-align:center;width:36px;">${archiveRowCheckbox('exams', e.id, selected.has(e.id))}</td>
@@ -2215,7 +2254,7 @@ function renderArchivedExams() {
         <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(e.updatedAt || e.createdAt)}</span></td>
         <td data-label="">
           <div class="table-actions">
-            <button class="btn-action btn-action-ghost" onclick="recoverExam('${e.id}')">Recover${icUndoFill}</button>
+            ${recoverAction}
             <button class="tbl-btn tbl-btn-archive" onclick="permanentDeleteExam('${e.id}')">Delete Permanently${icTrashStroke}</button>
           </div>
         </td>
@@ -2259,6 +2298,10 @@ function renderArchivedStudents() {
 
 async function recoverExam(id) {
   const exam = DB.getExam(id);
+  if (!canRecoverArchivedExam(exam)) {
+    showToast('This exam cannot be recovered while its course is archived.', 'error');
+    return;
+  }
   const ok = await showConfirm(`Recover "${exam.title}"? It will be moved back to draft status.`);
   if (!ok) return;
   DB.updateExam(id, { status: 'draft' });
@@ -2270,7 +2313,7 @@ async function permanentDeleteExam(id) {
   const exam = DB.getExam(id);
   const ok = await showConfirm(`Permanently delete "${exam.title}"? This cannot be undone.`);
   if (!ok) return;
-  DB.deleteExam(id);
+  await DB.deleteExam(id);
   renderArchive('exams');
   showToast('Exam permanently deleted.', 'success');
 }
@@ -2335,7 +2378,7 @@ async function permanentDeleteCourse(id) {
   if (!s) return;
   const ok = await showConfirm(`Permanently delete "${s.name}"? This cannot be undone.`);
   if (!ok) return;
-  DB.deleteSubject(id);
+  await DB.deleteSubject(id);
   showToast('Course permanently deleted.', 'success');
   renderArchive('courses');
 }
@@ -3506,7 +3549,7 @@ async function deleteExam(id) {
   if (!exam) return;
   const ok = await showConfirm(`Delete exam "${exam.title}"? This will also delete all related sessions.`);
   if (!ok) return;
-  DB.deleteExam(id);
+  await DB.deleteExam(id);
   showToast('Exam deleted.', 'success');
   renderExams();
 }
@@ -4662,7 +4705,7 @@ function renderCameraGrid(examId) {
 
     const initial = (session.studentName || '?').charAt(0).toUpperCase();
 
-    return `<button type="button" onclick="viewCameraSnapshot('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:#111827;overflow:hidden;border-radius:4px;border:none;padding:0;cursor:pointer;text-align:left;">
+    return `<button type="button" onclick="viewCameraSnapshot('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border-radius:4px;border:1px solid var(--border);padding:0;cursor:pointer;text-align:left;">
       <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
         style="width:100%;height:100%;object-fit:cover;display:block;"
         onerror="this.style.display='none'" />

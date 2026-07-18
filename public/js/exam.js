@@ -60,14 +60,21 @@ const ExamApp = {
   _PRESENCE_THRESHOLD: 5,
   _NO_MOTION_WARN: 10,
   _MULTIPLE_FACE_WARN_SEC: 3,
-  _LOOK_DOWN_WARN_SEC: 6,
+  _MULTIPLE_FACE_CONFIRM_SEC: 1.2,
+  _LOOK_DOWN_WARN_SEC: 20,
+  _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
   _faceModelReady: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _multipleFaceSeconds: 0,
   _multipleFaceWarningIssued: false,
+  _secondaryFaceTrack: null,
   _lookDownSeconds: 0,
+  _lookDownConfirmSeconds: 0,
   _lookDownWarningIssued: false,
+  _facePoseBaseline: null,
+  _facePoseBaselineSamples: 0,
+  _lastCameraDetectAt: 0,
   _brightnessBaseline: null, // luminance baseline recorded at exam start
   _darkSeconds: 0,           // consecutive seconds below brightness threshold
   _brightnessWarningIssued: false, // prevent repeated brightness warnings
@@ -2776,8 +2783,13 @@ const ExamApp = {
     this._noMotionSec = 0;
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
+    this._secondaryFaceTrack = null;
     this._lookDownSeconds = 0;
+    this._lookDownConfirmSeconds = 0;
     this._lookDownWarningIssued = false;
+    this._facePoseBaseline = null;
+    this._facePoseBaselineSamples = 0;
+    this._lastCameraDetectAt = 0;
     this._brightnessBaseline = null; // reset baseline so first frames calibrate it
     this._darkSeconds = 0;
     this._brightnessWarningIssued = false;
@@ -2884,26 +2896,234 @@ const ExamApp = {
     return null;
   },
 
-  _isFaceLookingDown(prediction) {
-    if (!prediction?.topLeft || !prediction?.bottomRight) return false;
-    const [x1, y1] = prediction.topLeft;
-    const [x2, y2] = prediction.bottomRight;
-    const faceHeight = Number(y2) - Number(y1);
-    if (!Number.isFinite(faceHeight) || faceHeight < 40) return false;
+  _getFaceProbability(prediction) {
+    const raw = Array.isArray(prediction?.probability) ? prediction.probability[0] : prediction?.probability;
+    const probability = Number(raw);
+    return Number.isFinite(probability) ? probability : 1;
+  },
 
+  _normalizeFacePrediction(prediction, frameWidth, frameHeight) {
+    if (!prediction?.topLeft || !prediction?.bottomRight) return null;
+    const [rawX1, rawY1] = prediction.topLeft;
+    const [rawX2, rawY2] = prediction.bottomRight;
+    const x1 = Math.max(0, Math.min(frameWidth, Number(rawX1)));
+    const y1 = Math.max(0, Math.min(frameHeight, Number(rawY1)));
+    const x2 = Math.max(0, Math.min(frameWidth, Number(rawX2)));
+    const y2 = Math.max(0, Math.min(frameHeight, Number(rawY2)));
+    const width = x2 - x1;
+    const height = y2 - y1;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
+
+    const centerX = x1 + (width / 2);
+    const centerY = y1 + (height / 2);
+    const area = width * height;
+    const areaRatio = area / Math.max(1, frameWidth * frameHeight);
+    const centerXRatio = centerX / Math.max(1, frameWidth);
+    const centerYRatio = centerY / Math.max(1, frameHeight);
+    const edgeRatio = Math.min(centerXRatio, 1 - centerXRatio, centerYRatio, 1 - centerYRatio);
     const landmarks = Array.isArray(prediction.landmarks) ? prediction.landmarks : [];
-    const rightEye = this._facePoint(landmarks[0]);
-    const leftEye = this._facePoint(landmarks[1]);
-    const nose = this._facePoint(landmarks[2]);
-    const mouth = this._facePoint(landmarks[3]);
-    if (!rightEye || !leftEye || !nose) return false;
 
-    const eyeY = (rightEye.y + leftEye.y) / 2;
-    const noseDropRatio = (nose.y - eyeY) / faceHeight;
-    const noseBoxRatio = (nose.y - Number(y1)) / faceHeight;
-    const mouthBoxRatio = mouth ? (mouth.y - Number(y1)) / faceHeight : noseBoxRatio + 0.16;
+    return {
+      prediction,
+      probability: this._getFaceProbability(prediction),
+      x1,
+      y1,
+      x2,
+      y2,
+      width,
+      height,
+      area,
+      areaRatio,
+      centerX,
+      centerY,
+      centerXRatio,
+      centerYRatio,
+      edgeRatio,
+      rightEye: this._facePoint(landmarks[0]),
+      leftEye: this._facePoint(landmarks[1]),
+      nose: this._facePoint(landmarks[2]),
+      mouth: this._facePoint(landmarks[3]),
+    };
+  },
 
-    return noseDropRatio >= 0.18 && noseBoxRatio >= 0.5 && mouthBoxRatio >= 0.68;
+  _faceBoxOverlapRatio(a, b) {
+    if (!a || !b) return 0;
+    const left = Math.max(a.x1, b.x1);
+    const top = Math.max(a.y1, b.y1);
+    const right = Math.min(a.x2, b.x2);
+    const bottom = Math.min(a.y2, b.y2);
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+    const overlapArea = width * height;
+    if (!overlapArea) return 0;
+    return overlapArea / Math.max(1, Math.min(a.area, b.area));
+  },
+
+  _classifyFacePredictions(predictions, frameWidth, frameHeight) {
+    const faces = (Array.isArray(predictions) ? predictions : [])
+      .map(prediction => this._normalizeFacePrediction(prediction, frameWidth, frameHeight))
+      .filter(Boolean);
+
+    const primaryCandidates = faces
+      .filter(face => face.width >= 40 && face.height >= 40 && face.areaRatio >= 0.015 && face.edgeRatio >= 0.02)
+      .map(face => ({
+        ...face,
+        primaryScore: (face.areaRatio * 5.2)
+          + (face.probability * 1.25)
+          - ((Math.abs(face.centerXRatio - 0.5) + Math.abs(face.centerYRatio - 0.5)) * 0.9)
+          - (face.edgeRatio < 0.06 ? 0.18 : 0),
+      }))
+      .sort((a, b) => b.primaryScore - a.primaryScore);
+
+    const primaryFace = primaryCandidates[0] || null;
+    if (!primaryFace) {
+      return { primaryFace: null, extraFaces: [], drawFaces: [] };
+    }
+
+    const extraFaces = faces
+      .filter(face => face !== primaryFace)
+      .filter(face => {
+        const areaRelative = face.area / Math.max(1, primaryFace.area);
+        const overlapRatio = this._faceBoxOverlapRatio(primaryFace, face);
+        const centerDistance = Math.hypot(face.centerX - primaryFace.centerX, face.centerY - primaryFace.centerY);
+        const minSeparation = Math.max(24, Math.min(primaryFace.width, primaryFace.height) * 0.28);
+        const notEdgeGhost = face.edgeRatio >= 0.05 || face.areaRatio >= 0.04;
+
+        return face.probability >= 0.86
+          && face.width >= 48
+          && face.height >= 48
+          && face.areaRatio >= 0.018
+          && areaRelative >= 0.18
+          && overlapRatio <= 0.32
+          && centerDistance >= minSeparation
+          && notEdgeGhost;
+      })
+      .sort((a, b) => b.area - a.area);
+
+    return {
+      primaryFace,
+      extraFaces,
+      drawFaces: [primaryFace, ...extraFaces],
+    };
+  },
+
+  _getFacePoseMetrics(face) {
+    if (!face?.rightEye || !face?.leftEye || !face?.nose || !face?.mouth || !face.height || !face.width) return null;
+    const eyeY = (face.rightEye.y + face.leftEye.y) / 2;
+    return {
+      eyeSpanRatio: Math.abs(face.leftEye.x - face.rightEye.x) / face.width,
+      eyeSlopeRatio: Math.abs(face.leftEye.y - face.rightEye.y) / face.height,
+      noseDropRatio: (face.nose.y - eyeY) / face.height,
+      noseBoxRatio: (face.nose.y - face.y1) / face.height,
+      mouthBoxRatio: (face.mouth.y - face.y1) / face.height,
+      mouthGapRatio: (face.mouth.y - face.nose.y) / face.height,
+      faceCenterYRatio: face.centerYRatio,
+    };
+  },
+
+  _isNeutralFacePose(metrics) {
+    if (!metrics) return false;
+    return metrics.eyeSpanRatio >= 0.18
+      && metrics.eyeSlopeRatio <= 0.14
+      && metrics.noseBoxRatio >= 0.42
+      && metrics.noseBoxRatio <= 0.6
+      && metrics.mouthBoxRatio >= 0.62
+      && metrics.mouthBoxRatio <= 0.82
+      && metrics.mouthGapRatio >= 0.08
+      && metrics.mouthGapRatio <= 0.22;
+  },
+
+  _updateFacePoseBaseline(metrics) {
+    if (!this._isNeutralFacePose(metrics)) return;
+    if (!this._facePoseBaseline) {
+      this._facePoseBaseline = { ...metrics };
+      this._facePoseBaselineSamples = 1;
+      return;
+    }
+
+    const blend = this._facePoseBaselineSamples < 8 ? 0.22 : 0.08;
+    Object.keys(metrics).forEach(key => {
+      const value = Number(metrics[key]);
+      if (!Number.isFinite(value)) return;
+      const previous = Number(this._facePoseBaseline[key]);
+      this._facePoseBaseline[key] = Number.isFinite(previous)
+        ? (previous * (1 - blend)) + (value * blend)
+        : value;
+    });
+    this._facePoseBaselineSamples += 1;
+  },
+
+  _evaluateLookingDown(face) {
+    const metrics = this._getFacePoseMetrics(face);
+    if (!metrics) return { isLookingDown: false, metrics: null };
+
+    const baseline = this._facePoseBaseline;
+    const baselineReady = !!baseline && this._facePoseBaselineSamples >= 5;
+
+    let hardSignals = 0;
+    if (metrics.noseDropRatio >= 0.235) hardSignals += 1;
+    if (metrics.noseBoxRatio >= 0.58) hardSignals += 1;
+    if (metrics.mouthBoxRatio >= 0.76) hardSignals += 1;
+    if (metrics.mouthGapRatio >= 0.118) hardSignals += 1;
+    if (metrics.faceCenterYRatio >= 0.56) hardSignals += 1;
+
+    let adaptiveSignals = 0;
+    if (baselineReady) {
+      if (metrics.noseDropRatio >= baseline.noseDropRatio + 0.032) adaptiveSignals += 1;
+      if (metrics.noseBoxRatio >= baseline.noseBoxRatio + 0.05) adaptiveSignals += 1;
+      if (metrics.mouthBoxRatio >= baseline.mouthBoxRatio + 0.04) adaptiveSignals += 1;
+      if (metrics.mouthGapRatio >= baseline.mouthGapRatio + 0.022) adaptiveSignals += 1;
+      if (metrics.faceCenterYRatio >= baseline.faceCenterYRatio + 0.035) adaptiveSignals += 1;
+    }
+
+    const poseStable = metrics.eyeSpanRatio >= 0.17 && metrics.eyeSlopeRatio <= 0.14;
+    const isLookingDown = poseStable && (
+      adaptiveSignals >= 3
+      || (hardSignals >= 3 && (!baselineReady || adaptiveSignals >= 2))
+      || hardSignals >= 4
+    );
+
+    return { isLookingDown, metrics };
+  },
+
+  _trackSecondaryFace(face, deltaSec) {
+    if (!face) {
+      this._secondaryFaceTrack = null;
+      return 0;
+    }
+
+    const previous = this._secondaryFaceTrack;
+    const current = {
+      centerX: face.centerX,
+      centerY: face.centerY,
+      area: face.area,
+      width: face.width,
+      height: face.height,
+    };
+
+    if (!previous) {
+      this._secondaryFaceTrack = { ...current, seconds: deltaSec };
+      return deltaSec;
+    }
+
+    const centerDistance = Math.hypot(current.centerX - previous.centerX, current.centerY - previous.centerY);
+    const areaRatio = Math.min(current.area, previous.area) / Math.max(1, Math.max(current.area, previous.area));
+    const isSameTrack = centerDistance <= Math.max(36, Math.min(face.width, face.height) * 0.6) && areaRatio >= 0.55;
+    const seconds = isSameTrack ? ((previous.seconds || 0) + deltaSec) : deltaSec;
+
+    this._secondaryFaceTrack = { ...current, seconds };
+    return seconds;
+  },
+
+  _consumeCameraDetectDelta(fallbackMs = 600) {
+    const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+    const prev = this._lastCameraDetectAt || 0;
+    this._lastCameraDetectAt = now;
+    if (!prev) return fallbackMs / 1000;
+    const deltaSec = Math.max(0, (now - prev) / 1000);
+    return Math.min(deltaSec, Math.max(1.5, (fallbackMs / 1000) * 2));
   },
 
   async _detectFace(video) {
@@ -2911,41 +3131,50 @@ const ExamApp = {
     const statusText = document.getElementById('camera-status-text');
     const canvas = document.getElementById('camera-canvas');
     try {
+      const deltaSec = this._consumeCameraDetectDelta();
+      const frameWidth = video.videoWidth || 320;
+      const frameHeight = video.videoHeight || 240;
       const predictions = await this._faceModel.estimateFaces(video, false);
-      const primaryLookingDown = predictions.length === 1 && this._isFaceLookingDown(predictions[0]);
+      const { primaryFace, extraFaces, drawFaces } = this._classifyFacePredictions(predictions, frameWidth, frameHeight);
+      const secondaryFaceSeconds = extraFaces.length ? this._trackSecondaryFace(extraFaces[0], deltaSec) : 0;
+      const multipleFacesConfirmed = secondaryFaceSeconds >= this._MULTIPLE_FACE_CONFIRM_SEC;
+      const lookDownEvaluation = primaryFace && !extraFaces.length ? this._evaluateLookingDown(primaryFace) : { isLookingDown: false, metrics: null };
+      const primaryLookingDown = !!primaryFace && !extraFaces.length && lookDownEvaluation.isLookingDown;
+      if (primaryFace && !extraFaces.length && !primaryLookingDown) {
+        this._updateFacePoseBaseline(lookDownEvaluation.metrics);
+      }
 
       // Draw video + face boxes on canvas
       if (canvas) {
-        canvas.width = video.videoWidth || 320;
-        canvas.height = video.videoHeight || 240;
+        canvas.width = frameWidth;
+        canvas.height = frameHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         try {
           const frame = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
           this._checkAmbientBrightness(frame, canvas.width * canvas.height);
         } catch (e) {}
-        predictions.forEach((pred, index) => {
-          const [x1, y1] = pred.topLeft;
-          const [x2, y2] = pred.bottomRight;
-          const isExtraFace = index > 0;
-          const isLookingDownFace = index === 0 && primaryLookingDown;
+        drawFaces.forEach(face => {
+          const isExtraFace = extraFaces.includes(face) && multipleFacesConfirmed;
+          const isLookingDownFace = face === primaryFace && primaryLookingDown;
           const color = isExtraFace ? '#ffb020' : (isLookingDownFace ? '#f97316' : '#00e676');
           ctx.strokeStyle = color;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.roundRect ? ctx.roundRect(x1, y1, x2-x1, y2-y1, 4) : ctx.rect(x1, y1, x2-x1, y2-y1);
+          ctx.roundRect ? ctx.roundRect(face.x1, face.y1, face.width, face.height, 4) : ctx.rect(face.x1, face.y1, face.width, face.height);
           ctx.stroke();
           // Label
           ctx.fillStyle = color;
           ctx.font = 'bold 11px sans-serif';
           const label = isExtraFace ? 'Extra person' : (isLookingDownFace ? 'Looking down' : 'Person');
-          ctx.fillText(label, x1, y1 > 14 ? y1 - 4 : y1 + 14);
+          ctx.fillText(label, face.x1, face.y1 > 14 ? face.y1 - 4 : face.y1 + 14);
         });
       }
 
-      if (predictions.length > 1) {
-        this._multipleFaceSeconds += 0.6;
+      if (extraFaces.length && multipleFacesConfirmed) {
+        this._multipleFaceSeconds += deltaSec;
         this._lookDownSeconds = 0;
+        this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
         this._noMotionSec = 0;
         this._motionBlocked = false;
@@ -2963,17 +3192,22 @@ const ExamApp = {
             'Another visible face/person was detected beside the student or facing the camera/screen'
           );
         }
-      } else if (predictions.length > 0 && primaryLookingDown) {
+      } else if (primaryFace && primaryLookingDown) {
         this._multipleFaceSeconds = 0;
+        this._secondaryFaceTrack = null;
         this._multipleFaceWarningIssued = false;
-        this._lookDownSeconds += 0.6;
+        this._lookDownConfirmSeconds = Math.min(this._LOOK_DOWN_CONFIRM_SEC, this._lookDownConfirmSeconds + deltaSec);
+        const lookDownConfirmed = this._lookDownConfirmSeconds >= this._LOOK_DOWN_CONFIRM_SEC;
+        this._lookDownSeconds = lookDownConfirmed ? (this._lookDownSeconds + deltaSec) : 0;
         this._noMotionSec = 0;
         this._motionBlocked = false;
         const remaining = Math.max(0, this._LOOK_DOWN_WARN_SEC - this._lookDownSeconds);
         if (statusText) {
           statusText.textContent = this._lookDownWarningIssued
             ? 'Looking down detected'
-            : `Looking down (${Math.ceil(remaining)}s)`;
+            : lookDownConfirmed
+              ? `Looking down (${Math.ceil(remaining)}s)`
+              : 'Person detected';
         }
         this._clearMotionWarning();
         if (this._lookDownSeconds >= this._LOOK_DOWN_WARN_SEC && !this._lookDownWarningIssued) {
@@ -2983,10 +3217,12 @@ const ExamApp = {
             'Student looked down away from the screen/camera for an extended period'
           );
         }
-      } else if (predictions.length > 0) {
+      } else if (primaryFace) {
         this._multipleFaceSeconds = 0;
+        this._secondaryFaceTrack = null;
         this._multipleFaceWarningIssued = false;
         this._lookDownSeconds = 0;
+        this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
         this._noMotionSec = 0;
         this._motionBlocked = false;
@@ -2994,10 +3230,12 @@ const ExamApp = {
         this._clearMotionWarning();
       } else {
         this._multipleFaceSeconds = 0;
+        this._secondaryFaceTrack = null;
         this._multipleFaceWarningIssued = false;
         this._lookDownSeconds = 0;
+        this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
-        this._noMotionSec += 0.6;
+        this._noMotionSec += deltaSec;
         const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
         if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
         if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
@@ -3006,6 +3244,7 @@ const ExamApp = {
       }
     } catch(e) {
       // Model error — fall back to motion detection silently
+      this._lastCameraDetectAt = 0;
       this._detectMotion(video);
     }
   },
@@ -3304,8 +3543,12 @@ const ExamApp = {
     this._motionBlocked = false;
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
+    this._secondaryFaceTrack = null;
     this._lookDownSeconds = 0;
+    this._lookDownConfirmSeconds = 0;
     this._lookDownWarningIssued = false;
+    this._facePoseBaseline = null;
+    this._facePoseBaselineSamples = 0;
     this._lowLightSeconds = 0;
     this._lowLightWarningIssued = false;
     this._hideBrightnessPrompt();

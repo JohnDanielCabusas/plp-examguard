@@ -3410,6 +3410,10 @@ tr:hover td { background: #F8FDF8; }
 .camera-grid-empty {
   border-radius: 18px;
   border: 1px dashed rgba(148, 163, 184, 0.28);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, #eef6f0) 0%, var(--surface-2) 100%);
+}
+
+[data-theme="dark"] .camera-grid-empty {
   background: linear-gradient(180deg, #151b22 0%, #11161d 100%);
 }
 
@@ -7580,22 +7584,22 @@ body.exam-page {
    ============================================================ */
 .camera-container {
   position: fixed;
-  bottom: 88px;
-  right: 16px;
+  bottom: 92px;
+  right: 18px;
   z-index: 500;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
 }
 .camera-feed-wrap {
-  width: 130px;
+  width: 182px;
   aspect-ratio: 4/3;
   background: #111827;
-  border-radius: 10px;
+  border-radius: 14px;
   overflow: hidden;
-  border: 2px solid rgba(15,45,26,0.5);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  border: 2px solid rgba(15,45,26,0.58);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.34);
   position: relative;
 }
 .camera-feed {
@@ -7607,31 +7611,33 @@ body.exam-page {
 }
 .camera-live-label {
   position: absolute;
-  top: 5px;
-  left: 5px;
+  top: 8px;
+  left: 8px;
   background: rgba(220,38,38,0.9);
   color: #fff;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 800;
-  padding: 2px 5px;
-  border-radius: 3px;
-  letter-spacing: 1px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.8px;
 }
 .camera-status-bar {
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 700;
   color: rgba(255,255,255,0.85);
   background: rgba(0,0,0,0.6);
-  padding: 3px 10px;
-  border-radius: 20px;
+  padding: 7px 14px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   backdrop-filter: blur(4px);
   white-space: nowrap;
+  line-height: 1;
 }
 .cam-rec-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #ef4444;
   animation: pulse 1.2s infinite;
@@ -7640,9 +7646,10 @@ body.exam-page {
 .camera-blocked-msg {
   background: rgba(0,0,0,0.75);
   color: #fff;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 700;
   text-align: center;
-  padding: 8px;
+  padding: 12px;
   line-height: 1.4;
 }
 

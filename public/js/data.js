@@ -992,16 +992,32 @@ const DB = {
     const updated = subjects.find(s => s.id === id);
     if (updated) SupabaseSync.syncDoc('subjects', updated);
     if (updated && updates.archived === true && !before?.archived) {
+      const exams = this._read(this.KEYS.exams, []);
+      let examsChanged = false;
+      const nextExams = exams.map(exam => {
+        if (exam.subjectId !== id || exam.status === 'archived') return exam;
+        examsChanged = true;
+        const archivedExam = { ...exam, status: 'archived' };
+        SupabaseSync.syncDoc('exams', archivedExam);
+        return archivedExam;
+      });
+      if (examsChanged) this._write(this.KEYS.exams, nextExams);
       this._logProfessorActivity('course_archived', 'course', updated.name || updated.code);
     } else if (updated && updates.archived === false && before?.archived) {
       this._logProfessorActivity('course_restored', 'course', updated.name || updated.code);
     }
   },
-  deleteSubject(id) {
+  async deleteSubject(id) {
     const subject = this._read(this.KEYS.subjects, []).find(s => s.id === id);
+    const relatedExamIds = this._read(this.KEYS.exams, [])
+      .filter(exam => exam.subjectId === id)
+      .map(exam => exam.id);
+    for (const examId of relatedExamIds) {
+      await this.deleteExam(examId);
+    }
     const subjects = this._read(this.KEYS.subjects, []).filter(s => s.id !== id);
     this._write(this.KEYS.subjects, subjects);
-    SupabaseSync.deleteDoc('subjects', id);
+    await SupabaseSync.deleteDoc('subjects', id);
     this._logProfessorActivity('course_deleted', 'course', subject?.name || subject?.code);
   },
 
@@ -1057,11 +1073,33 @@ const DB = {
       this._logProfessorActivity('exam_scores_released', 'exam', updated.title);
     }
   },
-  deleteExam(id) {
+  async deleteExam(id) {
     const exam = this._read(this.KEYS.exams, []).find(e => e.id === id);
+    const removedSessionIds = new Set();
+    const sessionDeletePromises = [];
+    const remainingSessions = this._read(this.KEYS.sessions, []).filter(session => {
+      if (session?.examId !== id) return true;
+      if (session?.id) removedSessionIds.add(session.id);
+      sessionDeletePromises.push(SupabaseSync.deleteDoc('sessions', session.id));
+      return false;
+    });
+    this._write(this.KEYS.sessions, remainingSessions);
+    await Promise.all(sessionDeletePromises);
+
+    const logDeletePromises = [];
+    const remainingLogs = this._read(this.KEYS.logs, []).filter(log => {
+      const matchesExam = log?.examId === id;
+      const matchesSession = log?.sessionId && removedSessionIds.has(log.sessionId);
+      if (!matchesExam && !matchesSession) return true;
+      logDeletePromises.push(SupabaseSync.deleteDoc('logs', log.id));
+      return false;
+    });
+    this._write(this.KEYS.logs, remainingLogs);
+    await Promise.all(logDeletePromises);
+
     const exams = this._read(this.KEYS.exams, []).filter(e => e.id !== id);
     this._write(this.KEYS.exams, exams);
-    SupabaseSync.deleteDoc('exams', id);
+    await SupabaseSync.deleteDoc('exams', id);
     this._logProfessorActivity('exam_deleted', 'exam', exam?.title);
   },
   getActiveExams() {

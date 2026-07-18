@@ -778,18 +778,19 @@ const SupabaseSync = {
     });
   },
 
-  deleteDoc(table, id) {
+  async deleteDoc(table, id) {
     if (!this._client || !id) return;
-    this._client.from(table).delete().eq('id', id)
-      .then(({ error }) => {
-        if (!error) return;
-        console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message);
-        this._emitSyncError(table, error);
-      })
-      .catch((error) => {
-        console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message || error);
-        this._emitSyncError(table, error);
-      });
+    try {
+      const { error } = await this._client.from(table).delete().eq('id', id);
+      if (!error) return;
+      console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message);
+      this._emitSyncError(table, error);
+      throw error;
+    } catch (error) {
+      console.error(`[SupabaseSync] deleteDoc(${table}):`, error.message || error);
+      this._emitSyncError(table, error);
+      throw error;
+    }
   },
 
   // ── JS → DB normalizers ─────────────────────────────────────
