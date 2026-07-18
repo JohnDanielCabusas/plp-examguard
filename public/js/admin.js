@@ -5162,7 +5162,7 @@ function renderExamStats() {
 
   const exam = DB.getExam(examId);
   const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
-  const subject = DB.getSubject(exam.subjectId);
+
 
   if (!sessions.length) {
     content.innerHTML = `<div class="dash-empty"><div class="dash-empty-title">No Submissions Yet</div><div class="dash-empty-sub">No students have submitted this exam.</div></div>`;
@@ -5170,14 +5170,15 @@ function renderExamStats() {
   }
 
   const scores = sessions.map(s => s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0);
-  const avg    = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  const max    = Math.max(...scores);
-  const min    = Math.min(...scores);
-  const sorted = [...scores].sort((a,b)=>a-b);
-  const median = sorted.length%2 ? sorted[Math.floor(sorted.length/2)] : Math.round((sorted[sorted.length/2-1]+sorted[sorted.length/2])/2);
   const passing = sessions.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length;
   const autoSub = sessions.filter(s => s.autoSubmitted).length;
   const flagged = sessions.filter(s => s.warnings >= 2).length;
+  const overviewCards = [
+    {label:'Pass Rate (>=75%)',value:Math.round(passing/sessions.length*100)+'%',color:'#0d9488'},
+    {label:'Auto-Submitted',value:autoSub,color:'#d97706'},
+    {label:'Flagged (>=2 warn)',value:flagged,color:'#dc2626'},
+    {label:'Total Submitted',value:sessions.length,color:'var(--text)'},
+  ];
 
   // Score distribution
   const totalPoints = exam.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
@@ -5220,17 +5221,8 @@ function renderExamStats() {
 
   content.innerHTML = `
     <!-- Overview Strip -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:24px;">
-      ${[
-        {label:'Average',value:avg+'%',color:'var(--primary)'},
-        {label:'Median',value:median+'%',color:'#1d4ed8'},
-        {label:'Highest',value:max+'%',color:'#15803d'},
-        {label:'Lowest',value:min+'%',color:'#dc2626'},
-        {label:'Pass Rate (≥75%)',value:Math.round(passing/sessions.length*100)+'%',color:'#0d9488'},
-        {label:'Auto-Submitted',value:autoSub,color:'#d97706'},
-        {label:'Flagged (≥2 warn)',value:flagged,color:'#dc2626'},
-        {label:'Total Submitted',value:sessions.length,color:'var(--text)'},
-      ].map(c=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 220px),1fr));gap:14px;margin-bottom:24px;">
+      ${overviewCards.map(c=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);min-width:0;">
         <div style="font-size:28px;font-weight:900;color:${c.color};font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-1px;">${c.value}</div>
         <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.7px;margin-top:4px;">${c.label}</div>
       </div>`).join('')}
@@ -7187,3 +7179,4 @@ function importAIQuestions() {
   updateQBadge(currentQBuilderExamId);
   showToast(`${newQuestions.length} question(s) imported successfully.`, 'success');
 }
+
