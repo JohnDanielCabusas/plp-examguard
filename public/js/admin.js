@@ -1974,7 +1974,7 @@ function openDuplicateExamModal(examId) {
   subjectField.disabled = availableSubjects.length === 0;
 
   const saveBtn = document.getElementById('duplicate-exam-save-btn');
-  if (saveBtn) saveBtn.disabled = availableSubjects.length === 0;
+  if (saveBtn) saveBtn.disabled = false;
 
   closeModal('modal-more-actions');
   openModal('modal-duplicate-exam');
@@ -1985,7 +1985,19 @@ function openDuplicateExamModal(examId) {
   });
 }
 
-function saveDuplicatedExam() {
+async function showDuplicateExamUnavailableMessage() {
+  await showConfirm({
+    title: 'Duplicate Exam Unavailable',
+    message: 'No other active course is available for this exam. Please create or activate another course first.',
+    confirmLabel: 'OK',
+    confirmClass: 'btn btn-primary',
+    hideCancel: true,
+    icon: 'warning',
+  });
+  closeModal('modal-duplicate-exam');
+}
+
+async function saveDuplicatedExam() {
   const sourceExamId = document.getElementById('duplicate-exam-source-id').value;
   const title = document.getElementById('duplicate-exam-title').value.trim();
   const subjectId = document.getElementById('duplicate-exam-subject').value;
@@ -1993,6 +2005,10 @@ function saveDuplicatedExam() {
   const sourceExam = DB.getExam(sourceExamId);
   if (!sourceExam) { showToast('Original exam could not be found.', 'error'); return; }
   if (!title) { showToast('Exam title is required.', 'error'); return; }
+  if (!getExamDuplicateTargetSubjects(sourceExam).length) {
+    await showDuplicateExamUnavailableMessage();
+    return;
+  }
   if (!subjectId) { showToast('Please select a course for the duplicated exam.', 'error'); return; }
   if (subjectId === sourceExam.subjectId) { showToast('Please select a different course for the duplicated exam.', 'error'); return; }
 
@@ -6192,6 +6208,8 @@ function showConfirm(options) {
           message: options,
           confirmLabel: 'Confirm',
           confirmClass: 'btn btn-danger',
+          cancelLabel: 'Cancel',
+          hideCancel: false,
           icon: 'warning',
         }
       : {
@@ -6199,6 +6217,8 @@ function showConfirm(options) {
           message: options?.message || '',
           confirmLabel: options?.confirmLabel || 'Confirm',
           confirmClass: options?.confirmClass || 'btn btn-danger',
+          cancelLabel: options?.cancelLabel || 'Cancel',
+          hideCancel: !!options?.hideCancel,
           icon: options?.icon || 'warning',
         };
     const iconSvg = config.icon === 'signout'
@@ -6212,7 +6232,7 @@ function showConfirm(options) {
       <div class="confirm-title">${escHtml(config.title)}</div>
       <div class="confirm-message">${escHtml(config.message)}</div>
       <div class="confirm-actions">
-        <button class="btn btn-secondary" onclick="resolveConfirm(false)">Cancel</button>
+        ${config.hideCancel ? '' : `<button class="btn btn-secondary" onclick="resolveConfirm(false)">${escHtml(config.cancelLabel)}</button>`}
         <button class="${config.confirmClass}" onclick="resolveConfirm(true)">${escHtml(config.confirmLabel)}</button>
       </div>
     `;
