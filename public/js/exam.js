@@ -111,6 +111,7 @@ const ExamApp = {
   _refreshUnloadHandler: null,
   _refreshPageHideHandler: null,
   _refreshUnloadCleanupTimer: null,
+  _portalDataChangedTimer: null,
   _REFRESH_AUTO_SUBMIT_KEY: 'acs_exam_refresh_auto_submit',
 
   _repairStudentEmail(studentSession) {
@@ -959,6 +960,53 @@ const ExamApp = {
       this._currentCourseId = null;
       this._currentCourseArchivedView = false;
     }
+  },
+
+  _handlePortalDataChange(table) {
+    if (!['subjects', 'students', 'exams', 'sessions'].includes(String(table || '').trim())) return;
+    if (!document.getElementById('portal-main')) return;
+    if (this.exam && this.session && !this.session.submitted) return;
+
+    const sess = Auth.getStudentSession();
+    if (!sess) return;
+
+    clearTimeout(this._portalDataChangedTimer);
+    this._portalDataChangedTimer = setTimeout(() => {
+      const subject = this._currentCourseId ? DB.getSubjects().find(s => s.id === this._currentCourseId) : null;
+      const student = this._getPortalStudent(sess.studentId);
+      const enrolled = student?.enrolledSubjects || [];
+
+      if (this._currentCourseId) {
+        if (!subject || !enrolled.includes(this._currentCourseId)) {
+          this.showPortalTab('home');
+          return;
+        }
+        if (this._currentCourseArchivedView) {
+          if (!subject.archived) {
+            this.showPortalTab('home');
+            return;
+          }
+          this.showCourseView(this._currentCourseId, { allowArchived: true });
+          return;
+        }
+        if (subject.archived) {
+          this.showPortalTab('home');
+          return;
+        }
+        this.showCourseView(this._currentCourseId);
+        return;
+      }
+
+      if (!document.getElementById('portal-tab-archived')?.classList.contains('hidden')) {
+        this._renderArchivedCourses();
+        return;
+      }
+      if (!document.getElementById('portal-tab-settings')?.classList.contains('hidden')) {
+        this._loadSettingsForm();
+        return;
+      }
+      this._renderDashboard(Auth.getStudentSession());
+    }, 150);
   },
 
   _loadSettingsForm() {
@@ -4934,6 +4982,10 @@ function formatDateTime(iso) {
 document.addEventListener('supabaseSyncError', (e) => {
   const msg = e.detail?.message || 'Unable to sync with the server right now.';
   ExamApp._showToast(msg, 'error', { context: 'sync' });
+});
+
+document.addEventListener('acsDataChanged', (e) => {
+  ExamApp._handlePortalDataChange(e.detail?.table);
 });
 
 document.addEventListener('dbReady', () => ExamApp.init());

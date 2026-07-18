@@ -1198,15 +1198,15 @@ function buildCourseYearSectionMeta(years, sections, accentColor) {
       seen.add(key);
       return true;
     })
-    .map(value => `<span class="course-meta-pill year-section" style="color:${accentColor};border-color:${accentColor}22;background:${accentColor}12;">${escHtml(value)}</span>`)
+    .map(value => `<span class="course-meta-pill year-section">${escHtml(value)}</span>`)
     .join('');
 
   if (!items) return '';
 
   return `
-    <div class="course-year-section-wrap">
+    <div class="course-year-section-wrap" style="--course-pill-accent:${accentColor};">
       <span class="course-enroll-divider" aria-hidden="true"></span>
-      <span class="course-year-section-icon" style="color:${accentColor};">
+      <span class="course-year-section-icon">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
           <circle cx="9" cy="7" r="4"/>
@@ -1360,6 +1360,23 @@ function formatCourseSectionsInputValue(sections) {
     .join(', ');
 }
 
+function normalizeSubjectManageAccess(value) {
+  return String(value || '').trim().toLowerCase() === 'everyone' ? 'everyone' : 'restrict';
+}
+
+function syncSubjectManageAccessHint() {
+  const accessField = document.getElementById('subj-manage-access');
+  const hintField = document.getElementById('subj-manage-access-hint');
+  if (!accessField) return;
+  const mode = normalizeSubjectManageAccess(accessField.value);
+  accessField.value = mode;
+  if (!hintField) return;
+  hintField.textContent = mode === 'everyone'
+    ? 'Any year level or section can self-enroll in this course using the enrollment code.'
+    : 'Only students whose year level and section match this course can self-enroll.';
+}
+window.syncSubjectManageAccessHint = syncSubjectManageAccessHint;
+
 function ensureSubjectModalTextFields() {
   const yearField = document.getElementById('subj-year-level');
   if (yearField && yearField.tagName === 'SELECT') {
@@ -1398,6 +1415,8 @@ function openSubjectModal(id) {
   document.getElementById('subj-year-level').value = '';
   document.getElementById('subj-section').value = '';
   document.getElementById('subj-school-year').value = '';
+  document.getElementById('subj-manage-access').value = 'restrict';
+  syncSubjectManageAccessHint();
   document.getElementById('subj-enroll-code').value = generateEnrollmentCode();
   document.getElementById('modal-subject-title').textContent = 'Add Course';
 
@@ -1415,6 +1434,8 @@ function openSubjectModal(id) {
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     document.getElementById('subj-year-level').value = yearLabelToNumber(savedYears[0] || '');
     document.getElementById('subj-section').value = formatCourseSectionsInputValue(s.sections || []);
+    document.getElementById('subj-manage-access').value = normalizeSubjectManageAccess(s.manageAccess);
+    syncSubjectManageAccessHint();
   }
   openModal('modal-subject');
 }
@@ -1432,6 +1453,7 @@ function saveSubject() {
   const sections = normalizeCourseSectionsInput(document.getElementById('subj-section').value);
   const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
   const schoolYear = document.getElementById('subj-school-year').value.trim();
+  const manageAccess = normalizeSubjectManageAccess(document.getElementById('subj-manage-access').value);
 
   const missingFields = [];
   if (!code) missingFields.push('course code');
@@ -1457,10 +1479,10 @@ function saveSubject() {
   }
 
   if (id) {
-    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear });
+    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, manageAccess });
     showToast('Course updated successfully.', 'success');
   } else {
-    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear });
+    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, manageAccess });
     showToast('Course added successfully.', 'success');
   }
   closeModal('modal-subject');

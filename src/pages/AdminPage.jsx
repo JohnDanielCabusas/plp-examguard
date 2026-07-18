@@ -1082,6 +1082,16 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="form-group" style={{ marginTop: '14px' }}>
+              <label>Manage Access *</label>
+              <select className="form-control" id="subj-manage-access" defaultValue="restrict" onChange={() => window.syncSubjectManageAccessHint?.()}>
+                <option value="restrict">RESTRICT</option>
+                <option value="everyone">EVERYONE</option>
+              </select>
+              <p className="text-muted" id="subj-manage-access-hint" style={{ fontSize: '12px', marginTop: '6px' }}>
+                Only students whose year level and section match this course can self-enroll.
+              </p>
+            </div>
+            <div className="form-group" style={{ marginTop: '14px' }}>
               <label>Student Enrollment Code</label>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input type="text" className="form-control" id="subj-enroll-code" placeholder="Auto-generated" maxLength={8} style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 600, letterSpacing: '2px', flex: 1 }} readOnly />

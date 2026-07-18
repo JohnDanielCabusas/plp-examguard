@@ -855,6 +855,7 @@ const SupabaseSync = {
 
   _jsToDbSubject(d) {
     const yearLevels = Array.isArray(d.yearLevels) ? d.yearLevels.filter(Boolean) : [];
+    const manageAccess = String(d.manageAccess || '').trim().toLowerCase() === 'everyone' ? 'everyone' : 'restrict';
     return {
       id: d.id,
       code: d.code,
@@ -864,6 +865,7 @@ const SupabaseSync = {
       sections: Array.isArray(d.sections) ? d.sections : [],
       school_year: d.schoolYear || null,
       enrollment_code: d.enrollmentCode || null,
+      manage_access: manageAccess,
       color: typeof d.courseColor === 'number' ? String(d.courseColor) : (d.color || null),
       owner_admin_id: d.ownerAdminId || null,
       archived: !!d.archived,
@@ -1005,6 +1007,7 @@ const SupabaseSync = {
       .split(',')
       .map(value => value.trim())
       .filter(Boolean);
+    const manageAccess = String(r.manage_access || '').trim().toLowerCase() === 'everyone' ? 'everyone' : 'restrict';
     return {
       id: r.id,
       code: r.code,
@@ -1015,6 +1018,7 @@ const SupabaseSync = {
       sections: Array.isArray(r.sections) ? r.sections : [],
       schoolYear: r.school_year || '',
       enrollmentCode: r.enrollment_code || '',
+      manageAccess,
       courseColor: (r.color !== null && r.color !== '' && !isNaN(Number(r.color))) ? Number(r.color) : undefined,
       ownerAdminId: r.owner_admin_id || '',
       archived: !!r.archived,

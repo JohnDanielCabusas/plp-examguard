@@ -74,6 +74,9 @@ alter table if exists public.sessions add column if not exists camera_snapshots 
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.subjects add column if not exists school_year text;
+alter table if exists public.subjects add column if not exists manage_access text;
+update public.subjects set manage_access = 'restrict' where manage_access is null or btrim(coalesce(manage_access, '')) = '';
+alter table if exists public.subjects alter column manage_access set default 'restrict';
 
 -- Exams may optionally require an access code. When blank, students can open
 -- the exam directly from their course page; when present, the code remains

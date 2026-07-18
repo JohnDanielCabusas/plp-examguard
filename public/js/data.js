@@ -772,6 +772,8 @@ const DB = {
   // buildCourseYearSectionMeta pairing rules so "eligible to enroll" always
   // matches what the course card displays as its target year(s)/section(s).
   isStudentEligibleForCourse(student, subject) {
+    if (String(subject?.manageAccess || '').trim().toLowerCase() === 'everyone') return true;
+
     const rawYears = Array.isArray(subject?.yearLevels) && subject.yearLevels.length
       ? subject.yearLevels
       : (subject?.yearLevel ? [subject.yearLevel] : []);
