@@ -13,6 +13,7 @@ const SupabaseSync = {
   _initPromise: null,
   _deferredHydrationPromise: null,
   _readyEmitted: false,
+  _sessionEssayGradesSupported: true,
   _sessionAiDetectionsSupported: true,
   _sessionCameraSnapshotsSupported: true,
   _lastSyncErrorKey: '',
@@ -389,15 +390,34 @@ const SupabaseSync = {
       if (items.length) {
         let rows = items.map(normalizer);
         let { error } = await c.from(table).upsert(rows);
-        if (error && this._isMissingSessionAiDetectionsError(table, error)) {
-          this._sessionAiDetectionsSupported = false;
-          rows = rows.map(row => this._withoutSessionAiDetections(row));
-          ({ error } = await c.from(table).upsert(rows));
-        }
-        if (error && this._isMissingExamExcludedStudentIdsError(table, error)) {
-          rows.forEach(row => this._examIdsWithUnsyncedExclusions.add(row.id));
-          rows = rows.map(row => this._withoutExamExcludedStudentIds(row));
-          ({ error } = await c.from(table).upsert(rows));
+        while (error) {
+          if (this._isMissingSessionEssayGradesError(table, error) && this._sessionEssayGradesSupported !== false) {
+            this._sessionEssayGradesSupported = false;
+            rows = rows.map(row => this._withoutSessionEssayGrades(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
+          if (this._isMissingSessionAiDetectionsError(table, error) && this._sessionAiDetectionsSupported !== false) {
+            this._sessionAiDetectionsSupported = false;
+            rows = rows.map(row => this._withoutSessionAiDetections(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
+          if (this._isMissingSessionCameraSnapshotsError(table, error) && this._sessionCameraSnapshotsSupported !== false) {
+            this._sessionCameraSnapshotsSupported = false;
+            rows = rows.map(row => this._withoutSessionCameraSnapshots(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
+          if (this._isMissingExamExcludedStudentIdsError(table, error)) {
+            rows.forEach(row => this._examIdsWithUnsyncedExclusions.add(row.id));
+            rows = rows.map(row => this._withoutExamExcludedStudentIds(row));
+            ({ error } = await c.from(table).upsert(rows));
+          }
+          break;
         }
         if (error) console.warn(`[SupabaseSync] seed ${table}:`, error.message);
       }
@@ -722,6 +742,13 @@ const SupabaseSync = {
         let retryRow = row;
         let retryError = error;
         while (retryError) {
+          if (this._isMissingSessionEssayGradesError(table, retryError) && this._sessionEssayGradesSupported !== false) {
+            this._sessionEssayGradesSupported = false;
+            retryRow = this._withoutSessionEssayGrades(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           if (this._isMissingSessionAiDetectionsError(table, retryError) && this._sessionAiDetectionsSupported !== false) {
             this._sessionAiDetectionsSupported = false;
             retryRow = this._withoutSessionAiDetections(retryRow);
@@ -929,6 +956,9 @@ const SupabaseSync = {
     if (this._sessionCameraSnapshotsSupported === false) {
       delete row.camera_snapshots;
     }
+    if (this._sessionEssayGradesSupported !== false) {
+      row.essay_grades = d.essayGrades || {};
+    }
     if (this._sessionAiDetectionsSupported !== false) {
       row.ai_detections = d.aiDetections || {};
     }
@@ -1055,6 +1085,10 @@ const SupabaseSync = {
   },
 
   _dbToJsSession(r) {
+    const localSession = this._localArray('acs_sessions').find(session => session.id === r.id);
+    const essayGrades = ('essay_grades' in r && this._sessionEssayGradesSupported !== false)
+      ? this._normalizeSessionEssayGrades(r.essay_grades)
+      : this._normalizeSessionEssayGrades(localSession?.essayGrades);
     return {
       id: r.id,
       examId: r.exam_id,
@@ -1076,6 +1110,7 @@ const SupabaseSync = {
       submitted: !!r.submitted,
       autoSubmitted: !!r.auto_submitted,
       scoreReleased: !!r.score_released,
+      essayGrades,
       aiDetections: r.ai_detections || {},
       cameraSnapshots: Array.isArray(r.camera_snapshots) ? r.camera_snapshots : [],
       ownerAdminId: r.owner_admin_id || '',
@@ -1117,6 +1152,21 @@ const SupabaseSync = {
   _localArray(key) {
     const value = window.DB?._read?.(key, []);
     return Array.isArray(value) ? value : [];
+  },
+
+  _normalizeSessionEssayGrades(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  },
+
+  _isMissingSessionEssayGradesError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'sessions' && message.includes(`Could not find the 'essay_grades' column`);
+  },
+
+  _withoutSessionEssayGrades(row) {
+    const next = { ...row };
+    delete next.essay_grades;
+    return next;
   },
 
   _isMissingSessionAiDetectionsError(table, error) {

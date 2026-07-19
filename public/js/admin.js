@@ -4304,7 +4304,7 @@ function viewExamResults(examId) {
               <td>${s.maxScore ? pct + '%' : '—'}</td>
               <td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td>
               <td>${s.autoSubmitted ? '<span class="badge badge-warning">Auto</span>' : '<span class="badge badge-success">Manual</span>'}</td>
-              <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button></div></td>
+              <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}', '${currentSection === 'reports' ? 'reports' : 'statistics'}')">Review${icEyeFill}</button></div></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4314,7 +4314,7 @@ function viewExamResults(examId) {
   openModal('modal-exam-results');
 }
 
-function viewStudentAnswers(sessionId) {
+function viewStudentAnswersLegacy(sessionId) {
   const session = DB.getSession(sessionId);
   if (!session) return;
   const exam = DB.getExam(session.examId);
@@ -4456,6 +4456,339 @@ function viewStudentAnswers(sessionId) {
   aiScanJobs.forEach(job => {
     detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
   });
+}
+
+function normalizeEssayGradeValue(value, maxPoints) {
+  if (value === '' || value === null || typeof value === 'undefined') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const capped = Math.min(Math.max(parsed, 0), Math.max(Number(maxPoints) || 0, 0));
+  return Math.round(capped * 100) / 100;
+}
+
+function formatPointsValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0';
+  return numeric.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function getSessionEssayGrades(session) {
+  const grades = session?.essayGrades;
+  return grades && typeof grades === 'object' && !Array.isArray(grades) ? grades : {};
+}
+
+function calculateEarnedPointsForQuestion(question, rawAnswer, essayGrades = {}) {
+  if (!question) return 0;
+  const maxPoints = Number(question.points) || 0;
+
+  if (question.type === 'essay') {
+    return normalizeEssayGradeValue(essayGrades[question.id], maxPoints) ?? 0;
+  }
+  if (rawAnswer === null || typeof rawAnswer === 'undefined') return 0;
+
+  if (question.type === 'enumeration') {
+    const expected = (question.answers || []).map(answer => String(answer).trim().toUpperCase()).filter(Boolean);
+    const given = String(rawAnswer).split('\n').map(answer => answer.trim().toUpperCase()).filter(Boolean);
+    if (!expected.length || !given.length) return 0;
+    const correct = expected.filter(answer => given.includes(answer)).length;
+    if (question.partialScoring === false) return correct === expected.length ? maxPoints : 0;
+    return Math.round((correct / expected.length) * maxPoints);
+  }
+
+  if (question.type === 'matching') {
+    let given = {};
+    try { given = JSON.parse(rawAnswer || '{}') || {}; } catch (_) {}
+    const pairs = Array.isArray(question.pairs) ? question.pairs : [];
+    const answered = Object.values(given || {}).some(value => String(value || '').trim());
+    if (!pairs.length || !answered) return 0;
+    const correct = pairs.filter((pair, index) => String(given?.[index] || '').trim().toUpperCase() === String(pair?.match || '').trim().toUpperCase()).length;
+    return Math.round((correct / pairs.length) * maxPoints * 100) / 100;
+  }
+
+  if (question.type === 'checkbox') {
+    let given = [];
+    try { given = JSON.parse(rawAnswer || '[]') || []; } catch (_) {}
+    if (!Array.isArray(given) || !given.length) return 0;
+    const correct = (question.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+    const sortedGiven = given.slice().sort((a, b) => a - b);
+    const exactMatch = correct.length === sortedGiven.length && correct.every((value, index) => value === sortedGiven[index]);
+    return exactMatch ? maxPoints : 0;
+  }
+
+  const normalizedAnswer = String(rawAnswer).trim();
+  if (!normalizedAnswer) return 0;
+  return normalizedAnswer.toUpperCase() === String(question.correctAnswer || '').trim().toUpperCase() ? maxPoints : 0;
+}
+
+function calculateSessionScoreBreakdown(exam, session) {
+  const questions = Array.isArray(exam?.questions) ? exam.questions : [];
+  const answers = session?.answers || {};
+  const essayGrades = getSessionEssayGrades(session);
+  const byQuestion = {};
+  let earned = 0;
+  let max = 0;
+
+  questions.forEach(question => {
+    const questionMax = Number(question?.points) || 0;
+    const questionEarned = calculateEarnedPointsForQuestion(question, answers[question.id], essayGrades);
+    max += questionMax;
+    earned += questionEarned;
+    byQuestion[question.id] = questionEarned;
+  });
+
+  return {
+    earned: Math.round(earned * 100) / 100,
+    max: Math.round(max * 100) / 100,
+    byQuestion,
+  };
+}
+
+function renderStudentAnswersFooter(mode, sessionId, hasEssayQuestions) {
+  const footer = document.querySelector('#modal-student-answers .modal-footer');
+  if (!footer) return;
+
+  if (mode === 'reports' && hasEssayQuestions) {
+    footer.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;width:100%;">
+        <span style="font-size:12px;color:var(--text-muted);">Essay grades saved here will appear read-only in Statistics.</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-student-answers')">Close</button>
+          <button class="btn btn-primary" onclick="saveEssayGrades('${sessionId}')">Save Essay Grades</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  footer.innerHTML = `<button class="btn btn-secondary" onclick="closeModal('modal-student-answers')">Close</button>`;
+}
+
+function sanitizeStudentAnswersHtml(html) {
+  return String(html || '')
+    .replace(/>\s*[^\x00-\x7F]+\s*\+\s*([0-9.]+)\s*pts</g, '>+$1 pts<')
+    .replace(/>\s*[^\x00-\x7F]+\s*0\s*pts</g, '>0 pts<')
+    .replace(/([0-9]+)\s+words(?:\s|&nbsp;)*[^\x00-\x7F]+(?:\s|&nbsp;)*max/g, '$1 words | max')
+    .replace(/correct\s+[^\x00-\x7F]+\s+([0-9.]+\/[0-9.]+\s+pts)/g, 'correct | $1')
+    .replace(/Correct:\s+[^\x00-\x7F]{2,}<\/div>/g, 'Correct: -</div>');
+}
+
+function viewStudentAnswers(sessionId, source = currentSection) {
+  const mode = source === 'reports' ? 'reports' : 'statistics';
+  const session = DB.getSession(sessionId);
+  if (!session) return;
+  const exam = DB.getExam(session.examId);
+  if (!exam) return;
+  const aiScanJobs = [];
+  const scoreBreakdown = calculateSessionScoreBreakdown(exam, session);
+  const scorePct = scoreBreakdown.max ? Math.round(scoreBreakdown.earned / scoreBreakdown.max * 100) : 0;
+  const essayGrades = getSessionEssayGrades(session);
+  const hasEssayQuestions = (exam.questions || []).some(question => question.type === 'essay');
+
+  let html = `
+    <div class="student-info-box" style="margin-bottom:16px;">
+      <div class="info-row"><span class="info-label">Student</span><span class="info-value">${escHtml(session.studentName)}</span></div>
+      <div class="info-row"><span class="info-label">Student ID</span><span class="info-value">${escHtml(session.studentId)}</span></div>
+      <div class="info-row"><span class="info-label">Score</span><span class="info-value">${formatPointsValue(scoreBreakdown.earned)}/${formatPointsValue(scoreBreakdown.max)} (${scorePct}%)</span></div>
+      <div class="info-row"><span class="info-label">Warnings</span><span class="info-value">${session.warnings}</span></div>
+    </div>
+  `;
+
+  const requireAI = !!exam.requireAIDetection;
+
+  exam.questions.forEach((q, idx) => {
+    const rawAnswer = (session.answers || {})[q.id];
+    const studentAns = rawAnswer || '';
+
+    if (q.type === 'essay') {
+      const aiId = `ai-badge-${session.id}-${q.id}`;
+      const wordCount = studentAns ? studentAns.split(/\s+/).filter(Boolean).length : 0;
+      const earnedEssayPoints = scoreBreakdown.byQuestion[q.id] || 0;
+      const hasSavedEssayGrade = Object.prototype.hasOwnProperty.call(essayGrades, q.id)
+        && normalizeEssayGradeValue(essayGrades[q.id], q.points) !== null;
+      const cachedAIDetection = requireAI && studentAns
+        ? getCachedEssayAIDetection(session.id, q.id, studentAns)
+        : null;
+      if (requireAI && studentAns && !cachedAIDetection) {
+        aiScanJobs.push({ badgeId: aiId, questionId: q.id, text: studentAns });
+      }
+      html += `
+        <div class="answer-row" style="border-color:var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+            <strong style="font-size:14px;">Q${idx+1} (Essay): ${escHtml(q.content)}</strong>
+          </div>
+          ${q.rubric ? `<div style="font-size:11px;color:var(--text-muted);background:var(--surface-2);border-radius:6px;padding:6px 10px;margin-bottom:8px;"><strong>Rubric:</strong> ${escHtml(q.rubric)}</div>` : ''}
+          <div style="font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px;white-space:pre-wrap;line-height:1.6;min-height:60px;margin-bottom:10px;" id="essay-text-${session.id}-${q.id}">${escHtml(studentAns || '(no answer)')}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <span style="font-size:12px;color:var(--text-muted);">${wordCount} words &nbsp;Â·&nbsp; max ${formatPointsValue(q.points)} pts</span>
+            ${requireAI && studentAns ? `
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div id="${aiId}-bar-wrap" style="width:120px;height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
+                  <div id="${aiId}-bar" style="height:100%;width:${cachedAIDetection ? cachedAIDetection.score : 0}%;border-radius:99px;background:${cachedAIDetection ? getAIDetectionBarColor(cachedAIDetection.label) : 'var(--text-muted)'};transition:width 0.4s;"></div>
+                </div>
+                <span id="${aiId}" class="ai-badge ${cachedAIDetection ? `ai-badge-${cachedAIDetection.label}` : 'ai-badge-scanning'}" style="cursor:pointer;" title="${escHtml(cachedAIDetection?.reason || 'Auto-scanning essay answer')}" onclick="detectAIContentDetailed(document.getElementById('essay-text-${session.id}-${q.id}').textContent,'${aiId}','${session.id}','${q.id}', true)">
+                  ${cachedAIDetection ? `AI: <strong>${cachedAIDetection.score}%</strong> <span style="font-weight:400;">(${cachedAIDetection.label})</span>` : 'Scanning...'}
+                </span>
+              </div>` : requireAI ? '<span style="font-size:12px;color:var(--text-muted);">No answer to scan</span>' : ''}
+          </div>
+          <div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <strong style="font-size:12px;">Essay Score</strong>
+              <span style="font-size:12px;color:var(--text-muted);">${mode === 'reports' ? 'Only Reports can edit this score.' : 'Read-only here. Grade changes are made in Reports.'}</span>
+            </div>
+            ${mode === 'reports'
+              ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <input type="number" id="essay-grade-input-${session.id}-${q.id}" min="0" max="${Number(q.points) || 0}" step="0.5" class="form-control" value="${hasSavedEssayGrade ? escHtml(formatPointsValue(earnedEssayPoints)) : ''}" placeholder="0-${formatPointsValue(q.points)}" style="width:120px;" />
+                  <span style="font-size:12px;font-weight:700;color:var(--primary);">${hasSavedEssayGrade ? `${formatPointsValue(earnedEssayPoints)}/${formatPointsValue(q.points)} pts` : 'Pending grade'}</span>
+                </div>`
+              : `<span style="font-size:12px;font-weight:700;color:var(--primary);">${hasSavedEssayGrade ? `${formatPointsValue(earnedEssayPoints)}/${formatPointsValue(q.points)} pts` : 'Pending grade'}</span>`
+            }
+          </div>
+        </div>`;
+      return;
+    }
+
+    if (q.type === 'checkbox') {
+      let given = [];
+      try { given = JSON.parse(studentAns || '[]') || []; } catch (_) {}
+      const correctIndices = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+      const sortedGiven = given.slice().sort((a, b) => a - b);
+      const isCorrect = correctIndices.length === sortedGiven.length && correctIndices.every((v, i) => v === sortedGiven[i]);
+      const rowClass = given.length ? (isCorrect ? 'correct' : 'wrong') : '';
+      const studentLabels = given.map(i => (q.options || [])[i]).filter(v => v !== undefined);
+      const correctLabels = correctIndices.map(i => (q.options || [])[i]).filter(v => v !== undefined);
+      html += `
+        <div class="answer-row ${rowClass}">
+          <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
+            <span>Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
+            <span>Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
+            <span>${isCorrect ? 'âœ“ +' + q.points : (given.length ? 'âœ— 0' : 'â€” 0')} pts</span>
+          </div>
+        </div>`;
+      return;
+    }
+
+    if (q.type === 'matching') {
+      let given = {};
+      try { given = JSON.parse(studentAns || '{}') || {}; } catch (_) {}
+      const pairs = Array.isArray(q.pairs) ? q.pairs : [];
+      const normalizedPairs = pairs.map(pair => ({
+        term: String(pair?.term || '').trim(),
+        correct: String(pair?.match || '').trim(),
+      }));
+      const correctCount = normalizedPairs.reduce((count, pair, pairIdx) => {
+        const studentValue = String(given?.[pairIdx] || '').trim();
+        return count + (studentValue && studentValue.toUpperCase() === pair.correct.toUpperCase() ? 1 : 0);
+      }, 0);
+      const pairPoints = normalizedPairs.length ? (q.points / normalizedPairs.length) : 0;
+      const earnedPoints = Math.round(correctCount * pairPoints * 100) / 100;
+      const rowClass = normalizedPairs.length && correctCount === normalizedPairs.length
+        ? 'correct'
+        : Object.keys(given).length ? 'wrong' : '';
+      html += `
+        <div class="answer-row ${rowClass}">
+          <div style="font-weight:600;margin-bottom:6px;">Q${idx+1}: ${escHtml(q.content)}</div>
+          <div class="review-answer-note" style="margin-top:0;margin-bottom:8px;">${correctCount}/${normalizedPairs.length || 0} correct Â· ${earnedPoints}/${q.points} pts</div>
+          <div class="review-matching-list">
+            ${normalizedPairs.map((pair, pairIdx) => {
+              const studentValue = String(given?.[pairIdx] || '').trim();
+              const pairCorrect = studentValue && studentValue.toUpperCase() === pair.correct.toUpperCase();
+              return `
+                <div class="review-matching-item ${pairCorrect ? 'is-correct' : studentValue ? 'is-wrong' : ''}">
+                  <div class="review-matching-term">${escHtml(pair.term || `Term ${pairIdx + 1}`)}</div>
+                  <div class="review-matching-arrow">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  </div>
+                  <div class="review-matching-answer">
+                    <div class="review-matching-student">${escHtml(studentValue || '(no answer)')}</div>
+                    <div class="review-matching-correct">Correct: ${escHtml(pair.correct || 'â€”')}</div>
+                    <div class="review-matching-note">${pairCorrect ? 'Matched correctly.' : 'Student answer did not match the expected pair.'}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>`;
+      return;
+    }
+
+    const correctAnswer = q.correctAnswer || '';
+    const isCorrect = studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
+    const rowClass = studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
+    html += `
+      <div class="answer-row ${rowClass}">
+        <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
+          <span>Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
+          <span>Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
+          <span>${isCorrect ? 'âœ“ +' + q.points : (studentAns ? 'âœ— 0' : 'â€” 0')} pts</span>
+        </div>
+      </div>`;
+  });
+
+  if (session.activities && session.activities.length) {
+    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>`;
+    html += renderBehaviorSummary(session.activities);
+    html += `<div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Anti-Cheat Activity Timeline</div>`;
+    session.activities.forEach(a => {
+      html += `<div class="log-item"><div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div><div class="log-detail">${escHtml(a.detail)}</div><div class="log-time">${formatDateTime(a.timestamp)}</div></div>`;
+    });
+  }
+
+  document.getElementById('modal-answers-title').textContent = `Answers - ${session.studentName}`;
+  document.getElementById('modal-answers-body').innerHTML = sanitizeStudentAnswersHtml(html);
+  renderStudentAnswersFooter(mode, sessionId, hasEssayQuestions);
+  openModal('modal-student-answers');
+  aiScanJobs.forEach(job => {
+    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
+  });
+}
+
+function saveEssayGrades(sessionId) {
+  const session = DB.getSession(sessionId);
+  if (!session) return;
+  const exam = DB.getExam(session.examId);
+  if (!exam) return;
+
+  const essayQuestions = (exam.questions || []).filter(question => question.type === 'essay');
+  if (!essayQuestions.length) {
+    showToast('This submission has no essay questions to grade.', 'info');
+    return;
+  }
+
+  const nextEssayGrades = { ...getSessionEssayGrades(session) };
+  for (const [index, question] of essayQuestions.entries()) {
+    const input = document.getElementById(`essay-grade-input-${sessionId}-${question.id}`);
+    if (!input) continue;
+
+    const rawValue = String(input.value || '').trim();
+    if (!rawValue) {
+      delete nextEssayGrades[question.id];
+      continue;
+    }
+
+    const normalized = normalizeEssayGradeValue(rawValue, question.points);
+    if (normalized === null) {
+      showToast(`Enter a valid essay score for Q${index + 1}.`, 'error');
+      input.focus();
+      return;
+    }
+
+    nextEssayGrades[question.id] = normalized;
+  }
+
+  const nextSession = { ...session, essayGrades: nextEssayGrades };
+  const scoreBreakdown = calculateSessionScoreBreakdown(exam, nextSession);
+  DB.updateSession(sessionId, {
+    essayGrades: nextEssayGrades,
+    score: scoreBreakdown.earned,
+    maxScore: scoreBreakdown.max,
+  });
+
+  if (currentSection === 'reports') renderReportTable();
+  if (currentSection === 'statistics') renderExamStats();
+
+  showToast('Essay grades saved. Statistics now reflects the updated review score.', 'success');
+  viewStudentAnswers(sessionId, 'reports');
 }
 
 // Full per-question, per-choice answer breakdown for the "Question Difficulty"
@@ -5273,7 +5606,7 @@ function renderExamStats() {
                 <td><span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span></td>
                 <td>${s.warnings>0?`<span class="badge badge-danger">${s.warnings}</span>`:'0'}</td>
                 <td>${s.autoSubmitted?'<span class="badge badge-warning">Auto</span>':'<span class="badge badge-success">Manual</span>'}</td>
-                <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button></div></td>
+                <td><div class="table-actions"><button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}', 'statistics')">Review${icEyeFill}</button></div></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -5476,7 +5809,7 @@ function renderReportTable() {
       <td data-label="Submitted" class="report-status-cell">${submissionStatus}</td>
       <td data-label="Actions">
         <div class="table-actions">
-          <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}')">Review${icEyeFill}</button>
+          <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}', 'reports')">Review${icEyeFill}</button>
           <button class="tbl-btn tbl-btn-warning" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake${icRedoStroke}</button>
         </div>
       </td>
@@ -5970,6 +6303,7 @@ async function allowStudentRetake(sessionId) {
     score:         null,
     scoreReleased: false,
     answers:       {},
+    essayGrades:   {},
     aiDetections:  {},
     warnings:      0,
     activities:    [],
