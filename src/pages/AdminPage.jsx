@@ -1162,6 +1162,14 @@ export default function AdminPage() {
         </div>
       </div>
 
+      <div className="modal-backdrop hidden" id="modal-student-history">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header"><span className="modal-title" id="modal-student-history-title">Student History</span><button className="modal-close" onClick={() => window.closeModal('modal-student-history')}>&#10005;</button></div>
+          <div className="modal-body" id="modal-student-history-body" />
+          <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-student-history')}>Close</button></div>
+        </div>
+      </div>
+
       <div className="modal-backdrop hidden" id="modal-question-breakdown">
         <div className="modal-dialog modal-xl">
           <div className="modal-header"><span className="modal-title" id="modal-qbreak-title">Question Breakdown</span><button className="modal-close" onClick={() => window.closeModal('modal-question-breakdown')}>&#10005;</button></div>

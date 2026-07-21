@@ -1689,6 +1689,252 @@ function getStudentSectionDisplay(student) {
   return parts.section || normalizeSectionValue(student?.section || '');
 }
 
+function getStudentCourseMembership(student) {
+  const subjectMap = new Map(DB.getSubjects().map(subject => [subject.id, subject]));
+  return (student?.enrolledSubjects || [])
+    .map(subjectId => subjectMap.get(subjectId))
+    .filter(subject => subject && !subject.archived);
+}
+
+function countSessionViolations(session) {
+  const activities = Array.isArray(session?.activities) ? session.activities : [];
+  const cameraViolations = Array.isArray(session?.cameraSnapshots)
+    ? session.cameraSnapshots.filter(snapshot => snapshot?.kind === 'violation').length
+    : 0;
+  return Math.max(activities.length, Number(session?.warnings || 0), cameraViolations);
+}
+
+function getStudentExamHistory(student) {
+  const courses = getStudentCourseMembership(student);
+  const courseMap = new Map(courses.map(course => [course.id, course]));
+  const exams = DB.getExams()
+    .filter(exam => courseMap.has(exam.subjectId))
+    .sort((a, b) => {
+      const aTime = new Date(a.createdAt || 0).getTime();
+      const bTime = new Date(b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+
+  return exams.map(exam => {
+    const course = courseMap.get(exam.subjectId) || null;
+    const session = DB.getStudentSession(exam.id, student.studentId);
+    const violationCount = session ? countSessionViolations(session) : 0;
+    const scorePercent = session?.submitted && session?.maxScore
+      ? Math.round(((session.score || 0) / session.maxScore) * 100)
+      : null;
+    const statusText = session
+      ? getSubmissionStatusText(session)
+      : 'Not Taken';
+
+    return {
+      exam,
+      course,
+      session,
+      violationCount,
+      scorePercent,
+      statusText,
+    };
+  });
+}
+
+function renderStudentCourseChips(courses) {
+  if (!courses.length) {
+    return `<div style="font-size:13px;color:var(--text-muted);">Not enrolled in any active course.</div>`;
+  }
+
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${courses.map(course => `
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text);">
+          <span>${escHtml(course.name || 'Untitled Course')}</span>
+          ${course.code ? `<span style="color:var(--text-muted);font-weight:600;">${escHtml(course.code)}</span>` : ''}
+        </span>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openStudentHistoryReview(sessionId) {
+  closeModal('modal-student-history');
+  requestAnimationFrame(() => viewStudentAnswers(sessionId, 'reports'));
+}
+
+function renderStudentExamHistoryAccordion(entry) {
+  const { exam, course, session, violationCount, scorePercent, statusText } = entry;
+  const scoreLabel = session?.submitted
+    ? `${session.score ?? 0}/${session.maxScore ?? 0}${scorePercent !== null ? ` (${scorePercent}%)` : ''}`
+    : session
+      ? 'In Progress'
+      : 'Not Taken';
+  const dropdownHint = session?.submitted
+    ? 'Click to open or close details and review.'
+    : 'Click to open or close details.';
+  const activities = Array.isArray(session?.activities) ? session.activities : [];
+  const timelineHtml = activities.length
+    ? `
+      <div style="margin-top:12px;display:grid;gap:8px;">
+        ${activities.map(activity => `
+          <div class="log-item">
+            <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
+            <div class="log-detail">${escHtml(activity.detail || 'Violation recorded')}</div>
+            <div class="log-time">${formatDateTime(activity.timestamp)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `
+    : `<div style="margin-top:12px;font-size:12px;color:var(--text-muted);">No violation logs recorded for this exam.</div>`;
+
+  return `
+    <details style="border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 4px 18px rgba(0,0,0,0.05);overflow:hidden;">
+      <summary style="list-style:none;cursor:pointer;padding:16px 18px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;" title="${escHtml(dropdownHint)}">
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:16px;font-weight:800;color:var(--text);">${escHtml(exam.title || 'Untitled Exam')}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            ${escHtml(course?.name || 'Unknown Course')}
+            ${course?.code ? ` • ${escHtml(course.code)}` : ''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Status: ${escHtml(statusText)}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Score: ${escHtml(scoreLabel)}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Violations: ${violationCount}</span>
+        </div>
+      </summary>
+      <div style="padding:0 18px 16px;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          ${session?.submitted ? `<button class="btn-action btn-action-ghost" onclick="openStudentHistoryReview('${session.id}')">Review${icEyeFill}</button>` : ''}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
+          <div class="student-info-box" style="margin:0;">
+            <div class="info-row"><span class="info-label">Course</span><span class="info-value">${escHtml(course?.code || course?.name || '-')}</span></div>
+            <div class="info-row"><span class="info-label">Status</span><span class="info-value">${escHtml(statusText)}</span></div>
+          </div>
+          <div class="student-info-box" style="margin:0;">
+            <div class="info-row"><span class="info-label">Score</span><span class="info-value">${escHtml(scoreLabel)}</span></div>
+            <div class="info-row"><span class="info-label">Warnings</span><span class="info-value">${session ? String(session.warnings || 0) : '0'}</span></div>
+          </div>
+          <div class="student-info-box" style="margin:0;">
+            <div class="info-row"><span class="info-label">Violations</span><span class="info-value">${violationCount}</span></div>
+            <div class="info-row"><span class="info-label">Submitted</span><span class="info-value">${session?.submitted ? formatDateTime(session.endTime || session.createdAt) : 'Not yet'}</span></div>
+          </div>
+        </div>
+        <div style="margin-top:4px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Violation History</div>
+          ${activities.length ? renderBehaviorSummary(activities) : ''}
+          ${timelineHtml}
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function renderStudentExamHistoryCard(entry) {
+  const { exam, course, session, violationCount, scorePercent, statusText } = entry;
+  const scoreLabel = session?.submitted
+    ? `${session.score ?? 0}/${session.maxScore ?? 0}${scorePercent !== null ? ` (${scorePercent}%)` : ''}`
+    : session
+      ? 'In Progress'
+      : 'Not Taken';
+  const activities = Array.isArray(session?.activities) ? session.activities : [];
+  const timelineHtml = activities.length
+    ? `
+      <div style="margin-top:12px;display:grid;gap:8px;">
+        ${activities.map(activity => `
+          <div class="log-item">
+            <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
+            <div class="log-detail">${escHtml(activity.detail || 'Violation recorded')}</div>
+            <div class="log-time">${formatDateTime(activity.timestamp)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `
+    : `<div style="margin-top:12px;font-size:12px;color:var(--text-muted);">No violation logs recorded for this exam.</div>`;
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:18px 18px 16px;box-shadow:0 4px 18px rgba(0,0,0,0.05);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <div style="font-size:16px;font-weight:800;color:var(--text);">${escHtml(exam.title || 'Untitled Exam')}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            ${escHtml(course?.name || 'Unknown Course')}
+            ${course?.code ? ` • ${escHtml(course.code)}` : ''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${statusBadge}
+          ${session?.submitted ? `<button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${session.id}','reports')">Review${icEyeFill}</button>` : ''}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
+        <div class="student-info-box" style="margin:0;">
+          <div class="info-row"><span class="info-label">Course</span><span class="info-value">${escHtml(course?.code || course?.name || '-')}</span></div>
+          <div class="info-row"><span class="info-label">Status</span><span class="info-value">${escHtml(statusText)}</span></div>
+        </div>
+        <div class="student-info-box" style="margin:0;">
+          <div class="info-row"><span class="info-label">Score</span><span class="info-value">${escHtml(scoreLabel)}</span></div>
+          <div class="info-row"><span class="info-label">Warnings</span><span class="info-value">${session ? String(session.warnings || 0) : '0'}</span></div>
+        </div>
+        <div class="student-info-box" style="margin:0;">
+          <div class="info-row"><span class="info-label">Violations</span><span class="info-value">${violationCount}</span></div>
+          <div class="info-row"><span class="info-label">Submitted</span><span class="info-value">${session?.submitted ? formatDateTime(session.endTime || session.createdAt) : 'Not yet'}</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top:4px;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Violation History</div>
+        ${activities.length ? renderBehaviorSummary(activities) : ''}
+        ${timelineHtml}
+      </div>
+    </div>
+  `;
+}
+
+function viewStudentHistory(studentId) {
+  const student = DB.getStudentById(studentId);
+  if (!student) return;
+
+  const courses = getStudentCourseMembership(student);
+  const history = getStudentExamHistory(student);
+  const titleEl = document.getElementById('modal-student-history-title');
+  const bodyEl = document.getElementById('modal-student-history-body');
+  if (!titleEl || !bodyEl) return;
+
+  titleEl.textContent = `Student History - ${student.name}`;
+
+  const yearLevel = getStudentYearLevelLabel(student) || '-';
+  const section = getStudentSectionDisplay(student) || '-';
+
+  bodyEl.innerHTML = `
+    <div style="display:grid;gap:18px;">
+      <div class="student-info-box" style="margin:0;">
+        <div class="info-row"><span class="info-label">Student ID</span><span class="info-value">${escHtml(student.studentId)}</span></div>
+        <div class="info-row"><span class="info-label">Program</span><span class="info-value">${escHtml(student.program || '-')}</span></div>
+        <div class="info-row"><span class="info-label">Year & Section</span><span class="info-value">${escHtml(`${yearLevel} • ${section}`)}</span></div>
+        <div class="info-row"><span class="info-label">Email</span><span class="info-value">${escHtml(student.email || '-')}</span></div>
+      </div>
+
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;">Courses</div>
+        ${renderStudentCourseChips(courses)}
+      </div>
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">Exam History</div>
+          <div style="font-size:12px;color:var(--text-muted);">${history.length} exam${history.length !== 1 ? 's' : ''} across this student's courses</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Each exam row is a dropdown. Click it to expand the full history, then click it again to close.</div>
+        ${history.length
+          ? `<div style="display:grid;gap:14px;">${history.map(renderStudentExamHistoryAccordion).join('')}</div>`
+          : `<div class="empty-state"><p>No exams found for this student's courses yet.</p></div>`}
+      </div>
+    </div>
+  `;
+
+  openModal('modal-student-history');
+}
+
 function renderStudents(filter) {
   // Only show students enrolled in at least one of this professor's courses
   const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
@@ -1782,6 +2028,7 @@ function renderStudents(filter) {
       <td data-label="Program"><span class="section-text">${escHtml(programDisplay)}</span></td>
       <td data-label="">
         <div class="table-actions">
+          <button class="btn-action btn-action-ghost" onclick="viewStudentHistory('${s.id}')">View${icEyeFill}</button>
           <button class="tbl-btn tbl-btn-archive" onclick="archiveStudent('${s.id}')">Archive${icArchiveFill}</button>
         </div>
       </td>
