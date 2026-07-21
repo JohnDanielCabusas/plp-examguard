@@ -57,8 +57,13 @@ function ButtonSpinner() {
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('admin');
-  const [adminStep, setAdminStep] = useState('login');
+  const [adminStep, setAdminStep] = useState('email');
   const [studentStep, setStudentStep] = useState(1); // 1 | 'verify' | '2a' | '2b'
+  const [adminIdentifier, setAdminIdentifier] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminAccountType, setAdminAccountType] = useState('professor');
+  const [adminVerifyMessage, setAdminVerifyMessage] = useState('');
+  const [adminHasPasswordLogin, setAdminHasPasswordLogin] = useState(false);
   const [studentEmail, setStudentEmail] = useState('');
   const [studentVerifyMessage, setStudentVerifyMessage] = useState('');
   const [studentResetMessage, setStudentResetMessage] = useState('');
@@ -68,6 +73,8 @@ export default function LoginPage() {
   const [step1Error, setStep1Error] = useState('');
   const [step2aError, setStep2aError] = useState('');
   const [step2bError, setStep2bError] = useState('');
+  const [showAdminSetupPass, setShowAdminSetupPass] = useState(false);
+  const [showAdminSetupConfirm, setShowAdminSetupConfirm] = useState(false);
   const [showAdminPass, setShowAdminPass] = useState(false);
   const [showStudentPass, setShowStudentPass] = useState(false);
   const [showStudentResetPass, setShowStudentResetPass] = useState(false);
@@ -77,6 +84,8 @@ export default function LoginPage() {
   const [showAdminResetPass, setShowAdminResetPass] = useState(false);
   const [showAdminResetConfirm, setShowAdminResetConfirm] = useState(false);
   const [fbLoading, setFbLoading] = useState(true);
+  const [adminEmailLookupBusy, setAdminEmailLookupBusy] = useState(false);
+  const [adminSetupBusy, setAdminSetupBusy] = useState(false);
   const [studentEmailLookupBusy, setStudentEmailLookupBusy] = useState(false);
   const [studentEmailSendBusy, setStudentEmailSendBusy] = useState(false);
   const [adminEmailSendBusy, setAdminEmailSendBusy] = useState(false);
@@ -89,8 +98,12 @@ export default function LoginPage() {
     logoUrl: '/plp-logo.png',
   });
 
-  const adminUsernameRef = useRef();
+  const adminIdentifierRef = useRef();
+  const adminVerifyCodeRef = useRef();
   const adminPasswordRef = useRef();
+  const adminSetupUsernameRef = useRef();
+  const adminSetupPasswordRef = useRef();
+  const adminSetupConfirmRef = useRef();
   const adminResetEmailRef = useRef();
   const adminResetCodeRef = useRef();
   const adminResetPasswordRef = useRef();
@@ -176,7 +189,12 @@ export default function LoginPage() {
 
   const switchTab = (tab) => {
     setActiveTab(tab);
-    setAdminStep('login');
+    setAdminStep('email');
+    setAdminIdentifier('');
+    setAdminEmail('');
+    setAdminAccountType('professor');
+    setAdminVerifyMessage('');
+    setAdminHasPasswordLogin(false);
     setAdminError('');
     setAdminResetEmail('');
     setAdminResetMessage('');
@@ -194,16 +212,6 @@ export default function LoginPage() {
     setStudentStep(1);
   };
 
-
-  const startAdminReset = () => {
-    setAdminStep('email');
-    setAdminError('');
-    setAdminResetEmail('');
-    setAdminResetMessage('');
-    setAdminResendCooldown(0);
-    requestAnimationFrame(() => adminResetEmailRef.current?.focus());
-  };
-
   const buildDeliveryMessage = (result, fallbackMessage) => {
     if (result?.delivery === 'console' && result?.previewCode) {
       return `${fallbackMessage} Dev code: ${result.previewCode}`;
@@ -211,17 +219,198 @@ export default function LoginPage() {
     return fallbackMessage;
   };
 
-  const getAdminResetEmailValue = () => (adminResetEmail || adminResetEmailRef.current?.value || '').trim().toLowerCase();
+  const getProfessorIdentifierValue = () => (adminIdentifierRef.current?.value || adminIdentifier || '').trim();
+
+  const getAdminResetEmailValue = () => (adminResetEmail || adminResetEmailRef.current?.value || adminEmail || '').trim().toLowerCase();
 
   const getStudentEmailValue = () => (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
 
-  const adminResetBackToLogin = () => {
-    setAdminStep('login');
+  const professorGoBack = () => {
+    setAdminStep('email');
+    setAdminError('');
+    setAdminVerifyMessage('');
+    setAdminResetMessage('');
+    setAdminResetEmail('');
+    setAdminResendCooldown(0);
+    setAdminHasPasswordLogin(false);
+    setAdminAccountType('professor');
+    requestAnimationFrame(() => adminIdentifierRef.current?.focus());
+  };
+
+  const backFromAdminReset = () => {
     setAdminError('');
     setAdminResetMessage('');
     setAdminResendCooldown(0);
     window.Auth?.clearAdminPasswordReset?.();
-    requestAnimationFrame(() => adminUsernameRef.current?.focus());
+    if (adminHasPasswordLogin && adminEmail) {
+      setAdminStep('password');
+      requestAnimationFrame(() => adminPasswordRef.current?.focus());
+      return;
+    }
+    professorGoBack();
+  };
+
+  const doProfessorEmailContinue = async () => {
+    const identifier = getProfessorIdentifierValue();
+    setAdminError('');
+    setAdminResetMessage('');
+    setAdminVerifyMessage('');
+    if (!identifier) {
+      setAdminError('Please enter your username or email.');
+      return;
+    }
+
+    setAdminEmailLookupBusy(true);
+    try {
+      const result = await window.Auth.continueProfessorLogin(identifier);
+      if (!result.success) {
+        setAdminError(result.message);
+        return;
+      }
+      setAdminIdentifier(result.identifier || identifier);
+      setAdminAccountType(result.accountType || 'professor');
+      setAdminEmail(result.email || '');
+      if (result.nextStep === 'password') {
+        setAdminHasPasswordLogin(true);
+        setAdminStep('password');
+        requestAnimationFrame(() => adminPasswordRef.current?.focus());
+        return;
+      }
+      setAdminHasPasswordLogin(false);
+      setAdminVerifyMessage(buildDeliveryMessage(result, 'Verification code sent. Check your email inbox for the 6-digit code.'));
+      setAdminResendCooldown(60);
+      setAdminStep('verify');
+      requestAnimationFrame(() => adminVerifyCodeRef.current?.focus());
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Unable to continue right now. Please try again.');
+      return;
+    } finally {
+      setAdminEmailLookupBusy(false);
+    }
+  };
+
+  const verifyProfessorEmail = async () => {
+    const code = (adminVerifyCodeRef.current?.value || '').trim();
+    setAdminError('');
+    if (!/^\d{6}$/.test(code)) {
+      setAdminError('Please enter the 6-digit verification code.');
+      return;
+    }
+    const result = await window.Auth.verifyProfessorEmailCode(adminEmail, code);
+    if (!result.success) {
+      setAdminError(result.message);
+      return;
+    }
+    if (result.hasCredentials) {
+      setAdminAccountType('professor');
+      setAdminHasPasswordLogin(true);
+      setAdminVerifyMessage('Email verified. Enter your password to continue.');
+      setAdminStep('password');
+      requestAnimationFrame(() => adminPasswordRef.current?.focus());
+      return;
+    }
+    setAdminVerifyMessage('Email verified successfully. You can now create your username and password.');
+    setAdminStep('setup');
+    requestAnimationFrame(() => adminSetupUsernameRef.current?.focus());
+  };
+
+  const resendProfessorVerificationCode = async () => {
+    setAdminError('');
+    if (!adminEmail) {
+      setAdminError('Professor email is missing. Please start again.');
+      return;
+    }
+    setAdminEmailSendBusy(true);
+    try {
+      const result = await window.Auth.beginProfessorEmailVerification(adminEmail);
+      if (!result.success) {
+        setAdminError(result.message);
+        return;
+      }
+      setAdminVerifyMessage(buildDeliveryMessage(result, 'A new verification code was sent to your email.'));
+      setAdminResendCooldown(60);
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Unable to send the verification email right now. Please try again.');
+    } finally {
+      setAdminEmailSendBusy(false);
+    }
+  };
+
+  const doProfessorPasswordLogin = async () => {
+    const identifier = getProfessorIdentifierValue();
+    const password = adminPasswordRef.current?.value || '';
+    setAdminError('');
+    if (!identifier) {
+      setAdminError('Username or email is missing. Please start again.');
+      return;
+    }
+    if (!password) {
+      setAdminError('Please enter your password.');
+      return;
+    }
+    const result = adminAccountType === 'sysadmin'
+      ? await window.Auth.sysAdminLogin(identifier, password)
+      : await window.Auth.adminLogin(identifier, password);
+    if (result.success) {
+      window.location.href = adminAccountType === 'sysadmin' ? 'super-admin.html' : 'admin.html';
+    } else {
+      setAdminError(result.message);
+    }
+  };
+
+  const doProfessorFirstSetup = async () => {
+    const email = adminEmail;
+    const username = (adminSetupUsernameRef.current?.value || '').trim().toLowerCase();
+    const password = adminSetupPasswordRef.current?.value || '';
+    const confirm = adminSetupConfirmRef.current?.value || '';
+    setAdminError('');
+
+    if (!email) {
+      setAdminError('Professor email verification is missing. Please start again.');
+      return;
+    }
+    if (!username) {
+      setAdminError('Please create your username.');
+      return;
+    }
+    if (!/^[a-z0-9_.-]{3,30}$/.test(username)) {
+      setAdminError('Username must be 3-30 characters (letters, numbers, _ . -).');
+      return;
+    }
+    if (!password) {
+      setAdminError('Please create your password.');
+      return;
+    }
+    if (password.length < 6) {
+      setAdminError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setAdminError('Passwords do not match.');
+      return;
+    }
+
+    setAdminSetupBusy(true);
+    try {
+      const result = await window.Auth.professorFirstSetup(email, username, password);
+      if (result.success) {
+        window.location.href = 'admin.html';
+      } else {
+        setAdminError(result.message);
+      }
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Unable to complete your account setup right now. Please try again.');
+    } finally {
+      setAdminSetupBusy(false);
+    }
+  };
+
+  const startAdminReset = () => {
+    setAdminStep('reset-email');
+    setAdminError('');
+    setAdminResetMessage('');
+    setAdminResendCooldown(0);
+    requestAnimationFrame(() => adminResetEmailRef.current?.focus());
   };
 
   const sendAdminResetCode = async () => {
@@ -240,10 +429,12 @@ export default function LoginPage() {
       return;
     }
     setAdminEmailSendBusy(false);
+    setAdminEmail(email);
+    setAdminHasPasswordLogin(true);
     setAdminResetEmail(email);
     setAdminResetMessage(buildDeliveryMessage(result, 'Verification code sent. Check your email inbox for the 6-digit code.'));
     setAdminResendCooldown(60);
-    setAdminStep('code');
+    setAdminStep('reset-code');
     requestAnimationFrame(() => adminResetCodeRef.current?.focus());
   };
 
@@ -261,7 +452,7 @@ export default function LoginPage() {
       return;
     }
     setAdminResetMessage('Code verified. You can now create a new password.');
-    setAdminStep('password');
+    setAdminStep('reset-password');
     requestAnimationFrame(() => adminResetPasswordRef.current?.focus());
   };
 
@@ -285,9 +476,9 @@ export default function LoginPage() {
       return;
     }
     setAdminResetMessage('Password updated successfully. Sign in with your new password.');
-    setAdminStep('login');
+    setAdminStep('password');
+    setAdminHasPasswordLogin(true);
     requestAnimationFrame(() => {
-      if (adminUsernameRef.current && result.username) adminUsernameRef.current.value = result.username;
       if (adminPasswordRef.current) adminPasswordRef.current.value = '';
       adminPasswordRef.current?.focus();
     });
@@ -553,20 +744,6 @@ export default function LoginPage() {
     else { setStep2bError(result.message); }
   };
 
-  const doAdminLogin = async () => {
-    const username = (adminUsernameRef.current?.value || '').trim();
-    const password = adminPasswordRef.current?.value || '';
-    setAdminError('');
-    if (!username || !password) { setAdminError('Please enter username and password.'); return; }
-    // Check sysadmin credentials first
-    const sysResult = await window.Auth?.sysAdminLogin?.(username, password);
-    if (sysResult?.success) { window.location.href = 'super-admin.html'; return; }
-    // Fall through to professor login
-    const result = await window.Auth.adminLogin(username, password);
-    if (result.success) { window.location.href = 'admin.html'; }
-    else { setAdminError(result.message); }
-  };
-
   const formatStudentId = (e) => {
     const input = e.target;
     const cursor = input.selectionStart;
@@ -610,30 +787,91 @@ export default function LoginPage() {
 
             {/* ===== ADMIN TAB ===== */}
             <div id="tab-admin" className={`tab-panel${activeTab === 'admin' ? ' active' : ''}`}>
-              {adminStep === 'login' && (
+              {adminStep === 'email' && (
                 <>
                   <div className="form-group">
-                    <label htmlFor="admin-username">Username</label>
-                    <input type="text" className="form-control" id="admin-username" ref={adminUsernameRef}
-                      placeholder="Enter username" autoComplete="username"
-                      onKeyDown={(e) => { if (e.key === 'Enter') adminPasswordRef.current?.focus(); }} />
+                    <label htmlFor="admin-identifier">Username or Email</label>
+                    <input type="text" className="form-control" id="admin-identifier" ref={adminIdentifierRef}
+                      value={adminIdentifier}
+                      onChange={(e) => setAdminIdentifier(e.target.value)}
+                      placeholder="Enter your username or email" autoComplete="username"
+                      onKeyDown={(e) => { if (e.key === 'Enter') doProfessorEmailContinue(); }} />
+                  </div>
+                </>
+              )}
+              {adminStep === 'verify' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminIdentifier || adminEmail}</span>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
-                    <label htmlFor="admin-password">Password</label>
+                    <label htmlFor="admin-verify-code">6-Digit Verification Code</label>
+                    <input type="text" className="form-control" id="admin-verify-code" ref={adminVerifyCodeRef}
+                      placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
+                      onKeyDown={(e) => { if (e.key === 'Enter') verifyProfessorEmail(); }} />
+                  </div>
+                </>
+              )}
+              {adminStep === 'password' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminIdentifier || adminEmail}</span>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-password">{adminAccountType === 'sysadmin' ? 'System Admin Password' : 'Password'}</label>
                     <div style={{ position: 'relative' }}>
                       <input type={showAdminPass ? 'text' : 'password'} className="form-control" id="admin-password" ref={adminPasswordRef}
-                        placeholder="Enter password" autoComplete="current-password" style={{ paddingRight: '42px' }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') doAdminLogin(); }} />
+                        placeholder="Enter your password" autoComplete="current-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') doProfessorPasswordLogin(); }} />
                       <EyeToggle show={showAdminPass} onToggle={() => setShowAdminPass(v => !v)} />
                     </div>
                   </div>
                 </>
               )}
-              {adminStep === 'email' && (
+              {adminStep === 'setup' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', background: '#f0f7f2', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '8px 12px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#15803d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminEmail}</span>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '14px' }}>First login detected. Create your username and password to continue.</p>
+                  <div className="form-group">
+                    <label htmlFor="admin-setup-username">Create Username</label>
+                    <input type="text" className="form-control" id="admin-setup-username" ref={adminSetupUsernameRef}
+                      placeholder="e.g. msantos" autoComplete="username"
+                      onKeyDown={(e) => { if (e.key === 'Enter') adminSetupPasswordRef.current?.focus(); }} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-setup-password">Create Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showAdminSetupPass ? 'text' : 'password'} className="form-control" id="admin-setup-password" ref={adminSetupPasswordRef}
+                        placeholder="Minimum 6 characters" autoComplete="new-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') adminSetupConfirmRef.current?.focus(); }} />
+                      <EyeToggle show={showAdminSetupPass} onToggle={() => setShowAdminSetupPass(v => !v)} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="admin-setup-confirm">Confirm Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showAdminSetupConfirm ? 'text' : 'password'} className="form-control" id="admin-setup-confirm" ref={adminSetupConfirmRef}
+                        placeholder="Re-enter password" autoComplete="new-password" style={{ paddingRight: '42px' }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') doProfessorFirstSetup(); }} />
+                      <EyeToggle show={showAdminSetupConfirm} onToggle={() => setShowAdminSetupConfirm(v => !v)} />
+                    </div>
+                  </div>
+                </>
+              )}
+              {adminStep === 'reset-email' && (
                 <>
                   <div className="form-group">
                     <label htmlFor="admin-reset-email">Professor Email</label>
                     <input type="email" className="form-control" id="admin-reset-email" ref={adminResetEmailRef}
+                      defaultValue={adminEmail}
                       placeholder="Enter your email address" autoComplete="email"
                       onKeyDown={(e) => { if (e.key === 'Enter') sendAdminResetCode(); }} />
                   </div>
@@ -642,7 +880,7 @@ export default function LoginPage() {
                   </p>
                 </>
               )}
-              {adminStep === 'code' && (
+              {adminStep === 'reset-code' && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
@@ -656,7 +894,7 @@ export default function LoginPage() {
                   </div>
                 </>
               )}
-              {adminStep === 'password' && (
+              {adminStep === 'reset-password' && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#ecfdf5', borderRadius: '8px', padding: '8px 12px', border: '1px solid #bbf7d0' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M20 6L9 17l-5-5" /></svg>
@@ -666,7 +904,7 @@ export default function LoginPage() {
                     <label htmlFor="admin-reset-password">New Password</label>
                     <div style={{ position: 'relative' }}>
                       <input type={showAdminResetPass ? 'text' : 'password'} className="form-control" id="admin-reset-password" ref={adminResetPasswordRef}
-                        placeholder="Minimum 6 characters" style={{ paddingRight: '42px' }}
+                        placeholder="Minimum 6 characters" autoComplete="new-password" style={{ paddingRight: '42px' }}
                         onKeyDown={(e) => { if (e.key === 'Enter') adminResetConfirmRef.current?.focus(); }} />
                       <EyeToggle show={showAdminResetPass} onToggle={() => setShowAdminResetPass(v => !v)} />
                     </div>
@@ -675,7 +913,7 @@ export default function LoginPage() {
                     <label htmlFor="admin-reset-confirm">Confirm New Password</label>
                     <div style={{ position: 'relative' }}>
                       <input type={showAdminResetConfirm ? 'text' : 'password'} className="form-control" id="admin-reset-confirm" ref={adminResetConfirmRef}
-                        placeholder="Re-enter new password" style={{ paddingRight: '42px' }}
+                        placeholder="Re-enter new password" autoComplete="new-password" style={{ paddingRight: '42px' }}
                         onKeyDown={(e) => { if (e.key === 'Enter') saveAdminNewPassword(); }} />
                       <EyeToggle show={showAdminResetConfirm} onToggle={() => setShowAdminResetConfirm(v => !v)} />
                     </div>
@@ -683,31 +921,23 @@ export default function LoginPage() {
                 </>
               )}
               {adminError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{adminError}</div>}
-              {adminResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminResetMessage}</div>}
-              {adminStep === 'login' && (
-                <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={doAdminLogin}>Sign In</button>
-                  <div style={{ marginTop: '10px', textAlign: 'center' }}>
-                    <button type="button" onClick={startAdminReset} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600 }}>
-                      Forgot Password?
-                    </button>
-                  </div>
-                </>
+              {adminVerifyMessage && (adminStep === 'verify' || adminStep === 'setup' || adminStep === 'password') && (
+                <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminVerifyMessage}</div>
               )}
+              {adminResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminResetMessage}</div>}
               {adminStep === 'email' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode} disabled={adminEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                    {adminEmailSendBusy && <ButtonSpinner />}
-                    <span>{adminEmailSendBusy ? 'Sending Code...' : 'Send Code'}</span>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorEmailContinue} disabled={adminEmailLookupBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    {adminEmailLookupBusy && <ButtonSpinner />}
+                    <span>{adminEmailLookupBusy ? 'Loading...' : 'Continue'}</span>
                   </button>
-                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={adminResetBackToLogin}>Back to Sign In</button>
                 </>
               )}
-              {adminStep === 'code' && (
+              {adminStep === 'verify' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyProfessorEmail}>Verify Email</button>
                   <div style={{ marginTop: '10px', textAlign: 'right' }}>
-                    <button type="button" onClick={sendAdminResetCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
+                    <button type="button" onClick={resendProfessorVerificationCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
                       {adminEmailSendBusy ? 'Sending...' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
@@ -715,8 +945,48 @@ export default function LoginPage() {
               )}
               {adminStep === 'password' && (
                 <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorPasswordLogin}>Sign In</button>
+                  {adminAccountType === 'professor' && (
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <button type="button" onClick={startAdminReset} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600 }}>
+                        Forgot Password?
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              {adminStep === 'setup' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorFirstSetup} disabled={adminSetupBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    {adminSetupBusy && <ButtonSpinner />}
+                    <span>{adminSetupBusy ? 'Creating Account...' : 'Create Account & Sign In'}</span>
+                  </button>
+                </>
+              )}
+              {adminStep === 'reset-email' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode} disabled={adminEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    {adminEmailSendBusy && <ButtonSpinner />}
+                    <span>{adminEmailSendBusy ? 'Sending Code...' : 'Send Code'}</span>
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Back</button>
+                </>
+              )}
+              {adminStep === 'reset-code' && (
+                <>
+                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
+                  <div style={{ marginTop: '10px', textAlign: 'right' }}>
+                    <button type="button" onClick={sendAdminResetCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
+                      {adminEmailSendBusy ? 'Sending...' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
+                    </button>
+                  </div>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Back</button>
+                </>
+              )}
+              {adminStep === 'reset-password' && (
+                <>
                   <button className="btn btn-primary btn-block btn-lg" onClick={saveAdminNewPassword}>Update Password</button>
-                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={adminResetBackToLogin}>Cancel</button>
+                  <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Cancel</button>
                 </>
               )}
             </div>

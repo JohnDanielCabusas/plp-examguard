@@ -12,6 +12,8 @@ const {
   getProfessorByEmail,
   getProfessorById,
   getProfessorPublicById,
+  checkProfessorEmailStatus,
+  completeProfessorSetup,
   updateProfessorPassword,
   logProfessorActivity,
   recoverProfessorOwnership,
@@ -244,14 +246,63 @@ async function getCurrentStudentSession(req) {
   return normalizeStudent(student);
 }
 
+async function resolveProfessorIdentifier(rawIdentifier) {
+  const identifier = String(rawIdentifier || '').trim();
+  const normalizedIdentifier = identifier.toLowerCase();
+  if (!normalizedIdentifier) {
+    return { success: false, message: 'Username or email is required.' };
+  }
+
+  const sysAdmin = await getSysAdminRow();
+  const sysAdminUsername = String(sysAdmin?.username || '').trim().toLowerCase();
+  const sysAdminEmail = String(sysAdmin?.email || '').trim().toLowerCase();
+  if (
+    sysAdmin
+    && (normalizedIdentifier === sysAdminUsername || (sysAdminEmail && normalizedIdentifier === sysAdminEmail))
+  ) {
+    return {
+      success: true,
+      accountType: 'sysadmin',
+      identifier,
+      email: sysAdmin.email || '',
+      hasCredentials: true,
+    };
+  }
+
+  const professor = normalizedIdentifier.includes('@')
+    ? await getProfessorByEmail(normalizedIdentifier)
+    : await getProfessorByUsername(identifier);
+  if (!professor) {
+    return { success: false, message: 'No professor or system administrator account found with that username or email.' };
+  }
+
+  const hasUsername = !!String(professor.username || '').trim();
+  const hasPassword = !!String(professor.password || '').trim();
+  return {
+    success: true,
+    accountType: 'professor',
+    professor,
+    identifier,
+    email: professor.email || '',
+    hasCredentials: hasUsername && hasPassword,
+    needsSetup: !hasUsername || !hasPassword,
+  };
+}
+
 async function handleProfessorLogin(req, res, body) {
-  const username = String(body?.username || '').trim();
+  const identifier = String(body?.identifier || body?.email || body?.username || '').trim();
   const password = String(body?.password || '');
-  const admin = await getProfessorByUsername(username);
-  if (!admin) return jsonResponse(res, 401, { success: false, message: 'Invalid username or password.' });
+  const resolved = await resolveProfessorIdentifier(identifier);
+  if (!resolved.success || resolved.accountType !== 'professor') {
+    return jsonResponse(res, 401, { success: false, message: 'Invalid username/email or password.' });
+  }
+  const admin = resolved.professor;
+  if (!String(admin.password || '').trim()) {
+    return jsonResponse(res, 400, { success: false, message: 'Account setup incomplete. Please verify your email first.' });
+  }
 
   const verification = await verifyPassword(password, admin.password);
-  if (!verification.valid) return jsonResponse(res, 401, { success: false, message: 'Invalid username or password.' });
+  if (!verification.valid) return jsonResponse(res, 401, { success: false, message: 'Invalid username/email or password.' });
   if (verification.needsUpgrade && verification.hash) {
     await updateProfessorPassword(admin.id, verification.hash);
   }
@@ -278,17 +329,79 @@ async function handleProfessorLogin(req, res, body) {
   });
 }
 
+async function handleProfessorContinue(res, body) {
+  const resolved = await resolveProfessorIdentifier(body?.identifier);
+  if (!resolved.success) {
+    return jsonResponse(res, 404, { success: false, message: resolved.message });
+  }
+
+  if (resolved.accountType === 'sysadmin') {
+    return jsonResponse(res, 200, {
+      success: true,
+      nextStep: 'password',
+      accountType: 'sysadmin',
+      identifier: resolved.identifier,
+      email: resolved.email || '',
+    });
+  }
+
+  if (resolved.hasCredentials) {
+    return jsonResponse(res, 200, {
+      success: true,
+      nextStep: 'password',
+      accountType: 'professor',
+      identifier: resolved.identifier,
+      email: resolved.email || '',
+    });
+  }
+
+  if (!resolved.email) {
+    return jsonResponse(res, 400, { success: false, message: 'This professor account is missing an email address. Please contact the system administrator.' });
+  }
+
+  await issueVerification(res, {
+    flow: 'professor-verification',
+    email: resolved.email,
+    type: 'professor-verification',
+    meta: {
+      nextStep: 'verify',
+      accountType: 'professor',
+      identifier: resolved.identifier,
+      email: resolved.email,
+      hasCredentials: false,
+      needsSetup: true,
+    },
+  });
+}
+
+async function handleProfessorStatus(res, body) {
+  const email = String(body?.email || '').trim().toLowerCase();
+  if (!email) return jsonResponse(res, 400, { success: false, message: 'Email is required.' });
+
+  const status = await checkProfessorEmailStatus(email);
+  if (!status.exists) {
+    return jsonResponse(res, 404, { success: false, message: 'No professor account found with that email address.' });
+  }
+
+  jsonResponse(res, 200, { success: true, ...status });
+}
+
 async function handleSysAdminLogin(req, res, body) {
   const username = String(body?.username || '').trim();
+  const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
   const sysAdmin = await getSysAdminRow();
-  if (!sysAdmin || sysAdmin.username !== username) {
-    return jsonResponse(res, 401, { success: false, message: 'Invalid username or password.' });
+  const normalizedUsername = String(sysAdmin?.username || '').trim().toLowerCase();
+  const normalizedEmail = String(sysAdmin?.email || '').trim().toLowerCase();
+  const matchesIdentifier = normalizedUsername === username.trim().toLowerCase()
+    || (normalizedEmail && normalizedEmail === email);
+  if (!sysAdmin || !matchesIdentifier) {
+    return jsonResponse(res, 401, { success: false, message: 'Invalid username/email or password.' });
   }
 
   const verification = await verifyPassword(password, sysAdmin.password);
   if (!verification.valid) {
-    return jsonResponse(res, 401, { success: false, message: 'Invalid username or password.' });
+    return jsonResponse(res, 401, { success: false, message: 'Invalid username/email or password.' });
   }
   if (verification.needsUpgrade && verification.hash) {
     await updateSysAdminPassword(verification.hash);
@@ -379,6 +492,26 @@ async function handleProfessorResetRequest(res, body) {
     email,
     type: 'admin-reset',
     meta: { username: admin.username, adminId: admin.id },
+  });
+}
+
+async function handleProfessorVerificationRequest(res, body) {
+  const email = String(body?.email || '').trim().toLowerCase();
+  const status = await checkProfessorEmailStatus(email);
+  if (!status.exists) {
+    return jsonResponse(res, 404, { success: false, message: 'No professor account found with that email address.' });
+  }
+  if (status.hasCredentials) {
+    return jsonResponse(res, 400, { success: false, message: 'This professor account is already set up. Enter your password to sign in.' });
+  }
+  await issueVerification(res, {
+    flow: 'professor-verification',
+    email,
+    type: 'professor-verification',
+    meta: {
+      hasCredentials: false,
+      needsSetup: true,
+    },
   });
 }
 
@@ -480,6 +613,45 @@ async function handleStudentSetup(req, res, body) {
   jsonResponse(res, 200, result);
 }
 
+async function handleProfessorSetup(req, res, body) {
+  const email = String(body?.email || '').trim().toLowerCase();
+  const username = String(body?.username || '').trim().toLowerCase();
+  const password = String(body?.password || '');
+  const pending = getVerification('professor-verification', email);
+  if (!pending || !pending.verified) {
+    return jsonResponse(res, 400, { success: false, message: 'Please verify your email first.' });
+  }
+
+  const admin = await getProfessorByEmail(email);
+  if (!admin) return jsonResponse(res, 404, { success: false, message: 'Professor account not found.' });
+
+  const result = await completeProfessorSetup({
+    id: admin.id,
+    username,
+    password,
+  });
+  if (!result.success) return jsonResponse(res, 400, result);
+
+  await logProfessorActivity('login', {
+    id: admin.id,
+    name: result.professor?.name || admin.name,
+    username: result.professor?.username || username,
+  });
+  writeSessionCookie(res, req, ADMIN_SESSION_COOKIE, buildProfessorSessionPayload(admin));
+  clearVerification('professor-verification', email);
+  jsonResponse(res, 200, {
+    success: true,
+    admin: {
+      id: admin.id,
+      username: result.professor?.username || username,
+      name: result.professor?.name || admin.name,
+      email: result.professor?.email || admin.email || '',
+      department: result.professor?.department || admin.department || '',
+      loginAt: new Date().toISOString(),
+    },
+  });
+}
+
 async function handleProfessorVerify(req, res, body) {
   const session = await getCurrentProfessorSession(req);
   if (!session || session.id !== body?.id) return forbid(res);
@@ -567,11 +739,10 @@ async function handleProfessorSave(req, res, body) {
   const password = String(body?.password || '');
 
   if (!name) return jsonResponse(res, 400, { success: false, message: 'Full name is required.' });
-  if (!username) return jsonResponse(res, 400, { success: false, message: 'Username is required.' });
-  if (!/^[a-z0-9_.-]{3,30}$/.test(username)) {
+  if (!email) return jsonResponse(res, 400, { success: false, message: 'Professor email is required.' });
+  if (username && !/^[a-z0-9_.-]{3,30}$/.test(username)) {
     return jsonResponse(res, 400, { success: false, message: 'Username must be 3-30 characters (letters, numbers, _ . -).' });
   }
-  if (!body?.id && !password) return jsonResponse(res, 400, { success: false, message: 'Password is required.' });
   if (password && password.length < 6) return jsonResponse(res, 400, { success: false, message: 'Password must be at least 6 characters.' });
 
   const result = await saveProfessor({
@@ -682,9 +853,13 @@ async function handleAuthRoute(req, res) {
   try {
     switch (pathname) {
       case '/api/auth/professor/login': await handleProfessorLogin(req, res, body); return true;
+      case '/api/auth/professor/continue': await handleProfessorContinue(res, body); return true;
+      case '/api/auth/professor/status': await handleProfessorStatus(res, body); return true;
       case '/api/auth/sysadmin/login': await handleSysAdminLogin(req, res, body); return true;
       case '/api/auth/student/status': await handleStudentStatus(res, body); return true;
       case '/api/auth/student/login': await handleStudentLogin(req, res, body); return true;
+      case '/api/auth/professor/verification/request': await handleProfessorVerificationRequest(res, body); return true;
+      case '/api/auth/professor/verification/verify': await verifyCode(res, { flow: 'professor-verification', email: body?.email, code: body?.code }); return true;
       case '/api/auth/professor/reset/request': await handleProfessorResetRequest(res, body); return true;
       case '/api/auth/professor/reset/verify': await verifyCode(res, { flow: 'admin-reset', email: body?.email, code: body?.code }); return true;
       case '/api/auth/professor/reset/complete': await completeProfessorReset(res, body); return true;
@@ -693,6 +868,7 @@ async function handleAuthRoute(req, res) {
       case '/api/auth/student/reset/request': await handleStudentResetRequest(res, body); return true;
       case '/api/auth/student/reset/verify': await verifyCode(res, { flow: 'student-reset', email: body?.email, code: body?.code }); return true;
       case '/api/auth/student/reset/complete': await completeStudentReset(res, body); return true;
+      case '/api/auth/professor/setup': await handleProfessorSetup(req, res, body); return true;
       case '/api/auth/student/setup': await handleStudentSetup(req, res, body); return true;
       case '/api/auth/professor/session': await handleProfessorSession(req, res); return true;
       case '/api/auth/student/session': await handleStudentSession(req, res); return true;

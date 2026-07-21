@@ -543,6 +543,115 @@ function ProfessorModal({ professor, onSave, onClose }) {
 }
 
 // ── main page ───────────────────────────────────────────────────
+function ProfessorAccountModal({ professor, onSave, onClose }) {
+  const nameRef = useRef();
+  const emailRef = useRef();
+  const [error, setError] = useState("");
+  const isEdit = !!professor;
+
+  useEffect(() => {
+    window.lockBodyScroll?.();
+    return () => window.unlockBodyScroll?.();
+  }, []);
+
+  const handleSave = async () => {
+    const name = (nameRef.current?.value || "").trim();
+    const email = (emailRef.current?.value || "").trim().toLowerCase();
+
+    setError("");
+    if (!name) {
+      setError("Full name is required.");
+      return;
+    }
+    if (!email) {
+      setError("Professor email is required.");
+      return;
+    }
+
+    const result = await onSave({ name, email });
+    if (result?.success === false) {
+      setError(result.message || "Unable to save professor.");
+    }
+  };
+
+  return (
+    <div className="sa-modal-overlay">
+      <div className="sa-modal sa-modal-md">
+        <div className="sa-modal-header">
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: "16px",
+              color: "var(--primary)",
+            }}
+          >
+            {isEdit ? "Edit Professor" : "Add Professor"}
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "20px",
+              color: "#9ca3af",
+              lineHeight: 1,
+            }}
+          >
+            &#10005;
+          </button>
+        </div>
+        <div className="sa-modal-body">
+          <div className="form-group">
+            <label>Full Name *</label>
+            <input
+              ref={nameRef}
+              type="text"
+              className="form-control"
+              placeholder="e.g. Dr. Maria Santos"
+              defaultValue={professor?.name || ""}
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
+            <label>Email *</label>
+            <input
+              ref={emailRef}
+              type="email"
+              className="form-control"
+              placeholder="professor@plpasig.edu.ph"
+              defaultValue={professor?.email || ""}
+            />
+          </div>
+          {isEdit && professor?.username ? (
+            <div className="text-muted mb-12" style={{ fontSize: "12px", marginTop: "-2px" }}>
+              Current username: <strong>@{professor.username}</strong>
+            </div>
+          ) : null}
+          {isEdit ? null : (
+            <div className="text-muted mb-12" style={{ fontSize: "12px", marginTop: "-2px" }}>
+              The professor will verify this email and create their own username and password on first login.
+            </div>
+          )}
+          {error && (
+            <div className="text-danger mb-12" style={{ fontSize: "13px" }}>
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="sa-modal-actions">
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleSave}>
+            {isEdit ? "Save Changes" : "Add Professor"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SuperAdminPage() {
   const [ready, setReady] = useState(false);
   const [theme, setTheme] = useState(() => readStoredTheme());
@@ -746,15 +855,18 @@ export default function SuperAdminPage() {
       return { success: false, message };
     }
 
-    const duplicateUsername = professors.find(
-      (prof) =>
-        (prof.username || "").trim().toLowerCase() === data.username &&
-        prof.id !== existing?.id,
-    );
-    if (duplicateUsername) {
-      const message = "Username already exists.";
-      showToast(message, "error");
-      return { success: false, message };
+    const normalizedUsername = (data.username || "").trim().toLowerCase();
+    if (normalizedUsername) {
+      const duplicateUsername = professors.find(
+        (prof) =>
+          (prof.username || "").trim().toLowerCase() === normalizedUsername &&
+          prof.id !== existing?.id,
+      );
+      if (duplicateUsername) {
+        const message = "Username already exists.";
+        showToast(message, "error");
+        return { success: false, message };
+      }
     }
 
     const result = await window.Auth.saveProfessorAccount(existing?.id, data);
@@ -765,7 +877,7 @@ export default function SuperAdminPage() {
 
     await window.Auth.refreshAdminsFromSupabase?.();
     await window.SupabaseSync?.refreshProfessorActivityLog?.();
-    showToast(existing ? "Professor updated successfully." : "Professor added successfully.");
+    showToast(existing ? "Professor updated successfully." : "Professor added successfully. The professor can finish setup from the login page.");
     setProfModal(null);
     loadData();
     return { success: true };
@@ -1033,7 +1145,7 @@ export default function SuperAdminPage() {
         />
       )}
       {profModal && (
-        <ProfessorModal
+        <ProfessorAccountModal
           professor={profModal.professor}
           onSave={saveProfessor}
           onClose={() => setProfModal(null)}

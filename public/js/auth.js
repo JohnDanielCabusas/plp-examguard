@@ -114,8 +114,35 @@ const Auth = {
     }).catch(() => {});
   },
 
-  async adminLogin(username, password) {
-    const result = await this._post('/api/auth/professor/login', { username, password });
+  async adminLogin(identifier, password) {
+    const result = await this._post('/api/auth/professor/login', { identifier, password });
+    if (!result.success) return result;
+    sessionStorage.setItem('acs_admin_session', JSON.stringify(result.admin));
+    return result;
+  },
+
+  async continueProfessorLogin(identifier) {
+    return this._post('/api/auth/professor/continue', { identifier });
+  },
+
+  async checkProfessorEmail(email) {
+    return this._post('/api/auth/professor/status', { email });
+  },
+
+  async beginProfessorEmailVerification(email) {
+    return this._post('/api/auth/professor/verification/request', { email });
+  },
+
+  async verifyProfessorEmailCode(email, code) {
+    return this._post('/api/auth/professor/verification/verify', { email, code });
+  },
+
+  async professorFirstSetup(email, username, password) {
+    const result = await this._post('/api/auth/professor/setup', {
+      email,
+      username,
+      password,
+    });
     if (!result.success) return result;
     sessionStorage.setItem('acs_admin_session', JSON.stringify(result.admin));
     return result;
@@ -381,8 +408,12 @@ const Auth = {
   },
 
   // ---- System Admin (sysadmin) ----
-  async sysAdminLogin(username, password) {
-    const result = await this._post('/api/auth/sysadmin/login', { username, password });
+  async sysAdminLogin(identifier, password) {
+    const normalized = String(identifier || '').trim();
+    const payload = normalized.includes('@')
+      ? { email: normalized, password }
+      : { username: normalized, password };
+    const result = await this._post('/api/auth/sysadmin/login', payload);
     if (!result.success) return result;
     sessionStorage.setItem('acs_sysadmin_session', JSON.stringify(result.session));
     return result;

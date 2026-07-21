@@ -27,7 +27,7 @@ function normalizeProfessor(row) {
   if (!row) return null;
   return {
     id: row.id,
-    username: row.username,
+    username: row.username || '',
     name: row.name,
     email: row.email || '',
     department: row.department || '',
@@ -195,8 +195,76 @@ async function getProfessorPublicById(id) {
   return normalizeProfessor(row);
 }
 
+async function checkProfessorEmailStatus(email) {
+  const professor = await getProfessorByEmail(email);
+  if (!professor) {
+    return {
+      exists: false,
+      hasCredentials: false,
+      needsSetup: false,
+    };
+  }
+
+  const hasUsername = !!String(professor.username || '').trim();
+  const hasPassword = !!String(professor.password || '').trim();
+
+  return {
+    exists: true,
+    hasCredentials: hasUsername && hasPassword,
+    needsSetup: !hasUsername || !hasPassword,
+  };
+}
+
 async function updateProfessorPassword(id, passwordHash) {
   await query('update public.professors set password = $2 where id = $1', [id, passwordHash]);
+}
+
+async function completeProfessorSetup({ id, username, password }) {
+  const professor = await getProfessorById(id);
+  if (!professor) return { success: false, message: 'Professor account not found.' };
+
+  const existingUsername = String(professor.username || '').trim().toLowerCase();
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const normalizedPassword = String(password || '');
+  const usernameToSave = existingUsername || normalizedUsername;
+
+  if (!usernameToSave) {
+    return { success: false, message: 'Username is required.' };
+  }
+  if (!/^[a-z0-9_.-]{3,30}$/.test(usernameToSave)) {
+    return { success: false, message: 'Username must be 3-30 characters (letters, numbers, _ . -).' };
+  }
+  if (existingUsername && normalizedUsername && existingUsername !== normalizedUsername) {
+    return { success: false, message: 'This account already has a different username configured.' };
+  }
+  if (normalizedPassword.length < 6) {
+    return { success: false, message: 'Password must be at least 6 characters.' };
+  }
+
+  const duplicateUsername = await query(
+    `select id from public.professors where lower(username) = lower($1) and id <> $2 limit 1`,
+    [usernameToSave, id],
+  );
+  if (duplicateUsername.rows[0]) {
+    return { success: false, message: 'Username already exists.' };
+  }
+
+  const { rows } = await query(
+    `update public.professors
+        set username = $1,
+            password = $2
+      where id = $3
+      returning id, username, name, email, department, created_at`,
+    [usernameToSave, await hashPassword(normalizedPassword), id],
+  );
+  if (!rows[0]) return { success: false, message: 'Professor account not found.' };
+
+  const updatedProfessor = normalizeProfessor(rows[0]);
+  await logProfessorActivity('account_setup_completed', updatedProfessor, {
+    entityType: 'professor',
+    entityName: updatedProfessor.name,
+  });
+  return { success: true, professor: updatedProfessor };
 }
 
 async function logProfessorActivity(action, professor, { details = null, entityType = null, entityName = null } = {}) {
@@ -233,12 +301,14 @@ async function saveProfessor({ id, name, username, email, password }) {
   const normalizedEmail = String(email || '').trim().toLowerCase() || null;
   const normalizedName = String(name || '').trim();
 
-  const duplicateUsername = await query(
-    `select id from public.professors where lower(username) = lower($1) and ($2::text is null or id <> $2) limit 1`,
-    [normalizedUsername, id || null],
-  );
-  if (duplicateUsername.rows[0]) {
-    return { success: false, message: 'Username already exists.' };
+  if (normalizedUsername) {
+    const duplicateUsername = await query(
+      `select id from public.professors where lower(username) = lower($1) and ($2::text is null or id <> $2) limit 1`,
+      [normalizedUsername, id || null],
+    );
+    if (duplicateUsername.rows[0]) {
+      return { success: false, message: 'Username already exists.' };
+    }
   }
 
   if (normalizedEmail) {
@@ -252,23 +322,28 @@ async function saveProfessor({ id, name, username, email, password }) {
   }
 
   if (id) {
-    const updates = [normalizedUsername, normalizedName, normalizedEmail, id];
+    const updates = [normalizedName, normalizedEmail];
+    let nextParamIndex = 3;
     let sql = `
       update public.professors
-         set username = $1,
-             name = $2,
-             email = $3`;
-    if (password) {
-      updates.splice(3, 0, await hashPassword(password));
+         set name = $1,
+             email = $2`;
+    if (normalizedUsername) {
+      updates.push(normalizedUsername);
       sql += `,
-             password = $4
-       where id = $5
-       returning id, username, name, email, department, created_at`;
-    } else {
-      sql += `
-       where id = $4
-       returning id, username, name, email, department, created_at`;
+             username = $${nextParamIndex}`;
+      nextParamIndex += 1;
     }
+    if (password) {
+      updates.push(await hashPassword(password));
+      sql += `,
+             password = $${nextParamIndex}`;
+      nextParamIndex += 1;
+    }
+    updates.push(id);
+    sql += `
+       where id = $${nextParamIndex}
+       returning id, username, name, email, department, created_at`;
     const { rows } = await query(sql, updates);
     if (!rows[0]) return { success: false, message: 'Professor account not found.' };
     const professor = normalizeProfessor(rows[0]);
@@ -280,7 +355,13 @@ async function saveProfessor({ id, name, username, email, password }) {
     `insert into public.professors (id, username, password, name, email)
      values ($1, $2, $3, $4, $5)
      returning id, username, name, email, department, created_at`,
-    [createId(), normalizedUsername, await hashPassword(password), normalizedName, normalizedEmail],
+    [
+      createId(),
+      normalizedUsername || null,
+      password ? await hashPassword(password) : null,
+      normalizedName,
+      normalizedEmail,
+    ],
   );
   const professor = normalizeProfessor(rows[0]);
   await logProfessorActivity('account_created', professor, { entityType: 'professor', entityName: professor.name });
@@ -637,6 +718,8 @@ module.exports = {
   getProfessorByEmail,
   getProfessorById,
   getProfessorPublicById,
+  checkProfessorEmailStatus,
+  completeProfessorSetup,
   updateProfessorPassword,
   logProfessorActivity,
   cleanupProfessorActivityLog,

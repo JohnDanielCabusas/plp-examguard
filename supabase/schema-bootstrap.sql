@@ -63,6 +63,8 @@ update public.logs set owner_admin_id = (select id from first_professor) where o
 
 -- ── Profile fields ──
 alter table if exists public.professors add column if not exists department text;
+alter table if exists public.professors alter column username drop not null;
+alter table if exists public.professors alter column password drop not null;
 alter table if exists public.superadmin
   add column if not exists email text,
   add column if not exists department text;

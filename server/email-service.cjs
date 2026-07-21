@@ -40,6 +40,7 @@ function isGmailHost(host) {
 
 function normalizeEmailType(type) {
   const normalized = String(type || '').trim().toLowerCase();
+  if (normalized === 'professor-verification' || normalized === 'admin-verification' || normalized === 'professor-setup') return 'professor-verification';
   if (normalized === 'student-verification') return 'student-verification';
   if (normalized === 'student-reset' || normalized === 'student-password-reset' || normalized === 'student-forgot-password') return 'student-reset';
   if (normalized === 'admin-reset' || normalized === 'professor-reset' || normalized === 'admin-password-reset') return 'admin-reset';
@@ -50,19 +51,26 @@ function buildEmailPayload({ type, code, to, fromEmail }) {
   const emailType = normalizeEmailType(type);
   if (!emailType) throw new Error('Unsupported email type.');
 
+  const isProfessorVerification = emailType === 'professor-verification';
   const isStudentVerification = emailType === 'student-verification';
   const isStudentReset = emailType === 'student-reset';
-  const subject = isStudentVerification
+  const subject = isProfessorVerification
+    ? `${BRAND_NAME} Professor Verification Code`
+    : isStudentVerification
     ? `${BRAND_NAME} Student Verification Code`
     : isStudentReset
       ? `${BRAND_NAME} Student Password Reset Code`
       : `${BRAND_NAME} Professor Password Reset Code`;
-  const intro = isStudentVerification
+  const intro = isProfessorVerification
+    ? `You requested a verification code to continue setting up your ${BRAND_NAME} professor account.`
+    : isStudentVerification
     ? `You requested a verification code to continue signing in to ${BRAND_NAME}.`
     : isStudentReset
       ? `You requested a verification code to continue resetting your ${BRAND_NAME} student password.`
       : `You requested a verification code to continue resetting your ${BRAND_NAME} professor password.`;
-  const instruction = isStudentVerification
+  const instruction = isProfessorVerification
+    ? 'Enter the code below on the professor login screen to verify your email address and finish setting up your account.'
+    : isStudentVerification
     ? 'Enter the code below on the student login screen to verify your email address.'
     : isStudentReset
       ? 'Enter the code below on the student reset screen to continue updating your password.'
