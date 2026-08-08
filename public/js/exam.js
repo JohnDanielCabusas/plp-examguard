@@ -2133,6 +2133,14 @@ const ExamApp = {
     const tools = document.getElementById('exam-tools-container');
     if (tools) tools.style.display = name === 'exam' ? '' : 'none';
 
+    // The in-exam chat FAB/panel is only relevant on the active exam screen.
+    const chatFab = document.getElementById('exam-chat-fab');
+    if (chatFab) chatFab.style.display = name === 'exam' ? '' : 'none';
+    if (name !== 'exam') {
+      const chatPanel = document.getElementById('exam-chat-panel');
+      if (chatPanel) chatPanel.style.display = 'none';
+    }
+
     // Same leak as above, but for the proctoring camera widget: it must
     // never keep rendering (or keep the webcam stream open) once the
     // student is off the exam screen, e.g. after a mid-exam refresh routes
@@ -2287,8 +2295,13 @@ const ExamApp = {
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
 
-    // Initialize camera if exam requires it
-    if (this.exam && this.exam.requireCamera) {
+    // Initialize camera if exam requires it — unless the professor has granted
+    // this specific student a webcam exemption (e.g. their camera is broken). The
+    // exemption skips initCamera() entirely, which also means its watchdog and
+    // "Camera Is Off" enforcement never start for this student.
+    const cameraExempt = this.session && DB.isStudentCameraExempt(this.exam?.id, this.session.studentId);
+    this._cameraRequired = !!(this.exam && this.exam.requireCamera && !cameraExempt);
+    if (this._cameraRequired) {
       this.initCamera();
     }
     // Verify display brightness with a perceptual check at the start of every
@@ -2311,6 +2324,226 @@ const ExamApp = {
 
     this._updateAnsweredStatus();
     document.getElementById('warning-num').textContent = this.warnings;
+
+    // In-exam chat: let the student message their professor during the exam.
+    this._ensureChatUI();
+    this._renderChatMessages();
+    this._updateChatBadge();
+  },
+
+  // ============================================================
+  // IN-EXAM CHAT (student -> professor)
+  // ============================================================
+  _CHAT_REPORTS: [
+    { key: 'webcam',   label: 'Webcam issue',      body: "I'm having a problem with my webcam." },
+    { key: 'loading',  label: "Page won't load",   body: "A question or part of the exam isn't loading properly." },
+    { key: 'question', label: 'Question unclear',  body: "I need clarification on one of the questions." },
+    { key: 'other',    label: 'Other issue',       body: "I'm having a technical problem during the exam." },
+  ],
+
+  _ensureChatUI() {
+    if (document.getElementById('exam-chat-fab')) return;
+
+    const fab = document.createElement('button');
+    fab.id = 'exam-chat-fab';
+    fab.type = 'button';
+    fab.className = 'exam-chat-fab examv2-interactive';
+    fab.setAttribute('data-exam-control', 'true');
+    fab.title = 'Message your professor';
+    fab.setAttribute('aria-label', 'Message your professor');
+    fab.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="exam-chat-fab-badge" id="exam-chat-fab-badge" style="display:none;">0</span>`;
+    fab.onclick = () => this._toggleChat();
+    document.body.appendChild(fab);
+
+    const panel = document.createElement('div');
+    panel.id = 'exam-chat-panel';
+    panel.className = 'exam-chat-panel examv2-interactive';
+    panel.setAttribute('data-exam-control', 'true');
+    panel.style.display = 'none';
+    panel.innerHTML = `
+      <div class="exam-chat-header">
+        <div class="exam-chat-header-title">
+          <span class="exam-chat-header-dot"></span>
+          <div>
+            <div class="exam-chat-header-name">Your Professor</div>
+            <div class="exam-chat-header-sub">Ask about tech issues or clarifications</div>
+          </div>
+        </div>
+        <button type="button" class="exam-chat-close examv2-interactive" data-exam-control="true" aria-label="Close chat">&#10005;</button>
+      </div>
+      <div class="exam-chat-body" id="exam-chat-messages"></div>
+      <div class="exam-chat-reports" id="exam-chat-reports"></div>
+      <div class="exam-chat-composer">
+        <textarea id="exam-chat-input" class="exam-chat-input examv2-interactive" data-exam-control="true" rows="1" placeholder="Type a message to your professor..." maxlength="1000"></textarea>
+        <button type="button" id="exam-chat-send" class="exam-chat-send examv2-interactive" data-exam-control="true" aria-label="Send message">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>`;
+    document.body.appendChild(panel);
+
+    panel.querySelector('.exam-chat-close').onclick = () => this._toggleChat(false);
+    panel.querySelector('#exam-chat-send').onclick = () => this._sendChatMessage();
+    const input = panel.querySelector('#exam-chat-input');
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._sendChatMessage(); }
+    });
+
+    const reportsWrap = panel.querySelector('#exam-chat-reports');
+    reportsWrap.innerHTML = `<div class="exam-chat-reports-label">Report a problem</div>`
+      + this._CHAT_REPORTS.map(r =>
+          `<button type="button" class="exam-chat-report-btn examv2-interactive" data-exam-control="true" data-report="${r.key}">${_esc(r.label)}</button>`
+        ).join('');
+    reportsWrap.querySelectorAll('.exam-chat-report-btn').forEach(btn => {
+      btn.onclick = () => this._sendReport(btn.dataset.report);
+    });
+  },
+
+  _toggleChat(force) {
+    const panel = document.getElementById('exam-chat-panel');
+    const fab = document.getElementById('exam-chat-fab');
+    if (!panel || !fab) return;
+    const open = typeof force === 'boolean' ? force : panel.style.display === 'none';
+    panel.style.display = open ? 'flex' : 'none';
+    fab.classList.toggle('active', open);
+    if (open) {
+      this._rememberTrustedInteraction(1500);
+      this._renderChatMessages();
+      // Reading the thread clears the professor's unread messages for this student.
+      if (this.exam && this.session) {
+        DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
+      }
+      this._updateChatBadge();
+      const body = document.getElementById('exam-chat-messages');
+      if (body) body.scrollTop = body.scrollHeight;
+      setTimeout(() => document.getElementById('exam-chat-input')?.focus(), 50);
+    }
+  },
+
+  _chatMessages() {
+    if (!this.exam || !this.session) return [];
+    return DB.getMessagesForExamStudent(this.exam.id, this.session.studentId);
+  },
+
+  _renderChatMessages() {
+    const body = document.getElementById('exam-chat-messages');
+    if (!body) return;
+    const messages = this._chatMessages();
+    if (!messages.length) {
+      body.innerHTML = `<div class="exam-chat-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <p>No messages yet. Send your professor a message if you run into a problem or need a clarification.</p>
+      </div>`;
+      return;
+    }
+    const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+    body.innerHTML = messages.map(m => {
+      const mine = m.senderRole === 'student';
+      const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      if (m.type === 'report') {
+        return `<div class="exam-chat-msg report">
+          <div class="exam-chat-report-bubble">
+            <span class="exam-chat-report-tag">Reported</span>
+            <span>${_esc(m.body || 'Problem reported')}</span>
+          </div>
+          <div class="exam-chat-time">${_esc(time)}</div>
+        </div>`;
+      }
+      return `<div class="exam-chat-msg ${mine ? 'mine' : 'theirs'}">
+        <div class="exam-chat-bubble">${_esc(m.body || '')}</div>
+        <div class="exam-chat-time">${mine ? 'You' : 'Professor'} &middot; ${_esc(time)}</div>
+      </div>`;
+    }).join('');
+    if (wasAtBottom) body.scrollTop = body.scrollHeight;
+  },
+
+  _updateChatBadge() {
+    const badge = document.getElementById('exam-chat-fab-badge');
+    if (!badge) return;
+    const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
+    const unread = panelOpen ? 0 : this._chatMessages().filter(m => m.senderRole === 'professor' && !m.readAt).length;
+    if (unread > 0) {
+      badge.textContent = unread > 9 ? '9+' : String(unread);
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  },
+
+  _sendChatMessage() {
+    const input = document.getElementById('exam-chat-input');
+    if (!input || !this.exam || !this.session) return;
+    const text = (input.value || '').trim();
+    if (!text) return;
+    this._rememberTrustedInteraction(1500);
+    DB.addMessage({
+      ownerAdminId: this.exam.ownerAdminId || null,
+      professorId: this.exam.ownerAdminId || null,
+      studentId: this.session.studentId,
+      studentName: this.session.studentName,
+      examId: this.exam.id,
+      sessionId: this.session.id,
+      senderRole: 'student',
+      type: 'message',
+      body: text,
+    });
+    input.value = '';
+    this._renderChatMessages();
+    const body = document.getElementById('exam-chat-messages');
+    if (body) body.scrollTop = body.scrollHeight;
+  },
+
+  _sendReport(key) {
+    if (!this.exam || !this.session) return;
+    const report = this._CHAT_REPORTS.find(r => r.key === key);
+    if (!report) return;
+    this._rememberTrustedInteraction(1500);
+    DB.addMessage({
+      ownerAdminId: this.exam.ownerAdminId || null,
+      professorId: this.exam.ownerAdminId || null,
+      studentId: this.session.studentId,
+      studentName: this.session.studentName,
+      examId: this.exam.id,
+      sessionId: this.session.id,
+      senderRole: 'student',
+      type: 'report',
+      reportCategory: key,
+      body: report.body,
+    });
+    this._toggleChat(true);
+    this._renderChatMessages();
+    this._showToast('Your professor has been notified.', 'success');
+  },
+
+  // Called from the global acsDataChanged listener while an exam is in progress.
+  _handleExamDataChange(table) {
+    const inExam = !document.getElementById('state-exam')?.classList.contains('hidden');
+    if (!inExam || !this.exam || !this.session) return;
+    if (table === 'messages') {
+      this._renderChatMessages();
+      const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
+      if (panelOpen) DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
+      this._updateChatBadge();
+    } else if (table === 'exams') {
+      this._syncCameraExemptionState();
+    }
+  },
+
+  // If the professor grants this student a camera exemption mid-exam, tear down
+  // the live webcam and its enforcement so the student isn't penalised.
+  _syncCameraExemptionState() {
+    if (!this.exam || !this.session) return;
+    const nowExempt = DB.isStudentCameraExempt(this.exam.id, this.session.studentId);
+    if (nowExempt && this._cameraRequired) {
+      this._cameraRequired = false;
+      this.stopCamera();
+      const camOff = document.getElementById('camera-off-overlay');
+      if (camOff) camOff.style.display = 'none';
+      const motion = document.getElementById('motion-warning-overlay');
+      if (motion) motion.style.display = 'none';
+      this._showToast('Your professor turned off the camera requirement for you.', 'success');
+    }
   },
 
   // ============================================================
@@ -5229,6 +5462,7 @@ document.addEventListener('supabaseSyncError', (e) => {
 
 document.addEventListener('acsDataChanged', (e) => {
   ExamApp._handlePortalDataChange(e.detail?.table);
+  ExamApp._handleExamDataChange(e.detail?.table);
 });
 
 document.addEventListener('dbReady', () => ExamApp.init());

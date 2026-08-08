@@ -4248,6 +4248,22 @@ function buildQuestionBlock(q, idx) {
           </div>
         </div>
         <div class="qe-header-right">
+          <div class="qe-diff-group" onclick="event.stopPropagation()" title="Difficulty level for this question. 'Auto' lets the system decide from the AI estimate and real student results; picking a level locks your choice.">
+            <span class="qe-pts-label">Level</span>
+            <select class="qe-diff-select" onchange="setQuestionDifficulty(${idx},this.value)">
+              <option value=""${!q.difficultyLocked ? ' selected' : ''}>Auto${!q.difficultyLocked && DIFFICULTY_META[q.difficulty] ? ` (${DIFFICULTY_META[q.difficulty].label})` : ''}</option>
+              <option value="easy"${q.difficultyLocked && q.difficulty === 'easy' ? ' selected' : ''}>Easy</option>
+              <option value="medium"${q.difficultyLocked && q.difficulty === 'medium' ? ' selected' : ''}>Medium</option>
+              <option value="hard"${q.difficultyLocked && q.difficulty === 'hard' ? ' selected' : ''}>Hard</option>
+            </select>
+          </div>
+          <div class="qe-diff-group" onclick="event.stopPropagation()" title="Bloom's Taxonomy cognitive level this question assesses (recall → higher-order thinking).">
+            <span class="qe-pts-label">Bloom</span>
+            <select class="qe-diff-select" onchange="setQuestionBloom(${idx},this.value)">
+              <option value=""${!BLOOM_META[q.bloom] ? ' selected' : ''}>—</option>
+              ${BLOOM_LEVELS.map(l => `<option value="${l}"${q.bloom === l ? ' selected' : ''}>${BLOOM_META[l].order}. ${BLOOM_META[l].label}</option>`).join('')}
+            </select>
+          </div>
           <span class="qe-pts-label">Pts</span>
           <input type="number" class="qe-pts-input" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
           <button class="qe-del-btn" onclick="removeQuestion(${idx})" title="Delete question">
@@ -5096,9 +5112,17 @@ function viewQuestionBreakdown(examId) {
 
     const maxCount = Math.max(1, ...choiceStats.map(c => c.count));
 
+    const diff = resolveQuestionDifficulty(q, sessions);
+    const diffNote = diff.source === 'statistical'
+      ? ` <span style="font-size:10px;color:#9ca3af;font-weight:600;">${diff.pct}% correct</span>`
+      : diff.level ? ` <span style="font-size:10px;color:#9ca3af;font-weight:600;">${DIFFICULTY_SOURCE_LABEL[diff.source]}</span>` : '';
+
     return `
       <div class="qbreak-item">
-        <div class="qbreak-q">Q${idx + 1}: ${escHtml(q.content)}</div>
+        <div class="qbreak-q" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+          <span>Q${idx + 1}: ${escHtml(q.content)}</span>
+          <span style="flex-shrink:0;white-space:nowrap;">${difficultyBadge(diff.level)}${diffNote}</span>
+        </div>
         <div class="qbreak-choices">
           ${choiceStats.map(c => {
             const pct = totalResponses ? Math.round(c.count / totalResponses * 100) : 0;
@@ -5407,6 +5431,16 @@ function renderMonitoringTable(examId) {
     const initial = (s.studentName || s.studentId).charAt(0).toUpperCase();
     const color   = chipColor(s.studentId);
 
+    // In-exam chat: unread messages from this student + whether a problem was reported.
+    const thread = DB.getMessagesForExamStudent(examId, s.studentId);
+    const unread = thread.filter(m => m.senderRole === 'student' && !m.readAt).length;
+    const hasUnreadReport = thread.some(m => m.type === 'report' && m.senderRole === 'student' && !m.readAt);
+    const chatBtnHtml = `<button class="tbl-btn ms-chat-btn ${unread ? 'has-unread' : ''} ${hasUnreadReport ? 'has-report' : ''}"
+        onclick="openStudentChat('${escHtml(examId)}','${escHtml(s.studentId)}','${escHtml(s.id)}')" title="Open chat with this student">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Chat</span>${unread ? `<span class="ms-chat-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
+      </button>`;
+
     const statusBadgeHtml = s.submitted
       ? (s.autoSubmitted
           ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
@@ -5445,7 +5479,8 @@ function renderMonitoringTable(examId) {
       <td style="text-align:center;">${statusBadgeHtml}</td>
       <td style="text-align:center;">${logsHtml}</td>
       <td style="text-align:center;">
-        <div class="table-actions" style="justify-content:center;">
+        <div class="table-actions" style="justify-content:center;gap:6px;flex-wrap:wrap;">
+          ${chatBtnHtml}
           ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span style="font-size:12px;color:#9ca3af;">Submitted</span>'}
         </div>
       </td>
@@ -5458,6 +5493,175 @@ function renderMonitoringTable(examId) {
       if (el && session) el.textContent = getStudentMonitorMeta(session);
     });
 }
+
+// ============================================================
+// IN-EXAM CHAT (professor side) — reply to students + grant camera exemption
+// ============================================================
+let _profChatCtx = null; // { examId, studentId, sessionId, studentName }
+
+function _ensureProfChatDrawer() {
+  if (document.getElementById('prof-chat-backdrop')) return;
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'prof-chat-backdrop';
+  backdrop.className = 'prof-chat-backdrop';
+  backdrop.style.display = 'none';
+  backdrop.onclick = (e) => { if (e.target === backdrop) closeStudentChat(); };
+
+  const drawer = document.createElement('div');
+  drawer.id = 'prof-chat-drawer';
+  drawer.className = 'prof-chat-drawer';
+  drawer.innerHTML = `
+    <div class="prof-chat-header">
+      <div class="prof-chat-header-info">
+        <div class="prof-chat-avatar" id="prof-chat-avatar">S</div>
+        <div>
+          <div class="prof-chat-name" id="prof-chat-name">Student</div>
+          <div class="prof-chat-meta" id="prof-chat-meta"></div>
+        </div>
+      </div>
+      <button type="button" class="prof-chat-close" onclick="closeStudentChat()" aria-label="Close chat">&#10005;</button>
+    </div>
+    <div class="prof-chat-camera-row" id="prof-chat-camera-row"></div>
+    <div class="prof-chat-body" id="prof-chat-body"></div>
+    <div class="prof-chat-composer">
+      <textarea id="prof-chat-input" class="prof-chat-input" rows="1" placeholder="Reply to this student..." maxlength="1000"></textarea>
+      <button type="button" class="prof-chat-send" onclick="sendProfChatMessage()" aria-label="Send">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>`;
+  backdrop.appendChild(drawer);
+  document.body.appendChild(backdrop);
+
+  drawer.querySelector('#prof-chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendProfChatMessage(); }
+  });
+}
+
+function openStudentChat(examId, studentId, sessionId) {
+  _ensureProfChatDrawer();
+  const session = DB.getSession(sessionId);
+  const studentName = session?.studentName || studentId;
+  _profChatCtx = { examId, studentId, sessionId, studentName };
+
+  document.getElementById('prof-chat-avatar').textContent = (studentName || 'S').charAt(0).toUpperCase();
+  document.getElementById('prof-chat-name').textContent = studentName;
+  document.getElementById('prof-chat-meta').textContent = session ? getStudentMonitorMeta(session) : studentId;
+
+  document.getElementById('prof-chat-backdrop').style.display = 'flex';
+  requestAnimationFrame(() => document.getElementById('prof-chat-drawer')?.classList.add('open'));
+
+  renderProfCameraRow();
+  renderProfChatMessages();
+  DB.markMessagesRead(examId, studentId, 'student');
+  renderMonitoringTable(monitorExamId); // clear the unread badge on the row
+  setTimeout(() => document.getElementById('prof-chat-input')?.focus(), 80);
+}
+
+function closeStudentChat() {
+  const drawer = document.getElementById('prof-chat-drawer');
+  const backdrop = document.getElementById('prof-chat-backdrop');
+  if (drawer) drawer.classList.remove('open');
+  setTimeout(() => { if (backdrop) backdrop.style.display = 'none'; }, 200);
+  _profChatCtx = null;
+}
+
+function renderProfCameraRow() {
+  const row = document.getElementById('prof-chat-camera-row');
+  if (!row || !_profChatCtx) return;
+  const { examId, studentId } = _profChatCtx;
+  const exam = DB.getExam(examId);
+  if (!exam || !exam.requireCamera) {
+    row.innerHTML = `<div class="prof-chat-camera-note">Camera is not required for this exam.</div>`;
+    return;
+  }
+  const exempt = DB.isStudentCameraExempt(examId, studentId);
+  row.innerHTML = `
+    <div class="prof-chat-camera-info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      <span>${exempt ? 'Webcam requirement is <b>OFF</b> for this student.' : 'Webcam is <b>required</b> for this student.'}</span>
+    </div>
+    <button type="button" class="prof-chat-camera-toggle ${exempt ? 'is-exempt' : ''}" onclick="toggleCameraExemption()">
+      ${exempt ? 'Re-enable webcam' : 'Turn off webcam for this student'}
+    </button>`;
+}
+
+function toggleCameraExemption() {
+  if (!_profChatCtx) return;
+  const { examId, studentId, studentName } = _profChatCtx;
+  const nowExempt = !DB.isStudentCameraExempt(examId, studentId);
+  DB.setStudentCameraExempt(examId, studentId, nowExempt);
+  renderProfCameraRow();
+  showToast(nowExempt
+    ? `Webcam requirement turned off for ${studentName}.`
+    : `Webcam requirement restored for ${studentName}.`);
+}
+
+function renderProfChatMessages() {
+  const body = document.getElementById('prof-chat-body');
+  if (!body || !_profChatCtx) return;
+  const { examId, studentId } = _profChatCtx;
+  const messages = DB.getMessagesForExamStudent(examId, studentId);
+  if (!messages.length) {
+    body.innerHTML = `<div class="prof-chat-empty">No messages yet from this student.</div>`;
+    return;
+  }
+  const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+  body.innerHTML = messages.map(m => {
+    const mine = m.senderRole === 'professor';
+    const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    if (m.type === 'report') {
+      return `<div class="prof-chat-msg report">
+        <div class="prof-chat-report-bubble">
+          <span class="prof-chat-report-tag">Reported a problem</span>
+          <span>${escHtml(m.body || '')}</span>
+        </div>
+        <div class="prof-chat-time">${escHtml(time)}</div>
+      </div>`;
+    }
+    return `<div class="prof-chat-msg ${mine ? 'mine' : 'theirs'}">
+      <div class="prof-chat-bubble">${escHtml(m.body || '')}</div>
+      <div class="prof-chat-time">${mine ? 'You' : escHtml(_profChatCtx.studentName)} &middot; ${escHtml(time)}</div>
+    </div>`;
+  }).join('');
+  if (wasAtBottom) body.scrollTop = body.scrollHeight;
+}
+
+function sendProfChatMessage() {
+  const input = document.getElementById('prof-chat-input');
+  if (!input || !_profChatCtx) return;
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const { examId, studentId, sessionId, studentName } = _profChatCtx;
+  const adminId = Auth.getAdminSession()?.id || null;
+  DB.addMessage({
+    ownerAdminId: adminId,
+    professorId: adminId,
+    studentId,
+    studentName,
+    examId,
+    sessionId,
+    senderRole: 'professor',
+    type: 'message',
+    body: text,
+  });
+  input.value = '';
+  renderProfChatMessages();
+  const body = document.getElementById('prof-chat-body');
+  if (body) body.scrollTop = body.scrollHeight;
+}
+
+// Keep an open drawer live as new messages / exemption changes arrive.
+document.addEventListener('acsDataChanged', (e) => {
+  const table = e.detail?.table;
+  if (!_profChatCtx) return;
+  if (table === 'messages') {
+    renderProfChatMessages();
+    DB.markMessagesRead(_profChatCtx.examId, _profChatCtx.studentId, 'student');
+  } else if (table === 'exams') {
+    renderProfCameraRow();
+  }
+});
 
 const EYE_OPEN   = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
 const EYE_CLOSED = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
@@ -5719,6 +5923,267 @@ async function forceSubmitStudent(sessionId) {
 }
 
 // ============================================================
+// QUESTION DIFFICULTY  (predicted → statistical → manual)
+// ============================================================
+// Difficulty Index (p-value) = the proportion of a question's points students
+// actually earned, averaged across submissions, expressed as a 0–100%.
+// Counter-intuitively, a HIGH % means the question is EASY (most students got
+// it right) and a LOW % means it is HARD. Standard educational-measurement
+// bands (confirmed with faculty):
+//     >= 70% correct  → Easy
+//     40–69% correct  → Medium
+//     <  40% correct  → Hard
+const DIFFICULTY_EASY_MIN = 70;   // pct >= this → Easy
+const DIFFICULTY_HARD_MAX = 40;   // pct <  this → Hard
+const DIFFICULTY_MIN_SAMPLE = 10; // submissions needed before stats override the AI/manual label
+
+const DIFFICULTY_META = {
+  easy:   { label: 'Easy',   color: '#15803d', bg: 'rgba(21,128,61,0.12)',  emoji: '🟢' },
+  medium: { label: 'Medium', color: '#d97706', bg: 'rgba(217,119,6,0.12)',  emoji: '🟡' },
+  hard:   { label: 'Hard',   color: '#dc2626', bg: 'rgba(220,38,38,0.12)',  emoji: '🔴' },
+};
+
+const DIFFICULTY_SOURCE_LABEL = {
+  manual: 'Set by professor',
+  statistical: 'From student results',
+  predicted: 'AI estimate',
+  none: 'Not enough data yet',
+};
+
+// Essay & coding are graded by hand (auto-score starts at 0), so their p-value
+// is meaningless — they only ever carry an AI/manual difficulty label.
+function isAutoGradedType(type) {
+  return type !== 'essay' && type !== 'coding';
+}
+
+function pctToDifficulty(pct) {
+  if (pct >= DIFFICULTY_EASY_MIN) return 'easy';
+  if (pct < DIFFICULTY_HARD_MAX) return 'hard';
+  return 'medium';
+}
+
+// Points a student earned on ONE question — mirrors ExamApp._calculateScoreFor
+// (exam.js) exactly so the difficulty p-value matches how the exam is graded.
+function scoreQuestionEarned(q, ans) {
+  if (!q || q.type === 'essay' || q.type === 'coding') return 0;
+  if (ans === undefined || ans === null || ans.toString().trim() === '') return 0;
+  const points = Number(q.points) || 0;
+
+  if (q.type === 'enumeration') {
+    const expected = (q.answers || []).map(a => (a || '').toUpperCase());
+    const given = ans.split('\n').map(s => s.trim().toUpperCase()).filter(Boolean);
+    const correct = expected.filter(e => given.includes(e)).length;
+    if (q.partialScoring === false) return (expected.length > 0 && correct === expected.length) ? points : 0;
+    return expected.length > 0 ? Math.round((correct / expected.length) * points) : 0;
+  }
+  if (q.type === 'matching') {
+    const pairs = q.pairs || [];
+    let studentAns = {};
+    try { studentAns = JSON.parse(ans); } catch (_) {}
+    const correct = pairs.filter((p, i) => (studentAns[i] || '').toUpperCase() === (p.match || '').toUpperCase()).length;
+    return pairs.length > 0 ? Math.round((correct / pairs.length) * points) : 0;
+  }
+  if (q.type === 'checkbox') {
+    let given = [];
+    try { given = JSON.parse(ans) || []; } catch (_) {}
+    const correct = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+    const sortedGiven = given.slice().sort((a, b) => a - b);
+    const exact = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
+    return exact ? points : 0;
+  }
+  // mcq / tf / identification — single correct string
+  const studentAns = ans.toString().trim().toUpperCase();
+  const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
+  return studentAns === correctAns ? points : 0;
+}
+
+// p-value for one question across submitted sessions: mean proportion of the
+// question's points earned, as a 0–100%. Handles every auto-graded type
+// (dichotomous MCQ/TF and partial-credit enumeration/matching alike).
+function computeQuestionPValue(q, sessions) {
+  const points = Number(q.points) || 0;
+  const graded = (sessions || []).filter(s => s && s.submitted);
+  if (!graded.length || points <= 0) return { pct: 0, sampleSize: graded.length };
+  let sum = 0;
+  graded.forEach(s => { sum += scoreQuestionEarned(q, (s.answers || {})[q.id]) / points; });
+  return { pct: Math.round((sum / graded.length) * 100), sampleSize: graded.length };
+}
+
+// Effective difficulty for a question, resolving the three sources in order:
+// professor override → statistical (once enough data) → AI-predicted label.
+// Returns { level: 'easy'|'medium'|'hard'|null, source, pct, sampleSize }.
+function resolveQuestionDifficulty(q, sessions) {
+  const auto = isAutoGradedType(q.type);
+  const { pct, sampleSize } = auto ? computeQuestionPValue(q, sessions) : { pct: 0, sampleSize: 0 };
+
+  // 1. Professor manual override always wins.
+  if (q.difficultyLocked && DIFFICULTY_META[q.difficulty]) {
+    return { level: q.difficulty, source: 'manual', pct, sampleSize };
+  }
+  // 2. Statistical, once we have enough submissions to trust it (auto-graded only).
+  if (auto && sampleSize >= DIFFICULTY_MIN_SAMPLE) {
+    return { level: pctToDifficulty(pct), source: 'statistical', pct, sampleSize };
+  }
+  // 3. AI-predicted label set at generation, else unknown.
+  if (DIFFICULTY_META[q.difficulty]) {
+    return { level: q.difficulty, source: 'predicted', pct, sampleSize };
+  }
+  return { level: null, source: 'none', pct, sampleSize };
+}
+
+// Small inline pill for a difficulty level, used across stats + editor + preview.
+function difficultyBadge(level, extraStyle = '') {
+  const meta = DIFFICULTY_META[level];
+  if (!meta) return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#6b7280;background:rgba(107,114,128,0.12);white-space:nowrap;${extraStyle}">Unrated</span>`;
+  return `<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};white-space:nowrap;${extraStyle}">${meta.emoji} ${meta.label}</span>`;
+}
+
+// Horizontal 3-band gauge with a marker at `pct` (0% = hardest/left, 100% =
+// easiest/right). Answers the professors' question: "how do we SEE that a
+// number means students struggled?"
+function difficultyGauge(pct) {
+  const pos = Math.max(0, Math.min(100, pct));
+  return `
+    <div style="margin:2px 0 2px;">
+      <div style="position:relative;display:flex;height:9px;border-radius:99px;overflow:hidden;">
+        <div style="width:${DIFFICULTY_HARD_MAX}%;background:#dc2626;opacity:.85;"></div>
+        <div style="width:${DIFFICULTY_EASY_MIN - DIFFICULTY_HARD_MAX}%;background:#d97706;opacity:.85;"></div>
+        <div style="width:${100 - DIFFICULTY_EASY_MIN}%;background:#15803d;opacity:.85;"></div>
+      </div>
+      <div style="position:relative;height:0;">
+        <div style="position:absolute;top:-13px;left:${pos}%;transform:translateX(-50%);width:3px;height:17px;background:var(--text);border-radius:2px;box-shadow:0 0 0 2px var(--surface);"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:6px;font-weight:700;">
+        <span>Hard</span><span>Medium</span><span>Easy</span>
+      </div>
+    </div>`;
+}
+
+function setQuestionDifficulty(idx, level) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== idx) return q;
+    if (!level) return { ...q, difficultyLocked: false }; // "Auto" — keep any AI label, drop the manual lock
+    return { ...q, difficulty: level, difficultyLocked: true };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+}
+
+// ============================================================
+// DISCRIMINATION INDEX  (item analysis)
+// ============================================================
+// How well a question separates high performers from low performers.
+// D = (mean proportion correct in the top group) − (bottom group), where the
+// groups are the top & bottom 27% of students by total score (Kelley).
+// Range −1..+1:  +1 perfect discriminator · 0 no discrimination · negative =
+// high scorers did WORSE than low scorers (usually a miskeyed/ambiguous item).
+const DISCRIMINATION_MIN_SAMPLE = 8; // below this the index is too noisy to trust
+
+const DISCRIMINATION_BANDS = [
+  { min: 0.40,      key: 'excellent', label: 'Excellent', color: '#15803d', bg: 'rgba(21,128,61,0.12)' },
+  { min: 0.30,      key: 'good',      label: 'Good',      color: '#0d9488', bg: 'rgba(13,148,136,0.12)' },
+  { min: 0.20,      key: 'fair',      label: 'Fair',      color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+  { min: 0.00,      key: 'poor',      label: 'Poor',      color: '#dc2626', bg: 'rgba(220,38,38,0.12)' },
+  { min: -Infinity, key: 'negative',  label: 'Review',    color: '#b91c1c', bg: 'rgba(185,28,28,0.18)' },
+];
+
+function discriminationMeta(d) {
+  if (d < 0) return DISCRIMINATION_BANDS[4];
+  return DISCRIMINATION_BANDS.find(m => d >= m.min) || DISCRIMINATION_BANDS[3];
+}
+
+// Returns { d, groupSize } or null for hand-graded / unscorable questions.
+// rankedSessions MUST be pre-sorted by total score, highest first.
+function computeDiscrimination(q, rankedSessions) {
+  const n = rankedSessions.length;
+  const points = Number(q.points) || 0;
+  if (!isAutoGradedType(q.type) || points <= 0 || n < 2) return null;
+  const groupSize = Math.max(1, Math.round(n * 0.27));
+  const upper = rankedSessions.slice(0, groupSize);
+  const lower = rankedSessions.slice(n - groupSize);
+  const meanProp = group => group.reduce((sum, s) =>
+    sum + scoreQuestionEarned(q, (s.answers || {})[q.id]) / points, 0) / group.length;
+  return { d: Math.round((meanProp(upper) - meanProp(lower)) * 100) / 100, groupSize };
+}
+
+// Diverging bar centred on 0: fills right (positive) or left (negative).
+function discriminationBar(d, color) {
+  const mag = Math.min(1, Math.abs(d)) * 50; // half-width %
+  const left = d >= 0 ? 50 : 50 - mag;
+  return `
+    <div style="position:relative;height:8px;background:var(--surface-2);border-radius:99px;">
+      <div style="position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--border);"></div>
+      <div style="position:absolute;top:0;bottom:0;left:${left}%;width:${mag}%;background:${color};border-radius:99px;"></div>
+    </div>`;
+}
+
+// ============================================================
+// BLOOM'S TAXONOMY  (cognitive level per question)
+// ============================================================
+// Six cognitive levels, low-order (recall) → high-order (creation). Tagged by
+// AI at generation and overridable by the professor. Drives the Student Mastery
+// analysis below — mastery is measured per cognitive level.
+const BLOOM_LEVELS = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
+const BLOOM_META = {
+  remember:   { label: 'Remember',   order: 1, color: '#2563eb', bg: 'rgba(37,99,235,0.12)',  hint: 'Recall facts & basic concepts' },
+  understand: { label: 'Understand', order: 2, color: '#0d9488', bg: 'rgba(13,148,136,0.12)', hint: 'Explain ideas or concepts' },
+  apply:      { label: 'Apply',      order: 3, color: '#15803d', bg: 'rgba(21,128,61,0.12)',  hint: 'Use information in new situations' },
+  analyze:    { label: 'Analyze',    order: 4, color: '#d97706', bg: 'rgba(217,119,6,0.12)',  hint: 'Draw connections among ideas' },
+  evaluate:   { label: 'Evaluate',   order: 5, color: '#db2777', bg: 'rgba(219,39,119,0.12)', hint: 'Justify a stand or decision' },
+  create:     { label: 'Create',     order: 6, color: '#7c3aed', bg: 'rgba(124,58,237,0.12)', hint: 'Produce new or original work' },
+};
+
+function bloomBadge(level, extraStyle = '') {
+  const meta = BLOOM_META[level];
+  if (!meta) return '';
+  return `<span title="${meta.hint}" style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};white-space:nowrap;${extraStyle}">${meta.order}· ${meta.label}</span>`;
+}
+
+function setQuestionBloom(idx, level) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((q, i) => {
+    if (i !== idx) return q;
+    return { ...q, bloom: BLOOM_META[level] ? level : undefined };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+}
+
+// ============================================================
+// STUDENT MASTERY  (class performance grouped by cognitive level)
+// ============================================================
+// For each Bloom level present in the exam, the mean proportion of points
+// students earned on questions of that level (0–100%). Answers "which cognitive
+// skills has the class mastered vs struggled with?".
+const MASTERY_MASTERED = 75; // pct >= this → mastered
+const MASTERY_STRUGGLING = 50; // pct <  this → struggling
+
+function masteryMeta(pct) {
+  if (pct >= MASTERY_MASTERED)   return { label: 'Mastered',   color: '#15803d' };
+  if (pct >= MASTERY_STRUGGLING) return { label: 'Developing', color: '#d97706' };
+  return { label: 'Struggling', color: '#dc2626' };
+}
+
+// Returns [{ level, pct, questionCount }] ordered by Bloom order, for every
+// cognitive level that has at least one tagged, auto-graded question.
+function computeMasteryByBloom(exam, sessions) {
+  const graded = (sessions || []).filter(s => s && s.submitted);
+  return BLOOM_LEVELS.map(level => {
+    const qs = (exam.questions || []).filter(q => q.bloom === level && isAutoGradedType(q.type) && (Number(q.points) || 0) > 0);
+    if (!qs.length || !graded.length) return null;
+    let sum = 0, n = 0;
+    graded.forEach(s => {
+      qs.forEach(q => {
+        sum += scoreQuestionEarned(q, (s.answers || {})[q.id]) / (Number(q.points) || 1);
+        n++;
+      });
+    });
+    return { level, pct: n ? Math.round((sum / n) * 100) : 0, questionCount: qs.length };
+  }).filter(Boolean);
+}
+
+// ============================================================
 // ============================================================
 // STATISTICS (full page per exam)
 // ============================================================
@@ -5784,20 +6249,54 @@ function renderExamStats() {
     </div>`;
   }).join('');
 
-  // Per-question analysis
+  // Per-question difficulty analysis. resolveQuestionDifficulty() handles every
+  // auto-graded type correctly (MCQ/TF/identification/checkbox/enumeration/matching)
+  // and picks the label source: professor override → student stats → AI estimate.
   const qStats = exam.questions.map((q, qi) => {
     if (q.type === 'essay') return null;
-    let correct = 0;
-    sessions.forEach(s => {
-      const ans = (s.answers||{})[q.id];
-      if (ans && ans.toString().trim().toUpperCase() === (q.correctAnswer||'').toString().trim().toUpperCase()) correct++;
-    });
-    const pct = sessions.length ? Math.round(correct/sessions.length*100) : 0;
-    return { qi, q, correct, pct };
+    const d = resolveQuestionDifficulty(q, sessions);
+    return { qi, q, ...d };
   }).filter(Boolean);
+
+  // Exam-level difficulty summary: distribution + average p-value across questions
+  // that have real student data (drives the overall gauge).
+  const diffDist = { easy: 0, medium: 0, hard: 0 };
+  qStats.forEach(d => { if (d.level) diffDist[d.level]++; });
+  const statQs = qStats.filter(d => d.source === 'statistical');
+  const avgDiffPct = statQs.length ? Math.round(statQs.reduce((a, d) => a + d.pct, 0) / statQs.length) : null;
 
   // Top & bottom performers
   const ranked = [...sessions].sort((a,b)=>(b.score||0)-(a.score||0));
+
+  // Discrimination Index per auto-graded question (top-27% vs bottom-27%).
+  const discStats = exam.questions.map((q, qi) => {
+    const r = computeDiscrimination(q, ranked);
+    return r ? { qi, q, ...r } : null;
+  }).filter(Boolean);
+  const discReliable = ranked.length >= DISCRIMINATION_MIN_SAMPLE;
+  const discFlagged = discStats.filter(x => x.d < 0.20).length; // poor + negative — worth reviewing
+
+  // Student Mastery by Bloom's cognitive level.
+  const masteryStats = computeMasteryByBloom(exam, sessions);
+  const taggedCount = (exam.questions || []).filter(q => BLOOM_LEVELS.includes(q.bloom)).length;
+
+  // Evaluation Trends: class average across all exams in this subject over time.
+  const trendExams = DB.getExams()
+    .filter(e => e.subjectId === exam.subjectId && ['active', 'closed', 'archived'].includes(e.status))
+    .map(e => {
+      const es = DB.getSessionsByExam(e.id).filter(s => s.submitted && s.maxScore > 0);
+      if (!es.length) return null;
+      const avg = Math.round(es.reduce((sum, s) => sum + (s.score / s.maxScore) * 100, 0) / es.length);
+      return { id: e.id, title: e.title || 'Untitled', avg, count: es.length, date: e.closedAt || e.createdAt || 0 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const trendDelta = trendExams.length >= 2 ? trendExams[trendExams.length - 1].avg - trendExams[0].avg : 0;
+  const trendMeta = trendDelta > 2
+    ? { arrow: '↑', label: 'Improving', color: '#15803d' }
+    : trendDelta < -2
+      ? { arrow: '↓', label: 'Declining', color: '#dc2626' }
+      : { arrow: '→', label: 'Steady', color: '#6b7280' };
 
   content.innerHTML = `
     <!-- Overview Strip -->
@@ -5817,25 +6316,139 @@ function renderExamStats() {
       </div>
 
       <!-- Question Difficulty -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:220px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:320px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="font-size:14px;font-weight:700;">Question Difficulty</div>
           ${qStats.length ? `<button class="qbreak-expand-btn" onclick="viewQuestionBreakdown('${examId}')" title="View full question and answer breakdown">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> Expand
           </button>` : ''}
         </div>
-        ${qStats.length ? qStats.map(({qi,q,correct,pct})=>`
-          <div style="margin-bottom:10px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
-              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">Q${qi+1}: ${escHtml(q.content.substring(0,40))}${q.content.length>40?'…':''}</span>
-              <span style="font-weight:700;color:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};">${pct}%</span>
+        ${qStats.length ? `
+          <!-- Overall exam difficulty gauge -->
+          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Overall</span>
+              <span style="display:flex;gap:6px;">
+                ${diffDist.easy ? difficultyBadge('easy') : ''}${diffDist.medium ? difficultyBadge('medium') : ''}${diffDist.hard ? difficultyBadge('hard') : ''}
+              </span>
             </div>
+            ${avgDiffPct !== null
+              ? `${difficultyGauge(avgDiffPct)}<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Class averaged <strong>${avgDiffPct}%</strong> correct across ${statQs.length} question${statQs.length===1?'':'s'} with enough data — overall <strong style="color:${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].color};">${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].label}</strong>.</div>`
+              : `<div style="font-size:10px;color:var(--text-muted);">Fewer than ${DIFFICULTY_MIN_SAMPLE} submissions — showing AI/professor estimates until enough students submit.</div>`}
+          </div>
+          ${qStats.map(({qi,q,level,source,pct,sampleSize})=>{
+            const meta = DIFFICULTY_META[level] || { label:'Unrated', color:'#9ca3af' };
+            const isStat = source === 'statistical';
+            return `
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:4px;">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Q${qi+1}: ${escHtml(q.content.substring(0,38))}${q.content.length>38?'…':''}</span>
+              ${difficultyBadge(level)}
+            </div>
+            ${isStat ? `
             <div style="height:5px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
-              <div style="width:${pct}%;height:100%;background:${pct>=75?'#15803d':pct>=50?'#d97706':'#dc2626'};border-radius:99px;"></div>
+              <div style="width:${pct}%;height:100%;background:${meta.color};border-radius:99px;"></div>
             </div>
-          </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;">No auto-graded questions.</div>'}
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">${pct}% answered correctly · ${sampleSize} submission${sampleSize===1?'':'s'}</div>
+            ` : `
+            <div style="font-size:10px;color:var(--text-muted);">${DIFFICULTY_SOURCE_LABEL[source]}${source==='predicted' && sampleSize>0 ? ` · ${sampleSize}/${DIFFICULTY_MIN_SAMPLE} submissions toward live data` : ''}</div>
+            `}
+          </div>`;
+          }).join('')}
+        ` : '<div style="color:var(--text-muted);font-size:13px;">No auto-graded questions.</div>'}
       </div>
     </div>
+
+    <!-- Discrimination Index -->
+    ${discStats.length ? `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:700;">Discrimination Index</div>
+        ${discFlagged ? `<span style="font-size:11px;font-weight:700;color:#b91c1c;background:rgba(185,28,28,0.12);padding:3px 10px;border-radius:99px;">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span style="font-size:11px;font-weight:700;color:#15803d;background:rgba(21,128,61,0.12);padding:3px 10px;border-radius:99px;">All questions discriminate well</span>`}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+        How well each question separates high performers from low performers (top 27% vs bottom 27% by total score). Higher is better; <strong>negative</strong> means high scorers did <em>worse</em> — usually a miskeyed or confusing question.
+        ${!discReliable ? `<br/><strong style="color:#d97706;">Only ${ranked.length} submission${ranked.length===1?'':'s'}</strong> — treat these values as provisional until at least ${DISCRIMINATION_MIN_SAMPLE}.` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        ${discStats.map(({qi,q,d})=>{
+          const meta = discriminationMeta(d);
+          return `
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:5px;">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Q${qi+1}: ${escHtml(q.content.substring(0,55))}${q.content.length>55?'…':''}</span>
+              <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <span style="font-weight:800;font-variant-numeric:tabular-nums;color:${meta.color};">${d>0?'+':''}${d.toFixed(2)}</span>
+                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};">${meta.label}</span>
+              </span>
+            </div>
+            ${discriminationBar(d, meta.color)}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Evaluation Trends across exams in this course -->
+    ${trendExams.length >= 2 ? `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:700;">Evaluation Trends</div>
+        <span style="font-size:12px;font-weight:800;color:${trendMeta.color};">${trendMeta.arrow} ${trendMeta.label}${trendDelta !== 0 ? ` (${trendDelta > 0 ? '+' : ''}${trendDelta} pts)` : ''}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px;line-height:1.5;">
+        Class average across every exam in this course, oldest → newest. The highlighted bar is the exam you're viewing.
+      </div>
+      <div style="display:flex;align-items:stretch;gap:10px;min-height:170px;">
+        ${trendExams.map(t => {
+          const isCurrent = t.id === examId;
+          const mm = masteryMeta(t.avg);
+          const barGrow = Math.max(t.avg, 3);
+          const spacerGrow = Math.max(0, 100 - t.avg);
+          return `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;min-width:0;" title="${escHtml(t.title)} · ${t.avg}% · ${t.count} submission${t.count===1?'':'s'}">
+            <div style="flex:${spacerGrow} 0 0;width:100%;"></div>
+            <div style="font-size:12px;font-weight:800;color:${isCurrent ? 'var(--primary)' : mm.color};">${t.avg}%</div>
+            <div style="flex:${barGrow} 0 0;width:100%;background:${mm.color};opacity:${isCurrent ? 1 : 0.55};border-radius:5px 5px 0 0;${isCurrent ? 'outline:2px solid var(--primary);outline-offset:1px;' : ''}"></div>
+            <div style="font-size:9px;color:var(--text-muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;${isCurrent ? 'font-weight:800;color:var(--text);' : ''}">${escHtml(t.title.substring(0,14))}${t.title.length>14?'…':''}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Student Mastery by cognitive level -->
+    ${masteryStats.length ? `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:6px;">Student Mastery — by Cognitive Level</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+        Class average score on each Bloom's Taxonomy level in this exam. Reveals whether students handle higher-order thinking (analyze / evaluate / create) as well as basic recall.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        ${masteryStats.map(({level, pct, questionCount})=>{
+          const bm = BLOOM_META[level];
+          const mm = masteryMeta(pct);
+          return `
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:5px;">
+              <span style="display:flex;align-items:center;gap:8px;min-width:0;">
+                ${bloomBadge(level)}
+                <span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">${questionCount} question${questionCount===1?'':'s'}</span>
+              </span>
+              <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <span style="font-weight:800;color:${mm.color};font-variant-numeric:tabular-nums;">${pct}%</span>
+                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${mm.color};background:${mm.color}1f;">${mm.label}</span>
+              </span>
+            </div>
+            <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
+              <div style="width:${pct}%;height:100%;background:${mm.color};border-radius:99px;"></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : (taggedCount === 0 ? `
+    <div style="background:var(--surface);border:1px dashed var(--border);border-radius:14px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Student Mastery — by Cognitive Level</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">No questions in this exam are tagged with a Bloom's level yet. Generate questions with AI (auto-tagged) or set the <strong>Bloom</strong> level on each question in the editor to unlock this analysis.</div>
+    </div>` : '')}
 
     <!-- Leaderboard -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
@@ -7551,7 +8164,9 @@ async function runAIGenerate() {
 
   const schemaRules = `Return ONLY a valid JSON array with no other text, explanation, or markdown.
 Each question object schema:
-  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1 }
+  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1, "difficulty": "easy"|"medium"|"hard", "bloom": "remember"|"understand"|"apply"|"analyze"|"evaluate"|"create" }
+- "difficulty": REQUIRED on every question. Your best estimate of how hard it is for a typical student — "easy" (recall/definition), "medium" (application/understanding), or "hard" (analysis/multi-step reasoning). This is a provisional label; the system refines it from real student results later.
+- "bloom": REQUIRED on every question. The Bloom's Taxonomy cognitive level the question assesses: "remember" (recall facts), "understand" (explain concepts), "apply" (use in new situations), "analyze" (compare/break down), "evaluate" (justify/critique), or "create" (design/produce). Aim for a spread across levels — not every question should be "remember".
 - For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
 - For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
 - For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
@@ -7704,7 +8319,10 @@ function renderAIPreview(questions) {
           </div>
         </div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${groupNum[q.type]}. ${escHtml(q.content)}</div>
+          <div style="font-size:13px;font-weight:500;margin-bottom:4px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+            <span>${groupNum[q.type]}. ${escHtml(q.content)}</span>
+            <span style="flex-shrink:0;display:flex;gap:5px;">${BLOOM_LEVELS.includes(q.bloom) ? bloomBadge(q.bloom) : ''}${['easy','medium','hard'].includes(q.difficulty) ? difficultyBadge(q.difficulty) : ''}</span>
+          </div>
           ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
           <div class="ai-q-correct">✓ ${escHtml(q.correctAnswer)}</div>
         </div>
@@ -7749,6 +8367,12 @@ function importAIQuestions() {
       rubric: q.rubric || '',
       minWords: q.minWords || 0,
       points: q.points || 1,
+      // AI-predicted difficulty (provisional — statistics override it once enough
+      // students submit). Not "locked", so the professor / real data can supersede it.
+      difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : undefined,
+      difficultyLocked: false,
+      // Bloom's Taxonomy cognitive level (AI-estimated, professor-overridable)
+      bloom: BLOOM_LEVELS.includes(q.bloom) ? q.bloom : undefined,
       imageUrl: '',
       required: true,
     };

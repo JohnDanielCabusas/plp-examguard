@@ -29,6 +29,7 @@ const DB = {
     logs: 'acs_logs',
     sysadmin: 'acs_sysadmin',
     professorActivityLog: 'acs_professor_activity_log',
+    messages: 'acs_messages',
   },
   _cache: {},
 
@@ -1175,6 +1176,85 @@ const DB = {
   // ---- Professor activity log (system-admin actions on professor accounts) ----
   getProfessorActivityLog() {
     return this._read(this.KEYS.professorActivityLog, []);
+  },
+
+  // ---- In-exam chat (student <-> professor) ----
+  // The cache is already role-scoped by the pull/realtime layer (a student only
+  // ever receives their own messages; a professor only their own scope), so these
+  // read helpers just slice by exam/student without re-checking ownership.
+  getMessages() {
+    return this._read(this.KEYS.messages, []);
+  },
+  getMessagesForExamStudent(examId, studentId) {
+    return this.getMessages()
+      .filter(m => m.examId === examId && m.studentId === studentId)
+      .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  },
+  // Every distinct student who has messaged about a given exam, newest activity first —
+  // used to badge the professor's monitoring rows.
+  getMessageThreadsForExam(examId) {
+    const byStudent = new Map();
+    this.getMessages().filter(m => m.examId === examId).forEach(m => {
+      const prev = byStudent.get(m.studentId) || { studentId: m.studentId, messages: [], unreadFromStudent: 0, lastAt: 0 };
+      prev.messages.push(m);
+      const at = new Date(m.createdAt || 0).getTime();
+      if (at > prev.lastAt) prev.lastAt = at;
+      if (m.senderRole === 'student' && !m.readAt) prev.unreadFromStudent += 1;
+      byStudent.set(m.studentId, prev);
+    });
+    return [...byStudent.values()].sort((a, b) => b.lastAt - a.lastAt);
+  },
+  addMessage(data) {
+    const messages = [...this._read(this.KEYS.messages, [])];
+    const newMessage = {
+      id: this.generateId(),
+      createdAt: new Date().toISOString(),
+      senderRole: 'student',
+      type: 'message',
+      readAt: null,
+      ...data,
+    };
+    messages.push(newMessage);
+    this._write(this.KEYS.messages, messages);
+    SupabaseSync.syncDoc('messages', newMessage);
+    // Let any open chat UI on THIS device repaint immediately (realtime only
+    // echoes to OTHER clients, not the sender).
+    if (typeof document !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table: 'messages' } }));
+    }
+    return newMessage;
+  },
+  // Marks the other party's messages in a thread as read (senderRole = whoever we're
+  // reading FROM). Best-effort sync of each touched row.
+  markMessagesRead(examId, studentId, fromSenderRole) {
+    let changed = false;
+    const messages = this._read(this.KEYS.messages, []).map(m => {
+      if (m.examId === examId && m.studentId === studentId && m.senderRole === fromSenderRole && !m.readAt) {
+        changed = true;
+        const updated = { ...m, readAt: new Date().toISOString() };
+        SupabaseSync.syncDoc('messages', updated);
+        return updated;
+      }
+      return m;
+    });
+    if (changed) this._write(this.KEYS.messages, messages);
+    return changed;
+  },
+
+  // ---- Per-student camera exemption ----
+  isStudentCameraExempt(examId, studentId) {
+    const exam = this._read(this.KEYS.exams, []).find(e => e.id === examId);
+    return Array.isArray(exam?.cameraExemptStudentIds) && exam.cameraExemptStudentIds.includes(studentId);
+  },
+  setStudentCameraExempt(examId, studentId, exempt) {
+    const exam = this._read(this.KEYS.exams, []).find(e => e.id === examId);
+    if (!exam) return;
+    const current = Array.isArray(exam.cameraExemptStudentIds) ? exam.cameraExemptStudentIds : [];
+    const has = current.includes(studentId);
+    if (exempt && has) return;
+    if (!exempt && !has) return;
+    const next = exempt ? [...current, studentId] : current.filter(id => id !== studentId);
+    this.updateExam(examId, { cameraExemptStudentIds: next });
   },
 };
 

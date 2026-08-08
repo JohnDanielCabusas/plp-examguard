@@ -16,6 +16,11 @@ const SupabaseSync = {
   _sessionEssayGradesSupported: true,
   _sessionAiDetectionsSupported: true,
   _sessionCameraSnapshotsSupported: true,
+  _examCameraExemptSupported: true,
+  // Set false the first time a messages write/read fails because the table
+  // doesn't exist yet (schema-bootstrap.sql not applied). Keeps the chat feature
+  // from spamming sync-error toasts on databases that pre-date it.
+  _messagesSupported: true,
   _lastSyncErrorKey: '',
   _lastSyncErrorAt: 0,
   // Serialize writes per table/id so rapid local edits (for example absent -> present ->
@@ -249,6 +254,7 @@ const SupabaseSync = {
       this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
       this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+      await this._pullMessages({ ownerAdminId: admin.id });
       return;
     }
 
@@ -282,6 +288,7 @@ const SupabaseSync = {
       this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
       this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+      await this._pullMessages({ studentId: student.studentId });
       return;
     }
 
@@ -320,6 +327,26 @@ const SupabaseSync = {
     this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
   },
 
+  // Loads the in-exam chat messages visible to the current viewer: a professor
+  // sees every message scoped to them (owner_admin_id), a student sees only their
+  // own thread (student_id). Silently no-ops if the table isn't deployed yet.
+  async _pullMessages({ ownerAdminId, studentId } = {}) {
+    if (!this._client || this._messagesSupported === false) return;
+    try {
+      let query = this._client.from('messages').select('*').order('created_at');
+      if (ownerAdminId) query = query.eq('owner_admin_id', ownerAdminId);
+      else if (studentId) query = query.eq('student_id', studentId);
+      const { data, error } = await query;
+      if (error) {
+        if (this._isMissingMessagesTableError(error)) this._messagesSupported = false;
+        return;
+      }
+      this._writeLocal('acs_messages', (data || []).map(r => this._dbToJsMessage(r)));
+    } catch (e) {
+      if (this._isMissingMessagesTableError(e)) this._messagesSupported = false;
+    }
+  },
+
   // Normalizes exam rows from Supabase, but preserves the locally-known
   // excludedStudentIds instead of letting the pull silently wipe/revert it, whenever
   // either (a) this Supabase project's schema doesn't have the column yet (pre-migration),
@@ -333,6 +360,12 @@ const SupabaseSync = {
         const prior = existingById.get(normalized.id);
         if (prior && Array.isArray(prior.excludedStudentIds)) {
           normalized.excludedStudentIds = prior.excludedStudentIds;
+        }
+      }
+      if (!('camera_exempt_student_ids' in r)) {
+        const prior = existingById.get(normalized.id);
+        if (prior && Array.isArray(prior.cameraExemptStudentIds)) {
+          normalized.cameraExemptStudentIds = prior.cameraExemptStudentIds;
         }
       }
       return normalized;
@@ -412,6 +445,13 @@ const SupabaseSync = {
             if (!error) break;
             continue;
           }
+          if (this._isMissingExamCameraExemptError(table, error) && this._examCameraExemptSupported !== false) {
+            this._examCameraExemptSupported = false;
+            rows = rows.map(row => this._withoutExamCameraExempt(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
           if (this._isMissingExamExcludedStudentIdsError(table, error)) {
             rows.forEach(row => this._examIdsWithUnsyncedExclusions.add(row.id));
             rows = rows.map(row => this._withoutExamExcludedStudentIds(row));
@@ -428,9 +468,14 @@ const SupabaseSync = {
   _setupListeners() {
     const c = this._client;
     if (this._channel) return;
-    const { admin, sysadmin } = this._getSessions();
+    const { admin, sysadmin, student } = this._getSessions();
     const ownerFilter = admin?.id && !sysadmin ? `owner_admin_id=eq.${admin.id}` : null;
     const professorFilter = admin?.id && !sysadmin ? `id=eq.${admin.id}` : null;
+    // Chat is 1:1: a professor listens to every message scoped to them; a student
+    // listens only to their own thread. Both use a single-column Realtime filter.
+    const messagesFilter = admin?.id && !sysadmin
+      ? `owner_admin_id=eq.${admin.id}`
+      : (student?.studentId && !sysadmin ? `student_id=eq.${student.studentId}` : null);
 
     const applyChange = (table, lsKey, normalizer) => (payload) => {
       const { eventType, new: row, old } = payload;
@@ -526,6 +571,8 @@ const SupabaseSync = {
         applyChange('logs', 'acs_logs', r => this._dbToJsLog(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'professor_activity_log' },
         applyChange('professor_activity_log', 'acs_professor_activity_log', r => this._dbToJsProfessorActivityLog(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', ...(messagesFilter ? { filter: messagesFilter } : {}) },
+        applyChange('messages', 'acs_messages', r => this._dbToJsMessage(r)))
       .subscribe();
   },
 
@@ -714,6 +761,7 @@ const SupabaseSync = {
 
   syncDoc(table, data) {
     if (!this._client || !data?.id) return;
+    if (table === 'messages' && this._messagesSupported === false) return;
     const row = this._jsToDb(table, data);
     if (!row) return;
     this._enqueueDocSync(table, data.id, async () => {
@@ -763,6 +811,13 @@ const SupabaseSync = {
             if (!retryError) return;
             continue;
           }
+          if (this._isMissingExamCameraExemptError(table, retryError) && this._examCameraExemptSupported !== false) {
+            this._examCameraExemptSupported = false;
+            retryRow = this._withoutExamCameraExempt(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           break;
         }
         error = retryError;
@@ -793,12 +848,25 @@ const SupabaseSync = {
           error = retryError;
         }
 
+        if (error && table === 'messages' && this._isMissingMessagesTableError(error)) {
+          // Chat table not deployed on this database yet — disable messaging quietly
+          // instead of nagging the professor/student with sync-error toasts.
+          this._messagesSupported = false;
+          console.warn('[SupabaseSync] messages table not found — in-exam chat disabled until schema-bootstrap.sql is applied.');
+          return;
+        }
+
         if (error) {
           console.error(`[SupabaseSync] syncDoc(${table}):`, error.message);
           // Surface sync failures as a visible warning
           this._emitSyncError(table, error);
         }
       } catch (error) {
+        if (table === 'messages' && this._isMissingMessagesTableError(error)) {
+          this._messagesSupported = false;
+          console.warn('[SupabaseSync] messages table not found — in-exam chat disabled until schema-bootstrap.sql is applied.');
+          return;
+        }
         console.error(`[SupabaseSync] syncDoc(${table}):`, error.message || error);
         this._emitSyncError(table, error);
       }
@@ -925,6 +993,9 @@ const SupabaseSync = {
       closed_at: d.closedAt || null,
       excluded_student_ids: Array.isArray(d.excludedStudentIds) ? d.excludedStudentIds : [],
     };
+    if (this._examCameraExemptSupported !== false) {
+      row.camera_exempt_student_ids = Array.isArray(d.cameraExemptStudentIds) ? d.cameraExemptStudentIds : [];
+    }
     return row;
   },
 
@@ -978,6 +1049,39 @@ const SupabaseSync = {
     };
   },
 
+  _jsToDbMessage(d) {
+    return {
+      id: d.id,
+      owner_admin_id: d.ownerAdminId || null,
+      professor_id: d.professorId || null,
+      student_id: d.studentId || null,
+      exam_id: d.examId || null,
+      session_id: d.sessionId || null,
+      sender_role: d.senderRole || 'student',
+      type: d.type || 'message',
+      report_category: d.reportCategory || null,
+      body: d.body || null,
+      read_at: d.readAt || null,
+    };
+  },
+
+  _dbToJsMessage(r) {
+    return {
+      id: r.id,
+      ownerAdminId: r.owner_admin_id || '',
+      professorId: r.professor_id || '',
+      studentId: r.student_id || '',
+      examId: r.exam_id || '',
+      sessionId: r.session_id || '',
+      senderRole: r.sender_role || 'student',
+      type: r.type || 'message',
+      reportCategory: r.report_category || '',
+      body: r.body || '',
+      readAt: r.read_at || null,
+      createdAt: r.created_at || null,
+    };
+  },
+
   _jsToDb(table, data) {
     switch (table) {
       case 'professors': return this._jsToDbAdmin(data);
@@ -986,6 +1090,7 @@ const SupabaseSync = {
       case 'exams':    return this._jsToDbExam(data);
       case 'sessions': return this._jsToDbSession(data);
       case 'logs':     return this._jsToDbLog(data);
+      case 'messages': return this._jsToDbMessage(data);
       default: return null;
     }
   },
@@ -1077,6 +1182,7 @@ const SupabaseSync = {
       targetYearLevels: Array.isArray(r.target_year_levels) ? r.target_year_levels : [],
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
       excludedStudentIds: Array.isArray(r.excluded_student_ids) ? r.excluded_student_ids : [],
+      cameraExemptStudentIds: Array.isArray(r.camera_exempt_student_ids) ? r.camera_exempt_student_ids : [],
       ownerAdminId: r.owner_admin_id || '',
       startedAt: r.started_at || null,
       closedAt: r.closed_at || null,
@@ -1200,6 +1306,22 @@ const SupabaseSync = {
     const next = { ...row };
     delete next.excluded_student_ids;
     return next;
+  },
+
+  _isMissingExamCameraExemptError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'exams' && message.includes(`Could not find the 'camera_exempt_student_ids' column`);
+  },
+
+  _withoutExamCameraExempt(row) {
+    const next = { ...row };
+    delete next.camera_exempt_student_ids;
+    return next;
+  },
+
+  _isMissingMessagesTableError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('messages') && (message.includes('does not exist') || message.includes('could not find the table') || message.includes('schema cache'));
   },
 
   // Keeps retrying (with backoff) to write excluded_student_ids for one exam whose last

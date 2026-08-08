@@ -98,6 +98,52 @@ where code is not null;
 alter table if exists public.subjects drop constraint if exists subjects_code_key;
 drop index if exists public.subjects_owner_admin_id_code_key;
 
+-- ── In-exam chat / help messages ──
+-- A lightweight 1:1 message thread between a student and their professor,
+-- used during an exam for tech issues, clarifications, and the professor's
+-- replies. owner_admin_id scopes each row to a professor so realtime routing
+-- and the multi-tenant pull filters work the same way they do for every other
+-- table here.
+create table if not exists public.messages (
+  id text primary key,
+  owner_admin_id text,
+  professor_id text,
+  student_id text,
+  exam_id text,
+  session_id text,
+  sender_role text not null default 'student',
+  type text not null default 'message',           -- 'message' | 'report'
+  report_category text,                            -- webcam | loading | question | other (reports only)
+  body text,
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists messages_owner_admin_id_idx on public.messages (owner_admin_id);
+create index if not exists messages_student_id_idx on public.messages (student_id);
+create index if not exists messages_exam_id_idx on public.messages (exam_id);
+
+-- Publish the table to Supabase Realtime so both sides receive live pushes.
+-- Guarded so re-running this file doesn't error with "relation is already member".
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+exception
+  when undefined_object then
+    -- supabase_realtime publication doesn't exist on this deployment; skip.
+    null;
+end $$;
+
+-- ── Per-student camera exemption ──
+-- Lets a professor waive the webcam requirement for a single student on a
+-- single exam (e.g. their webcam is broken), without turning it off for the
+-- whole class. Mirrors exams.excluded_student_ids in shape.
+alter table if exists public.exams add column if not exists camera_exempt_student_ids jsonb not null default '[]'::jsonb;
+
 -- ── Default accounts ──
 insert into public.superadmin (id, username, password, name, email, department)
 values (
