@@ -11665,13 +11665,16 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
    IN-EXAM CHAT — student floating panel
    ============================================================ */
 .exam-chat-fab {
-  position: fixed; left: 22px; bottom: 22px; z-index: 7000;
+  /* Anchored on the right edge, vertically centered — clear of the exam tools
+     (bottom-left), the camera widget + fast-scroll buttons (bottom-right), and
+     the header, so it never overlaps a button or question text. */
+  position: fixed; right: 18px; top: 50%; transform: translateY(-50%); z-index: 7000;
   width: 54px; height: 54px; border-radius: 50%; border: none; cursor: pointer;
   background: var(--primary, #0f2d1a); color: #fff;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 22px rgba(0,0,0,0.28); transition: transform .15s ease, box-shadow .15s ease;
 }
-.exam-chat-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.34); }
+.exam-chat-fab:hover { transform: translateY(calc(-50% - 2px)); box-shadow: 0 12px 28px rgba(0,0,0,0.34); }
 .exam-chat-fab.active { background: #0b2013; }
 .exam-chat-fab-badge {
   position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px;
@@ -11679,7 +11682,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   display: flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff);
 }
 .exam-chat-panel {
-  position: fixed; left: 22px; bottom: 86px; z-index: 7000;
+  position: fixed; right: 18px; top: 50%; transform: translateY(-50%); z-index: 7000;
   width: min(360px, calc(100vw - 44px)); height: min(520px, calc(100vh - 130px));
   background: var(--surface, #fff); border: 1px solid var(--border, #d1d5db); border-radius: 16px;
   box-shadow: 0 18px 48px rgba(0,0,0,0.32); display: flex; flex-direction: column; overflow: hidden;
@@ -11761,6 +11764,6 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .prof-chat-send:hover { background: #0b2013; }
 @media (max-width: 520px) {
   .prof-chat-drawer { width: 100vw; }
-  .exam-chat-panel { left: 12px; right: 12px; width: auto; }
-  .exam-chat-fab { left: 16px; bottom: 16px; }
+  .exam-chat-panel { left: 12px; right: 12px; width: auto; top: 50%; transform: translateY(-50%); }
+  .exam-chat-fab { right: 12px; left: auto; top: 50%; bottom: auto; transform: translateY(-50%); }
 }
