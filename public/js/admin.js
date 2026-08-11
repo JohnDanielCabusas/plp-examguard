@@ -252,6 +252,8 @@ document.addEventListener('dbReady', function init() {
 
   requestAnimationFrame(() => {
     showSection(readAdminSectionFromUrl());
+    refreshMessageNotifications();       // seed backlog + set the Monitoring badge
+    startMessageNotificationPolling();   // catch new messages even if realtime misses
 
   // Student ID modal: digits only, auto-insert dash after 2nd digit (YY-NNNNN)
   const studentIdInput = document.getElementById('stu-student-id');
@@ -478,6 +480,109 @@ document.addEventListener('acsDataChanged', () => {
   if (!render) return;
   clearTimeout(_dataChangedRenderTimer);
   _dataChangedRenderTimer = setTimeout(() => render(), 150);
+});
+
+// ── Professor notifications for incoming student messages ──────────────
+// A student's chat message / problem report should surface to the professor
+// no matter which section they're on. We toast for messages that arrive AFTER
+// login (never the pre-existing backlog) and keep a live unread count on the
+// Monitoring nav item. Fires off the same realtime 'acsDataChanged' push.
+const _notifiedMsgIds = new Set();
+let _msgNotifySeeded = false; // once true, any NEW unread student message pops
+
+function updateMonitoringNavBadge(count) {
+  const nav = document.getElementById('nav-monitoring');
+  if (!nav) return;
+  let badge = nav.querySelector('.nav-msg-badge');
+  if (count > 0) {
+    if (!badge) { badge = document.createElement('span'); badge.className = 'nav-msg-badge'; nav.appendChild(badge); }
+    badge.textContent = count > 9 ? '9+' : String(count);
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+// Top-right popup that slides in and auto-dismisses after 3 seconds.
+function showProfMessagePopup(title, detail, kind) {
+  let host = document.getElementById('prof-msg-popups');
+  if (!host) { host = document.createElement('div'); host.id = 'prof-msg-popups'; document.body.appendChild(host); }
+  const pop = document.createElement('div');
+  pop.className = `prof-msg-popup${kind === 'report' ? ' is-report' : ''}`;
+  pop.innerHTML = `<span class="prof-msg-popup-icon">${kind === 'report' ? '⚠️' : '💬'}</span>
+    <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>`;
+  host.appendChild(pop);
+  requestAnimationFrame(() => pop.classList.add('show'));
+  setTimeout(() => {
+    pop.classList.remove('show');
+    setTimeout(() => pop.remove(), 300);
+  }, 3000);
+}
+
+// Pop a top-right notification for any not-yet-announced unread student message
+// in `list`. Skips the pre-login backlog and the thread being actively read.
+function notifyForStudentMessages(list) {
+  if (!_msgNotifySeeded) return; // don't pop the pre-login backlog
+  const openStudentId = _profChatCtx?.studentId || null;
+  (list || []).forEach(m => {
+    if (!m || m.senderRole !== 'student' || m.readAt) return;
+    if (_notifiedMsgIds.has(m.id)) return;
+    _notifiedMsgIds.add(m.id);
+    if (m.studentId === openStudentId) return; // they're already reading this thread
+    const who = m.studentName || m.studentId || 'A student';
+    if (m.type === 'report') showProfMessagePopup(`${who} reported a problem`, m.body, 'report');
+    else showProfMessagePopup(`New message from ${who}`, m.body, 'message');
+  });
+}
+
+function refreshMessageNotifications() {
+  if (typeof DB?.getMessages !== 'function') return;
+  const unread = DB.getMessages().filter(m => m.senderRole === 'student' && !m.readAt);
+  updateMonitoringNavBadge(unread.length);
+  if (!_msgNotifySeeded) {
+    // First pass after login: remember the existing backlog so we only pop
+    // genuinely NEW messages afterward (no clock/timestamp dependence).
+    unread.forEach(m => _notifiedMsgIds.add(m.id));
+    _msgNotifySeeded = true;
+    return;
+  }
+  notifyForStudentMessages(unread);
+}
+
+// Poll Supabase for new messages so notifications fire even if a realtime push
+// is missed or realtime isn't available for this project.
+let _msgPollTimer = null;
+function startMessageNotificationPolling() {
+  if (_msgPollTimer) return;
+  _msgPollTimer = setInterval(() => {
+    const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
+    if (adminId && window.SupabaseSync?._pullMessages) {
+      Promise.resolve(SupabaseSync._pullMessages({ ownerAdminId: adminId }))
+        .then(() => refreshMessageNotifications()).catch(() => {});
+    } else {
+      refreshMessageNotifications();
+    }
+  }, 6000);
+}
+
+document.addEventListener('acsDataChanged', (e) => {
+  if (e.detail?.table === 'messages') refreshMessageNotifications();
+});
+
+// Cross-tab bridge: when another tab on this device (e.g. a student's exam page)
+// writes to the shared localStorage, the 'storage' event fires here but the
+// same-document 'acsDataChanged' event does NOT. We notify straight from the
+// event payload (e.newValue) FIRST — before any owner-scoped Supabase pull can
+// overwrite the cache — then re-broadcast so the table and open chats refresh.
+window.addEventListener('storage', (e) => {
+  if (e.key && !e.key.startsWith('acs_')) return;
+  if (e.key === 'acs_messages' && e.newValue) {
+    try { notifyForStudentMessages(JSON.parse(e.newValue)); } catch (_) {}
+  }
+  const table = e.key === 'acs_messages' ? 'messages'
+    : e.key === 'acs_sessions' ? 'sessions'
+    : e.key === 'acs_exams' ? 'exams'
+    : 'unknown';
+  document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
 });
 
 async function showSection(name) {
@@ -4248,13 +4353,13 @@ function buildQuestionBlock(q, idx) {
           </div>
         </div>
         <div class="qe-header-right">
-          <div class="qe-diff-group" onclick="event.stopPropagation()" title="Difficulty level for this question. 'Auto' lets the system decide from the AI estimate and real student results; picking a level locks your choice.">
+          <div class="qe-diff-group" onclick="event.stopPropagation()" title="Difficulty level for this question (Easy / Medium / Hard).">
             <span class="qe-pts-label">Level</span>
             <select class="qe-diff-select" onchange="setQuestionDifficulty(${idx},this.value)">
-              <option value=""${!q.difficultyLocked ? ' selected' : ''}>Auto${!q.difficultyLocked && DIFFICULTY_META[q.difficulty] ? ` (${DIFFICULTY_META[q.difficulty].label})` : ''}</option>
-              <option value="easy"${q.difficultyLocked && q.difficulty === 'easy' ? ' selected' : ''}>Easy</option>
-              <option value="medium"${q.difficultyLocked && q.difficulty === 'medium' ? ' selected' : ''}>Medium</option>
-              <option value="hard"${q.difficultyLocked && q.difficulty === 'hard' ? ' selected' : ''}>Hard</option>
+              ${DIFFICULTY_META[q.difficulty] ? '' : '<option value="" disabled selected hidden>—</option>'}
+              <option value="easy"${q.difficulty === 'easy' ? ' selected' : ''}>Easy</option>
+              <option value="medium"${q.difficulty === 'medium' ? ' selected' : ''}>Medium</option>
+              <option value="hard"${q.difficulty === 'hard' ? ' selected' : ''}>Hard</option>
             </select>
           </div>
           <div class="qe-diff-group" onclick="event.stopPropagation()" title="Bloom's Taxonomy cognitive level this question assesses (recall → higher-order thinking).">
@@ -5555,7 +5660,17 @@ function openStudentChat(examId, studentId, sessionId) {
   renderProfChatMessages();
   DB.markMessagesRead(examId, studentId, 'student');
   renderMonitoringTable(monitorExamId); // clear the unread badge on the row
+  refreshMessageNotifications();        // recompute the nav unread count
   setTimeout(() => document.getElementById('prof-chat-input')?.focus(), 80);
+
+  // Freshness: pull the latest messages straight from Supabase in case a realtime
+  // push was missed, then repaint the open thread once they land.
+  const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
+  if (adminId && window.SupabaseSync?._pullMessages) {
+    Promise.resolve(SupabaseSync._pullMessages({ ownerAdminId: adminId }))
+      .then(() => { if (_profChatCtx && _profChatCtx.studentId === studentId) { renderProfChatMessages(); refreshMessageNotifications(); } })
+      .catch(() => {});
+  }
 }
 
 function closeStudentChat() {

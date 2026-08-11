@@ -2133,10 +2133,13 @@ const ExamApp = {
     const tools = document.getElementById('exam-tools-container');
     if (tools) tools.style.display = name === 'exam' ? '' : 'none';
 
-    // The in-exam chat FAB/panel is only relevant on the active exam screen.
+    // The in-exam chat stays available on the active exam screen AND after the
+    // student has submitted, so they can still reach their professor (and see
+    // replies) about a submitted attempt.
+    const chatAllowed = (name === 'exam' || name === 'submitted') && !!this.exam && !!this.session;
     const chatFab = document.getElementById('exam-chat-fab');
-    if (chatFab) chatFab.style.display = name === 'exam' ? '' : 'none';
-    if (name !== 'exam') {
+    if (chatFab) chatFab.style.display = chatAllowed ? '' : 'none';
+    if (!chatAllowed) {
       const chatPanel = document.getElementById('exam-chat-panel');
       if (chatPanel) chatPanel.style.display = 'none';
     }
@@ -2351,8 +2354,9 @@ const ExamApp = {
     fab.setAttribute('data-exam-control', 'true');
     fab.title = 'Message your professor';
     fab.setAttribute('aria-label', 'Message your professor');
+    // Single chat icon that springs with a bounce on every click (open + close).
     fab.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="exam-chat-fab-inner"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
       <span class="exam-chat-fab-badge" id="exam-chat-fab-badge" style="display:none;">0</span>`;
     fab.onclick = () => this._toggleChat();
     document.body.appendChild(fab);
@@ -2396,7 +2400,7 @@ const ExamApp = {
           `<button type="button" class="exam-chat-report-btn examv2-interactive" data-exam-control="true" data-report="${r.key}">${_esc(r.label)}</button>`
         ).join('');
     reportsWrap.querySelectorAll('.exam-chat-report-btn').forEach(btn => {
-      btn.onclick = () => this._sendReport(btn.dataset.report);
+      btn.onclick = () => this._stageReport(btn.dataset.report);
     });
   },
 
@@ -2407,6 +2411,10 @@ const ExamApp = {
     const open = typeof force === 'boolean' ? force : panel.style.display === 'none';
     panel.style.display = open ? 'flex' : 'none';
     fab.classList.toggle('active', open);
+    // Replay the springy bounce on every click (opening AND closing) — restart
+    // the CSS animation by removing the class, forcing reflow, then re-adding it.
+    const inner = fab.querySelector('.exam-chat-fab-inner');
+    if (inner) { fab.classList.remove('bounce'); void fab.offsetWidth; fab.classList.add('bounce'); }
     if (open) {
       this._rememberTrustedInteraction(1500);
       this._renderChatMessages();
@@ -2477,6 +2485,10 @@ const ExamApp = {
     const text = (input.value || '').trim();
     if (!text) return;
     this._rememberTrustedInteraction(1500);
+    // If the text was staged from a "Report a problem" chip (and left intact),
+    // send it as a categorised report; otherwise it's a plain message.
+    const pending = this._pendingReport;
+    const asReport = pending && pending.body === text;
     DB.addMessage({
       ownerAdminId: this.exam.ownerAdminId || null,
       professorId: this.exam.ownerAdminId || null,
@@ -2485,41 +2497,36 @@ const ExamApp = {
       examId: this.exam.id,
       sessionId: this.session.id,
       senderRole: 'student',
-      type: 'message',
+      type: asReport ? 'report' : 'message',
+      reportCategory: asReport ? pending.key : undefined,
       body: text,
     });
+    this._pendingReport = null;
     input.value = '';
     this._renderChatMessages();
     const body = document.getElementById('exam-chat-messages');
     if (body) body.scrollTop = body.scrollHeight;
   },
 
-  _sendReport(key) {
-    if (!this.exam || !this.session) return;
+  // Clicking a "Report a problem" chip DOES NOT send — it drops the report text
+  // into the composer so the student can review/edit, then send it themselves.
+  _stageReport(key) {
     const report = this._CHAT_REPORTS.find(r => r.key === key);
-    if (!report) return;
+    const input = document.getElementById('exam-chat-input');
+    if (!report || !input) return;
     this._rememberTrustedInteraction(1500);
-    DB.addMessage({
-      ownerAdminId: this.exam.ownerAdminId || null,
-      professorId: this.exam.ownerAdminId || null,
-      studentId: this.session.studentId,
-      studentName: this.session.studentName,
-      examId: this.exam.id,
-      sessionId: this.session.id,
-      senderRole: 'student',
-      type: 'report',
-      reportCategory: key,
-      body: report.body,
-    });
-    this._toggleChat(true);
-    this._renderChatMessages();
-    this._showToast('Your professor has been notified.', 'success');
+    this._pendingReport = { key, body: report.body };
+    input.value = report.body;
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
   },
 
   // Called from the global acsDataChanged listener while an exam is in progress.
   _handleExamDataChange(table) {
-    const inExam = !document.getElementById('state-exam')?.classList.contains('hidden');
-    if (!inExam || !this.exam || !this.session) return;
+    // Keep the chat live on both the active-exam and post-submit screens.
+    const chatVisible = !document.getElementById('state-exam')?.classList.contains('hidden')
+      || !document.getElementById('state-submitted')?.classList.contains('hidden');
+    if (!chatVisible || !this.exam || !this.session) return;
     if (table === 'messages') {
       this._renderChatMessages();
       const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
@@ -5287,6 +5294,15 @@ const ExamApp = {
 
   _showSubmitted(freshSubmit) {
     this.showState('submitted');
+
+    // Keep the professor chat reachable after submission.
+    if (this.exam && this.session) {
+      this._ensureChatUI();
+      this._renderChatMessages();
+      this._updateChatBadge();
+      const fab = document.getElementById('exam-chat-fab');
+      if (fab) fab.style.display = '';
+    }
 
     const session = this.session ? DB.getSession(this.session.id) : null;
     const titleEl  = document.getElementById('submitted-title');
