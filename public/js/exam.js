@@ -39,6 +39,8 @@ const ExamApp = {
   markedForReview: new Set(), // set of question indices marked for review
   timeRemaining: 0,
   _blurTimer: null,         // debounce timer for window blur
+  _visTimer: null,          // grace timer for tab-hidden (visibilitychange)
+  _fsLossTimer: null,       // grace timer for fullscreen-exit — forgives transient display blips (e.g. brightness/HDR re-sync)
   _countdownInterval: null, // 10-second return-window countdown
   _warningReadTimer: null,  // 3-second read timer after student returns
   _inReadCountdown: false,  // true while the 3-second read overlay is showing
@@ -2723,14 +2725,21 @@ const ExamApp = {
     // ── Tab switch (document hidden) ─────────────────────────────
     const visHandler = () => {
       if (document.hidden) {
-        if (this._inReadCountdown) {
-          // Left during read countdown — cancel read, restart 10s auto-submit
-          this._cancelReadCountdown();
-          this.startCountdown(10);
-        } else {
-          this.issueWarning('tab_switch', 'Tab or window switched');
-        }
+        // Grace period: a brightness/display re-sync can fire a spurious
+        // hidden→visible blip. Only act if the tab is STILL hidden shortly after.
+        if (this._visTimer) clearTimeout(this._visTimer);
+        this._visTimer = setTimeout(() => {
+          this._visTimer = null;
+          if (!document.hidden) return; // recovered on its own — ignore
+          if (this._inReadCountdown) {
+            this._cancelReadCountdown();
+            this.startCountdown(10);
+          } else {
+            this.issueWarning('tab_switch', 'Tab or window switched');
+          }
+        }, 300);
       } else {
+        if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
         this.cancelCountdown(); // student returned to tab
       }
     };
@@ -2776,10 +2785,19 @@ const ExamApp = {
     // ── Fullscreen change ────────────────────────────────────────
     const fsHandler = () => {
       if (!this._isFullscreenActive()) {
-        // Always issue a violation — issueWarning handles _cancelReadCountdown internally
-        this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
-        this._showFullscreenLock();
+        // Grace period: changing screen brightness / HDR on some laptops makes
+        // the display briefly drop and re-enter fullscreen, firing a spurious
+        // exit→enter pair. Only treat it as a real exit if fullscreen is STILL
+        // gone a moment later — otherwise it just flickers the warning overlay.
+        if (this._fsLossTimer) clearTimeout(this._fsLossTimer);
+        this._fsLossTimer = setTimeout(() => {
+          this._fsLossTimer = null;
+          if (this._isFullscreenActive()) return; // recovered on its own — ignore
+          this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
+          this._showFullscreenLock();
+        }, 500);
       } else {
+        if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
         if (this._pendingFullscreenRecovery) {
           clearTimeout(this._pendingFullscreenRecovery);
           this._pendingFullscreenRecovery = null;
@@ -3805,6 +3823,8 @@ const ExamApp = {
 
   destroyAntiCheat() {
     if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
+    if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
+    if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
     if (this._pendingFullscreenRecovery) {
       clearTimeout(this._pendingFullscreenRecovery);
       this._pendingFullscreenRecovery = null;
