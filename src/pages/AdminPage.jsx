@@ -376,6 +376,21 @@ export default function AdminPage() {
             <div className="topbar-actions">
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="topbar-date" />
 
+              {/* Notifications bell */}
+              <div className="topbar-bell-wrap">
+                <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" onClick={() => window.toggleNotifDropdown?.()}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  <span className="topbar-bell-badge" id="topbar-bell-badge" style={{ display: 'none' }}>0</span>
+                </button>
+                <div className="notif-dropdown hidden" id="notif-dropdown">
+                  <div className="notif-dropdown-head">
+                    <span>Notifications</span>
+                    <button type="button" id="notif-clear" onClick={() => window.clearNotifs?.()}>Clear</button>
+                  </div>
+                  <div className="notif-dropdown-list" id="notif-dropdown-list"></div>
+                </div>
+              </div>
+
               {/* Dark mode toggle */}
               <div className="dm-toggle" title="Toggle dark mode">
                 <input type="checkbox" id="dm-checkbox" onChange={() => window.toggleDarkMode()} />

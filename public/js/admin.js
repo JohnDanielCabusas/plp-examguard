@@ -502,6 +502,85 @@ function updateMonitoringNavBadge(count) {
   }
 }
 
+// ── Notification bell (topbar) ─────────────────────────────────────────
+// A running log of student message/report notifications, with an unread badge.
+// Opening the dropdown marks everything seen (clears the badge).
+let _bellNotifs = []; // { id, kind, who, body, at, studentId, examId, seen }
+
+function addBellNotification(entry, seen = false) {
+  if (!entry || !entry.id) return;
+  if (_bellNotifs.some(n => n.id === entry.id)) return;
+  _bellNotifs.unshift({ ...entry, seen });
+  if (_bellNotifs.length > 40) _bellNotifs.length = 40;
+  renderBell();
+}
+
+function updateBellBadge() {
+  const badge = document.getElementById('topbar-bell-badge');
+  if (!badge) return;
+  const n = _bellNotifs.filter(x => !x.seen).length;
+  if (n > 0) { badge.style.display = ''; badge.textContent = n > 9 ? '9+' : String(n); }
+  else badge.style.display = 'none';
+}
+
+function renderBell() {
+  updateBellBadge();
+  const list = document.getElementById('notif-dropdown-list');
+  if (!list) return;
+  if (!_bellNotifs.length) {
+    list.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
+    return;
+  }
+  list.innerHTML = _bellNotifs.map(n => {
+    const t = n.at ? new Date(n.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const tag = n.kind === 'report' ? '<span class="notif-tag notif-tag-report">Report</span>' : '<span class="notif-tag">Message</span>';
+    return `<button type="button" class="notif-item${n.seen ? '' : ' unseen'}" onclick="openNotif('${escHtml(n.examId || '')}','${escHtml(n.studentId || '')}')">
+      <div class="notif-item-top">${tag}<span class="notif-item-time">${t}</span></div>
+      <div class="notif-item-who">${escHtml(n.who || 'Student')}</div>
+      <div class="notif-item-body">${escHtml(n.body || '')}</div>
+    </button>`;
+  }).join('');
+}
+
+function toggleNotifDropdown(force) {
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd) return;
+  const open = typeof force === 'boolean' ? force : dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', !open);
+  if (open) {
+    _bellNotifs.forEach(n => { n.seen = true; }); // reading the list clears the badge
+    renderBell();
+  }
+}
+
+function clearNotifs() {
+  _bellNotifs = [];
+  renderBell();
+}
+
+// Jump from a notification straight to that student's chat in Monitoring.
+function openNotif(examId, studentId) {
+  toggleNotifDropdown(false);
+  if (!examId || !studentId) { showSection('monitoring'); return; }
+  showSection('monitoring');
+  setTimeout(() => {
+    const sel = document.getElementById('monitor-exam-select');
+    if (sel) { sel.value = examId; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    setTimeout(() => {
+      const sess = DB.getSessionsByExam?.(examId)?.find(s => s.studentId === studentId);
+      if (sess) openStudentChat(examId, studentId, sess.id);
+    }, 400);
+  }, 250);
+}
+
+// Close the dropdown when clicking outside it.
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd || dd.classList.contains('hidden')) return;
+  if (e.target.closest('#notif-dropdown') || e.target.closest('#topbar-bell')) return;
+  dd.classList.add('hidden');
+});
+
 // Top-right popup that slides in and auto-dismisses after 3 seconds.
 function showProfMessagePopup(title, detail, kind) {
   let host = document.getElementById('prof-msg-popups');
@@ -527,8 +606,10 @@ function notifyForStudentMessages(list) {
     if (!m || m.senderRole !== 'student' || m.readAt) return;
     if (_notifiedMsgIds.has(m.id)) return;
     _notifiedMsgIds.add(m.id);
-    if (m.studentId === openStudentId) return; // they're already reading this thread
     const who = m.studentName || m.studentId || 'A student';
+    // Log to the bell centre (unseen → badge) regardless of the toast.
+    addBellNotification({ id: m.id, kind: m.type === 'report' ? 'report' : 'message', who, body: m.body, at: m.createdAt, studentId: m.studentId, examId: m.examId }, false);
+    if (m.studentId === openStudentId) return; // reading it — skip the toast
     if (m.type === 'report') showProfMessagePopup(`${who} reported a problem`, m.body, 'report');
     else showProfMessagePopup(`New message from ${who}`, m.body, 'message');
   });
@@ -540,9 +621,14 @@ function refreshMessageNotifications() {
   updateMonitoringNavBadge(unread.length);
   if (!_msgNotifySeeded) {
     // First pass after login: remember the existing backlog so we only pop
-    // genuinely NEW messages afterward (no clock/timestamp dependence).
-    unread.forEach(m => _notifiedMsgIds.add(m.id));
+    // genuinely NEW messages afterward. Log them to the bell as already-seen
+    // (visible in the list, no badge).
+    unread.forEach(m => {
+      _notifiedMsgIds.add(m.id);
+      addBellNotification({ id: m.id, kind: m.type === 'report' ? 'report' : 'message', who: m.studentName || m.studentId || 'A student', body: m.body, at: m.createdAt, studentId: m.studentId, examId: m.examId }, true);
+    });
     _msgNotifySeeded = true;
+    renderBell();
     return;
   }
   notifyForStudentMessages(unread);
