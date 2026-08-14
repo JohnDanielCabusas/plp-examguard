@@ -391,12 +391,15 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Dark mode toggle */}
-              <div className="dm-toggle" title="Toggle dark mode">
-                <input type="checkbox" id="dm-checkbox" onChange={() => window.toggleDarkMode()} />
-                <span className="dm-button"></span>
-                <span className="dm-label" id="dm-label">☼</span>
-              </div>
+              {/* Theme toggle — sliding sun/moon switch */}
+              <label className="theme-switch" title="Toggle dark / light mode">
+                <input type="checkbox" checked={isDark} onChange={() => window.toggleDarkMode()} />
+                <span className="theme-switch-track">
+                  <svg className="theme-switch-icon ts-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                  <svg className="theme-switch-icon ts-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                  <span className="theme-switch-knob"></span>
+                </span>
+              </label>
 
               {/* User chip */}
               <button type="button" className="topbar-user-pill" onClick={() => window.showSection('settings')}>

@@ -207,20 +207,12 @@ window.toggleDarkMode = function() {
   const next = isDark ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('acs_theme', next);
-  const label = document.getElementById('dm-label');
-  if (label) label.textContent = next === 'dark' ? '☾' : '☼';
 };
 
-// Apply saved theme on load
+// Apply saved theme on load (the sun/moon icon swaps via CSS on data-theme)
 (function() {
   const saved = localStorage.getItem('acs_theme') || 'light';
-  if (saved === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    const cb = document.getElementById('dm-checkbox');
-    if (cb) cb.checked = true;
-    const label = document.getElementById('dm-label');
-    if (label) label.textContent = '☾';
-  }
+  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
 })();
 
 // ---- Bootstrap ----
@@ -803,8 +795,8 @@ function renderDashboard() {
   // Recent exams
   const recentExams = [...exams].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
   const recentHtml = recentExams.length
-    ? `<table style="width:100%;"><thead><tr><th>Title</th><th>Status</th><th>Questions</th></tr></thead><tbody>
-        ${recentExams.map(e => `<tr><td>${escHtml(e.title)}</td><td>${statusBadge(e.status)}</td><td>${e.questions.length}</td></tr>`).join('')}
+    ? `<table style="width:100%;"><thead><tr><th>Title</th><th style="text-align:center;">Status</th><th style="text-align:center;">Questions</th></tr></thead><tbody>
+        ${recentExams.map(e => `<tr><td>${escHtml(e.title)}</td><td style="text-align:center;">${statusBadge(e.status)}</td><td style="text-align:center;">${e.questions.length}</td></tr>`).join('')}
        </tbody></table>`
     : `<div class="empty-state"><p>No exams yet</p></div>`;
   document.getElementById('dash-recent-exams').innerHTML = recentHtml;
@@ -814,14 +806,14 @@ function renderDashboard() {
     .filter(s => !s.submitted && (s.startTime || s.createdAt))
     .sort((a, b) => new Date(b.startTime || b.createdAt || 0) - new Date(a.startTime || a.createdAt || 0));
   const sessHtml = activeSessions.length
-    ? `<table style="width:100%;"><thead><tr><th>Student</th><th>Exam</th><th>Live</th><th>Warnings</th></tr></thead><tbody>
+    ? `<table style="width:100%;"><thead><tr><th>Student</th><th style="text-align:center;">Exam</th><th style="text-align:center;">Live</th><th style="text-align:center;">Warnings</th></tr></thead><tbody>
         ${activeSessions.map(s => {
           const exam = DB.getExam(s.examId);
           return `<tr>
             <td>${escHtml(s.studentName)}</td>
-            <td>${escHtml(exam ? exam.title : s.examCode)}</td>
-            <td>${escHtml(formatLiveDuration(s.startTime || s.createdAt))}</td>
-            <td>${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td>
+            <td style="text-align:center;">${escHtml(exam ? exam.title : s.examCode)}</td>
+            <td style="text-align:center;">${escHtml(formatLiveDuration(s.startTime || s.createdAt))}</td>
+            <td style="text-align:center;">${s.warnings > 0 ? `<span class="badge badge-danger">${s.warnings}</span>` : '0'}</td>
           </tr>`;
         }).join('')}
        </tbody></table>`
@@ -899,10 +891,10 @@ function renderAnalytics(exams, sessions, students) {
     }).join(' L') + ` L${W},${H} Z`;
     sparkSvg = `
       <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-        <defs><linearGradient id="sg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f2d1a" stop-opacity="0.2"/><stop offset="100%" stop-color="#0f2d1a" stop-opacity="0"/></linearGradient></defs>
+        <defs><linearGradient id="sg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22c55e" stop-opacity="0.28"/><stop offset="100%" stop-color="#22c55e" stop-opacity="0"/></linearGradient></defs>
         <path d="${areaPath}" fill="url(#sg1)"/>
-        <polyline points="${pts}" fill="none" stroke="#0f2d1a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-        ${vals.map((v, i) => { const x = (i / (vals.length-1)) * W; const y = H - ((v - minV) / (maxV - minV)) * H; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#0f2d1a"/>`; }).join('')}
+        <polyline points="${pts}" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${vals.map((v, i) => { const x = (i / (vals.length-1)) * W; const y = H - ((v - minV) / (maxV - minV)) * H; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#22c55e"/>`; }).join('')}
       </svg>`;
   } else {
     sparkSvg = `<div class="text-muted" style="font-size:12px;padding:12px 0;">Not enough data for trend. Complete at least 2 exams.</div>`;
