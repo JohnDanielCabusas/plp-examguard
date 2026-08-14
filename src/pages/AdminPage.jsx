@@ -756,11 +756,27 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="monitoring-grid" id="monitoring-grid">
-                <div className="card monitor-panel monitor-sessions-panel">
+                <div className="monitoring-grid" id="monitoring-grid">
+                  <div className="card monitor-panel monitor-sessions-panel">
                   <div className="card-header monitor-panel-header">
                     <span className="card-title monitor-panel-title">Student Sessions</span>
-                    <span id="monitor-count" className="monitor-count-chip">0 students</span>
+                    <div className="monitor-panel-actions">
+                      <button
+                        type="button"
+                        id="monitor-sort-btn"
+                        className="monitor-sort-btn"
+                        onClick={() => window.toggleMonitorNameSort?.()}
+                        title="Sort sessions by student last name"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18" />
+                          <path d="M7 12h10" />
+                          <path d="M10 18h4" />
+                        </svg>
+                        <span id="monitor-sort-btn-label">Last name A-Z</span>
+                      </button>
+                      <span id="monitor-count" className="monitor-count-chip">0 students</span>
+                    </div>
                   </div>
                   <div className="table-wrapper monitor-table-shell">
                     <table>

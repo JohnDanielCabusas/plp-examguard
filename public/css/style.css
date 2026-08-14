@@ -3450,6 +3450,49 @@ tr:hover td { background: #F8FDF8; }
   color: #111827;
 }
 
+.monitor-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.monitor-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  background: rgba(239, 246, 255, 0.9);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.monitor-sort-btn:hover {
+  background: #dbeafe;
+  border-color: rgba(37, 99, 235, 0.34);
+  color: #1e40af;
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .monitor-sort-btn {
+  background: rgba(30, 41, 59, 0.92) !important;
+  border-color: rgba(96, 165, 250, 0.26) !important;
+  color: #93c5fd !important;
+}
+
+[data-theme="dark"] .monitor-sort-btn:hover {
+  background: rgba(30, 64, 175, 0.24) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+  color: #bfdbfe !important;
+}
+
 .monitor-log-student {
   font-weight: 500;
   font-size: 12px;
@@ -11742,11 +11785,15 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
    ============================================================ */
 /* Always clearly visible (filled), so a professor can open a thread even after
    the student has submitted — not a faded outline button. */
-.ms-chat-btn { position: relative; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #fff !important; background: var(--primary, #0f2d1a) !important; border-color: var(--primary, #0f2d1a) !important; }
-.ms-chat-btn:hover { background: #0b2013 !important; }
+.ms-chat-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border-radius: 50% !important; font-size: 12px; font-weight: 700; color: #fff !important; background: #16a34a !important; border-color: #16a34a !important; flex: 0 0 auto; margin-left: auto; }
+.ms-chat-btn:hover { background: #15803d !important; border-color: #15803d !important; }
 .ms-chat-btn.has-unread { box-shadow: 0 0 0 2px rgba(15,45,26,0.25); }
 .ms-chat-btn.has-report { background: #b45309 !important; border-color: #b45309 !important; }
 .ms-chat-btn.has-report:hover { background: #92400e !important; }
+.ms-action-cell { position: relative; display: flex; align-items: center; justify-content: flex-end; width: 100%; min-height: 34px; padding-right: 44px; }
+.ms-action-main { width: 100%; display: flex; align-items: center; justify-content: center; }
+.ms-chat-btn.ms-chat-btn { position: absolute; right: 0; top: 50%; margin-left: 0; transform: translateY(-50%); }
+.ms-action-status { font-size: 12px; color: #9ca3af; text-align: center; }
 /* Unread-message count on the Monitoring sidebar item */
 .nav-item { position: relative; }
 .nav-msg-badge { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface, #0f2d1a); }
@@ -11794,7 +11841,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
    washed out on the light topbar (dark mode already has its own contrast). */
 .dm-toggle { border-radius: 50%; background: #e7eae7; }
 [data-theme="dark"] .topbar .dm-toggle { background: transparent !important; }
-.ms-chat-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; }
+.ms-chat-badge { position: absolute; top: -4px; right: -4px; display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; }
 .prof-chat-backdrop { position: fixed; inset: 0; z-index: 8000; background: rgba(15,23,42,0.35); display: flex; justify-content: flex-end; }
 .prof-chat-drawer {
   width: min(400px, 100vw); height: 100%; background: var(--surface, #fff);

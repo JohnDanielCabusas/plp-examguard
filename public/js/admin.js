@@ -14,6 +14,7 @@ const icTrashStroke = `<svg class="archive-icon" viewBox="0 0 24 24" fill="none"
 let currentSection = 'dashboard';
 let monitorInterval = null;
 let monitorExamId = null;
+let monitorNameSort = 'asc';
 let reportInterval = null;
 let sectionPollInterval = null;
 let currentQBuilderExamId = null;
@@ -5352,6 +5353,32 @@ function loadMonitoringExams() {
 
 let _monitorView = 'table'; // 'table' | 'camera'
 
+function getMonitorLastName(name) {
+  const text = String(name || '').trim();
+  if (!text) return '';
+  const suffixes = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+  const parts = text.split(/\s+/).filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const cleaned = parts[i].replace(/[.,]/g, '').toLowerCase();
+    if (!suffixes.has(cleaned)) return cleaned;
+  }
+  return parts[parts.length - 1]?.toLowerCase() || '';
+}
+
+function compareMonitorSessionsByLastName(a, b) {
+  const lastNameA = getMonitorLastName(a.studentName || a.studentId);
+  const lastNameB = getMonitorLastName(b.studentName || b.studentId);
+  const direction = monitorNameSort === 'desc' ? -1 : 1;
+  const lastNameCompare = lastNameA.localeCompare(lastNameB, undefined, { sensitivity: 'base' });
+  if (lastNameCompare !== 0) return lastNameCompare * direction;
+  return String(a.studentName || a.studentId || '').localeCompare(String(b.studentName || b.studentId || ''), undefined, { sensitivity: 'base' }) * direction;
+}
+
+function syncMonitorSortButton() {
+  const label = document.getElementById('monitor-sort-btn-label');
+  if (label) label.textContent = monitorNameSort === 'desc' ? 'Last name Z-A' : 'Last name A-Z';
+}
+
 function setMonitorView(view) {
   _monitorView = view;
   const tableView = document.getElementById('monitoring-grid');
@@ -5529,6 +5556,12 @@ function onMonitorExamChange() {
   setMonitorView(monitorExamId ? _monitorView : 'table');
 }
 
+function toggleMonitorNameSort() {
+  monitorNameSort = monitorNameSort === 'asc' ? 'desc' : 'asc';
+  syncMonitorSortButton();
+  renderMonitoringTable(monitorExamId);
+}
+
 function startMonitoring() {
   stopMonitoring();
   const refresh = () => {
@@ -5556,6 +5589,7 @@ function stopMonitoring() {
 function renderMonitoringTable(examId) {
   const countEl = document.getElementById('monitor-count');
   const grid = document.getElementById('monitoring-grid');
+  syncMonitorSortButton();
 
   if (!examId) {
     countEl.textContent = '0 students';
@@ -5568,7 +5602,7 @@ function renderMonitoringTable(examId) {
   }
 
   const exam = DB.getExam(examId);
-  const sessions = DB.getSessionsByExam(examId);
+  const sessions = DB.getSessionsByExam(examId).slice().sort(compareMonitorSessionsByLastName);
   const totalQs = exam ? exam.questions.length : 1;
 
   countEl.textContent = sessions.length + ' student' + (sessions.length !== 1 ? 's' : '');
@@ -5629,7 +5663,7 @@ function renderMonitoringTable(examId) {
     const chatBtnHtml = `<button class="tbl-btn ms-chat-btn ${unread ? 'has-unread' : ''} ${hasUnreadReport ? 'has-report' : ''}"
         onclick="openStudentChat('${escHtml(examId)}','${escHtml(s.studentId)}','${escHtml(s.id)}')" title="Open chat with this student">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>Chat</span>${unread ? `<span class="ms-chat-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
+        ${unread ? `<span class="ms-chat-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
       </button>`;
 
     const statusBadgeHtml = s.submitted
@@ -5670,9 +5704,11 @@ function renderMonitoringTable(examId) {
       <td style="text-align:center;">${statusBadgeHtml}</td>
       <td style="text-align:center;">${logsHtml}</td>
       <td style="text-align:center;">
-        <div class="table-actions" style="justify-content:center;gap:6px;flex-wrap:wrap;">
+        <div class="table-actions ms-action-cell">
+          <div class="ms-action-main">
+            ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span class="ms-action-status">Submitted</span>'}
+          </div>
           ${chatBtnHtml}
-          ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span style="font-size:12px;color:#9ca3af;">Submitted</span>'}
         </div>
       </td>
     </tr>`;
