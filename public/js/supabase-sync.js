@@ -541,6 +541,16 @@ const SupabaseSync = {
             normalized.excludedStudentIds = prior.excludedStudentIds;
           }
         }
+        // Same protection for cameraExemptStudentIds (webcam exemption toggle from the
+        // in-exam chat) — without this, a realtime echo from a pre-migration schema
+        // would silently wipe the exemption back to [] right after it was set, which
+        // looked like the "Re-enable webcam" toggle not sticking.
+        if (table === 'exams' && row && !('camera_exempt_student_ids' in row)) {
+          const prior = current.find(r => r.id === normalized.id);
+          if (prior && Array.isArray(prior.cameraExemptStudentIds)) {
+            normalized.cameraExemptStudentIds = prior.cameraExemptStudentIds;
+          }
+        }
         const nextRow = table === 'sessions'
           ? this._mergeIncomingSessionWithLocal(normalized, current.find(r => r.id === normalized.id))
           : normalized;

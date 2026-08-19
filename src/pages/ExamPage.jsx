@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ThemeToggle from '../components/ThemeToggle.jsx';
 import { applyTheme, readStoredTheme, toggleTheme } from '../lib/theme.js';
 
 const EYE_OPEN = (
@@ -225,7 +224,14 @@ export default function ExamPage() {
                 <span className="portal-topbar-title" id="portal-topbar-title">Home</span>
               </div>
               <div className="portal-topbar-actions">
-                <ThemeToggle checked={theme === 'dark'} onChange={handleThemeToggle} title="Toggle dark mode" />
+                <label className="theme-switch" title="Toggle dark / light mode">
+                  <input type="checkbox" checked={theme === 'dark'} onChange={handleThemeToggle} />
+                  <span className="theme-switch-track">
+                    <svg className="theme-switch-icon ts-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <svg className="theme-switch-icon ts-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                    <span className="theme-switch-knob"></span>
+                  </span>
+                </label>
                 <button type="button" className="portal-user-pill" onClick={() => window.ExamApp.showPortalTab('settings')}>
                   <div id="portal-topbar-avatar" className="portal-user-avatar">S</div>
                   <span id="portal-topbar-name" className="portal-user-name">Student</span>
@@ -676,6 +682,21 @@ export default function ExamPage() {
         <div id="camera-off-countdown" style={{ fontSize: '13px', opacity: 0.75 }}>Attempting to reconnect&hellip;</div>
       </div>
 
+      {/* Webcam Wait Overlay — shown after the student reports a webcam problem.
+          Blocks the exam entirely until the professor grants a camera exemption
+          from the in-exam chat; the student's only other option is to exit. */}
+      <div id="webcam-wait-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.97)', zIndex: 9100, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff', padding: '24px' }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px', opacity: 0.85 }}>
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <div style={{ fontSize: '26px', fontWeight: 900, marginBottom: '10px', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Waiting for Your Professor</div>
+        <div style={{ fontSize: '15px', opacity: 0.85, marginBottom: '26px', maxWidth: '420px', lineHeight: 1.5 }}>
+          You reported a webcam issue. You can continue once your professor allows you to proceed without one.
+        </div>
+        <div className="webcam-wait-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" style={{ marginTop: '30px' }} onClick={() => window.ExamApp.exitWebcamDecline()}>Exit</button>
+      </div>
+
       {/* Camera Container */}
       <div id="camera-container" className="camera-container" style={{ display: 'none' }}>
         <div className="camera-feed-wrap">
@@ -794,6 +815,60 @@ export default function ExamPage() {
               <button type="button" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.submitExamAccessCode()}>
                 Continue
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Webcam Consent Modal — shown before camera activation, required by privacy/consent policy */}
+      <div id="webcam-consent-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog webcam-consent-dialog">
+            <div className="confirm-icon" style={{ background: '#e8f5ec' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+            </div>
+            <div className="confirm-title">Webcam Monitoring Required</div>
+            <div className="confirm-message">
+              This exam requires webcam monitoring to ensure academic integrity. Your professor will see your live feed and periodic snapshots during the exam. By clicking &ldquo;Allow&rdquo;, you consent to video monitoring during this examination.
+            </div>
+            <div className="confirm-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.declineWebcamConsent()}>Decline</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.acceptWebcamConsent()}>Allow</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Webcam Decline — Reason Modal (shown after Decline, sends a message/report to the professor) */}
+      <div id="webcam-decline-reason-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog webcam-decline-reason-dialog">
+            <div className="confirm-icon" style={{ background: '#fdecea' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b3261e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                <line x1="12" y1="2" x2="12" y2="12" />
+              </svg>
+            </div>
+            <div className="confirm-title">Is there a reason?</div>
+            <div className="confirm-message">
+              A webcam is required for this exam. Let your professor know why — they can allow you to continue without one.
+            </div>
+            <div className="form-group confirm-input-wrap">
+              <textarea
+                id="webcam-decline-reason-input"
+                className="form-control"
+                rows={3}
+                maxLength={500}
+                placeholder="e.g. My webcam is broken, I don't own one..."
+                style={{ width: '100%', resize: 'vertical' }}
+              />
+            </div>
+            <div className="confirm-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.exitWebcamDecline()}>Exit</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.sendWebcamReport()}>Send to Professor</button>
             </div>
           </div>
         </div>

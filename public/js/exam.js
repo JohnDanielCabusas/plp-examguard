@@ -2307,7 +2307,7 @@ const ExamApp = {
     const cameraExempt = this.session && DB.isStudentCameraExempt(this.exam?.id, this.session.studentId);
     this._cameraRequired = !!(this.exam && this.exam.requireCamera && !cameraExempt);
     if (this._cameraRequired) {
-      this.initCamera();
+      this._requestWebcamConsent();
     }
     // Verify display brightness with a perceptual check at the start of every
     // exam — the camera's ambient-light monitor only catches a dim screen
@@ -2539,10 +2539,13 @@ const ExamApp = {
     }
   },
 
-  // If the professor grants this student a camera exemption mid-exam, tear down
-  // the live webcam and its enforcement so the student isn't penalised.
+  // Keeps live camera enforcement in sync with the professor's exemption toggle
+  // (set from the in-exam chat). Handles BOTH directions: granting an exemption
+  // mid-exam tears down the live webcam, and revoking it later must bring the
+  // camera requirement back — previously only the "grant" direction was handled,
+  // so "Re-enable webcam" never actually resumed monitoring on the student's side.
   _syncCameraExemptionState() {
-    if (!this.exam || !this.session) return;
+    if (!this.exam || !this.session || !this.exam.requireCamera) return;
     const nowExempt = DB.isStudentCameraExempt(this.exam.id, this.session.studentId);
     if (nowExempt && this._cameraRequired) {
       this._cameraRequired = false;
@@ -2551,7 +2554,19 @@ const ExamApp = {
       if (camOff) camOff.style.display = 'none';
       const motion = document.getElementById('motion-warning-overlay');
       if (motion) motion.style.display = 'none';
+      // The exemption answers any pending consent prompt — don't leave it hanging.
+      const consentModal = document.getElementById('webcam-consent-modal');
+      if (consentModal && !consentModal.classList.contains('hidden')) { unlockBodyScroll(); consentModal.classList.add('hidden'); }
+      const reasonModal = document.getElementById('webcam-decline-reason-modal');
+      if (reasonModal && !reasonModal.classList.contains('hidden')) { unlockBodyScroll(); reasonModal.classList.add('hidden'); }
+      this._hideWebcamWaitOverlay();
       this._showToast('Your professor turned off the camera requirement for you.', 'success');
+    } else if (!nowExempt && !this._cameraRequired) {
+      // Professor turned the requirement back on — re-request consent before the
+      // webcam is reactivated (a camera is never turned on without consent).
+      this._cameraRequired = true;
+      this._showToast('Your professor turned the webcam requirement back on for you.', 'info');
+      this._requestWebcamConsent();
     }
   },
 
@@ -2876,6 +2891,137 @@ const ExamApp = {
   // ============================================================
   // CAMERA
   // ============================================================
+  // Privacy notice + consent gate — shown before the webcam is ever activated.
+  // Explains why monitoring is required, what is collected, and how it is
+  // used, and requires an explicit "Allow" before initCamera() runs.
+  _requestWebcamConsent() {
+    const modal = document.getElementById('webcam-consent-modal');
+    if (!modal) { this.initCamera(); return; } // fallback if markup is missing
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  acceptWebcamConsent() {
+    const modal = document.getElementById('webcam-consent-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+    this._recordActivity('camera_consent_given', 'Student consented to webcam monitoring');
+    this.initCamera();
+  },
+
+  declineWebcamConsent() {
+    const modal = document.getElementById('webcam-consent-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+    this._recordActivity('camera_consent_declined', 'Student declined webcam monitoring consent');
+
+    // Camera is required for this exam, but the student has explicitly declined
+    // and is about to report it to their professor — show a quiet blocked
+    // indicator only. Do NOT start the camera watchdog here: that would trigger
+    // the full-screen "Camera Is Off" overlay and rack up camera_off violations
+    // for something that isn't an accidental camera drop. The professor can
+    // grant a camera exemption from the chat, which tears this state down via
+    // _syncCameraExemptionState()/stopCamera().
+    const container = document.getElementById('camera-container');
+    const blockedMsg = document.getElementById('camera-blocked-msg');
+    const statusText = document.getElementById('camera-status-text');
+    if (container) container.style.display = '';
+    if (blockedMsg) blockedMsg.style.display = 'flex';
+    if (statusText) statusText.textContent = 'Camera denied';
+
+    // Give the student a chance to tell their professor why, so the professor
+    // can grant a camera exemption from the in-exam chat if warranted.
+    const reasonModal = document.getElementById('webcam-decline-reason-modal');
+    if (reasonModal) {
+      const textarea = document.getElementById('webcam-decline-reason-input');
+      if (textarea) textarea.value = '';
+      reasonModal.classList.remove('hidden');
+      lockBodyScroll();
+      setTimeout(() => textarea?.focus(), 50);
+    }
+  },
+
+  // The student has no professor permission to continue without a webcam, so
+  // the only alternative to reporting a reason is leaving the exam entirely.
+  exitWebcamDecline() {
+    const reasonModal = document.getElementById('webcam-decline-reason-modal');
+    if (reasonModal && !reasonModal.classList.contains('hidden')) unlockBodyScroll();
+    reasonModal?.classList.add('hidden');
+    this._hideWebcamWaitOverlay();
+    this.returnToLogin();
+  },
+
+  sendWebcamReport() {
+    const textarea = document.getElementById('webcam-decline-reason-input');
+    const text = (textarea?.value || '').trim();
+    if (!text) {
+      this._showToast('Please tell your professor why before sending.', 'error');
+      textarea?.focus();
+      return;
+    }
+
+    const modal = document.getElementById('webcam-decline-reason-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+    if (!this.exam || !this.session) return;
+
+    // Sent as a "report" (reusing the existing webcam report category) so it
+    // surfaces in the professor's chat with a notification, same as any other
+    // reported problem — the professor can then grant a camera exemption.
+    DB.addMessage({
+      ownerAdminId: this.exam.ownerAdminId || null,
+      professorId: this.exam.ownerAdminId || null,
+      studentId: this.session.studentId,
+      studentName: this.session.studentName,
+      examId: this.exam.id,
+      sessionId: this.session.id,
+      senderRole: 'student',
+      type: 'report',
+      reportCategory: 'webcam',
+      body: text,
+    });
+    this._renderChatMessages();
+    this._updateChatBadge();
+    this._showToast('Sent to your professor.', 'success');
+
+    // Block the exam entirely until the professor grants a camera exemption —
+    // the student can only leave (Exit) or wait for that response.
+    this._showWebcamWaitOverlay();
+  },
+
+  _showWebcamWaitOverlay() {
+    const overlay = document.getElementById('webcam-wait-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    this._startWebcamWaitPoll();
+  },
+
+  _hideWebcamWaitOverlay() {
+    const overlay = document.getElementById('webcam-wait-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._stopWebcamWaitPoll();
+  },
+
+  // Realtime alone isn't trusted here: a professor's "Re-enable webcam" /
+  // exemption toggle updates the exams row, but that postgres_changes event
+  // can silently miss the student's socket (see refreshExams()'s own comment
+  // about the realtime socket dropping) — leaving the student stuck on this
+  // screen until they refresh. Poll a direct exam refetch instead, so the
+  // professor's decision is picked up within a few seconds either way.
+  _startWebcamWaitPoll() {
+    if (this._webcamWaitPoll) return;
+    this._webcamWaitPoll = setInterval(async () => {
+      if (!this.exam || !this.session) return;
+      try {
+        if (window.SupabaseSync?.refreshExams) await window.SupabaseSync.refreshExams();
+      } catch (_) { /* best-effort — next tick retries */ }
+      this._syncCameraExemptionState();
+    }, 3000);
+  },
+
+  _stopWebcamWaitPoll() {
+    if (this._webcamWaitPoll) { clearInterval(this._webcamWaitPoll); this._webcamWaitPoll = null; }
+  },
+
   async initCamera() {
     const container = document.getElementById('camera-container');
     const video = document.getElementById('camera-feed');
@@ -3838,6 +3984,7 @@ const ExamApp = {
     this.anticheatListeners = [];
     this.stopCamera();
     this._stopConnectionMonitor();
+    this._stopWebcamWaitPoll();
   },
 
   // ============================================================
