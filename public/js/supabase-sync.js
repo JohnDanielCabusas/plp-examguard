@@ -255,6 +255,7 @@ const SupabaseSync = {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
       this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
       await this._pullMessages({ ownerAdminId: admin.id });
+      await this._pullExamShares({ professorId: admin.id });
       return;
     }
 
@@ -289,6 +290,7 @@ const SupabaseSync = {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
       this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
       await this._pullMessages({ studentId: student.studentId });
+      this._writeLocal('acs_exam_shares', []);
       return;
     }
 
@@ -325,6 +327,7 @@ const SupabaseSync = {
     this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
     this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     this._writeLocal('acs_sessions', (sessions || []).map(r => this._dbToJsSession(r)));
+    await this._pullExamShares();
   },
 
   // Loads the in-exam chat messages visible to the current viewer: a professor
@@ -344,6 +347,27 @@ const SupabaseSync = {
       this._writeLocal('acs_messages', (data || []).map(r => this._dbToJsMessage(r)));
     } catch (e) {
       if (this._isMissingMessagesTableError(e)) this._messagesSupported = false;
+    }
+  },
+
+  async _pullExamShares({ professorId } = {}) {
+    if (!this._client) return;
+    const { admin, sysadmin } = this._getSessions();
+    const scopedProfessorId = professorId || admin?.id || null;
+    if (!scopedProfessorId && !sysadmin) {
+      this._writeLocal('acs_exam_shares', []);
+      return;
+    }
+    try {
+      let query = this._client.from('exam_shares').select('*').order('created_at', { ascending: false });
+      if (scopedProfessorId && !sysadmin) {
+        query = query.or(`sender_professor_id.eq.${scopedProfessorId},recipient_professor_id.eq.${scopedProfessorId}`);
+      }
+      const { data, error } = await query;
+      if (error) return;
+      this._writeLocal('acs_exam_shares', (data || []).map(r => this._dbToJsExamShare(r)));
+    } catch {
+      // The feature is optional until the exam-sharing SQL migration is applied.
     }
   },
 
@@ -416,6 +440,7 @@ const SupabaseSync = {
       ['exams',    'acs_exams',    r => this._jsToDbExam(r)],
       ['sessions', 'acs_sessions', r => this._jsToDbSession(r)],
       ['logs',     'acs_logs',     r => this._jsToDbLog(r)],
+      ['exam_shares', 'acs_exam_shares', r => this._jsToDbExamShare(r)],
     ];
 
     for (const [table, lsKey, normalizer] of seedings) {
@@ -526,6 +551,26 @@ const SupabaseSync = {
         this._notifyDataChanged(table);
         return;
       }
+      if (table === 'exam_shares' && admin?.id && !sysadmin) {
+        if (eventType === 'DELETE') {
+          this._writeLocal(lsKey, current.filter(r => r.id !== old.id));
+          this._notifyDataChanged(table);
+          return;
+        }
+        const visible = row?.sender_professor_id === admin.id || row?.recipient_professor_id === admin.id;
+        if (!visible) {
+          const idx = current.findIndex(r => r.id === row?.id);
+          if (idx >= 0) this._writeLocal(lsKey, current.filter(r => r.id !== row.id));
+          this._notifyDataChanged(table);
+          return;
+        }
+        const normalized = normalizer(row);
+        const idx = current.findIndex(r => r.id === normalized.id);
+        if (idx >= 0) { current[idx] = normalized; this._writeLocal(lsKey, current); }
+        else { this._writeLocal(lsKey, [...current, normalized]); }
+        this._notifyDataChanged(table);
+        return;
+      }
       if (eventType === 'DELETE') {
         this._writeLocal(lsKey, current.filter(r => r.id !== old.id));
       } else {
@@ -583,6 +628,8 @@ const SupabaseSync = {
         applyChange('professor_activity_log', 'acs_professor_activity_log', r => this._dbToJsProfessorActivityLog(r)))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', ...(messagesFilter ? { filter: messagesFilter } : {}) },
         applyChange('messages', 'acs_messages', r => this._dbToJsMessage(r)))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_shares' },
+        applyChange('exam_shares', 'acs_exam_shares', r => this._dbToJsExamShare(r)))
       .subscribe();
   },
 
@@ -608,6 +655,10 @@ const SupabaseSync = {
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
+  },
+
+  async refreshExamShares() {
+    await this._pullExamShares();
   },
 
   // Sessions carry submitted/answers/warnings state that professors mutate
@@ -1075,6 +1126,34 @@ const SupabaseSync = {
     };
   },
 
+  _jsToDbExamShare(d) {
+    return {
+      id: d.id,
+      exam_id: d.examId || null,
+      sender_professor_id: d.senderProfessorId || null,
+      sender_professor_name: d.senderProfessorName || null,
+      sender_email: d.senderEmail || null,
+      recipient_professor_id: d.recipientProfessorId || null,
+      recipient_professor_name: d.recipientProfessorName || null,
+      recipient_email: d.recipientEmail || null,
+      source_subject_id: d.sourceSubjectId || null,
+      source_subject_code: d.sourceSubjectCode || null,
+      source_subject_name: d.sourceSubjectName || null,
+      exam_title: d.examTitle || null,
+      share_mode: d.shareMode || 'clone_exam',
+      message: d.message || null,
+      status: d.status || 'pending',
+      decline_reason: d.declineReason || null,
+      recipient_seen_at: d.recipientSeenAt || null,
+      responded_at: d.respondedAt || null,
+      accepted_exam_id: d.acceptedExamId || null,
+      accepted_subject_id: d.acceptedSubjectId || null,
+      snapshot: d.snapshot && typeof d.snapshot === 'object' ? d.snapshot : {},
+      created_at: d.createdAt || null,
+      updated_at: d.updatedAt || null,
+    };
+  },
+
   _dbToJsMessage(r) {
     return {
       id: r.id,
@@ -1092,6 +1171,34 @@ const SupabaseSync = {
     };
   },
 
+  _dbToJsExamShare(r) {
+    return {
+      id: r.id,
+      examId: r.exam_id || '',
+      senderProfessorId: r.sender_professor_id || '',
+      senderProfessorName: r.sender_professor_name || '',
+      senderEmail: r.sender_email || '',
+      recipientProfessorId: r.recipient_professor_id || '',
+      recipientProfessorName: r.recipient_professor_name || '',
+      recipientEmail: r.recipient_email || '',
+      sourceSubjectId: r.source_subject_id || '',
+      sourceSubjectCode: r.source_subject_code || '',
+      sourceSubjectName: r.source_subject_name || '',
+      examTitle: r.exam_title || '',
+      shareMode: r.share_mode || 'clone_exam',
+      message: r.message || '',
+      status: r.status || 'pending',
+      declineReason: r.decline_reason || '',
+      recipientSeenAt: r.recipient_seen_at || null,
+      respondedAt: r.responded_at || null,
+      acceptedExamId: r.accepted_exam_id || '',
+      acceptedSubjectId: r.accepted_subject_id || '',
+      snapshot: r.snapshot && typeof r.snapshot === 'object' ? r.snapshot : {},
+      createdAt: r.created_at || null,
+      updatedAt: r.updated_at || null,
+    };
+  },
+
   _jsToDb(table, data) {
     switch (table) {
       case 'professors': return this._jsToDbAdmin(data);
@@ -1101,6 +1208,7 @@ const SupabaseSync = {
       case 'sessions': return this._jsToDbSession(data);
       case 'logs':     return this._jsToDbLog(data);
       case 'messages': return this._jsToDbMessage(data);
+      case 'exam_shares': return this._jsToDbExamShare(data);
       default: return null;
     }
   },

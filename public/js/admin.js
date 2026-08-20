@@ -28,6 +28,7 @@ let examEditorOriginalUpdateExam = null;
 let confirmResolve = null;
 let adminBootstrapped = false;
 let passwordPromptResolve = null;
+let currentSharedExamsTab = 'received';
 const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
 
 function readAdminSectionFromUrl() {
@@ -247,6 +248,8 @@ document.addEventListener('dbReady', function init() {
     showSection(readAdminSectionFromUrl());
     refreshMessageNotifications();       // seed backlog + set the Monitoring badge
     startMessageNotificationPolling();   // catch new messages even if realtime misses
+    refreshExamShareNotifications();
+    startExamShareNotificationPolling();
 
   // Student ID modal: digits only, auto-insert dash after 2nd digit (YY-NNNNN)
   const studentIdInput = document.getElementById('stu-student-id');
@@ -496,9 +499,9 @@ function updateMonitoringNavBadge(count) {
 }
 
 // ── Notification bell (topbar) ─────────────────────────────────────────
-// A running log of student message/report notifications, with an unread badge.
-// Opening the dropdown marks everything seen (clears the badge).
-let _bellNotifs = []; // { id, kind, who, body, at, studentId, examId, seen }
+// A running log of notifications, with an unread badge. Opening the dropdown
+// marks everything seen locally.
+let _bellNotifs = []; // { id, kind, who, body, at, studentId, examId, shareId, seen }
 
 function addBellNotification(entry, seen = false) {
   if (!entry || !entry.id) return;
@@ -526,13 +529,21 @@ function renderBell() {
   }
   list.innerHTML = _bellNotifs.map(n => {
     const t = n.at ? new Date(n.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    const tag = n.kind === 'report' ? '<span class="notif-tag notif-tag-report">Report</span>' : '<span class="notif-tag">Message</span>';
-    return `<button type="button" class="notif-item${n.seen ? '' : ' unseen'}" onclick="openNotif('${escHtml(n.examId || '')}','${escHtml(n.studentId || '')}')">
+    const tag = getBellTagHtml(n.kind);
+    return `<button type="button" class="notif-item${n.seen ? '' : ' unseen'}" onclick="openNotif('${escHtml(n.id)}')">
       <div class="notif-item-top">${tag}<span class="notif-item-time">${t}</span></div>
-      <div class="notif-item-who">${escHtml(n.who || 'Student')}</div>
+      <div class="notif-item-who">${escHtml(n.who || 'Notification')}</div>
       <div class="notif-item-body">${escHtml(n.body || '')}</div>
     </button>`;
   }).join('');
+}
+
+function getBellTagHtml(kind) {
+  if (kind === 'report') return '<span class="notif-tag notif-tag-report">Report</span>';
+  if (kind === 'share-request') return '<span class="notif-tag notif-tag-share">Shared Exam</span>';
+  if (kind === 'share-accepted') return '<span class="notif-tag notif-tag-share notif-tag-share-success">Accepted</span>';
+  if (kind === 'share-declined') return '<span class="notif-tag notif-tag-share notif-tag-share-danger">Declined</span>';
+  return '<span class="notif-tag">Message</span>';
 }
 
 function toggleNotifDropdown(force) {
@@ -551,9 +562,17 @@ function clearNotifs() {
   renderBell();
 }
 
-// Jump from a notification straight to that student's chat in Monitoring.
-function openNotif(examId, studentId) {
+// Jump from a notification to its relevant destination.
+function openNotif(notificationId) {
+  const entry = _bellNotifs.find(item => item.id === notificationId);
   toggleNotifDropdown(false);
+  if (!entry) { showSection('monitoring'); return; }
+  if (entry.kind === 'share-request' || entry.kind === 'share-accepted' || entry.kind === 'share-declined') {
+    openExamSharePreview(entry.shareId);
+    return;
+  }
+  const examId = entry.examId || '';
+  const studentId = entry.studentId || '';
   if (!examId || !studentId) { showSection('monitoring'); return; }
   showSection('monitoring');
   setTimeout(() => {
@@ -575,12 +594,24 @@ document.addEventListener('click', (e) => {
 });
 
 // Top-right popup that slides in and auto-dismisses after 3 seconds.
+function getProfMessagePopupIcon(kind) {
+  if (kind === 'report') {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>`;
+  }
+  if (kind === 'share') {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51 8.59 10.49"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+}
+
 function showProfMessagePopup(title, detail, kind) {
   let host = document.getElementById('prof-msg-popups');
   if (!host) { host = document.createElement('div'); host.id = 'prof-msg-popups'; document.body.appendChild(host); }
   const pop = document.createElement('div');
   pop.className = `prof-msg-popup${kind === 'report' ? ' is-report' : ''}`;
   pop.innerHTML = `<span class="prof-msg-popup-icon">${kind === 'report' ? '⚠️' : '💬'}</span>
+    <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>`;
+  pop.innerHTML = `<span class="prof-msg-popup-icon">${getProfMessagePopupIcon(kind)}</span>
     <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>`;
   host.appendChild(pop);
   requestAnimationFrame(() => pop.classList.add('show'));
@@ -627,6 +658,97 @@ function refreshMessageNotifications() {
   notifyForStudentMessages(unread);
 }
 
+let _shareNotifySeeded = false;
+const _notifiedShareIds = new Set();
+const _notifiedShareResponses = new Set();
+
+function buildIncomingShareBellEntry(share) {
+  return {
+    id: `share-request:${share.id}`,
+    shareId: share.id,
+    kind: 'share-request',
+    who: formatProfessorIdentity(share.senderProfessorName, share.senderEmail),
+    body: `${share.examTitle || 'Shared exam'} is waiting for your review.`,
+    at: share.createdAt,
+  };
+}
+
+function buildOutgoingShareResponseBellEntry(share) {
+  const accepted = share.status === 'accepted';
+  return {
+    id: `share-response:${share.id}:${share.status}`,
+    shareId: share.id,
+    kind: accepted ? 'share-accepted' : 'share-declined',
+    who: formatProfessorIdentity(share.recipientProfessorName, share.recipientEmail),
+    body: accepted
+      ? `${share.examTitle || 'Shared exam'} was accepted.`
+      : `${share.examTitle || 'Shared exam'} was declined.`,
+    at: share.respondedAt || share.updatedAt || share.createdAt,
+  };
+}
+
+function refreshSharedExamsBadge() {
+  const pendingCount = DB.getPendingIncomingExamShares?.().length || 0;
+  const headerBadge = document.getElementById('shared-exams-open-badge');
+  if (headerBadge) {
+    if (pendingCount > 0) {
+      headerBadge.style.display = '';
+      headerBadge.textContent = pendingCount > 9 ? '9+' : String(pendingCount);
+    } else {
+      headerBadge.style.display = 'none';
+    }
+  }
+  const tabBadge = document.getElementById('shared-exams-tab-received-badge');
+  if (tabBadge) {
+    if (pendingCount > 0) {
+      tabBadge.style.display = '';
+      tabBadge.textContent = pendingCount > 9 ? '9+' : String(pendingCount);
+    } else {
+      tabBadge.style.display = 'none';
+    }
+  }
+}
+
+function refreshExamShareNotifications() {
+  if (typeof DB?.getIncomingExamShares !== 'function') return;
+  const incomingPending = DB.getIncomingExamShares().filter(share => share.status === 'pending');
+  const outgoingResponses = DB.getOutgoingExamShares().filter(share => ['accepted', 'declined'].includes(share.status));
+  refreshSharedExamsBadge();
+
+  if (!_shareNotifySeeded) {
+    incomingPending.forEach(share => {
+      _notifiedShareIds.add(share.id);
+      addBellNotification(buildIncomingShareBellEntry(share), true);
+    });
+    outgoingResponses.forEach(share => {
+      const key = `${share.id}:${share.status}`;
+      _notifiedShareResponses.add(key);
+      addBellNotification(buildOutgoingShareResponseBellEntry(share), true);
+    });
+    _shareNotifySeeded = true;
+    return;
+  }
+
+  incomingPending.forEach(share => {
+    if (_notifiedShareIds.has(share.id)) return;
+    _notifiedShareIds.add(share.id);
+    addBellNotification(buildIncomingShareBellEntry(share), false);
+    showProfMessagePopup(`New shared exam from ${formatProfessorIdentity(share.senderProfessorName, share.senderEmail, 'a professor')}`, share.examTitle || 'Review the shared exam request.', 'share');
+  });
+
+  outgoingResponses.forEach(share => {
+    const key = `${share.id}:${share.status}`;
+    if (_notifiedShareResponses.has(key)) return;
+    _notifiedShareResponses.add(key);
+    addBellNotification(buildOutgoingShareResponseBellEntry(share), false);
+    showProfMessagePopup(
+      share.status === 'accepted' ? 'Shared exam accepted' : 'Shared exam declined',
+      `${formatProfessorIdentity(share.recipientProfessorName, share.recipientEmail, 'A professor')} ${share.status} "${share.examTitle || 'your shared exam'}".`,
+      'share'
+    );
+  });
+}
+
 // Poll Supabase for new messages so notifications fire even if a realtime push
 // is missed or realtime isn't available for this project.
 let _msgPollTimer = null;
@@ -643,8 +765,30 @@ function startMessageNotificationPolling() {
   }, 6000);
 }
 
+let _sharePollTimer = null;
+function startExamShareNotificationPolling() {
+  if (_sharePollTimer) return;
+  _sharePollTimer = setInterval(() => {
+    if (window.SupabaseSync?.refreshExamShares) {
+      Promise.resolve(SupabaseSync.refreshExamShares())
+        .then(() => refreshExamShareNotifications())
+        .catch(() => refreshExamShareNotifications());
+    } else {
+      refreshExamShareNotifications();
+    }
+  }, 7000);
+}
+
 document.addEventListener('acsDataChanged', (e) => {
   if (e.detail?.table === 'messages') refreshMessageNotifications();
+  if (e.detail?.table === 'exam_shares') {
+    refreshExamShareNotifications();
+    if (!document.getElementById('modal-shared-exams')?.classList.contains('hidden')) renderSharedExamsModal();
+    if (!document.getElementById('modal-exam-share-preview')?.classList.contains('hidden')) {
+      const shareId = document.getElementById('modal-exam-share-preview')?.dataset.shareId || '';
+      if (shareId) openExamSharePreview(shareId);
+    }
+  }
 });
 
 // Cross-tab bridge: when another tab on this device (e.g. a student's exam page)
@@ -2355,6 +2499,7 @@ function buildMoreItems(e) {
 
 function buildExamActions(e) {
   const icEdit    = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  const icShare   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51L8.59 10.49"/></svg>`;
   const icArchive = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
   const icMore    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>`;
 
@@ -2369,6 +2514,7 @@ function buildExamActions(e) {
   // Edit: same slide-icon animation as course/table edit buttons
   if (['draft','ready','active','closed'].includes(e.status)) {
     btns += `<button class="btn-action btn-action-ghost" onclick="openExamModal('${e.id}')">Edit${icEditFill}</button>`;
+    btns += `<button class="btn-action btn-action-ghost" onclick="openShareExamModal('${e.id}')">Share${icShare}</button>`;
   }
   if (['ready','active','closed'].includes(e.status)) {
     btns += `<button class="tbl-btn tbl-btn-archive" onclick="setExamStatus('${e.id}','archived')">Archive${icArchiveFill}</button>`;
@@ -2383,6 +2529,427 @@ function openMoreModal(examId) {
   document.getElementById('modal-more-title').textContent = e.title;
   document.getElementById('modal-more-body').innerHTML = buildMoreItems(e);
   openModal('modal-more-actions');
+}
+
+function getExamShareStatusBadge(status) {
+  const map = {
+    pending: 'badge-warning',
+    accepted: 'badge-success',
+    declined: 'badge-danger',
+    cancelled: 'badge-secondary',
+  };
+  return `<span class="badge ${map[status] || 'badge-secondary'}">${escHtml(String(status || 'pending').toUpperCase())}</span>`;
+}
+
+function getExamShareModeLabel(mode) {
+  return mode === 'clone_exam' ? 'Clone Full Exam' : 'Shared Exam';
+}
+
+function getShareQuestionTypeLabel(type) {
+  const map = {
+    mcq: 'Multiple Choice',
+    checkbox: 'Checkboxes',
+    tf: 'True / False',
+    identification: 'Identification',
+    enumeration: 'Enumeration',
+    matching: 'Matching',
+    essay: 'Essay',
+    coding: 'Coding',
+  };
+  return map[type] || String(type || 'Question').replace(/_/g, ' ');
+}
+
+function getExamShareSnapshotExam(share) {
+  return share?.snapshot?.exam && typeof share.snapshot.exam === 'object' ? share.snapshot.exam : {};
+}
+
+function getExamShareSnapshotSubject(share) {
+  return share?.snapshot?.subject && typeof share.snapshot.subject === 'object' ? share.snapshot.subject : {};
+}
+
+function formatProfessorIdentity(name, email, fallback = 'Professor') {
+  const cleanName = String(name || '').trim();
+  const cleanEmail = String(email || '').trim();
+  if (cleanName && cleanEmail) return `${cleanName} (${cleanEmail})`;
+  return cleanName || cleanEmail || fallback;
+}
+
+function openShareExamModal(examId) {
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+  const subject = DB.getSubject(exam.subjectId);
+  document.getElementById('share-exam-id').value = exam.id;
+  document.getElementById('share-recipient-email').value = '';
+  document.getElementById('share-message').value = '';
+  document.getElementById('share-mode').value = 'clone_exam';
+  document.getElementById('share-exam-title').textContent = `${exam.title}${subject ? ` — ${subject.code} - ${formatCourseNameDisplay(subject.name)}` : ''}`;
+  closeModal('modal-more-actions');
+  openModal('modal-share-exam');
+  requestAnimationFrame(() => document.getElementById('share-recipient-email')?.focus());
+}
+
+async function submitShareExam() {
+  const examId = document.getElementById('share-exam-id').value;
+  const recipientEmail = String(document.getElementById('share-recipient-email').value || '').trim().toLowerCase();
+  const shareMode = document.getElementById('share-mode').value || 'clone_exam';
+  const message = String(document.getElementById('share-message').value || '').trim();
+  const sender = getCurrentAdminRecord();
+  const exam = DB.getExam(examId);
+
+  if (!exam) { showToast('Exam could not be found.', 'error'); return; }
+  if (!recipientEmail) { showToast('Recipient professor email is required.', 'error'); return; }
+  if (!sender?.id) { showToast('Professor session not found.', 'error'); return; }
+  if (recipientEmail === String(sender.email || '').trim().toLowerCase()) {
+    showToast('You cannot share an exam with your own account.', 'error');
+    return;
+  }
+
+  const sendBtn = document.getElementById('share-exam-send-btn');
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    const recipient = await DB.findProfessorByEmail(recipientEmail);
+    if (!recipient?.id) {
+      showToast('No professor account matches that email address.', 'error');
+      return;
+    }
+    if (recipient.id === sender.id) {
+      showToast('You cannot share an exam with your own account.', 'error');
+      return;
+    }
+
+    const subject = DB.getSubject(exam.subjectId);
+    DB.createExamShare({
+      examId: exam.id,
+      senderProfessorId: sender.id,
+      senderProfessorName: sender.name || sender.username || 'Professor',
+      senderEmail: sender.email || '',
+      recipientProfessorId: recipient.id,
+      recipientProfessorName: recipient.name || recipient.username || '',
+      recipientEmail: recipient.email || recipientEmail,
+      sourceSubjectId: subject?.id || '',
+      sourceSubjectCode: subject?.code || '',
+      sourceSubjectName: subject ? formatCourseNameDisplay(subject.name) : '',
+      examTitle: exam.title || 'Shared Exam',
+      shareMode,
+      message,
+      snapshot: {
+        exam: cloneExamEditorData({
+          title: exam.title || '',
+          description: exam.description || '',
+          timeLimit: Number(exam.timeLimit) || 60,
+          shuffleQuestions: !!exam.shuffleQuestions,
+          shuffleAnswers: !!exam.shuffleAnswers,
+          requireCamera: !!exam.requireCamera,
+          requireAIDetection: !!exam.requireAIDetection,
+          allowReview: !!exam.allowReview,
+          status: exam.status || 'draft',
+          questions: exam.questions || [],
+        }),
+        subject: cloneExamEditorData({
+          id: subject?.id || '',
+          code: subject?.code || '',
+          name: subject ? formatCourseNameDisplay(subject.name) : '',
+          schoolYear: subject?.schoolYear || '',
+          yearLevels: Array.isArray(subject?.yearLevels) ? subject.yearLevels : [],
+          sections: Array.isArray(subject?.sections) ? subject.sections : [],
+        }),
+      },
+    });
+
+    closeModal('modal-share-exam');
+    renderSharedExamsModal();
+    refreshExamShareNotifications();
+    showToast(`Exam shared with ${recipient.name || recipient.email}.`, 'success');
+  } catch (error) {
+    showToast(`Unable to share exam: ${error.message || error}`, 'error');
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+  }
+}
+
+function switchSharedExamsTab(tab) {
+  currentSharedExamsTab = tab === 'sent' ? 'sent' : 'received';
+  const input = document.getElementById('shared-exams-active-tab');
+  if (input) input.value = currentSharedExamsTab;
+  document.getElementById('shared-exams-tab-received')?.classList.toggle('active', currentSharedExamsTab === 'received');
+  document.getElementById('shared-exams-tab-sent')?.classList.toggle('active', currentSharedExamsTab === 'sent');
+  renderSharedExamsModal();
+}
+
+function openSharedExamsModal(initialTab = 'received') {
+  switchSharedExamsTab(initialTab);
+  refreshSharedExamsBadge();
+  openModal('modal-shared-exams');
+}
+
+function renderSharedExamsModal() {
+  const listEl = document.getElementById('shared-exams-list');
+  if (!listEl) return;
+  refreshSharedExamsBadge();
+  const shares = currentSharedExamsTab === 'sent'
+    ? DB.getOutgoingExamShares()
+    : DB.getIncomingExamShares();
+
+  if (!shares.length) {
+    listEl.innerHTML = `<div class="empty-state"><p>${currentSharedExamsTab === 'sent' ? 'You have not shared any exams yet.' : 'No shared exam requests yet.'}</p></div>`;
+    return;
+  }
+
+  listEl.innerHTML = shares.map(share => {
+    const isReceived = currentSharedExamsTab === 'received';
+    const counterpartName = isReceived
+      ? formatProfessorIdentity(share.senderProfessorName, share.senderEmail)
+      : formatProfessorIdentity(share.recipientProfessorName, share.recipientEmail);
+    const subjectMeta = [share.sourceSubjectCode, share.sourceSubjectName].filter(Boolean).join(' - ');
+    const statusMeta = share.status === 'pending'
+      ? `Sent ${formatDateTime(share.createdAt)}`
+      : `${share.status === 'accepted' ? 'Responded' : 'Declined'} ${formatDateTime(share.respondedAt || share.updatedAt || share.createdAt)}`;
+    const noteHtml = share.message ? `<div class="shared-exam-card-note">${escHtml(share.message)}</div>` : '';
+    const viewedHtml = !isReceived && share.recipientSeenAt ? `<span class="shared-exam-meta-pill">Viewed ${formatDateTime(share.recipientSeenAt)}</span>` : '';
+    return `<button type="button" class="shared-exam-card" onclick="openExamSharePreview('${share.id}')">
+      <div class="shared-exam-card-top">
+        <div>
+          <div class="shared-exam-card-title">${escHtml(share.examTitle || 'Shared Exam')}</div>
+          <div class="shared-exam-card-sub">${isReceived ? 'From' : 'To'} ${escHtml(counterpartName)}</div>
+        </div>
+        <div>${getExamShareStatusBadge(share.status)}</div>
+      </div>
+      <div class="shared-exam-card-meta">
+        ${subjectMeta ? `<span class="shared-exam-meta-pill">${escHtml(subjectMeta)}</span>` : ''}
+        <span class="shared-exam-meta-pill">${escHtml(getExamShareModeLabel(share.shareMode))}</span>
+        ${viewedHtml}
+      </div>
+      ${noteHtml}
+      <div class="shared-exam-card-foot">${escHtml(statusMeta)}</div>
+    </button>`;
+  }).join('');
+}
+
+function getSharePreviewTargetSubjectId(share) {
+  const snapshotSubject = getExamShareSnapshotSubject(share);
+  const subjects = DB.getSubjects().filter(subject => !subject.archived);
+  const codeMatch = subjects.find(subject => snapshotSubject.code && subject.code === snapshotSubject.code);
+  if (codeMatch) return codeMatch.id;
+  const nameMatch = subjects.find(subject => snapshotSubject.name && formatCourseNameDisplay(subject.name) === snapshotSubject.name);
+  return nameMatch?.id || subjects[0]?.id || '';
+}
+
+function buildExamShareQuestionAnswerHtml(question) {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  const answers = Array.isArray(question?.answers) ? question.answers : [];
+  const pairs = Array.isArray(question?.pairs) ? question.pairs : [];
+
+  let detailHtml = '';
+  if (options.length) {
+    detailHtml += `<div class="share-preview-options">${options.map((option, index) => `<div class="share-preview-option">${String.fromCharCode(65 + index)}. ${escHtml(option)}</div>`).join('')}</div>`;
+  }
+
+  let answerHtml = '';
+  if (question?.type === 'checkbox') {
+    const correctIndices = Array.isArray(question?.correctAnswerIndices) ? question.correctAnswerIndices : [];
+    const labels = correctIndices.map(index => options[index]).filter(Boolean);
+    answerHtml = labels.length ? labels.map(label => escHtml(label)).join(', ') : 'No correct options recorded.';
+  } else if (question?.type === 'enumeration') {
+    answerHtml = answers.length ? answers.map(answer => escHtml(answer)).join(', ') : 'No expected answers recorded.';
+  } else if (question?.type === 'matching') {
+    answerHtml = pairs.length
+      ? pairs.map(pair => `${escHtml(pair.term || '')} → ${escHtml(pair.match || '')}`).join('<br>')
+      : 'No answer pairs recorded.';
+  } else if (question?.type === 'essay') {
+    answerHtml = question?.rubric ? `Rubric: ${escHtml(question.rubric)}` : 'Essay question — manual grading required.';
+  } else if (question?.type === 'coding') {
+    const parts = [];
+    if (question?.language) parts.push(`Language: ${escHtml(question.language)}`);
+    if (question?.expectedOutput) parts.push(`Expected output: ${escHtml(question.expectedOutput)}`);
+    if (question?.rubric) parts.push(`Rubric: ${escHtml(question.rubric)}`);
+    answerHtml = parts.join('<br>') || 'Coding question.';
+  } else {
+    answerHtml = question?.correctAnswer ? escHtml(question.correctAnswer) : 'No answer recorded.';
+  }
+
+  return `
+    <div class="share-preview-question">
+      <div class="share-preview-question-top">
+        <span class="share-preview-question-type">${escHtml(getShareQuestionTypeLabel(question?.type))}</span>
+        <span class="share-preview-question-points">${Number(question?.points) || 0} pt${Number(question?.points) === 1 ? '' : 's'}</span>
+      </div>
+      <div class="share-preview-question-text">${escHtml(question?.content || 'Untitled question')}</div>
+      ${detailHtml}
+      <div class="share-preview-answer"><strong>Answer:</strong><div>${answerHtml}</div></div>
+    </div>
+  `;
+}
+
+function buildExamSharePreviewBody(share, isIncomingPending) {
+  const snapshotExam = getExamShareSnapshotExam(share);
+  const snapshotSubject = getExamShareSnapshotSubject(share);
+  const questions = Array.isArray(snapshotExam.questions) ? snapshotExam.questions : [];
+  const targetSubjectId = getSharePreviewTargetSubjectId(share);
+  const targetSubjects = DB.getSubjects().filter(subject => !subject.archived);
+  const targetSubjectOptions = targetSubjects.length
+    ? targetSubjects.map(subject => `<option value="${subject.id}"${subject.id === targetSubjectId ? ' selected' : ''}>${escHtml(subject.code)} - ${escHtml(formatCourseNameDisplay(subject.name))}</option>`).join('')
+    : '<option value="">No available courses</option>';
+
+  return `
+    <div class="share-preview-meta-grid">
+      <div class="share-preview-meta-card">
+        <div class="share-preview-meta-label">From</div>
+        <div class="share-preview-meta-value">${escHtml(formatProfessorIdentity(share.senderProfessorName, share.senderEmail))}</div>
+      </div>
+      <div class="share-preview-meta-card">
+        <div class="share-preview-meta-label">Course</div>
+        <div class="share-preview-meta-value">${escHtml([share.sourceSubjectCode, share.sourceSubjectName || snapshotSubject.name].filter(Boolean).join(' - ') || 'Not specified')}</div>
+      </div>
+      <div class="share-preview-meta-card">
+        <div class="share-preview-meta-label">Mode</div>
+        <div class="share-preview-meta-value">${escHtml(getExamShareModeLabel(share.shareMode))}</div>
+      </div>
+      <div class="share-preview-meta-card">
+        <div class="share-preview-meta-label">Status</div>
+        <div class="share-preview-meta-value">${getExamShareStatusBadge(share.status)}</div>
+      </div>
+    </div>
+    ${share.message ? `<div class="share-preview-note"><strong>Note:</strong> ${escHtml(share.message)}</div>` : ''}
+    <div class="share-preview-summary">
+      <span>${questions.length} question${questions.length === 1 ? '' : 's'}</span>
+      <span>${Number(snapshotExam.timeLimit) || 60} minute${Number(snapshotExam.timeLimit) === 1 ? '' : 's'}</span>
+    </div>
+    ${isIncomingPending ? `
+      <div class="form-group" style="margin-top:18px;">
+        <label>Target Course for Your Copy *</label>
+        <select class="form-control" id="exam-share-target-subject">${targetSubjectOptions}</select>
+        <p class="text-muted" style="font-size:12px;margin-top:6px;">Your accepted copy will be created as a new draft exam under this course.</p>
+      </div>
+    ` : ''}
+    <div class="share-preview-questions">
+      ${questions.length
+        ? questions.map((question, index) => `
+            <div class="share-preview-question-wrap">
+              <div class="share-preview-question-index">Question ${index + 1}</div>
+              ${buildExamShareQuestionAnswerHtml(question)}
+            </div>
+          `).join('')
+        : '<div class="empty-state"><p>No questions were included in this shared exam.</p></div>'}
+    </div>
+  `;
+}
+
+function openExamSharePreview(shareId) {
+  const share = DB.getExamShare(shareId);
+  if (!share) {
+    showToast('Shared exam request could not be found.', 'error');
+    return;
+  }
+  const currentAdminId = Auth.getAdminSession?.()?.id || '';
+  const isIncoming = share.recipientProfessorId === currentAdminId;
+  const isIncomingPending = isIncoming && share.status === 'pending';
+  if (isIncoming) DB.markExamShareSeen(shareId);
+
+  const modal = document.getElementById('modal-exam-share-preview');
+  const body = document.getElementById('modal-exam-share-preview-body');
+  const footer = document.getElementById('modal-exam-share-preview-footer');
+  if (!modal || !body || !footer) return;
+
+  modal.dataset.shareId = shareId;
+  document.getElementById('modal-exam-share-preview-title').textContent = share.examTitle || 'Shared Exam Preview';
+  document.getElementById('modal-exam-share-preview-subtitle').textContent = `Sent ${formatDateTime(share.createdAt)} by ${formatProfessorIdentity(share.senderProfessorName, share.senderEmail)}`;
+  body.innerHTML = buildExamSharePreviewBody(share, isIncomingPending);
+
+  if (isIncomingPending) {
+    footer.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal('modal-exam-share-preview')">Close</button>
+      <button class="btn btn-danger" onclick="declineExamShare('${share.id}')">Decline</button>
+      <button class="btn btn-primary" onclick="acceptExamShare('${share.id}')">Accept and Create Draft</button>
+    `;
+  } else if (share.status === 'accepted' && share.acceptedExamId && DB.getExam(share.acceptedExamId)) {
+    footer.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal('modal-exam-share-preview')">Close</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-exam-share-preview');showSection('exams');setTimeout(() => openExamEditor('${share.acceptedExamId}'), 120);">Open Accepted Copy</button>
+    `;
+  } else {
+    footer.innerHTML = `<button class="btn btn-secondary" onclick="closeModal('modal-exam-share-preview')">Close</button>`;
+  }
+
+  if (modal.classList.contains('hidden')) openModal('modal-exam-share-preview');
+}
+
+async function acceptExamShare(shareId) {
+  const share = DB.getExamShare(shareId);
+  if (!share || share.status !== 'pending') {
+    showToast('This shared exam request is no longer pending.', 'error');
+    return;
+  }
+  const subjectId = document.getElementById('exam-share-target-subject')?.value || '';
+  if (!subjectId) {
+    showToast('Please choose a target course for your copy.', 'error');
+    return;
+  }
+  const subject = DB.getSubject(subjectId);
+  if (!subject || subject.archived) {
+    showToast('The selected target course is no longer available.', 'error');
+    return;
+  }
+
+  const snapshotExam = getExamShareSnapshotExam(share);
+  const audienceData = getExamAudienceDataForSubject(subject);
+  const acceptedExam = DB.addExam({
+    title: `${snapshotExam.title || share.examTitle || 'Shared Exam'} (Shared Copy)`,
+    subjectId,
+    description: snapshotExam.description || '',
+    timeLimit: Number(snapshotExam.timeLimit) || 60,
+    code: '',
+    shuffleQuestions: !!snapshotExam.shuffleQuestions,
+    shuffleAnswers: !!snapshotExam.shuffleAnswers,
+    requireCamera: !!snapshotExam.requireCamera,
+    requireAIDetection: !!snapshotExam.requireAIDetection,
+    allowReview: !!snapshotExam.allowReview,
+    status: 'draft',
+    scoringReleased: false,
+    questions: cloneExamQuestionsForDuplicate(snapshotExam.questions || []),
+    excludedStudentIds: [],
+    cameraExemptStudentIds: [],
+    ...audienceData,
+  });
+
+  DB.updateExamShare(shareId, {
+    status: 'accepted',
+    respondedAt: new Date().toISOString(),
+    acceptedExamId: acceptedExam.id,
+    acceptedSubjectId: subjectId,
+    declineReason: '',
+  });
+
+  closeModal('modal-exam-share-preview');
+  closeModal('modal-shared-exams');
+  renderExams();
+  renderSharedExamsModal();
+  refreshExamShareNotifications();
+  showToast('Shared exam accepted. Your draft copy is ready.', 'success');
+  showSection('exams');
+  setTimeout(() => openExamEditor(acceptedExam.id), 120);
+}
+
+async function declineExamShare(shareId) {
+  const share = DB.getExamShare(shareId);
+  if (!share || share.status !== 'pending') {
+    showToast('This shared exam request is no longer pending.', 'error');
+    return;
+  }
+  const ok = await showConfirm(`Decline "${share.examTitle || 'this shared exam'}" from ${share.senderProfessorName || share.senderEmail || 'the sender'}?`);
+  if (!ok) return;
+
+  DB.updateExamShare(shareId, {
+    status: 'declined',
+    respondedAt: new Date().toISOString(),
+    acceptedExamId: '',
+    acceptedSubjectId: '',
+  });
+
+  closeModal('modal-exam-share-preview');
+  renderSharedExamsModal();
+  refreshExamShareNotifications();
+  showToast('Shared exam declined.', 'success');
 }
 
 function getExamDuplicateTargetSubjects(sourceExam) {

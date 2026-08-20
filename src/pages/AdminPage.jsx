@@ -535,7 +535,12 @@ export default function AdminPage() {
                     <div className="section-title">Exams</div>
                     <div className="section-subtitle">Create and manage examinations</div>
                   </div>
-                  <button className="btn btn-primary" onClick={() => window.openExamEditor()}>+ Create Exam</button>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary" onClick={() => window.openSharedExamsModal?.()}>
+                      Shared Requests <span id="shared-exams-open-badge" style={{ display: 'none', marginLeft: '6px' }} className="badge badge-warning">0</span>
+                    </button>
+                    <button className="btn btn-primary" onClick={() => window.openExamEditor()}>+ Create Exam</button>
+                  </div>
                 </div>
                 <div id="exams-grid" className="exam-cards-grid" />
               </div>
@@ -1073,6 +1078,77 @@ export default function AdminPage() {
           <div className="modal-footer">
             <button className="btn btn-secondary" onClick={() => window.closeModal('modal-duplicate-exam')}>Cancel</button>
             <button className="btn btn-primary" id="duplicate-exam-save-btn" onClick={() => window.saveDuplicatedExam()}>Create Duplicated Exam</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-share-exam">
+        <div className="modal-dialog">
+          <div className="modal-header"><span className="modal-title">Share Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-share-exam')}>&#10005;</button></div>
+          <div className="modal-body">
+            <input type="hidden" id="share-exam-id" />
+            <div className="form-group">
+              <label>Exam</label>
+              <div className="form-control" id="share-exam-title" style={{ display: 'flex', alignItems: 'center', background: 'var(--surface-2, #f9fafb)', cursor: 'default' }} />
+            </div>
+            <div className="form-group">
+              <label>Recipient Professor Email *</label>
+              <input type="email" className="form-control" id="share-recipient-email" placeholder="professor@school.edu" autoComplete="off" />
+            </div>
+            <div className="form-group">
+              <label>Share Mode</label>
+              <select className="form-control" id="share-mode">
+                <option value="clone_exam">Clone Full Exam</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Optional Note</label>
+              <textarea className="form-control" id="share-message" rows={4} placeholder="Add a short message for the receiving professor." maxLength={400} />
+            </div>
+            <p className="text-muted" style={{ fontSize: '12px', marginTop: '6px' }}>The receiving professor will review the exam snapshot first, then accept or decline it.</p>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-share-exam')}>Cancel</button>
+            <button className="btn btn-primary" id="share-exam-send-btn" onClick={() => window.submitShareExam?.()}>Send Share Request</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-shared-exams">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header">
+            <div>
+              <span className="modal-title">Shared Exams</span>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Review received requests and track the exams you have shared.</div>
+            </div>
+            <button className="modal-close" onClick={() => window.closeModal('modal-shared-exams')}>&#10005;</button>
+          </div>
+          <div className="modal-body">
+            <div className="shared-exams-tabs">
+              <button type="button" className="shared-exams-tab active" id="shared-exams-tab-received" onClick={() => window.switchSharedExamsTab?.('received')}>Received <span id="shared-exams-tab-received-badge" className="shared-exams-tab-badge" style={{ display: 'none' }}>0</span></button>
+              <button type="button" className="shared-exams-tab" id="shared-exams-tab-sent" onClick={() => window.switchSharedExamsTab?.('sent')}>Sent</button>
+            </div>
+            <input type="hidden" id="shared-exams-active-tab" value="received" />
+            <div id="shared-exams-list" className="shared-exams-list" />
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-shared-exams')}>Close</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-exam-share-preview">
+        <div className="modal-dialog modal-xl">
+          <div className="modal-header">
+            <div>
+              <span className="modal-title" id="modal-exam-share-preview-title">Shared Exam Preview</span>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }} id="modal-exam-share-preview-subtitle" />
+            </div>
+            <button className="modal-close" onClick={() => window.closeModal('modal-exam-share-preview')}>&#10005;</button>
+          </div>
+          <div className="modal-body" id="modal-exam-share-preview-body" />
+          <div className="modal-footer" id="modal-exam-share-preview-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-share-preview')}>Close</button>
           </div>
         </div>
       </div>

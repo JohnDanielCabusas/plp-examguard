@@ -30,6 +30,7 @@ const DB = {
     sysadmin: 'acs_sysadmin',
     professorActivityLog: 'acs_professor_activity_log',
     messages: 'acs_messages',
+    examShares: 'acs_exam_shares',
   },
   _cache: {},
 
@@ -310,6 +311,17 @@ const DB = {
     if (!admin) return admin;
     const { password, ...safeAdmin } = admin;
     return safeAdmin;
+  },
+
+  _upsertAdminInLocalCache(admin) {
+    if (!admin?.id) return null;
+    const admins = [...this._read(this.KEYS.admins, [])];
+    const safeAdmin = this._sanitizeAdminRecord(admin);
+    const index = admins.findIndex(entry => entry.id === safeAdmin.id);
+    if (index >= 0) admins[index] = { ...admins[index], ...safeAdmin };
+    else admins.push(safeAdmin);
+    this._write(this.KEYS.admins, admins);
+    return admins[index >= 0 ? index : admins.length - 1] || null;
   },
 
   _sanitizeStudentRecord(student) {
@@ -613,6 +625,7 @@ const DB = {
       ],
       [this.KEYS.sessions]: [],
       [this.KEYS.logs]: [],
+      [this.KEYS.examShares]: [],
     };
   },
 
@@ -647,6 +660,14 @@ const DB = {
   getAdmin(username) {
     return this.getAdmins().find(a => a.username === username) || null;
   },
+  getAdminById(id) {
+    return this.getAdmins().find(a => a.id === id) || null;
+  },
+  getAdminByEmail(email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return null;
+    return this.getAdmins().find(a => String(a.email || '').trim().toLowerCase() === normalizedEmail) || null;
+  },
   async refreshAdminsFromSupabase() {
     const supabase = this._getSupabaseClient();
     if (!supabase) return this.getAdmins();
@@ -668,6 +689,34 @@ const DB = {
     }));
     this._write(this.KEYS.admins, admins);
     return admins;
+  },
+  async findProfessorByEmail(email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const localMatch = this.getAdminByEmail(normalizedEmail);
+    const supabase = this._getSupabaseClient();
+    if (!supabase) return localMatch;
+
+    const { data, error } = await supabase
+      .from('professors')
+      .select('id, username, name, email, department, created_at')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return localMatch;
+
+    const admin = this._sanitizeAdminRecord({
+      id: data.id,
+      username: data.username,
+      name: data.name,
+      email: data.email || '',
+      department: data.department || '',
+      createdAt: data.created_at || null,
+    });
+    this._upsertAdminInLocalCache(admin);
+    return admin;
   },
   updateAdmin(id, updates) {
     const safeUpdates = this._sanitizeAdminRecord(updates);
@@ -1239,6 +1288,76 @@ const DB = {
     });
     if (changed) this._write(this.KEYS.messages, messages);
     return changed;
+  },
+
+  // ---- Professor-to-professor exam sharing ----
+  getExamShares() {
+    return [...this._read(this.KEYS.examShares, [])]
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+  },
+  getExamShare(id) {
+    return this.getExamShares().find(share => share.id === id) || null;
+  },
+  getIncomingExamShares() {
+    const currentAdminId = this._getCurrentAdminId();
+    return this.getExamShares().filter(share => !currentAdminId || share.recipientProfessorId === currentAdminId);
+  },
+  getOutgoingExamShares() {
+    const currentAdminId = this._getCurrentAdminId();
+    return this.getExamShares().filter(share => !currentAdminId || share.senderProfessorId === currentAdminId);
+  },
+  getPendingIncomingExamShares() {
+    return this.getIncomingExamShares().filter(share => share.status === 'pending');
+  },
+  createExamShare(data) {
+    const examShares = [...this._read(this.KEYS.examShares, [])];
+    const timestamp = new Date().toISOString();
+    const newShare = {
+      id: this.generateId(),
+      shareMode: 'clone_exam',
+      status: 'pending',
+      message: '',
+      declineReason: '',
+      recipientSeenAt: null,
+      respondedAt: null,
+      acceptedExamId: '',
+      acceptedSubjectId: '',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      snapshot: {},
+      ...data,
+    };
+    examShares.push(newShare);
+    this._write(this.KEYS.examShares, examShares);
+    SupabaseSync.syncDoc('exam_shares', newShare);
+    if (typeof document !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table: 'exam_shares' } }));
+    }
+    return newShare;
+  },
+  updateExamShare(id, updates) {
+    let updatedShare = null;
+    const examShares = this._read(this.KEYS.examShares, []).map(share => {
+      if (share.id !== id) return share;
+      updatedShare = {
+        ...share,
+        ...updates,
+        updatedAt: updates.updatedAt || new Date().toISOString(),
+      };
+      return updatedShare;
+    });
+    this._write(this.KEYS.examShares, examShares);
+    if (!updatedShare) return null;
+    SupabaseSync.syncDoc('exam_shares', updatedShare);
+    if (typeof document !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table: 'exam_shares' } }));
+    }
+    return updatedShare;
+  },
+  markExamShareSeen(id) {
+    const share = this.getExamShare(id);
+    if (!share || share.recipientSeenAt) return share;
+    return this.updateExamShare(id, { recipientSeenAt: new Date().toISOString() });
   },
 
   // ---- Per-student camera exemption ----
