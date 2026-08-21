@@ -62,13 +62,18 @@ const ExamApp = {
   _MOTION_THRESHOLD: 10,
   _PRESENCE_THRESHOLD: 5,
   _NO_MOTION_WARN: 10,
+  _NO_PERSON_GRACE_SEC: 2,
+  _FACE_PRESENCE_CONFIRM_SEC: 1.2,
   _MULTIPLE_FACE_WARN_SEC: 3,
   _MULTIPLE_FACE_CONFIRM_SEC: 1.2,
   _LOOK_DOWN_WARN_SEC: 20,
   _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
   _faceModelReady: false,
+  _faceDetectInFlight: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
+  _presenceConfirmSec: 0,
+  _lastPresenceSeenAt: 0,
   _multipleFaceSeconds: 0,
   _multipleFaceWarningIssued: false,
   _secondaryFaceTrack: null,
@@ -93,6 +98,7 @@ const ExamApp = {
   _cameraOffSeconds: 0,      // consecutive seconds with the webcam off/blocked
   _cameraOffWarningIssued: false, // prevent repeated camera-off strike warnings
   _cameraReacquiring: false, // true while attempting to re-open the camera
+  _cameraRecoveryGraceUntil: 0, // short grace window after reacquiring before declaring the camera fully restored
   _CAMERA_OFF_WARN_SEC: 10,  // seconds with the camera off before a formal warning
   _brightnessCheckRound: 0,  // perceptual check: consecutive correct rounds
   _brightnessCheckFails: 0,  // perceptual check: failed attempts
@@ -3183,14 +3189,31 @@ const ExamApp = {
     this._cameraWatchdog = setInterval(() => this._checkCameraAlive(), 1000);
   },
 
+  _isCameraRecoveryPending() {
+    return this._cameraRecoveryGraceUntil > Date.now();
+  },
+
   _isCameraLive() {
     const track = this._cameraStream && this._cameraStream.getVideoTracks()[0];
-    return !!(track && track.readyState === 'live' && !track.muted && !this._cameraObstructed);
+    return !!(
+      track
+      && track.readyState === 'live'
+      && !track.muted
+      && !this._cameraObstructed
+      && !this._isCameraRecoveryPending()
+    );
   },
 
   _checkCameraAlive() {
     if (!this.session) return;
     if (this._cameraPrompting || this._cameraReacquiring) return; // permission dialog open
+
+    if (this._isCameraRecoveryPending()) {
+      this._showCameraOffOverlay({ status: 'Checking camera...' });
+      const statusText = document.getElementById('camera-status-text');
+      if (statusText) statusText.textContent = 'Checking camera...';
+      return;
+    }
 
     if (this._isCameraLive()) {
       if (this._cameraOffSeconds > 0) {
@@ -3199,6 +3222,7 @@ const ExamApp = {
         this._hideCameraOffOverlay();
         const statusText = document.getElementById('camera-status-text');
         if (statusText) statusText.textContent = '● Monitoring';
+        this._recordActivity('camera_restored', 'Webcam re-enabled — monitoring resumed');
       }
       return;
     }
@@ -3231,11 +3255,9 @@ const ExamApp = {
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';
       const statusText = document.getElementById('camera-status-text');
-      if (statusText) statusText.textContent = '● Monitoring';
-      this._cameraOffSeconds = 0;
-      this._cameraOffWarningIssued = false;
-      this._hideCameraOffOverlay();
-      this._recordActivity('camera_restored', 'Webcam re-enabled — monitoring resumed');
+      if (statusText) statusText.textContent = 'Checking camera...';
+      this._cameraRecoveryGraceUntil = Date.now() + 2500;
+      this._showCameraOffOverlay({ status: 'Checking camera...' });
       // If the camera was denied at exam start, detection never began — start it now
       if (video && !this._motionInterval) {
         setTimeout(() => this._checkInitialPresence(video), 800);
@@ -3248,15 +3270,20 @@ const ExamApp = {
     }
   },
 
-  _showCameraOffOverlay() {
+  _showCameraOffOverlay(options = {}) {
     const overlay = document.getElementById('camera-off-overlay');
     if (!overlay) return;
     const cd = document.getElementById('camera-off-countdown');
+    const { status = '' } = options;
     if (cd) {
-      const remaining = Math.max(0, Math.ceil(this._CAMERA_OFF_WARN_SEC - this._cameraOffSeconds));
-      cd.textContent = this._cameraOffWarningIssued
-        ? 'A violation warning has been recorded. Re-enable your camera now.'
-        : `A warning will be recorded in ${remaining}s if the camera stays off.`;
+      if (status) {
+        cd.textContent = status;
+      } else {
+        const remaining = Math.max(0, Math.ceil(this._CAMERA_OFF_WARN_SEC - this._cameraOffSeconds));
+        cd.textContent = this._cameraOffWarningIssued
+          ? 'A violation warning has been recorded. Re-enable your camera now.'
+          : `A warning will be recorded in ${remaining}s if the camera stays off.`;
+      }
     }
     if (overlay.style.display === 'none' || !overlay.style.display) {
       overlay.style.display = 'flex';
@@ -3267,6 +3294,7 @@ const ExamApp = {
   _hideCameraOffOverlay() {
     const overlay = document.getElementById('camera-off-overlay');
     if (overlay && overlay.style.display !== 'none') overlay.style.display = 'none';
+    this._cameraRecoveryGraceUntil = 0;
   },
 
   _checkInitialPresence(video) {
@@ -3280,18 +3308,24 @@ const ExamApp = {
     this._prevFrameData = initData;
     this._slowFrameData = initData;
     this._slowFrameCount = 0;
+    this._lastPresenceSeenAt = this._getDetectionNow();
+    this._presenceConfirmSec = 0;
     this._startMotionDetection(video);
   },
 
   _startMotionDetection(video) {
     if (this._motionInterval) clearInterval(this._motionInterval);
     this._noMotionSec = 0;
+    this._motionBlocked = false;
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
     this._secondaryFaceTrack = null;
     this._lookDownSeconds = 0;
     this._lookDownConfirmSeconds = 0;
     this._lookDownWarningIssued = false;
+    this._faceDetectInFlight = false;
+    this._presenceConfirmSec = 0;
+    this._lastPresenceSeenAt = this._getDetectionNow();
     this._facePoseBaseline = null;
     this._facePoseBaselineSamples = 0;
     this._lastCameraDetectAt = 0;
@@ -3371,12 +3405,21 @@ const ExamApp = {
 
     const detected = fastAvg >= this._MOTION_THRESHOLD || slowAvg >= this._PRESENCE_THRESHOLD;
     if (detected) {
-      // Motion/presence detected — reset timer
-      this._noMotionSec = 0;
-      this._motionBlocked = false;
-      if (statusText) statusText.textContent = 'Person detected';
-      this._clearMotionWarning();
+      const presenceStable = this._confirmPresence(0.6);
+      if (presenceStable) {
+        this._noMotionSec = 0;
+        this._motionBlocked = false;
+      }
+      if (statusText) statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+      if (presenceStable) this._clearMotionWarning();
     } else {
+      const now = this._getDetectionNow();
+      this._resetPresenceTracking();
+      if (this._isPresenceGraceActive(now)) {
+        if (statusText) statusText.textContent = 'Checking camera...';
+        return;
+      }
+
       // No significant motion
       this._noMotionSec += 0.5;
       const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
@@ -3631,10 +3674,35 @@ const ExamApp = {
     return Math.min(deltaSec, Math.max(1.5, (fallbackMs / 1000) * 2));
   },
 
+  _getDetectionNow() {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+  },
+
+  _isPresenceGraceActive(now = this._getDetectionNow()) {
+    return !!this._lastPresenceSeenAt && ((now - this._lastPresenceSeenAt) / 1000) < this._NO_PERSON_GRACE_SEC;
+  },
+
+  _confirmPresence(deltaSec) {
+    this._presenceConfirmSec = Math.min(
+      this._FACE_PRESENCE_CONFIRM_SEC,
+      (this._presenceConfirmSec || 0) + Math.max(0, deltaSec || 0)
+    );
+    if (this._presenceConfirmSec < this._FACE_PRESENCE_CONFIRM_SEC) return false;
+    this._lastPresenceSeenAt = this._getDetectionNow();
+    return true;
+  },
+
+  _resetPresenceTracking() {
+    this._presenceConfirmSec = 0;
+  },
+
   async _detectFace(video) {
-    if (!this._faceModel || !video || video.readyState < 2 || !this._cameraStream) return;
+    if (!this._faceModel || !video || video.readyState < 2 || !this._cameraStream || this._faceDetectInFlight) return;
     const statusText = document.getElementById('camera-status-text');
     const canvas = document.getElementById('camera-canvas');
+    this._faceDetectInFlight = true;
     try {
       const deltaSec = this._consumeCameraDetectDelta();
       const frameWidth = video.videoWidth || 320;
@@ -3645,6 +3713,7 @@ const ExamApp = {
       const multipleFacesConfirmed = secondaryFaceSeconds >= this._MULTIPLE_FACE_CONFIRM_SEC;
       const lookDownEvaluation = primaryFace && !extraFaces.length ? this._evaluateLookingDown(primaryFace) : { isLookingDown: false, metrics: null };
       const primaryLookingDown = !!primaryFace && !extraFaces.length && lookDownEvaluation.isLookingDown;
+      const presenceStable = primaryFace ? this._confirmPresence(deltaSec) : false;
       if (primaryFace && !extraFaces.length && !primaryLookingDown) {
         this._updateFacePoseBaseline(lookDownEvaluation.metrics);
       }
@@ -3681,15 +3750,17 @@ const ExamApp = {
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
-        this._noMotionSec = 0;
-        this._motionBlocked = false;
+        if (presenceStable) {
+          this._noMotionSec = 0;
+          this._motionBlocked = false;
+        }
         const remaining = Math.max(0, this._MULTIPLE_FACE_WARN_SEC - this._multipleFaceSeconds);
         if (statusText) {
           statusText.textContent = this._multipleFaceWarningIssued
             ? 'Multiple faces detected'
             : `Multiple faces detected (${Math.ceil(remaining)}s)`;
         }
-        this._clearMotionWarning();
+        if (presenceStable) this._clearMotionWarning();
         if (this._multipleFaceSeconds >= this._MULTIPLE_FACE_WARN_SEC && !this._multipleFaceWarningIssued) {
           this._multipleFaceWarningIssued = true;
           this.issueWarning(
@@ -3704,17 +3775,19 @@ const ExamApp = {
         this._lookDownConfirmSeconds = Math.min(this._LOOK_DOWN_CONFIRM_SEC, this._lookDownConfirmSeconds + deltaSec);
         const lookDownConfirmed = this._lookDownConfirmSeconds >= this._LOOK_DOWN_CONFIRM_SEC;
         this._lookDownSeconds = lookDownConfirmed ? (this._lookDownSeconds + deltaSec) : 0;
-        this._noMotionSec = 0;
-        this._motionBlocked = false;
+        if (presenceStable) {
+          this._noMotionSec = 0;
+          this._motionBlocked = false;
+        }
         const remaining = Math.max(0, this._LOOK_DOWN_WARN_SEC - this._lookDownSeconds);
         if (statusText) {
           statusText.textContent = this._lookDownWarningIssued
             ? 'Looking down detected'
             : lookDownConfirmed
               ? `Looking down (${Math.ceil(remaining)}s)`
-              : 'Person detected';
+              : (presenceStable ? 'Person detected' : 'Confirming person...');
         }
-        this._clearMotionWarning();
+        if (presenceStable) this._clearMotionWarning();
         if (this._lookDownSeconds >= this._LOOK_DOWN_WARN_SEC && !this._lookDownWarningIssued) {
           this._lookDownWarningIssued = true;
           this.issueWarning(
@@ -3729,17 +3802,25 @@ const ExamApp = {
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
-        this._noMotionSec = 0;
-        this._motionBlocked = false;
-        if (statusText) statusText.textContent = 'Person detected';
-        this._clearMotionWarning();
+        if (presenceStable) {
+          this._noMotionSec = 0;
+          this._motionBlocked = false;
+        }
+        if (statusText) statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+        if (presenceStable) this._clearMotionWarning();
       } else {
+        const now = this._getDetectionNow();
         this._multipleFaceSeconds = 0;
         this._secondaryFaceTrack = null;
         this._multipleFaceWarningIssued = false;
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
+        this._resetPresenceTracking();
+        if (this._isPresenceGraceActive(now)) {
+          if (statusText) statusText.textContent = 'Checking camera...';
+          return;
+        }
         this._noMotionSec += deltaSec;
         const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
         if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
@@ -3751,6 +3832,8 @@ const ExamApp = {
       // Model error — fall back to motion detection silently
       this._lastCameraDetectAt = 0;
       this._detectMotion(video);
+    } finally {
+      this._faceDetectInFlight = false;
     }
   },
 
@@ -3805,6 +3888,9 @@ const ExamApp = {
 
     this._cameraObstructed = false;
     this._cameraObstructedSeconds = 0;
+    if (this._cameraRecoveryGraceUntil) {
+      this._cameraRecoveryGraceUntil = 0;
+    }
     if (avgLuminance < this._MIN_LUMINANCE) {
       this._lowLightSeconds += tick;
       if (this._lowLightSeconds >= this._LOW_LIGHT_PROMPT_SEC) {
@@ -4040,12 +4126,16 @@ const ExamApp = {
 
   stopCamera() {
     this._cameraPrompting = false;
+    this._cameraRecoveryGraceUntil = 0;
     if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
     if (this._motionInterval) { clearInterval(this._motionInterval); this._motionInterval = null; }
     if (this._snapInterval)   { clearInterval(this._snapInterval);   this._snapInterval = null; }
+    this._faceDetectInFlight = false;
     this._prevFrameData = null;
     this._noMotionSec = 0;
     this._motionBlocked = false;
+    this._presenceConfirmSec = 0;
+    this._lastPresenceSeenAt = 0;
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
     this._secondaryFaceTrack = null;
