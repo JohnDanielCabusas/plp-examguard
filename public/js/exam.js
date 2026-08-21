@@ -38,6 +38,7 @@ const ExamApp = {
   currentQuestionIndex: 0, // index of currently displayed question
   markedForReview: new Set(), // set of question indices marked for review
   timeRemaining: 0,
+  _examRuntimeStarted: false,
   _blurTimer: null,         // debounce timer for window blur
   _visTimer: null,          // grace timer for tab-hidden (visibilitychange)
   _fsLossTimer: null,       // grace timer for fullscreen-exit — forgives transient display blips (e.g. brightness/HDR re-sync)
@@ -903,7 +904,7 @@ const ExamApp = {
           studentName: studentSession.studentName || studentSession.studentId,
           yearLevel: studentSession.yearLevel || (portalStudent ? portalStudent.yearLevel : ''),
           section: studentSession.section || (portalStudent ? portalStudent.section : ''),
-          startTime: new Date().toISOString(),
+          startTime: null,
           endTime: null,
           answers: {},
           warnings: 0,
@@ -2260,7 +2261,7 @@ const ExamApp = {
               studentName: studentSession.studentName || studentSession.studentId,
               yearLevel: studentSession.yearLevel || (student ? student.yearLevel : ''),
               section: studentSession.section || (student ? student.section : ''),
-              startTime: new Date().toISOString(),
+              startTime: null,
               endTime: null,
               answers: {},
               warnings: 0,
@@ -2289,30 +2290,18 @@ const ExamApp = {
   // ACTIVE EXAM
   // ============================================================
   startExam() {
-    this._rememberTrustedInteraction(2000);
-    this._enableRefreshProtection();
-    this._initConnectionMonitor();
-    this.requestFullscreen();
-    this.initAntiCheat();
-    this.showState('exam');
-    this.startTimer();
-    this.renderQuestions();
-    this._restoreFontScale();
-    this._scheduleFullscreenEnforcement();
-
-    // Initialize camera if exam requires it — unless the professor has granted
-    // this specific student a webcam exemption (e.g. their camera is broken). The
-    // exemption skips initCamera() entirely, which also means its watchdog and
-    // "Camera Is Off" enforcement never start for this student.
-    const cameraExempt = this.session && DB.isStudentCameraExempt(this.exam?.id, this.session.studentId);
-    this._cameraRequired = !!(this.exam && this.exam.requireCamera && !cameraExempt);
-    if (this._cameraRequired) {
-      this._requestWebcamConsent();
+    this._prepareExamShell();
+    this._webcamConsentAccepted = false;
+    this._cameraRequired = false;
+    if (this._shouldShowExamPolicies()) {
+      this._requestExamPolicies();
+      return;
     }
-    // Verify display brightness with a perceptual check at the start of every
-    // exam — the camera's ambient-light monitor only catches a dim screen
-    // after the fact, so this check still runs even when the camera is on.
-    this._startBrightnessCheck();
+    this._continueExamLaunch();
+  },
+
+  _prepareExamShell() {
+    this.showState('exam');
 
     // Update header
     const subject = this.exam.subjectId ? DB.getSubject(this.exam.subjectId) : null;
@@ -2334,6 +2323,108 @@ const ExamApp = {
     this._ensureChatUI();
     this._renderChatMessages();
     this._updateChatBadge();
+  },
+
+  _getExamPolicies() {
+    if (!this.exam || !Array.isArray(this.exam.examPolicies)) return [];
+    return this.exam.examPolicies
+      .map(policy => String(policy ?? '').trim())
+      .filter(Boolean);
+  },
+
+  _shouldShowExamPolicies() {
+    if (!this.session) return false;
+    const policies = this._getExamPolicies();
+    if (!policies.length) return false;
+    const session = DB.getSession(this.session.id);
+    const activities = Array.isArray(session?.activities) ? session.activities : [];
+    return !activities.some(activity => activity?.type === 'exam_policies_acknowledged');
+  },
+
+  _requestExamPolicies() {
+    const policies = this._getExamPolicies();
+    if (!policies.length) {
+      this._continueExamLaunch();
+      return;
+    }
+
+    const modal = document.getElementById('exam-policies-modal');
+    const list = document.getElementById('exam-policies-modal-list');
+    const empty = document.getElementById('exam-policies-modal-empty');
+    const professorCard = document.getElementById('exam-policies-modal-professor-card');
+    const professorLine = document.getElementById('exam-policies-modal-professor');
+    if (!modal || !list || !empty) {
+      this._continueExamLaunch();
+      return;
+    }
+
+    if (this.session) {
+      const liveSession = DB.getSession(this.session.id);
+      if (liveSession?.startTime) DB.updateSession(this.session.id, { startTime: null });
+    }
+
+    list.innerHTML = policies.map(policy => `<li>${_esc(policy)}</li>`).join('');
+    empty.style.display = policies.length ? 'none' : '';
+    if (professorLine) {
+      const professor = DB.getAdminById(this.exam?.ownerAdminId);
+      const professorName = String(professor?.name || DB.getSettings?.().adminName || '').trim();
+      professorLine.textContent = professorName;
+      if (professorCard) {
+        professorCard.style.display = professorName ? '' : 'none';
+      } else {
+        professorLine.style.display = professorName ? '' : 'none';
+      }
+    }
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  acceptExamPolicies() {
+    const modal = document.getElementById('exam-policies-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+    const count = this._getExamPolicies().length;
+    this._recordActivity('exam_policies_acknowledged', `Student acknowledged ${count} exam polic${count === 1 ? 'y' : 'ies'}`);
+    this._continueExamLaunch();
+  },
+
+  exitExamPolicies() {
+    const modal = document.getElementById('exam-policies-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+    this.returnToLogin();
+  },
+
+  _continueExamLaunch() {
+    const cameraExempt = this.session && DB.isStudentCameraExempt(this.exam?.id, this.session.studentId);
+    this._cameraRequired = !!(this.exam && this.exam.requireCamera && !cameraExempt);
+    if (this._cameraRequired && !this._webcamConsentAccepted) {
+      this._requestWebcamConsent();
+      return;
+    }
+    this._beginExamRuntime();
+  },
+
+  _beginExamRuntime() {
+    if (this._examRuntimeStarted) return;
+    this._examRuntimeStarted = true;
+    this._rememberTrustedInteraction(2000);
+    this._enableRefreshProtection();
+    this._initConnectionMonitor();
+    this.requestFullscreen();
+    this.initAntiCheat();
+    this.startTimer();
+    this.renderQuestions();
+    this._restoreFontScale();
+    this._scheduleFullscreenEnforcement();
+
+    if (this._cameraRequired && this._webcamConsentAccepted) {
+      this.initCamera();
+    }
+    // Verify display brightness with a perceptual check at the start of every
+    // exam — the camera's ambient-light monitor only catches a dim screen
+    // after the fact, so this check still runs even when the camera is on.
+    this._startBrightnessCheck();
   },
 
   // ============================================================
@@ -2549,6 +2640,7 @@ const ExamApp = {
     const nowExempt = DB.isStudentCameraExempt(this.exam.id, this.session.studentId);
     if (nowExempt && this._cameraRequired) {
       this._cameraRequired = false;
+      this._webcamConsentAccepted = true;
       this.stopCamera();
       const camOff = document.getElementById('camera-off-overlay');
       if (camOff) camOff.style.display = 'none';
@@ -2561,10 +2653,14 @@ const ExamApp = {
       if (reasonModal && !reasonModal.classList.contains('hidden')) { unlockBodyScroll(); reasonModal.classList.add('hidden'); }
       this._hideWebcamWaitOverlay();
       this._showToast('Your professor turned off the camera requirement for you.', 'success');
+      if (!this._examRuntimeStarted) {
+        this._beginExamRuntime();
+      }
     } else if (!nowExempt && !this._cameraRequired) {
       // Professor turned the requirement back on — re-request consent before the
       // webcam is reactivated (a camera is never turned on without consent).
       this._cameraRequired = true;
+      this._webcamConsentAccepted = false;
       this._showToast('Your professor turned the webcam requirement back on for you.', 'info');
       this._requestWebcamConsent();
     }
@@ -2896,7 +2992,11 @@ const ExamApp = {
   // used, and requires an explicit "Allow" before initCamera() runs.
   _requestWebcamConsent() {
     const modal = document.getElementById('webcam-consent-modal');
-    if (!modal) { this.initCamera(); return; } // fallback if markup is missing
+    if (!modal) {
+      this._webcamConsentAccepted = true;
+      this._beginExamRuntime();
+      return;
+    } // fallback if markup is missing
     modal.classList.remove('hidden');
     lockBodyScroll();
   },
@@ -2905,8 +3005,9 @@ const ExamApp = {
     const modal = document.getElementById('webcam-consent-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
+    this._webcamConsentAccepted = true;
     this._recordActivity('camera_consent_given', 'Student consented to webcam monitoring');
-    this.initCamera();
+    this._beginExamRuntime();
   },
 
   declineWebcamConsent() {
@@ -5386,6 +5487,10 @@ const ExamApp = {
 
   returnToLogin() {
     this._disableRefreshProtection();
+    this._examRuntimeStarted = false;
+    const policiesModal = document.getElementById('exam-policies-modal');
+    if (policiesModal && !policiesModal.classList.contains('hidden')) unlockBodyScroll();
+    policiesModal?.classList.add('hidden');
     const sess = Auth.getStudentSession();
     if (sess) {
       const updated = { ...sess };

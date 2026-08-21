@@ -820,6 +820,43 @@ export default function ExamPage() {
         </div>
       </div>
 
+      <div id="exam-policies-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-lg">
+          <div className="modal-body confirm-dialog exam-policies-dialog">
+            <div className="confirm-icon exam-policies-dialog-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="13" y2="17" />
+              </svg>
+            </div>
+            <div className="confirm-title exam-policies-dialog-title">Examination Policies and Rules</div>
+            <div className="confirm-message exam-policies-dialog-message">
+              Please review the examination rules provided by your professor before continuing.
+            </div>
+            <div className="exam-policies-panel">
+              <div id="exam-policies-modal-professor-card" className="exam-policies-professor-row" style={{ display: 'none' }}>
+                <span className="exam-policies-professor-label">Professor</span>
+                <span id="exam-policies-modal-professor" className="exam-policies-professor-name" />
+              </div>
+              <div id="exam-policies-modal-empty" className="exam-policies-empty-note" style={{ display: 'none' }}>
+                No custom exam policies were provided for this exam.
+              </div>
+              <ol id="exam-policies-modal-list" className="exam-policies-modal-list" />
+            </div>
+            <div className="confirm-actions exam-policies-dialog-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.exitExamPolicies()}>
+                Exit
+              </button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.acceptExamPolicies()}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Webcam Consent Modal — shown before camera activation, required by privacy/consent policy */}
       <div id="webcam-consent-modal" className="modal-backdrop hidden">
         <div className="modal-dialog modal-sm">

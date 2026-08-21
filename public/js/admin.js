@@ -2637,6 +2637,7 @@ async function submitShareExam() {
         exam: cloneExamEditorData({
           title: exam.title || '',
           description: exam.description || '',
+          examPolicies: normalizeExamPolicies(exam.examPolicies),
           timeLimit: Number(exam.timeLimit) || 60,
           shuffleQuestions: !!exam.shuffleQuestions,
           shuffleAnswers: !!exam.shuffleAnswers,
@@ -2897,6 +2898,7 @@ async function acceptExamShare(shareId) {
     title: `${snapshotExam.title || share.examTitle || 'Shared Exam'} (Shared Copy)`,
     subjectId,
     description: snapshotExam.description || '',
+    examPolicies: normalizeExamPolicies(snapshotExam.examPolicies),
     timeLimit: Number(snapshotExam.timeLimit) || 60,
     code: '',
     shuffleQuestions: !!snapshotExam.shuffleQuestions,
@@ -3040,6 +3042,7 @@ async function saveDuplicatedExam() {
     title,
     subjectId,
     description: sourceExam.description || '',
+    examPolicies: normalizeExamPolicies(sourceExam.examPolicies),
     timeLimit: Number(sourceExam.timeLimit) || 60,
     code: '',
     shuffleQuestions: !!sourceExam.shuffleQuestions,
@@ -3465,6 +3468,175 @@ function clearExamEditorDraftExam() {
   examEditorDraftExam = null;
 }
 
+function normalizeExamPolicies(policies) {
+  if (!Array.isArray(policies)) return [];
+  return policies
+    .map(policy => String(policy ?? '').trim())
+    .filter(Boolean);
+}
+
+function setExamPolicyDraftValues(policies) {
+  const list = document.getElementById('exam-policies-list');
+  if (list) list._policies = normalizeExamPolicies(policies);
+}
+
+function getExamPolicyDraftValues() {
+  const list = document.getElementById('exam-policies-list');
+  return Array.isArray(list?._policies) ? [...list._policies] : [];
+}
+
+function renderExamPoliciesEditor(policies = []) {
+  const list = document.getElementById('exam-policies-list');
+  const empty = document.getElementById('exam-policies-empty');
+  const count = document.getElementById('exam-policies-count');
+  if (!list || !empty) return;
+
+  const rows = normalizeExamPolicies(policies);
+  setExamPolicyDraftValues(rows);
+  if (count) count.textContent = `${rows.length} rule${rows.length === 1 ? '' : 's'}`;
+  empty.style.display = rows.length ? 'none' : '';
+
+  if (!rows.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = rows.map((policy, index) => `
+    <article class="exam-policy-card">
+      <div class="exam-policy-card-top">
+        <div class="exam-policy-number" aria-hidden="true">${index + 1}</div>
+        <div class="exam-policy-actions">
+          <button
+            type="button"
+            class="exam-policy-icon-btn"
+            onclick="openExamPolicyModal(${index})"
+            title="Edit rule"
+            aria-label="Edit rule ${index + 1}"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 20h9"/>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="exam-policy-icon-btn"
+            onclick="moveExamPolicy(${index}, -1)"
+            title="Move rule up"
+            aria-label="Move rule ${index + 1} up"
+            ${index === 0 ? 'disabled' : ''}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m18 15-6-6-6 6"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="exam-policy-icon-btn"
+            onclick="moveExamPolicy(${index}, 1)"
+            title="Move rule down"
+            aria-label="Move rule ${index + 1} down"
+            ${index === rows.length - 1 ? 'disabled' : ''}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="exam-policy-icon-btn exam-policy-icon-btn-danger"
+            onclick="removeExamPolicy(${index})"
+            title="Delete rule"
+            aria-label="Delete rule ${index + 1}"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18"/>
+              <path d="M8 6V4h8v2"/>
+              <path d="m19 6-1 14H6L5 6"/>
+              <path d="M10 11v6"/>
+              <path d="M14 11v6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="exam-policy-body">${escHtml(policy)}</div>
+    </article>
+  `).join('');
+}
+
+function updateExamPolicyDraftCounter() {
+  const input = document.getElementById('exam-policy-input');
+  if (!input) return;
+  updateCharCounter('exam-policy-input', 'exam-policy-counter', 300);
+}
+
+function openExamPolicyModal(index = null) {
+  const modal = document.getElementById('modal-exam-policy');
+  const title = document.getElementById('exam-policy-modal-title');
+  const input = document.getElementById('exam-policy-input');
+  const saveBtn = document.getElementById('exam-policy-save-btn');
+  const indexField = document.getElementById('exam-policy-edit-index');
+  if (!modal || !title || !input || !saveBtn || !indexField) return;
+
+  const rows = getExamPolicyDraftValues();
+  const isEdit = Number.isInteger(index) && index >= 0 && index < rows.length;
+  indexField.value = isEdit ? String(index) : '';
+  title.textContent = isEdit ? 'Edit Examination Rule' : 'Add Examination Rule';
+  saveBtn.textContent = isEdit ? 'Save Changes' : 'Add Rule';
+  input.value = isEdit ? rows[index] : '';
+  updateExamPolicyDraftCounter();
+  openModal('modal-exam-policy');
+  requestAnimationFrame(() => {
+    input.focus();
+    if (isEdit) input.setSelectionRange(input.value.length, input.value.length);
+  });
+}
+
+function saveExamPolicyFromModal() {
+  const input = document.getElementById('exam-policy-input');
+  const indexField = document.getElementById('exam-policy-edit-index');
+  if (!input || !indexField) return;
+
+  const text = String(input.value || '').trim();
+  if (!text) {
+    showToast('Please enter an examination rule before saving.', 'error');
+    input.focus();
+    return;
+  }
+
+  const rows = getExamPolicyDraftValues();
+  const index = Number.parseInt(indexField.value, 10);
+  if (Number.isInteger(index) && index >= 0 && index < rows.length) rows[index] = text;
+  else rows.push(text);
+
+  renderExamPoliciesEditor(rows);
+  closeModal('modal-exam-policy');
+  input.value = '';
+  indexField.value = '';
+  updateExamPolicyDraftCounter();
+  updateExamEditorSaveButtonState();
+}
+
+function removeExamPolicy(index) {
+  const rows = getExamPolicyDraftValues();
+  rows.splice(index, 1);
+  renderExamPoliciesEditor(rows);
+  updateExamEditorSaveButtonState();
+}
+
+function moveExamPolicy(index, direction) {
+  const rows = getExamPolicyDraftValues();
+  const nextIndex = index + direction;
+  if (nextIndex < 0 || nextIndex >= rows.length) return;
+  [rows[index], rows[nextIndex]] = [rows[nextIndex], rows[index]];
+  renderExamPoliciesEditor(rows);
+  updateExamEditorSaveButtonState();
+}
+
+window.openExamPolicyModal = openExamPolicyModal;
+window.saveExamPolicyFromModal = saveExamPolicyFromModal;
+window.updateExamPolicyDraftCounter = updateExamPolicyDraftCounter;
+
 function runExamEditorWithPersistedWrites(callback) {
   examEditorPersistBypassDepth += 1;
   try {
@@ -3488,6 +3660,7 @@ function getExamEditorDetailsState() {
     title: document.getElementById('exam-title-field')?.value.trim() || '',
     subjectId: document.getElementById('exam-subject-field')?.value || '',
     description: document.getElementById('exam-desc-field')?.value.trim() || '',
+    examPolicies: getExamPolicyDraftValues().map(policy => policy.trim()),
     timeLimit: parseInt(document.getElementById('exam-timelimit-field')?.value, 10) || 0,
     code: document.getElementById('exam-code-field')?.value.trim().toUpperCase() || '',
     shuffleQuestions: !!document.getElementById('exam-shuffle-q')?.checked,
@@ -3678,6 +3851,7 @@ function openExamEditor(id) {
   document.getElementById('exam-require-camera').checked = false;
   document.getElementById('exam-ai-detect').checked = false;
   document.getElementById('exam-allow-review').checked = false;
+  renderExamPoliciesEditor([]);
 
   selectedQuestionIndices.clear();
   switchExamEditorMainTab('builder');
@@ -3704,6 +3878,7 @@ function openExamEditor(id) {
     document.getElementById('exam-require-camera').checked = e.requireCamera || false;
     document.getElementById('exam-ai-detect').checked = e.requireAIDetection || false;
     document.getElementById('exam-allow-review').checked = e.allowReview || false;
+    renderExamPoliciesEditor(e.examPolicies || []);
     sel.value = e.subjectId;
     if (titleDisplay) titleDisplay.textContent = e.title;
     currentQBuilderExamId = id;
@@ -3712,6 +3887,7 @@ function openExamEditor(id) {
     if (qCard) qCard.style.display = '';
     refreshExamEditorStatusUI(id);
   } else {
+    renderExamPoliciesEditor([]);
     if (titleDisplay) titleDisplay.textContent = 'New Exam';
     const statusBadgeEl = document.getElementById('exam-editor-status-badge');
     if (statusBadgeEl) statusBadgeEl.innerHTML = statusBadge('draft');
@@ -4075,6 +4251,7 @@ let _examOutlineSections = [];
 function buildExamOutlineSections() {
   const sections = [
     { id: 'exam-editor-details-card', label: 'Exam Details', level: 0 },
+    { id: 'exam-editor-policies-card', label: 'Examination Policies and Rules', level: 0 },
   ];
   const exam = DB.getExam(currentQBuilderExamId);
   if (exam) {
@@ -4149,6 +4326,7 @@ function saveExamFromEditor() {
   const title = document.getElementById('exam-title-field').value.trim();
   const subjectId = document.getElementById('exam-subject-field').value;
   const description = document.getElementById('exam-desc-field').value.trim();
+  const examPolicies = normalizeExamPolicies(getExamPolicyDraftValues());
   const timeLimit = parseInt(document.getElementById('exam-timelimit-field').value);
   const code = document.getElementById('exam-code-field').value.trim().toUpperCase();
   const shuffleQuestions = document.getElementById('exam-shuffle-q').checked;
@@ -4163,7 +4341,7 @@ function saveExamFromEditor() {
   if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
   if (description.length > 100) { showToast('Description must be 100 characters or fewer.', 'error'); return; }
 
-  const data = { title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
+  const data = { title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
 
   let examId = id;
   if (id) {
@@ -4259,6 +4437,7 @@ function saveExam() {
   const title = document.getElementById('exam-title-field').value.trim();
   const subjectId = document.getElementById('exam-subject-field').value;
   const description = document.getElementById('exam-desc-field').value.trim();
+  const examPolicies = normalizeExamPolicies(getExamPolicyDraftValues());
   const timeLimit = parseInt(document.getElementById('exam-timelimit-field').value);
   const code = document.getElementById('exam-code-field').value.trim().toUpperCase();
   const shuffleQuestions = document.getElementById('exam-shuffle-q').checked;
@@ -4284,6 +4463,7 @@ function saveExam() {
       title,
       subjectId,
       description,
+      examPolicies,
       timeLimit,
       code,
       shuffleQuestions,
@@ -4296,7 +4476,7 @@ function saveExam() {
     });
     showToast('Exam updated.', 'success');
   } else {
-    const exam = DB.addExam({ title, subjectId, description, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
+    const exam = DB.addExam({ title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');

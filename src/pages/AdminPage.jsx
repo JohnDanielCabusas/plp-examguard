@@ -648,6 +648,45 @@ export default function AdminPage() {
                   </div>
 
                   {/* Attendance — mark individual students absent for this exam */}
+                  <div className="exam-editor-section-card" id="exam-editor-policies-card">
+                    <div className="exam-editor-section-label">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                      Examination Policies and Rules
+                    </div>
+                    <div className="exam-policies-toolbar">
+                      <div className="exam-policies-toolbar-copy">
+                        <label className="exam-policies-title">Examination Policies and Rules</label>
+                        <div className="exam-policies-subtitle">
+                          Set the rules students must review before they can begin this exam.
+                        </div>
+                      </div>
+                      <div className="exam-policies-toolbar-actions">
+                        <span id="exam-policies-count" className="exam-policies-count">0 rules</span>
+                        <button type="button" className="btn btn-secondary exam-policy-trigger" onClick={() => window.openExamPolicyModal()}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 5v14" />
+                            <path d="M5 12h14" />
+                          </svg>
+                          Add Rule
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      id="exam-policies-empty"
+                      className="exam-policies-empty"
+                    >
+                      <div className="exam-policies-empty-title">No examination rules added yet</div>
+                      <div className="exam-policies-empty-copy">
+                        Add the policies students must review and acknowledge before they can begin this exam.
+                      </div>
+                      <button type="button" className="btn btn-secondary exam-policy-empty-btn" onClick={() => window.openExamPolicyModal()}>
+                        Add First Rule
+                      </button>
+                    </div>
+                    <div id="exam-policies-list" className="exam-policies-list" />
+                  </div>
+
+                  {/* Attendance section */}
                   <div className="exam-editor-section-card" id="exam-editor-attendance-card">
                     <div className="exam-editor-section-label">
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -1260,6 +1299,36 @@ export default function AdminPage() {
           <div className="modal-footer">
             <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-absentees')}>Cancel</button>
             <button className="btn btn-primary" onClick={() => window.saveExamAbsentees()}>Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-exam-policy">
+        <div className="modal-dialog">
+          <div className="modal-header">
+            <div>
+              <span className="modal-title" id="exam-policy-modal-title">Add Examination Rule</span>
+            </div>
+            <button className="modal-close" onClick={() => window.closeModal('modal-exam-policy')}>&#10005;</button>
+          </div>
+          <div className="modal-body">
+            <input type="hidden" id="exam-policy-edit-index" />
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="exam-policy-input">Rule *</label>
+              <textarea
+                className="form-control"
+                id="exam-policy-input"
+                rows={5}
+                maxLength={300}
+                placeholder="e.g. Students must not use notes, phones, messaging apps, or another device during the examination."
+                onInput={() => window.updateExamPolicyDraftCounter?.()}
+              />
+              <div className="char-counter" id="exam-policy-counter">0/300</div>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-policy')}>Cancel</button>
+            <button className="btn btn-primary" id="exam-policy-save-btn" onClick={() => window.saveExamPolicyFromModal()}>Add Rule</button>
           </div>
         </div>
       </div>
