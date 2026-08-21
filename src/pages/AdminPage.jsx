@@ -376,6 +376,23 @@ export default function AdminPage() {
             <div className="topbar-actions">
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="topbar-date" />
 
+              <button
+                type="button"
+                className="topbar-sound-btn"
+                id="violation-sound-toggle"
+                title="Mute violation alert sounds"
+                onClick={() => window.toggleViolationSound?.()}
+              >
+                <span className="topbar-sound-btn-icon" id="violation-sound-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                </span>
+                <span className="topbar-sound-btn-label" id="violation-sound-label">Sound On</span>
+              </button>
+
               {/* Notifications bell */}
               <div className="topbar-bell-wrap">
                 <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" onClick={() => window.toggleNotifDropdown?.()}>
@@ -1709,6 +1726,64 @@ export default function AdminPage() {
       <div id="color-picker-popup" className="hidden" style={{ position:'fixed', zIndex:10001, background:'#fff', borderRadius:'16px', padding:'16px', boxShadow:'0 8px 32px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06)' }}>
         <div style={{ fontSize:'10px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'12px' }}>Card Color</div>
         <div id="color-swatches" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'8px' }} />
+      </div>
+
+      <div className="modal-backdrop hidden" id="modal-violation-alert" data-no-backdrop-close="true">
+        <div className="modal-dialog modal-sm violation-alert-modal">
+          <div className="modal-header violation-alert-modal-header">
+            <div className="violation-alert-header-copy">
+              <div className="violation-alert-header-row">
+                <div className="violation-alert-header-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                  </svg>
+                </div>
+                <span className="violation-alert-severity" id="violation-alert-severity">Immediate Attention</span>
+              </div>
+              <span className="violation-alert-kicker">Live violation alert</span>
+              <span className="modal-title">Student suspicious activity detected</span>
+              <div className="violation-alert-subtitle">A student triggered a suspicious activity event during the examination.</div>
+            </div>
+          </div>
+          <div className="modal-body violation-alert-modal-body">
+            <div className="violation-alert-student-card">
+              <div className="violation-alert-avatar" id="violation-alert-avatar">S</div>
+              <div className="violation-alert-student-copy">
+                <div className="violation-alert-student-name" id="violation-alert-student-name">Student Name</div>
+                <div className="violation-alert-student-meta" id="violation-alert-student-meta">Student ID</div>
+              </div>
+            </div>
+
+            <div className="violation-alert-grid">
+              <div className="violation-alert-item">
+                <span className="violation-alert-item-label">Exam</span>
+                <span className="violation-alert-item-value" id="violation-alert-exam-name">-</span>
+              </div>
+              <div className="violation-alert-item">
+                <span className="violation-alert-item-label">Violation</span>
+                <span className="violation-alert-item-value" id="violation-alert-type">-</span>
+              </div>
+              <div className="violation-alert-item">
+                <span className="violation-alert-item-label">Recorded at</span>
+                <span className="violation-alert-item-value" id="violation-alert-time">-</span>
+              </div>
+              <div className="violation-alert-item">
+                <span className="violation-alert-item-label">Warnings</span>
+                <span className="violation-alert-item-value" id="violation-alert-warning-count">0</span>
+              </div>
+            </div>
+
+            <div className="violation-alert-details" id="violation-alert-detail">Violation details appear here.</div>
+            <div className="violation-alert-queue hidden" id="violation-alert-queue-indicator">0 more alerts waiting</div>
+          </div>
+          <div className="modal-footer violation-alert-modal-footer">
+            <button className="btn btn-primary" type="button" onClick={() => window.acknowledgeViolationAlert?.()}>
+              OK
+            </button>
+          </div>
+        </div>
       </div>
 
       <style>{`

@@ -4,6 +4,8 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
+const { handleMonitorRoute } = require('./server/monitor-route.cjs');
+const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
 const { cleanupProfessorActivityLog } = require('./server/auth-service.cjs');
 
 // Serve from the Vite build output in production
@@ -61,6 +63,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (pathname.startsWith('/api/monitor/')) {
+    handleMonitorRoute(req, res);
+    return;
+  }
+
   if (pathname === '/api/email/send-verification') {
     handleEmailRoute(req, res);
     return;
@@ -83,6 +90,21 @@ const server = http.createServer((req, res) => {
   }
 
   sendFile(res, filePath);
+});
+
+server.on('upgrade', (req, socket, head) => {
+  Promise.resolve(handleMonitorWebSocketUpgrade(req, socket, head))
+    .then((handled) => {
+      if (handled) return;
+      socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+    })
+    .catch(() => {
+      try {
+        socket.write('HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n');
+      } catch (_) {}
+      socket.destroy();
+    });
 });
 
 server.listen(port, () => {

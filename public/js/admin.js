@@ -29,6 +29,24 @@ let confirmResolve = null;
 let adminBootstrapped = false;
 let passwordPromptResolve = null;
 let currentSharedExamsTab = 'received';
+let _violationAlertQueue = [];
+let _activeViolationAlert = null;
+let _queuedViolationAlertIds = new Set();
+let _seenViolationActivityBySession = new Map();
+let _violationAlertSeeded = false;
+let _monitorViolationFlashExpirations = new Map();
+let _violationSoundMuted = false;
+let _violationAudioContext = null;
+let _violationAudioPrimed = false;
+let _violationPollInterval = null;
+let _violationPollCursor = null;
+let _violationPollInFlight = false;
+let _violationTransportMode = 'pending';
+let _violationSocket = null;
+let _violationSocketReconnectTimer = null;
+let _monitorSessionPollInterval = null;
+let _monitorSessionPollInFlight = false;
+let _recentViolationEventKeys = new Map();
 const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
 
 function readAdminSectionFromUrl() {
@@ -114,6 +132,37 @@ const BEHAVIOR_LABELS = {
   force_submit: 'Force Submitted',
   timeout: 'Time Expired',
 };
+const VIOLATION_ALERTABLE_TYPES = new Set([
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+  'window_blur',
+  'tab_switch',
+  'fullscreen_exit',
+  'copy_attempt',
+  'paste_attempt',
+  'ctrl_c_attempt',
+  'ctrl_v_attempt',
+  'camera_denied',
+  'screenshot',
+  'brightness_check_failed',
+  'brightness_check_skipped',
+]);
+const CRITICAL_VIOLATION_TYPES = new Set([
+  'multiple_people',
+  'camera_off',
+  'fullscreen_exit',
+  'camera_denied',
+  'screenshot',
+]);
+const VIOLATION_SOUND_PREF_KEY = 'acs_violation_sound_muted';
+const VIOLATION_SOUND_ICON_ON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+const VIOLATION_SOUND_ICON_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+const MONITOR_VIOLATION_POLL_MS = 350;
+const MONITOR_SESSION_POLL_MS = 800;
+const MONITOR_VIOLATION_POLL_LIMIT = 100;
 
 function getBehaviorLabel(type) {
   return BEHAVIOR_LABELS[type] || String(type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
@@ -191,6 +240,396 @@ function getActivityTone(type) {
   return 'neutral';
 }
 
+function isViolationAlertActivity(activity) {
+  return !!activity?.type && VIOLATION_ALERTABLE_TYPES.has(activity.type);
+}
+
+function isCriticalViolationType(type) {
+  return CRITICAL_VIOLATION_TYPES.has(type);
+}
+
+function getViolationActivitySignature(activity) {
+  return [activity?.timestamp || '', activity?.type || '', activity?.detail || ''].join('|');
+}
+
+function getAlertableSessionActivities(session) {
+  return (Array.isArray(session?.activities) ? session.activities : [])
+    .filter(isViolationAlertActivity)
+    .slice()
+    .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+}
+
+function getLatestAlertableSessionActivity(session) {
+  const activities = getAlertableSessionActivities(session);
+  return activities[activities.length - 1] || null;
+}
+
+function formatViolationTime(timestamp) {
+  if (!timestamp) return '-';
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return '-';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function readViolationSoundPreference() {
+  try {
+    return localStorage.getItem(VIOLATION_SOUND_PREF_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function syncViolationSoundToggle() {
+  const btn = document.getElementById('violation-sound-toggle');
+  const label = document.getElementById('violation-sound-label');
+  const icon = document.getElementById('violation-sound-icon');
+  if (!btn || !label || !icon) return;
+
+  btn.classList.toggle('is-muted', _violationSoundMuted);
+  btn.title = _violationSoundMuted ? 'Unmute violation alert sounds' : 'Mute violation alert sounds';
+  label.textContent = _violationSoundMuted ? 'Muted' : 'Sound On';
+  icon.innerHTML = _violationSoundMuted ? VIOLATION_SOUND_ICON_OFF : VIOLATION_SOUND_ICON_ON;
+}
+
+function setViolationSoundMuted(muted) {
+  _violationSoundMuted = !!muted;
+  try {
+    localStorage.setItem(VIOLATION_SOUND_PREF_KEY, _violationSoundMuted ? '1' : '0');
+  } catch (_) {}
+  syncViolationSoundToggle();
+}
+
+function toggleViolationSound(force) {
+  const next = typeof force === 'boolean' ? force : !_violationSoundMuted;
+  setViolationSoundMuted(next);
+}
+window.toggleViolationSound = toggleViolationSound;
+
+function getViolationAudioContext() {
+  if (_violationAudioContext) return _violationAudioContext;
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  _violationAudioContext = new AudioContextCtor();
+  return _violationAudioContext;
+}
+
+function primeViolationAudio() {
+  const ctx = getViolationAudioContext();
+  if (!ctx || ctx.state !== 'suspended') return;
+  ctx.resume().then(() => {
+    if (_violationAudioPrimed) return;
+    _violationAudioPrimed = true;
+    const gain = ctx.createGain();
+    const osc = ctx.createOscillator();
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    osc.frequency.setValueAtTime(440, now);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.01);
+  }).catch(() => {});
+}
+
+document.addEventListener('pointerdown', primeViolationAudio, { passive: true });
+document.addEventListener('keydown', primeViolationAudio);
+
+async function playViolationSound() {
+  if (_violationSoundMuted) return;
+  primeViolationAudio();
+  const ctx = getViolationAudioContext();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') {
+    try {
+      await ctx.resume();
+    } catch (_) {
+      return;
+    }
+  }
+
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.46);
+
+  [880, 660].forEach((freq, index) => {
+    const osc = ctx.createOscillator();
+    const localGain = ctx.createGain();
+    const start = now + (index * 0.18);
+    const end = start + 0.16;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, start);
+    localGain.gain.setValueAtTime(0.0001, start);
+    localGain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+    localGain.gain.exponentialRampToValueAtTime(0.0001, end);
+    osc.connect(localGain);
+    localGain.connect(gain);
+    osc.start(start);
+    osc.stop(end + 0.02);
+  });
+}
+
+function markMonitorRowViolation(sessionId) {
+  if (!sessionId) return;
+  const expiry = Date.now() + 8000;
+  _monitorViolationFlashExpirations.set(sessionId, expiry);
+  setTimeout(() => {
+    if (_monitorViolationFlashExpirations.get(sessionId) !== expiry) return;
+    _monitorViolationFlashExpirations.delete(sessionId);
+    if (currentSection === 'monitoring') renderMonitoringTable(monitorExamId);
+  }, 8100);
+}
+
+function isMonitorRowViolationFresh(sessionId) {
+  const expiry = _monitorViolationFlashExpirations.get(sessionId);
+  if (!expiry) return false;
+  if (expiry <= Date.now()) {
+    _monitorViolationFlashExpirations.delete(sessionId);
+    return false;
+  }
+  return true;
+}
+
+function buildViolationAlertEntry(session, activity) {
+  const exam = session?.examId ? DB.getExam(session.examId) : null;
+  return {
+    id: `violation:${session?.id || 'session'}:${getViolationActivitySignature(activity)}`,
+    sessionId: session?.id || '',
+    studentId: session?.studentId || '',
+    studentName: session?.studentName || session?.studentId || 'Student',
+    examId: session?.examId || '',
+    examTitle: exam?.title || 'Exam',
+    type: activity?.type || 'unknown',
+    detail: activity?.detail || 'Violation recorded',
+    at: activity?.timestamp || new Date().toISOString(),
+    warningCount: Number(session?.warnings || 0),
+  };
+}
+
+function buildViolationAlertEntryFromEvent(event) {
+  const session = event?.sessionId ? DB.getSession(event.sessionId) : null;
+  const exam = event?.examId ? DB.getExam(event.examId) : null;
+  const matchingActivity = (session?.activities || []).find((activity) => (
+    activity?.type === event?.violationType
+    && String(activity?.detail || '') === String(event?.detail || '')
+  ));
+  const signature = matchingActivity
+    ? getViolationActivitySignature(matchingActivity)
+    : [event?.createdAt || '', event?.violationType || '', event?.detail || ''].join('|');
+  return {
+    id: `violation:${event?.sessionId || session?.id || 'session'}:${signature}`,
+    sessionId: event?.sessionId || session?.id || '',
+    studentId: event?.studentId || session?.studentId || '',
+    studentName: event?.studentName || session?.studentName || event?.studentId || 'Student',
+    examId: event?.examId || session?.examId || '',
+    examTitle: exam?.title || 'Exam',
+    type: event?.violationType || 'unknown',
+    detail: event?.detail || 'Violation recorded',
+    at: event?.createdAt || new Date().toISOString(),
+    warningCount: Number(event?.warningCount ?? session?.warnings ?? 0),
+  };
+}
+
+function renderViolationAlertModal() {
+  const modalId = 'modal-violation-alert';
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  if (!_activeViolationAlert) {
+    closeModal(modalId);
+    return;
+  }
+
+  const session = DB.getSession(_activeViolationAlert.sessionId);
+  const avatar = (_activeViolationAlert.studentName || _activeViolationAlert.studentId || 'S').charAt(0).toUpperCase();
+  const meta = session ? getStudentMonitorMeta(session) : (_activeViolationAlert.studentId || '-');
+  const queueIndicator = document.getElementById('violation-alert-queue-indicator');
+  const severityEl = document.getElementById('violation-alert-severity');
+  const isCritical = Number(_activeViolationAlert.warningCount || 0) >= 2 || isCriticalViolationType(_activeViolationAlert.type);
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText('violation-alert-avatar', avatar);
+  setText('violation-alert-student-name', _activeViolationAlert.studentName || 'Student');
+  setText('violation-alert-student-meta', meta || _activeViolationAlert.studentId || '-');
+  setText('violation-alert-exam-name', _activeViolationAlert.examTitle || 'Exam');
+  setText('violation-alert-type', getBehaviorLabel(_activeViolationAlert.type));
+  setText('violation-alert-time', formatDateTime(_activeViolationAlert.at));
+  setText('violation-alert-warning-count', String(_activeViolationAlert.warningCount || 0));
+  setText('violation-alert-detail', _activeViolationAlert.detail || 'Violation recorded.');
+  modal.dataset.severity = isCritical ? 'critical' : 'warning';
+  if (severityEl) severityEl.textContent = isCritical ? 'Critical Violation' : 'Immediate Attention';
+
+  if (queueIndicator) {
+    const remaining = _violationAlertQueue.length;
+    queueIndicator.textContent = `${remaining} more alert${remaining === 1 ? '' : 's'} waiting`;
+    queueIndicator.classList.toggle('hidden', remaining <= 0);
+  }
+
+  if (modal.classList.contains('hidden')) openModal(modalId);
+}
+
+function showNextViolationAlert() {
+  if (_activeViolationAlert || !_violationAlertQueue.length) return;
+  _activeViolationAlert = _violationAlertQueue.shift();
+  renderViolationAlertModal();
+}
+
+function acknowledgeViolationAlert() {
+  if (_activeViolationAlert?.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+  _activeViolationAlert = null;
+  if (_violationAlertQueue.length) {
+    showNextViolationAlert();
+    return;
+  }
+  renderViolationAlertModal();
+}
+window.acknowledgeViolationAlert = acknowledgeViolationAlert;
+
+function queueViolationAlert(entry) {
+  if (!entry?.id) return;
+  if (_queuedViolationAlertIds.has(entry.id) || _activeViolationAlert?.id === entry.id) return;
+
+  _queuedViolationAlertIds.add(entry.id);
+  _violationAlertQueue.push(entry);
+  addBellNotification({
+    id: entry.id,
+    kind: 'violation',
+    who: entry.studentName || entry.studentId || 'Student',
+    body: `${getBehaviorLabel(entry.type)}${entry.examTitle ? ` - ${entry.examTitle}` : ''}`,
+    at: entry.at,
+    studentId: entry.studentId,
+    examId: entry.examId,
+    sessionId: entry.sessionId,
+  }, false);
+  playViolationSound().catch(() => {});
+  markMonitorRowViolation(entry.sessionId);
+  if (currentSection === 'monitoring' && (!monitorExamId || monitorExamId === entry.examId)) {
+    renderMonitoringTable(monitorExamId || entry.examId);
+  }
+  if (_activeViolationAlert) renderViolationAlertModal();
+  showNextViolationAlert();
+}
+
+function getRecentViolationEventKey(activityOrEvent) {
+  return `${String(activityOrEvent?.type || activityOrEvent?.violationType || '').trim()}|${String(activityOrEvent?.detail || '').trim()}`;
+}
+
+function rememberRecentViolationEvent(entry) {
+  const sessionId = String(entry?.sessionId || '').trim();
+  const key = getRecentViolationEventKey(entry);
+  if (!sessionId || !key) return;
+
+  const now = Date.now();
+  const recent = (_recentViolationEventKeys.get(sessionId) || [])
+    .filter((item) => (now - item.at) <= 30000);
+  recent.push({ key, at: now });
+  _recentViolationEventKeys.set(sessionId, recent);
+}
+
+function wasRecentViolationEventForActivity(sessionId, activity) {
+  const id = String(sessionId || '').trim();
+  if (!id) return false;
+
+  const now = Date.now();
+  const recent = (_recentViolationEventKeys.get(id) || [])
+    .filter((item) => (now - item.at) <= 30000);
+  if (!recent.length) {
+    _recentViolationEventKeys.delete(id);
+    return false;
+  }
+
+  _recentViolationEventKeys.set(id, recent);
+  const key = getRecentViolationEventKey(activity);
+  return recent.some((item) => item.key === key);
+}
+
+function applyViolationEventToLocalSession(event) {
+  if (!event?.sessionId || !window.DB?._read || !window.DB?._write || !DB.KEYS?.sessions) return;
+  const current = Array.isArray(window.DB._read(DB.KEYS.sessions, []))
+    ? [...window.DB._read(DB.KEYS.sessions, [])]
+    : [];
+  const index = current.findIndex((session) => session?.id === event.sessionId);
+  if (index < 0) return;
+
+  const session = current[index];
+  const activities = Array.isArray(session.activities) ? [...session.activities] : [];
+  const alreadyExists = activities.some((activity) => (
+    activity?.type === event.violationType
+    && String(activity?.detail || '') === String(event.detail || '')
+    && String(activity?.timestamp || '') === String(event.createdAt || '')
+  ));
+
+  if (!alreadyExists) {
+    activities.push({
+      type: event.violationType || 'unknown',
+      detail: event.detail || 'Violation recorded',
+      timestamp: event.createdAt || new Date().toISOString(),
+    });
+  }
+
+  current[index] = {
+    ...session,
+    warnings: Math.max(Number(session.warnings || 0), Number(event.warningCount || 0)),
+    activities,
+  };
+  window.DB._write(DB.KEYS.sessions, current);
+}
+
+function processIncomingViolationEvent(event) {
+  if (!event?.sessionId) return;
+  if (event?.createdAt) _violationPollCursor = event.createdAt;
+  setViolationTransportMode('server');
+  applyViolationEventToLocalSession(event);
+  const entry = buildViolationAlertEntryFromEvent(event);
+  rememberRecentViolationEvent(entry);
+  queueViolationAlert(entry);
+  if (_activeLogSessionId === entry.sessionId) refreshOpenStudentLog();
+  if (currentSection === 'monitoring' && monitorExamId && monitorExamId === entry.examId) {
+    pollMonitorSessions({ immediate: true });
+  }
+}
+
+function refreshViolationAlerts(options = {}) {
+  const seedOnly = !!options.seedOnly;
+  const sessions = DB.getSessions();
+  const liveSessionIds = new Set(sessions.map(session => session.id));
+
+  sessions.forEach(session => {
+    const alertActivities = getAlertableSessionActivities(session);
+    const seen = _seenViolationActivityBySession.get(session.id) || new Set();
+
+    if (!_violationAlertSeeded || seedOnly) {
+      alertActivities.forEach(activity => seen.add(getViolationActivitySignature(activity)));
+      _seenViolationActivityBySession.set(session.id, seen);
+      return;
+    }
+
+    alertActivities.forEach(activity => {
+      const signature = getViolationActivitySignature(activity);
+      if (seen.has(signature)) return;
+      if (wasRecentViolationEventForActivity(session.id, activity)) {
+        seen.add(signature);
+        return;
+      }
+      seen.add(signature);
+      queueViolationAlert(buildViolationAlertEntry(session, activity));
+    });
+
+    _seenViolationActivityBySession.set(session.id, seen);
+  });
+
+  Array.from(_seenViolationActivityBySession.keys()).forEach(sessionId => {
+    if (!liveSessionIds.has(sessionId)) _seenViolationActivityBySession.delete(sessionId);
+  });
+
+  if (!_violationAlertSeeded || seedOnly) _violationAlertSeeded = true;
+}
+
 // Surface Supabase sync failures visibly
 document.addEventListener('supabaseSyncError', (e) => {
   const msg = e.detail?.message || 'Unknown error';
@@ -222,12 +661,15 @@ document.addEventListener('dbReady', function init() {
   if (adminBootstrapped) {
     refreshAdminIdentity();
     loadSettings();
+    syncViolationSoundToggle();
     return;
   }
   adminBootstrapped = true;
 
   const session = Auth.getAdminSession();
   const settings = DB.getSettings();
+  setViolationSoundMuted(readViolationSoundPreference());
+  refreshViolationAlerts({ seedOnly: true });
 
   // Sidebar and topbar user info
   refreshAdminIdentity();
@@ -250,6 +692,7 @@ document.addEventListener('dbReady', function init() {
     startMessageNotificationPolling();   // catch new messages even if realtime misses
     refreshExamShareNotifications();
     startExamShareNotificationPolling();
+    startViolationAlertPolling();
 
   // Student ID modal: digits only, auto-insert dash after 2nd digit (YY-NNNNN)
   const studentIdInput = document.getElementById('stu-student-id');
@@ -478,6 +921,13 @@ document.addEventListener('acsDataChanged', () => {
   _dataChangedRenderTimer = setTimeout(() => render(), 150);
 });
 
+document.addEventListener('acsDataChanged', (e) => {
+  if (_violationTransportMode !== 'fallback') return;
+  const table = e.detail?.table;
+  if (table && table !== 'sessions') return;
+  refreshViolationAlerts();
+});
+
 // ── Professor notifications for incoming student messages ──────────────
 // A student's chat message / problem report should surface to the professor
 // no matter which section they're on. We toast for messages that arrive AFTER
@@ -539,6 +989,7 @@ function renderBell() {
 }
 
 function getBellTagHtml(kind) {
+  if (kind === 'violation') return '<span class="notif-tag notif-tag-violation">Violation</span>';
   if (kind === 'report') return '<span class="notif-tag notif-tag-report">Report</span>';
   if (kind === 'share-request') return '<span class="notif-tag notif-tag-share">Shared Exam</span>';
   if (kind === 'share-accepted') return '<span class="notif-tag notif-tag-share notif-tag-share-success">Accepted</span>';
@@ -562,6 +1013,31 @@ function clearNotifs() {
   renderBell();
 }
 
+function openMonitoringThread(examId, studentId, sessionId, mode = 'chat') {
+  if (!examId || !studentId) {
+    showSection('monitoring');
+    return;
+  }
+
+  showSection('monitoring');
+  setTimeout(() => {
+    const sel = document.getElementById('monitor-exam-select');
+    if (sel) {
+      sel.value = examId;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setTimeout(() => {
+      const session = sessionId
+        ? DB.getSession(sessionId)
+        : DB.getSessionsByExam?.(examId)?.find(entry => entry.studentId === studentId);
+      if (!session) return;
+      setMonitorView('table');
+      if (mode === 'log') showStudentLog(session.id);
+      else openStudentChat(examId, studentId, session.id);
+    }, 400);
+  }, 250);
+}
+
 // Jump from a notification to its relevant destination.
 function openNotif(notificationId) {
   const entry = _bellNotifs.find(item => item.id === notificationId);
@@ -574,15 +1050,7 @@ function openNotif(notificationId) {
   const examId = entry.examId || '';
   const studentId = entry.studentId || '';
   if (!examId || !studentId) { showSection('monitoring'); return; }
-  showSection('monitoring');
-  setTimeout(() => {
-    const sel = document.getElementById('monitor-exam-select');
-    if (sel) { sel.value = examId; sel.dispatchEvent(new Event('change', { bubbles: true })); }
-    setTimeout(() => {
-      const sess = DB.getSessionsByExam?.(examId)?.find(s => s.studentId === studentId);
-      if (sess) openStudentChat(examId, studentId, sess.id);
-    }, 400);
-  }, 250);
+  openMonitoringThread(examId, studentId, entry.sessionId || '', entry.kind === 'violation' ? 'log' : 'chat');
 }
 
 // Close the dropdown when clicking outside it.
@@ -6079,15 +6547,20 @@ function viewQuestionBreakdown(examId) {
 function loadMonitoringExams() {
   const exams = DB.getExams().filter(e => e.status === 'active' || e.status === 'closed');
   const sel = document.getElementById('monitor-exam-select');
-  const cur = sel.value;
+  if (!sel) return;
+
+  const requestedId = String(monitorExamId || sel.value || '').trim();
+  const existingIds = new Set(exams.map(exam => exam.id));
+  const defaultExam = exams.find(exam => DB.getSessionsByExam(exam.id).length > 0) || exams[0] || null;
+  const nextExamId = existingIds.has(requestedId)
+    ? requestedId
+    : (defaultExam?.id || '');
+
   sel.innerHTML = '<option value="">Select an exam to monitor</option>' +
-    exams.map(e => buildExamContextOption(e, e.id === cur)).join('');
-  if (cur && exams.some(e => e.id === cur)) {
-    sel.value = cur;
-  } else {
-    monitorExamId = '';
-    sel.value = '';
-  }
+    exams.map(e => buildExamContextOption(e, e.id === nextExamId)).join('');
+
+  monitorExamId = nextExamId;
+  sel.value = nextExamId;
 }
 
 let _monitorView = 'table'; // 'table' | 'camera'
@@ -6288,8 +6761,10 @@ function renderCameraGrid(examId) {
 
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
+  _activeLogSessionId = null;
   document.getElementById('log-body').innerHTML = `<div class="activity-log-empty"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
+  pollMonitorSessions({ immediate: true });
   renderMonitoringTable(monitorExamId);
   // With no selected exam, keep the compact sessions layout visible.
   setMonitorView(monitorExamId ? _monitorView : 'table');
@@ -6315,15 +6790,255 @@ function startMonitoring() {
     });
   };
   refresh();
-  monitorInterval = setInterval(refresh, 3000);
+  pollMonitorSessions({ immediate: true });
+  _monitorSessionPollInterval = setInterval(() => pollMonitorSessions(), MONITOR_SESSION_POLL_MS);
+  // Realtime session pushes drive the live monitoring UX. Keep a slow silent
+  // fallback refresh in case the app server route becomes temporarily unavailable.
+  monitorInterval = setInterval(refresh, 45000);
   document.getElementById('monitor-live-badge').classList.remove('hidden');
 }
 
 function stopMonitoring() {
   if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
+  if (_monitorSessionPollInterval) { clearInterval(_monitorSessionPollInterval); _monitorSessionPollInterval = null; }
   const badge = document.getElementById('monitor-live-badge');
   if (badge) badge.classList.add('hidden');
 }
+
+async function monitorApiRequest(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: options.method || 'GET',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (error) {
+    return {
+      success: false,
+      connectivityIssue: !!window.AppErrorUtils?.isConnectivityIssue?.(error),
+      message: window.AppErrorUtils?.toUserMessage?.(error, 'Unable to reach the monitoring server right now.', { context: 'sync' })
+        || 'Unable to reach the monitoring server right now.',
+    };
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.success === false) {
+    const rawMessage = data?.message || 'Unable to complete the monitoring request right now.';
+    return {
+      success: false,
+      connectivityIssue: Boolean(data?.connectivityIssue) || !!window.AppErrorUtils?.isConnectivityIssue?.(rawMessage),
+      message: window.AppErrorUtils?.toUserMessage?.(rawMessage, 'Unable to complete the monitoring request right now.', { context: 'sync' })
+        || rawMessage,
+      status: response.status,
+    };
+  }
+
+  return { success: true, ...data, status: response.status };
+}
+
+function normalizeMonitorSessionRow(row) {
+  return {
+    id: row.id,
+    examId: row.exam_id,
+    examCode: row.exam_code || '',
+    studentId: row.student_id,
+    studentName: row.student_name,
+    yearLevel: row.year_level || '',
+    section: row.section || '',
+    yearSection: row.year_section || '',
+    department: row.department || '',
+    program: row.program || '',
+    startTime: row.start_time || null,
+    endTime: row.end_time || null,
+    answers: row.answers || {},
+    warnings: row.warnings || 0,
+    activities: Array.isArray(row.activities) ? row.activities : [],
+    score: row.score ?? null,
+    maxScore: row.max_score ?? null,
+    submitted: !!row.submitted,
+    autoSubmitted: !!row.auto_submitted,
+    scoreReleased: !!row.score_released,
+    essayGrades: row.essay_grades || {},
+    aiDetections: row.ai_detections || {},
+    cameraSnapshots: Array.isArray(row.camera_snapshots) ? row.camera_snapshots : [],
+    ownerAdminId: row.owner_admin_id || '',
+    createdAt: row.created_at || null,
+  };
+}
+
+function applyMonitorSessionsSnapshot(examId, sessionRows) {
+  if (!examId || !window.DB?._read || !window.DB?._write || !DB.KEYS?.sessions) return;
+  const current = Array.isArray(window.DB._read(DB.KEYS.sessions, []))
+    ? window.DB._read(DB.KEYS.sessions, [])
+    : [];
+  const existingForExam = current.filter(session => session.examId === examId);
+  const normalizedRows = (sessionRows || []).map(normalizeMonitorSessionRow);
+
+  // Never let a transient empty/partial server poll wipe out already-visible
+  // monitoring rows. We only upsert fresh rows into the local cache here.
+  if (!normalizedRows.length && existingForExam.length) return;
+
+  const mergedById = new Map();
+  current.forEach((session) => {
+    if (session?.id) mergedById.set(session.id, session);
+  });
+  normalizedRows.forEach((session) => {
+    if (!session?.id) return;
+    const previous = mergedById.get(session.id) || {};
+    mergedById.set(session.id, { ...previous, ...session });
+  });
+
+  window.DB._write(DB.KEYS.sessions, [...mergedById.values()]);
+}
+
+function setViolationTransportMode(nextMode) {
+  if (_violationTransportMode === nextMode) return;
+  _violationTransportMode = nextMode;
+  if (nextMode === 'fallback') refreshViolationAlerts({ seedOnly: true });
+}
+
+async function pollMonitorSessions(options = {}) {
+  if (_monitorSessionPollInFlight) return;
+  if (currentSection !== 'monitoring' && !options.immediate) return;
+  if (!monitorExamId) return;
+  const examId = monitorExamId;
+
+  _monitorSessionPollInFlight = true;
+  try {
+    const result = await monitorApiRequest(`/api/monitor/sessions?examId=${encodeURIComponent(examId)}`);
+    if (!result.success) return;
+    applyMonitorSessionsSnapshot(examId, result.sessions || []);
+    refreshViolationAlerts();
+    if (currentSection === 'monitoring') {
+      renderMonitoringSectionLive();
+      refreshOpenStudentLog();
+    }
+  } finally {
+    _monitorSessionPollInFlight = false;
+  }
+}
+
+async function pollViolationAlerts(options = {}) {
+  if (_violationPollInFlight) return;
+
+  _violationPollInFlight = true;
+  try {
+    const query = new URLSearchParams({ limit: String(MONITOR_VIOLATION_POLL_LIMIT) });
+    if (_violationPollCursor) query.set('since', _violationPollCursor);
+    const result = await monitorApiRequest(`/api/monitor/violations?${query.toString()}`);
+    if (!result.success) {
+      if (_violationTransportMode === 'pending') setViolationTransportMode('fallback');
+      return;
+    }
+
+    setViolationTransportMode('server');
+
+    const violations = Array.isArray(result.violations) ? result.violations : [];
+    if (options.seedOnly) {
+      if (result.cursor) _violationPollCursor = result.cursor;
+      return;
+    }
+
+    violations.forEach((violation) => {
+      processIncomingViolationEvent(violation);
+    });
+
+    if (!violations.length && result.cursor) _violationPollCursor = result.cursor;
+  } finally {
+    _violationPollInFlight = false;
+  }
+}
+
+function startViolationAlertPolling() {
+  if (_violationPollInterval) clearInterval(_violationPollInterval);
+  _violationPollCursor = null;
+  _violationPollInFlight = false;
+  setViolationTransportMode('pending');
+  startViolationEventStream();
+  pollViolationAlerts({ seedOnly: true });
+  _violationPollInterval = setInterval(() => pollViolationAlerts(), MONITOR_VIOLATION_POLL_MS);
+}
+
+function stopViolationEventStream() {
+  if (_violationSocketReconnectTimer) {
+    clearTimeout(_violationSocketReconnectTimer);
+    _violationSocketReconnectTimer = null;
+  }
+  if (_violationSocket) {
+    try { _violationSocket.close(); } catch (_) {}
+    _violationSocket = null;
+  }
+}
+
+function scheduleViolationEventStreamReconnect() {
+  if (_violationSocketReconnectTimer) return;
+  _violationSocketReconnectTimer = setTimeout(() => {
+    _violationSocketReconnectTimer = null;
+    startViolationEventStream();
+  }, 1000);
+}
+
+function startViolationEventStream() {
+  if (typeof WebSocket === 'undefined') return;
+  if (_violationSocket && (_violationSocket.readyState === WebSocket.OPEN || _violationSocket.readyState === WebSocket.CONNECTING)) return;
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(`${protocol}//${window.location.host}/api/monitor/socket`);
+  _violationSocket = socket;
+
+  socket.addEventListener('open', () => {
+    if (_violationSocket !== socket) return;
+    setViolationTransportMode('server');
+  });
+
+  socket.addEventListener('message', (event) => {
+    if (_violationSocket !== socket) return;
+    try {
+      const message = JSON.parse(event.data || '{}');
+      if (message?.type === 'connected') {
+        setViolationTransportMode('server');
+        return;
+      }
+      if (message?.type === 'violation' && message.payload) {
+        processIncomingViolationEvent(message.payload);
+      }
+    } catch (_) {}
+  });
+
+  socket.addEventListener('close', () => {
+    if (_violationSocket !== socket) return;
+    _violationSocket = null;
+    scheduleViolationEventStreamReconnect();
+    pollViolationAlerts();
+  });
+
+  socket.addEventListener('error', () => {
+    if (_violationSocket !== socket) return;
+    try { socket.close(); } catch (_) {}
+    pollViolationAlerts();
+  });
+}
+
+window.addEventListener('focus', () => {
+  pollViolationAlerts();
+  if (currentSection === 'monitoring') pollMonitorSessions({ immediate: true });
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  pollViolationAlerts();
+  if (currentSection === 'monitoring') pollMonitorSessions({ immediate: true });
+});
+
+window.addEventListener('beforeunload', () => {
+  stopViolationEventStream();
+});
 
 function renderMonitoringTable(examId) {
   const countEl = document.getElementById('monitor-count');
@@ -6394,7 +7109,15 @@ function renderMonitoringTable(examId) {
     const pct = totalQs > 0 ? Math.round((answered / totalQs) * 100) : 0;
     const initial = (s.studentName || s.studentId).charAt(0).toUpperCase();
     const color   = chipColor(s.studentId);
-
+    const latestViolation = getLatestAlertableSessionActivity(s);
+    const freshViolation = isMonitorRowViolationFresh(s.id);
+    const criticalViolation = !!(latestViolation && (Number(s.warnings || 0) >= 2 || isCriticalViolationType(latestViolation.type)));
+    const rowClassName = [
+      'monitor-session-row',
+      latestViolation ? 'monitor-session-row-alert' : '',
+      criticalViolation ? 'monitor-session-row-critical' : '',
+      freshViolation ? 'monitor-session-row-fresh' : '',
+    ].filter(Boolean).join(' ');
     // In-exam chat: unread messages from this student + whether a problem was reported.
     const thread = DB.getMessagesForExamStudent(examId, s.studentId);
     const unread = thread.filter(m => m.senderRole === 'student' && !m.readAt).length;
@@ -6423,13 +7146,13 @@ function renderMonitoringTable(examId) {
       ${activityCount > 0 ? `<span class="ms-log-count">${activityCount}</span>` : '<span style="color:#d1d5db;font-size:12px;">—</span>'}
     </button>`;
 
-    return `<tr>
+    return `<tr class="${rowClassName}">
       <td>
         <div style="display:flex;align-items:center;gap:10px;">
           <div class="monitor-avatar" style="background:${color};">${initial}</div>
-          <div>
-            <div style="font-weight:700;font-size:13px;">${escHtml(s.studentName)}</div>
-            <div style="font-size:11px;color:#9ca3af;">${escHtml(getStudentMonitorMeta(s))}</div>
+          <div class="monitor-student-copy">
+            <div class="monitor-student-name">${escHtml(s.studentName)}</div>
+            <div class="monitor-student-meta">${escHtml(getStudentMonitorMeta(s))}</div>
           </div>
         </div>
       </td>
@@ -6453,7 +7176,7 @@ function renderMonitoringTable(examId) {
     </tr>`;
   }).join('');
 
-  document.querySelectorAll('#monitor-tbody tr td:first-child > div > div:last-child > div:last-child')
+  document.querySelectorAll('#monitor-tbody .monitor-student-meta')
     .forEach((el, index) => {
       const session = sessions[index];
       if (el && session) el.textContent = getStudentMonitorMeta(session);
@@ -6696,6 +7419,59 @@ function showStudentLog(sessionId) {
     `;
     return;
   }
+  document.getElementById('log-body').innerHTML = `
+    ${studentCardHtml}
+    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
+    ${renderBehaviorSummary(activities)}
+    <div class="activity-log-section-title">Activity Timeline</div>
+    <div class="activity-log-timeline">
+      ${activities.map(a => `
+        <div class="activity-log-timeline-item">
+          <div class="activity-log-timeline-rail">
+            <span class="activity-log-timeline-dot tone-${getActivityTone(a.type)}"></span>
+          </div>
+          <div class="activity-log-timeline-card log-item">
+            <div class="activity-log-timeline-time">${formatDateTime(a.timestamp)}</div>
+            <div class="log-type ${a.type}">${escHtml(getBehaviorLabel(a.type))}</div>
+            <div class="log-detail">${escHtml(a.detail)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function refreshOpenStudentLog() {
+  if (!_activeLogSessionId) return;
+  const session = DB.getSession(_activeLogSessionId);
+  if (!session) return;
+  _setEye(_activeLogSessionId, true);
+
+  const activities = session.activities || [];
+  const studentName = session.studentName || session.studentId || 'Student';
+  const studentMeta = getStudentMonitorMeta(session);
+  const initial = studentName.charAt(0).toUpperCase();
+  document.getElementById('log-student-name').textContent = '';
+
+  const studentCardHtml = `
+    <div class="activity-log-viewing-label">Viewing logs for</div>
+    <div class="activity-log-student-card">
+      <div class="activity-log-student-avatar">${escHtml(initial)}</div>
+      <div class="activity-log-student-copy">
+        <div class="activity-log-student-name">${escHtml(studentName)}</div>
+        <div class="activity-log-student-meta">${escHtml(studentMeta)}</div>
+      </div>
+    </div>
+  `;
+
+  if (!activities.length) {
+    document.getElementById('log-body').innerHTML = `
+      ${studentCardHtml}
+      <div class="activity-log-empty"><p>No suspicious activity recorded.</p></div>
+    `;
+    return;
+  }
+
   document.getElementById('log-body').innerHTML = `
     ${studentCardHtml}
     <div class="activity-log-section-title">Suspicious Behavior Counter</div>
@@ -8405,6 +9181,7 @@ function closeModal(id) {
 document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
   backdrop.addEventListener('click', function(e) {
     if (e.target === this && !this.classList.contains('hidden')) {
+      if (this.dataset.noBackdropClose === 'true') return;
       unlockBodyScroll();
       this.classList.add('hidden');
     }

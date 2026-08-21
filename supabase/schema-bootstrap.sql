@@ -123,16 +123,43 @@ create index if not exists messages_owner_admin_id_idx on public.messages (owner
 create index if not exists messages_student_id_idx on public.messages (student_id);
 create index if not exists messages_exam_id_idx on public.messages (exam_id);
 
--- Publish the table to Supabase Realtime so both sides receive live pushes.
+-- Append-only professor alert feed for suspicious exam behavior. This is used
+-- by the app server polling endpoint so the professor UI can update instantly
+-- without depending on Supabase Realtime websocket delivery.
+create table if not exists public.violation_events (
+  id text primary key,
+  owner_admin_id text,
+  exam_id text not null,
+  session_id text not null,
+  student_id text not null,
+  student_name text,
+  violation_type text not null,
+  detail text,
+  warning_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists violation_events_owner_admin_exam_created_idx
+  on public.violation_events (owner_admin_id, exam_id, created_at desc);
+create index if not exists violation_events_session_created_idx
+  on public.violation_events (session_id, created_at desc);
+alter table if exists public.violation_events enable row level security;
+
+-- Publish core live-monitoring tables to Supabase Realtime so professor and
+-- student clients receive pushes without requiring a browser refresh.
 -- Guarded so re-running this file doesn't error with "relation is already member".
 do $$
+declare
+  realtime_table text;
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
-  ) then
-    alter publication supabase_realtime add table public.messages;
-  end if;
+  foreach realtime_table in array array['messages', 'sessions', 'logs']
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = realtime_table
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', realtime_table);
+    end if;
+  end loop;
 exception
   when undefined_object then
     -- supabase_realtime publication doesn't exist on this deployment; skip.

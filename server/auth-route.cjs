@@ -900,4 +900,9 @@ async function handleAuthRoute(req, res) {
 
 module.exports = {
   handleAuthRoute,
+  jsonResponse,
+  readJsonBody,
+  forbid,
+  getCurrentProfessorSession,
+  getCurrentStudentSession,
 };

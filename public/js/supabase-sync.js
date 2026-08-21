@@ -24,6 +24,9 @@ const SupabaseSync = {
   _messagesSupported: true,
   _lastSyncErrorKey: '',
   _lastSyncErrorAt: 0,
+  _crossTabChannel: null,
+  _crossTabListenerBound: false,
+  _tabId: `tab-${Math.random().toString(36).slice(2)}`,
   // Serialize writes per table/id so rapid local edits (for example absent -> present ->
   // draft -> ready on the same exam) cannot reach Supabase out of order and resurrect
   // stale state on other clients.
@@ -37,6 +40,81 @@ const SupabaseSync = {
 
   _writeLocal(key, value) {
     window.DB?._write?.(key, value);
+  },
+
+  _getCrossTabSignalKey() {
+    return 'acs_rt_signal';
+  },
+
+  _isSessionVisibleToCurrentContext(session) {
+    if (!session) return false;
+    const { admin, sysadmin, student } = this._getSessions();
+    if (sysadmin) return true;
+    if (admin?.id) return !session.ownerAdminId || session.ownerAdminId === admin.id;
+    if (student?.studentId) return session.studentId === student.studentId;
+    return true;
+  },
+
+  _handleCrossTabSignal(payload) {
+    if (!payload || payload.senderId === this._tabId) return;
+    const { table, row, eventType } = payload;
+    if (table !== 'sessions') return;
+
+    const currentValue = window.DB?._read?.('acs_sessions', []);
+    const current = Array.isArray(currentValue) ? [...currentValue] : [];
+
+    if (eventType === 'DELETE') {
+      this._writeLocal('acs_sessions', current.filter(session => session.id !== row?.id));
+      this._notifyDataChanged('sessions');
+      return;
+    }
+
+    if (!row || !this._isSessionVisibleToCurrentContext(row)) return;
+    const prior = current.find(session => session.id === row.id);
+    const nextRow = this._mergeIncomingSessionWithLocal(row, prior);
+    const index = current.findIndex(session => session.id === nextRow.id);
+    if (index >= 0) current[index] = nextRow;
+    else current.push(nextRow);
+    this._writeLocal('acs_sessions', current);
+    this._notifyDataChanged('sessions');
+  },
+
+  _setupCrossTabSignals() {
+    if (this._crossTabListenerBound || typeof window === 'undefined') return;
+    this._crossTabListenerBound = true;
+
+    if (typeof BroadcastChannel !== 'undefined') {
+      this._crossTabChannel = new BroadcastChannel('acs-realtime-sync');
+      this._crossTabChannel.addEventListener('message', (event) => {
+        this._handleCrossTabSignal(event.data);
+      });
+    }
+
+    window.addEventListener('storage', (event) => {
+      if (event.key !== this._getCrossTabSignalKey() || !event.newValue) return;
+      try {
+        this._handleCrossTabSignal(JSON.parse(event.newValue));
+      } catch (_) {}
+    });
+  },
+
+  broadcastLocalChange(table, row, eventType = 'UPSERT') {
+    if (typeof window === 'undefined') return;
+    const payload = {
+      senderId: this._tabId,
+      table,
+      row,
+      eventType,
+      timestamp: Date.now(),
+    };
+
+    try {
+      this._crossTabChannel?.postMessage(payload);
+    } catch (_) {}
+
+    try {
+      localStorage.setItem(this._getCrossTabSignalKey(), JSON.stringify(payload));
+    } catch (_) {}
   },
 
   _toUserErrorMessage(error, fallback = 'Unable to sync with the server right now.', context = 'sync') {
@@ -169,6 +247,7 @@ const SupabaseSync = {
       try {
         await this._pullFromSupabase();
         this._setupListeners();
+        this._setupCrossTabSignals();
       } catch (e) {
         console.warn('[SupabaseSync] Error loading data from Supabase:', e.message || e);
         this._emitSyncError('connection', e, 'Unable to load the latest data right now.');

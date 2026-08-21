@@ -103,6 +103,7 @@ const ExamApp = {
   _brightnessCheckRound: 0,  // perceptual check: consecutive correct rounds
   _brightnessCheckFails: 0,  // perceptual check: failed attempts
   _brightnessCheckAnswer: null, // index of the tile holding the symbol
+  _chatPollTimer: null,
   _dashInterval: null,      // dashboard poll interval
   _courseInterval: null,    // course-view exams poll interval
   _fullscreenInteractionGraceUntil: 0,
@@ -331,6 +332,38 @@ const ExamApp = {
     }
 
     return activity;
+  },
+
+  _notifyProfessorViolation(type, detail, warningCount) {
+    if (!this.session?.id || !this.exam?.id) return;
+
+    const payload = {
+      sessionId: this.session.id,
+      examId: this.exam.id,
+      studentId: this.session.studentId || '',
+      studentName: this.session.studentName || '',
+      violationType: type,
+      detail,
+      warningCount: Number(warningCount || 0),
+    };
+
+    fetch('/api/monitor/violation', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).then(async (response) => {
+      if (response.ok) return;
+      let message = '';
+      try {
+        const data = await response.json();
+        message = data?.message || '';
+      } catch (_) {}
+      console.warn('[Monitor] Violation notify failed:', response.status, message || 'Unknown server error');
+    }).catch((error) => {
+      console.warn('[Monitor] Unable to notify professor about violation:', error?.message || error);
+    });
   },
 
   _isCameraViolationType(type) {
@@ -2148,6 +2181,11 @@ const ExamApp = {
     const chatAllowed = (name === 'exam' || name === 'submitted') && !!this.exam && !!this.session;
     const chatFab = document.getElementById('exam-chat-fab');
     if (chatFab) chatFab.style.display = chatAllowed ? '' : 'none';
+    if (chatAllowed) {
+      this._startChatSyncPolling();
+      this._refreshChatMessagesFromSync();
+    }
+    else this._stopChatSyncPolling();
     if (!chatAllowed) {
       const chatPanel = document.getElementById('exam-chat-panel');
       if (chatPanel) chatPanel.style.display = 'none';
@@ -2517,6 +2555,7 @@ const ExamApp = {
     if (open) {
       this._rememberTrustedInteraction(1500);
       this._renderChatMessages();
+      this._refreshChatMessagesFromSync();
       // Reading the thread clears the professor's unread messages for this student.
       if (this.exam && this.session) {
         DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
@@ -2575,6 +2614,36 @@ const ExamApp = {
       badge.style.display = '';
     } else {
       badge.style.display = 'none';
+    }
+  },
+
+  _refreshChatMessagesFromSync() {
+    if (!this.exam || !this.session || !window.SupabaseSync?._pullMessages) return Promise.resolve();
+    return Promise.resolve(SupabaseSync._pullMessages({ studentId: this.session.studentId }))
+      .then(() => {
+        this._renderChatMessages();
+        const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
+        if (panelOpen) DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
+        this._updateChatBadge();
+      })
+      .catch(() => {});
+  },
+
+  _startChatSyncPolling() {
+    if (this._chatPollTimer || !this.exam || !this.session) return;
+    if (!window.SupabaseSync?._pullMessages) return;
+    this._chatPollTimer = setInterval(() => {
+      const chatAllowed = !document.getElementById('state-exam')?.classList.contains('hidden')
+        || !document.getElementById('state-submitted')?.classList.contains('hidden');
+      if (!chatAllowed || !this.exam || !this.session) return;
+      this._refreshChatMessagesFromSync();
+    }, 2500);
+  },
+
+  _stopChatSyncPolling() {
+    if (this._chatPollTimer) {
+      clearInterval(this._chatPollTimer);
+      this._chatPollTimer = null;
     }
   },
 
@@ -4321,10 +4390,11 @@ const ExamApp = {
     this._cancelReadCountdown();
 
     this.warnings++;
-    this._captureCameraViolationSnapshot(type, detail, this.warnings);
+    this._notifyProfessorViolation(type, detail, this.warnings);
 
     this._recordActivity(type, detail);
     DB.updateSession(this.session.id, { warnings: this.warnings });
+    this._captureCameraViolationSnapshot(type, detail, this.warnings);
 
     // Update warning badge in header
     const warningNumEl = document.getElementById('warning-num');
@@ -5841,6 +5911,17 @@ document.addEventListener('supabaseSyncError', (e) => {
 document.addEventListener('acsDataChanged', (e) => {
   ExamApp._handlePortalDataChange(e.detail?.table);
   ExamApp._handleExamDataChange(e.detail?.table);
+});
+
+window.addEventListener('storage', (e) => {
+  if (e.key && !e.key.startsWith('acs_')) return;
+  const table = e.key === 'acs_messages' ? 'messages'
+    : e.key === 'acs_sessions' ? 'sessions'
+    : e.key === 'acs_exams' ? 'exams'
+    : e.key === 'acs_students' ? 'students'
+    : e.key === 'acs_subjects' ? 'subjects'
+    : 'unknown';
+  document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
 });
 
 document.addEventListener('dbReady', () => ExamApp.init());

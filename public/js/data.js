@@ -1194,6 +1194,7 @@ const DB = {
     const newSession = this._withOwner({ id: this.generateId(), ...data }, exam?.ownerAdminId || this._getDefaultOwnerAdminId());
     sessions.push(newSession);
     this._write(this.KEYS.sessions, sessions);
+    SupabaseSync.broadcastLocalChange?.('sessions', newSession, 'UPSERT');
     SupabaseSync.syncDoc('sessions', newSession);
     return newSession;
   },
@@ -1201,7 +1202,10 @@ const DB = {
     const sessions = this._read(this.KEYS.sessions, []).map(s => s.id === id ? { ...s, ...updates, ownerAdminId: s.ownerAdminId || this._getDefaultOwnerAdminId() } : s);
     this._write(this.KEYS.sessions, sessions);
     const updated = sessions.find(s => s.id === id);
-    if (updated) SupabaseSync.syncDoc('sessions', updated);
+    if (updated) {
+      SupabaseSync.broadcastLocalChange?.('sessions', updated, 'UPSERT');
+      SupabaseSync.syncDoc('sessions', updated);
+    }
   },
 
   // ---- Logs ----
