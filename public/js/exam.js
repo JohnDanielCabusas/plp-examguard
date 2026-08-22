@@ -132,6 +132,7 @@ const ExamApp = {
   _portalDataChangedTimer: null,
   _remoteForceSubmitSessionId: null,
   _pendingCameraRequirementNotice: null,
+  _lastHandledWebcamDecisionId: null,
   _REFRESH_AUTO_SUBMIT_KEY: 'acs_exam_refresh_auto_submit',
 
   _repairStudentEmail(studentSession) {
@@ -2894,6 +2895,61 @@ const ExamApp = {
     return DB.getMessagesForExamStudent(this.exam.id, this.session.studentId);
   },
 
+  _isWebcamDeclineRequestMessage(message) {
+    const category = String(message?.reportCategory || '').trim().toLowerCase();
+    return !!(
+      message
+      && message.senderRole === 'student'
+      && message.type === 'report'
+      && (category === 'webcam_consent_decline' || category === 'webcam')
+    );
+  },
+
+  _isWebcamDecisionMessage(message) {
+    return !!(
+      message
+      && message.senderRole === 'professor'
+      && message.type === 'webcam_decision'
+      && ['allow', 'deny'].includes(message.reportCategory)
+    );
+  },
+
+  _getWebcamDecisionForRequest(requestMessage, messages = null) {
+    if (!this._isWebcamDeclineRequestMessage(requestMessage)) return null;
+    const thread = Array.isArray(messages) ? messages : this._chatMessages();
+    const requestAt = new Date(requestMessage.createdAt || 0).getTime();
+    const nextRequestAt = thread
+      .filter(message => this._isWebcamDeclineRequestMessage(message) && message.id !== requestMessage.id)
+      .map(message => new Date(message.createdAt || 0).getTime())
+      .filter(timestamp => Number.isFinite(timestamp) && timestamp > requestAt)
+      .sort((a, b) => a - b)[0];
+
+    const decisions = thread
+      .filter(message => this._isWebcamDecisionMessage(message))
+      .filter(message => {
+        const decisionAt = new Date(message.createdAt || 0).getTime();
+        if (!Number.isFinite(decisionAt) || decisionAt < requestAt) return false;
+        return !Number.isFinite(nextRequestAt) || decisionAt < nextRequestAt;
+      })
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
+    return decisions[decisions.length - 1] || null;
+  },
+
+  _handleIncomingWebcamDecision() {
+    const messages = this._chatMessages();
+    const latestRequest = [...messages].reverse().find(message => this._isWebcamDeclineRequestMessage(message));
+    if (!latestRequest) return;
+    const decision = this._getWebcamDecisionForRequest(latestRequest, messages);
+    if (!decision || decision.id === this._lastHandledWebcamDecisionId) return;
+    this._lastHandledWebcamDecisionId = decision.id;
+    if (decision.reportCategory === 'deny') {
+      this._hideWebcamWaitNoticeModal();
+      this._hideWebcamWaitOverlay();
+      this._showWebcamDeniedDecisionModal();
+    }
+  },
+
   _renderChatMessages() {
     const body = document.getElementById('exam-chat-messages');
     if (!body) return;
@@ -2909,11 +2965,24 @@ const ExamApp = {
     body.innerHTML = messages.map(m => {
       const mine = m.senderRole === 'student';
       const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      if (this._isWebcamDecisionMessage(m)) {
+        const allowed = m.reportCategory === 'allow';
+        const icon = allowed
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
+        return `<div class="exam-chat-msg report">
+          <div class="exam-chat-report-bubble is-decision ${allowed ? 'is-allow' : 'is-deny'}">
+            <span class="exam-chat-report-tag">${icon}${allowed ? 'Professor allowed webcam off' : 'Professor denied webcam off'}</span>
+            <span class="exam-chat-report-copy">${_esc(m.body || '')}</span>
+          </div>
+          <div class="exam-chat-time">${_esc(time)}</div>
+        </div>`;
+      }
       if (m.type === 'report') {
         return `<div class="exam-chat-msg report">
           <div class="exam-chat-report-bubble">
             <span class="exam-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Reported</span>
-            <span>${_esc(m.body || 'Problem reported')}</span>
+            <span class="exam-chat-report-copy">${_esc(m.body || 'Problem reported')}</span>
           </div>
           <div class="exam-chat-time">${_esc(time)}</div>
         </div>`;
@@ -3024,6 +3093,7 @@ const ExamApp = {
     if (!chatVisible || !this.exam || !this.session) return;
     if (table === 'messages') {
       this._renderChatMessages();
+      this._handleIncomingWebcamDecision();
       const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
       if (panelOpen) DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
       this._updateChatBadge();
@@ -3054,6 +3124,8 @@ const ExamApp = {
       if (consentModal && !consentModal.classList.contains('hidden')) { unlockBodyScroll(); consentModal.classList.add('hidden'); }
       const reasonModal = document.getElementById('webcam-decline-reason-modal');
       if (reasonModal && !reasonModal.classList.contains('hidden')) { unlockBodyScroll(); reasonModal.classList.add('hidden'); }
+      this._hideWebcamWaitNoticeModal();
+      this._hideWebcamDeniedDecisionModal();
       this._hideWebcamWaitOverlay();
       this._showCameraRequirementNotice('disabled');
       if (!this._examRuntimeStarted) {
@@ -3452,6 +3524,8 @@ const ExamApp = {
     const reasonModal = document.getElementById('webcam-decline-reason-modal');
     if (reasonModal && !reasonModal.classList.contains('hidden')) unlockBodyScroll();
     reasonModal?.classList.add('hidden');
+    this._hideWebcamWaitNoticeModal();
+    this._hideWebcamDeniedDecisionModal();
     this._hideWebcamWaitOverlay();
     this.returnToLogin();
   },
@@ -3482,16 +3556,14 @@ const ExamApp = {
       sessionId: this.session.id,
       senderRole: 'student',
       type: 'report',
-      reportCategory: 'webcam',
+      reportCategory: 'webcam_consent_decline',
       body: text,
     });
+    this._lastHandledWebcamDecisionId = null;
     this._renderChatMessages();
     this._updateChatBadge();
     this._showToast('Sent to your professor.', 'success');
-
-    // Block the exam entirely until the professor grants a camera exemption —
-    // the student can only leave (Exit) or wait for that response.
-    this._showWebcamWaitOverlay();
+    this._showWebcamWaitNoticeModal();
   },
 
   _showWebcamWaitOverlay() {
@@ -3504,6 +3576,46 @@ const ExamApp = {
     const overlay = document.getElementById('webcam-wait-overlay');
     if (overlay) overlay.style.display = 'none';
     this._stopWebcamWaitPoll();
+  },
+
+  _showWebcamWaitNoticeModal() {
+    const modal = document.getElementById('webcam-wait-notice-modal');
+    if (!modal) {
+      this._showWebcamWaitOverlay();
+      return;
+    }
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  _hideWebcamWaitNoticeModal() {
+    const modal = document.getElementById('webcam-wait-notice-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+  },
+
+  confirmWebcamWaitNotice() {
+    this._hideWebcamWaitNoticeModal();
+    this._showWebcamWaitOverlay();
+  },
+
+  _showWebcamDeniedDecisionModal() {
+    const modal = document.getElementById('webcam-denied-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  _hideWebcamDeniedDecisionModal() {
+    const modal = document.getElementById('webcam-denied-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+  },
+
+  turnOnCameraAfterWebcamDenied() {
+    this._hideWebcamDeniedDecisionModal();
+    this._webcamConsentAccepted = false;
+    this._requestWebcamConsent();
   },
 
   // Realtime alone isn't trusted here: a professor's "Re-enable webcam" /
@@ -5984,6 +6096,9 @@ const ExamApp = {
     const policiesModal = document.getElementById('exam-policies-modal');
     if (policiesModal && !policiesModal.classList.contains('hidden')) unlockBodyScroll();
     policiesModal?.classList.add('hidden');
+    this._hideWebcamWaitNoticeModal();
+    this._hideWebcamDeniedDecisionModal();
+    this._hideWebcamWaitOverlay();
     const sess = Auth.getStudentSession();
     if (sess) {
       const updated = { ...sess };

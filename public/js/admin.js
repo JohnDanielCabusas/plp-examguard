@@ -7357,6 +7357,84 @@ function toggleCameraExemption() {
     ? `Webcam requirement turned off for ${studentName}.`
     : `Webcam requirement restored for ${studentName}.`);
 }
+window.toggleCameraExemption = toggleCameraExemption;
+
+function isProfChatWebcamRequestMessage(message) {
+  const category = String(message?.reportCategory || '').trim().toLowerCase();
+  return !!(
+    message
+    && message.senderRole === 'student'
+    && message.type === 'report'
+    && (category === 'webcam_consent_decline' || category === 'webcam')
+  );
+}
+
+function isProfChatWebcamDecisionMessage(message) {
+  return !!(
+    message
+    && message.senderRole === 'professor'
+    && message.type === 'webcam_decision'
+    && ['allow', 'deny'].includes(message.reportCategory)
+  );
+}
+
+function getProfChatWebcamDecisionForRequest(messages, requestMessage) {
+  if (!isProfChatWebcamRequestMessage(requestMessage)) return null;
+  const requestAt = new Date(requestMessage.createdAt || 0).getTime();
+  const nextRequestAt = messages
+    .filter(message => isProfChatWebcamRequestMessage(message) && message.id !== requestMessage.id)
+    .map(message => new Date(message.createdAt || 0).getTime())
+    .filter(timestamp => Number.isFinite(timestamp) && timestamp > requestAt)
+    .sort((a, b) => a - b)[0];
+
+  const decisions = messages
+    .filter(isProfChatWebcamDecisionMessage)
+    .filter(message => {
+      const decisionAt = new Date(message.createdAt || 0).getTime();
+      if (!Number.isFinite(decisionAt) || decisionAt < requestAt) return false;
+      return !Number.isFinite(nextRequestAt) || decisionAt < nextRequestAt;
+    })
+    .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
+  return decisions[decisions.length - 1] || null;
+}
+
+function respondToWebcamRequest(requestMessageId, decision) {
+  if (!_profChatCtx || !['allow', 'deny'].includes(decision)) return;
+  const { examId, studentId, sessionId, studentName } = _profChatCtx;
+  const messages = DB.getMessagesForExamStudent(examId, studentId);
+  const requestMessage = messages.find(message => message.id === requestMessageId);
+  if (!isProfChatWebcamRequestMessage(requestMessage)) return;
+  if (getProfChatWebcamDecisionForRequest(messages, requestMessage)) {
+    showToast('This webcam request has already been resolved.', 'info');
+    return;
+  }
+
+  DB.setStudentCameraExempt(examId, studentId, decision === 'allow');
+
+  const adminId = Auth.getAdminSession()?.id || null;
+  const body = decision === 'allow'
+    ? 'Professor allowed you to continue without webcam monitoring.'
+    : 'Professor denied the request to continue without webcam monitoring. Turn on your camera to continue the exam.';
+  DB.addMessage({
+    ownerAdminId: adminId,
+    professorId: adminId,
+    studentId,
+    studentName,
+    examId,
+    sessionId,
+    senderRole: 'professor',
+    type: 'webcam_decision',
+    reportCategory: decision,
+    body,
+  });
+
+  renderProfCameraRow();
+  renderProfChatMessages();
+  showToast(decision === 'allow'
+    ? `Allowed ${studentName} to proceed without webcam monitoring.`
+    : `Denied ${studentName}'s request to proceed without webcam monitoring.`);
+}
 
 function renderProfChatMessages() {
   const body = document.getElementById('prof-chat-body');
@@ -7371,11 +7449,40 @@ function renderProfChatMessages() {
   body.innerHTML = messages.map(m => {
     const mine = m.senderRole === 'professor';
     const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    if (isProfChatWebcamDecisionMessage(m)) {
+      const allowed = m.reportCategory === 'allow';
+      const decisionIcon = allowed
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2 14.8 14.8"/><path d="M14.8 9.2 9.2 14.8"/></svg>`;
+      return `<div class="prof-chat-msg ${mine ? 'mine' : 'theirs'}">
+        <div class="prof-chat-report-bubble is-decision ${allowed ? 'is-allow' : 'is-deny'}">
+          <span class="prof-chat-report-tag">${decisionIcon}${allowed ? 'Webcam Off Allowed' : 'Webcam Off Denied'}</span>
+          <span class="prof-chat-report-copy">${escHtml(m.body || '')}</span>
+        </div>
+        <div class="prof-chat-time">${mine ? 'You' : escHtml(_profChatCtx.studentName)} &middot; ${escHtml(time)}</div>
+      </div>`;
+    }
     if (m.type === 'report') {
+      const decision = getProfChatWebcamDecisionForRequest(messages, m);
+      const webcamRequest = isProfChatWebcamRequestMessage(m);
+      const webcamRequestActions = isProfChatWebcamRequestMessage(m)
+        ? (decision
+          ? `<div class="prof-chat-report-status is-${decision.reportCategory}">
+              <span class="prof-chat-report-status-icon">${decision.reportCategory === 'allow'
+                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+                : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2 14.8 14.8"/><path d="M14.8 9.2 9.2 14.8"/></svg>'}</span>
+              <span>${decision.reportCategory === 'allow' ? 'Webcam disabled for this student' : 'Request denied, webcam still required'}</span>
+            </div>`
+          : `<div class="prof-chat-report-actions">
+              <button type="button" class="prof-chat-report-action allow" onclick="respondToWebcamRequest('${escAttr(m.id || '')}', 'allow')">Allow</button>
+              <button type="button" class="prof-chat-report-action deny" onclick="respondToWebcamRequest('${escAttr(m.id || '')}', 'deny')">Deny</button>
+            </div>`)
+        : '';
       return `<div class="prof-chat-msg report">
-        <div class="prof-chat-report-bubble">
-          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Reported a problem</span>
-          <span>${escHtml(m.body || '')}</span>
+        <div class="prof-chat-report-bubble ${webcamRequest ? 'is-webcam-request' : ''}">
+          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${webcamRequest ? 'Webcam consent declined' : 'Reported a problem'}</span>
+          <span class="prof-chat-report-copy">${escHtml(m.body || '')}</span>
+          ${webcamRequestActions}
         </div>
         <div class="prof-chat-time">${escHtml(time)}</div>
       </div>`;
@@ -7423,6 +7530,8 @@ document.addEventListener('acsDataChanged', (e) => {
     renderProfCameraRow();
   }
 });
+
+window.respondToWebcamRequest = respondToWebcamRequest;
 
 const EYE_OPEN   = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
 const EYE_CLOSED = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
@@ -9367,6 +9476,11 @@ function statusBadge(status) {
 function escHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function escAttr(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function formatDate(iso) {

@@ -911,6 +911,50 @@ export default function ExamPage() {
         </div>
       </div>
 
+      <div id="webcam-wait-notice-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog webcam-decline-reason-dialog">
+            <div className="confirm-icon" style={{ background: '#e8f5ec' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <path d="M12 7v5" />
+                <path d="M12 16h.01" />
+              </svg>
+            </div>
+            <div className="confirm-title">Wait for Professor Approval</div>
+            <div className="confirm-message">
+              Your reason was sent. Please wait for your professor&rsquo;s permission before continuing this exam with your webcam disabled.
+            </div>
+            <div className="confirm-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.exitWebcamDecline()}>Exit Exam</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.confirmWebcamWaitNotice()}>Wait for Permission</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="webcam-denied-modal" className="modal-backdrop hidden">
+        <div className="modal-dialog modal-sm">
+          <div className="modal-body confirm-dialog webcam-decline-reason-dialog">
+            <div className="confirm-icon" style={{ background: '#fdecea' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b3261e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                <line x1="12" y1="8" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <div className="confirm-title">Webcam Is Still Required</div>
+            <div className="confirm-message">
+              Your professor denied the request to continue without a webcam. You can exit the exam or turn on your camera to keep going.
+            </div>
+            <div className="confirm-actions">
+              <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.exitWebcamDecline()}>Exit Exam</button>
+              <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.turnOnCameraAfterWebcamDenied()}>Turn On Camera</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Violations Info Modal */}
       <div id="violations-info-modal" className="modal-backdrop hidden">
         <div className="modal-dialog modal-lg">
