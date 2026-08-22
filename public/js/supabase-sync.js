@@ -158,6 +158,23 @@ const SupabaseSync = {
     }, 0);
   },
 
+  _messageListSignature(messages) {
+    return JSON.stringify((Array.isArray(messages) ? messages : []).map(message => ([
+      message?.id || '',
+      message?.ownerAdminId || '',
+      message?.professorId || '',
+      message?.studentId || '',
+      message?.examId || '',
+      message?.sessionId || '',
+      message?.senderRole || '',
+      message?.type || '',
+      message?.reportCategory || '',
+      message?.body || '',
+      message?.readAt || '',
+      message?.createdAt || '',
+    ])));
+  },
+
   _mergeSessionSnapshots(priorSnapshots, incomingSnapshots) {
     const allSnapshots = [...(Array.isArray(priorSnapshots) ? priorSnapshots : []), ...(Array.isArray(incomingSnapshots) ? incomingSnapshots : [])]
       .filter(snapshot => snapshot && snapshot.imageData);
@@ -414,7 +431,7 @@ const SupabaseSync = {
   // sees every message scoped to them (owner_admin_id), a student sees only their
   // own thread (student_id). Silently no-ops if the table isn't deployed yet.
   async _pullMessages({ ownerAdminId, studentId } = {}) {
-    if (!this._client || this._messagesSupported === false) return;
+    if (!this._client || this._messagesSupported === false) return false;
     try {
       let query = this._client.from('messages').select('*').order('created_at');
       if (ownerAdminId) query = query.eq('owner_admin_id', ownerAdminId);
@@ -422,11 +439,17 @@ const SupabaseSync = {
       const { data, error } = await query;
       if (error) {
         if (this._isMissingMessagesTableError(error)) this._messagesSupported = false;
-        return;
+        return false;
       }
-      this._writeLocal('acs_messages', (data || []).map(r => this._dbToJsMessage(r)));
+      const nextMessages = (data || []).map(r => this._dbToJsMessage(r));
+      const currentMessages = this._localArray('acs_messages');
+      const changed = this._messageListSignature(currentMessages) !== this._messageListSignature(nextMessages);
+      this._writeLocal('acs_messages', nextMessages);
+      if (changed) this._notifyDataChanged('messages');
+      return changed;
     } catch (e) {
       if (this._isMissingMessagesTableError(e)) this._messagesSupported = false;
+      return false;
     }
   },
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import ThemeToggle from "../components/ThemeToggle.jsx";
 import { applyTheme, readStoredTheme, toggleTheme } from "../lib/theme.js";
 
 const SUPERADMIN_SECTIONS = new Set(["dashboard", "settings"]);
@@ -1298,11 +1297,14 @@ export default function SuperAdminPage() {
               </div>
               <div className="topbar-actions sa-topbar-actions">
                 <span className="topbar-date sa-topbar-date">{dateStr}</span>
-                <ThemeToggle
-                  checked={theme === "dark"}
-                  onChange={handleThemeToggle}
-                  title="Toggle dark mode"
-                />
+                <label className="theme-switch" title="Toggle dark / light mode">
+                  <input type="checkbox" checked={theme === "dark"} onChange={handleThemeToggle} />
+                  <span className="theme-switch-track">
+                    <svg className="theme-switch-icon ts-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <svg className="theme-switch-icon ts-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                    <span className="theme-switch-knob"></span>
+                  </span>
+                </label>
                 <button type="button" className="sa-user-pill" onClick={() => navTo("settings")}>
                   <div className="sa-user-avatar">
                     {(session?.name || "A").charAt(0).toUpperCase()}

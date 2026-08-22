@@ -7187,6 +7187,37 @@ function renderMonitoringTable(examId) {
 // IN-EXAM CHAT (professor side) — reply to students + grant camera exemption
 // ============================================================
 let _profChatCtx = null; // { examId, studentId, sessionId, studentName }
+let _profChatPollTimer = null;
+
+function refreshProfChatFromSync() {
+  const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
+  if (!adminId || !_profChatCtx || !window.SupabaseSync?._pullMessages) return Promise.resolve();
+  const activeStudentId = _profChatCtx.studentId;
+  return Promise.resolve(SupabaseSync._pullMessages({ ownerAdminId: adminId }))
+    .then((changed) => {
+      if (!_profChatCtx || _profChatCtx.studentId !== activeStudentId) return;
+      if (!changed) return;
+      renderProfChatMessages();
+      renderMonitoringTable(monitorExamId);
+      refreshMessageNotifications();
+    })
+    .catch(() => {});
+}
+
+function startProfChatSyncPolling() {
+  if (_profChatPollTimer || !window.SupabaseSync?._pullMessages) return;
+  _profChatPollTimer = setInterval(() => {
+    if (!_profChatCtx) return;
+    refreshProfChatFromSync();
+  }, 1200);
+}
+
+function stopProfChatSyncPolling() {
+  if (_profChatPollTimer) {
+    clearInterval(_profChatPollTimer);
+    _profChatPollTimer = null;
+  }
+}
 
 function _ensureProfChatDrawer() {
   if (document.getElementById('prof-chat-backdrop')) return;
@@ -7245,16 +7276,12 @@ function openStudentChat(examId, studentId, sessionId) {
   DB.markMessagesRead(examId, studentId, 'student');
   renderMonitoringTable(monitorExamId); // clear the unread badge on the row
   refreshMessageNotifications();        // recompute the nav unread count
+  startProfChatSyncPolling();
   setTimeout(() => document.getElementById('prof-chat-input')?.focus(), 80);
 
   // Freshness: pull the latest messages straight from Supabase in case a realtime
   // push was missed, then repaint the open thread once they land.
-  const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
-  if (adminId && window.SupabaseSync?._pullMessages) {
-    Promise.resolve(SupabaseSync._pullMessages({ ownerAdminId: adminId }))
-      .then(() => { if (_profChatCtx && _profChatCtx.studentId === studentId) { renderProfChatMessages(); refreshMessageNotifications(); } })
-      .catch(() => {});
-  }
+  refreshProfChatFromSync();
 }
 
 function closeStudentChat() {
@@ -7262,6 +7289,7 @@ function closeStudentChat() {
   const backdrop = document.getElementById('prof-chat-backdrop');
   if (drawer) drawer.classList.remove('open');
   setTimeout(() => { if (backdrop) backdrop.style.display = 'none'; }, 200);
+  stopProfChatSyncPolling();
   _profChatCtx = null;
 }
 
@@ -7277,10 +7305,13 @@ function renderProfCameraRow() {
   const exempt = DB.isStudentCameraExempt(examId, studentId);
   row.innerHTML = `
     <div class="prof-chat-camera-info">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      <span class="prof-chat-camera-icon ${exempt ? 'is-exempt' : ''}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${exempt ? '<path d="M1 1l22 22"/><path d="M21 7l-7 5 2.5 1.79"/><path d="M15 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 1.17 1.82"/><path d="M9.5 19H15a2 2 0 0 0 2-2v-1.5"/>' : '<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>'}</svg>
+      </span>
       <span>${exempt ? 'Webcam requirement is <b>OFF</b> for this student.' : 'Webcam is <b>required</b> for this student.'}</span>
     </div>
     <button type="button" class="prof-chat-camera-toggle ${exempt ? 'is-exempt' : ''}" onclick="toggleCameraExemption()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${exempt ? '<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>' : '<path d="M1 1l22 22"/><path d="M21 7l-7 5 2.5 1.79"/><path d="M15 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 1.17 1.82"/><path d="M9.5 19H15a2 2 0 0 0 2-2v-1.5"/>'}</svg>
       ${exempt ? 'Re-enable webcam' : 'Turn off webcam for this student'}
     </button>`;
 }
@@ -7312,7 +7343,7 @@ function renderProfChatMessages() {
     if (m.type === 'report') {
       return `<div class="prof-chat-msg report">
         <div class="prof-chat-report-bubble">
-          <span class="prof-chat-report-tag">Reported a problem</span>
+          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Reported a problem</span>
           <span>${escHtml(m.body || '')}</span>
         </div>
         <div class="prof-chat-time">${escHtml(time)}</div>
@@ -10137,4 +10168,3 @@ function importAIQuestions() {
   updateQBadge(currentQBuilderExamId);
   showToast(`${newQuestions.length} question(s) imported successfully.`, 'success');
 }
-
