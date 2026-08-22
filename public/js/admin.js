@@ -91,19 +91,30 @@ function refreshAdminIdentity() {
 function getSubmissionStatusText(session) {
   if (!session) return 'Pending';
   if (!session.submitted) return 'Pending';
+  if (!session.autoSubmitted) return 'Submitted';
 
-  if (session.autoSubmitted) {
-    if (session.warnings >= 3) return 'Auto-Submitted (Warnings)';
-    return 'Auto-Submitted (Time Limit)';
+  // Prefer the reason recorded at submit time. Sessions submitted before this
+  // field existed fall back to the force_submit activity marker (the one
+  // reason that was always reliably logged), then to a best-effort guess from
+  // the warning count.
+  const reason = session.submitReason
+    || (Array.isArray(session.activities) && session.activities.some(a => a?.type === 'force_submit') ? 'force_submit' : null)
+    || (session.warnings >= 3 ? 'violations' : 'timeout');
+
+  switch (reason) {
+    case 'force_submit': return 'Force-Submitted (Professor)';
+    case 'exam_closed': return 'Auto-Submitted (Exam Closed)';
+    case 'violations': return 'Auto-Submitted (Warnings)';
+    case 'timeout':
+    default: return 'Auto-Submitted (Time Limit)';
   }
-
-  return 'Submitted';
 }
 
 function getSubmissionStatusBadge(session) {
   const text = getSubmissionStatusText(session);
   if (text === 'Submitted') return '<span class="badge badge-success">Submitted</span>';
   if (text === 'Pending') return '<span class="badge badge-secondary">Pending</span>';
+  if (text === 'Force-Submitted (Professor)') return `<span class="badge badge-danger">${escHtml(text)}</span>`;
   return `<span class="badge badge-warning">${escHtml(text)}</span>`;
 }
 
@@ -348,26 +359,35 @@ async function playViolationSound() {
   }
 
   const now = ctx.currentTime;
-  const gain = ctx.createGain();
-  gain.connect(ctx.destination);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.46);
 
-  [880, 660].forEach((freq, index) => {
+  // Sharp, three-pulse alarm pattern — loud enough to cut through classroom /
+  // multi-monitor room noise, with a fast attack so it reads as urgent rather
+  // than a soft chime. A lowpass filter tames the raw square wave's harsh
+  // upper harmonics so it stays alerting without being ear-piercing.
+  const pulses = [
+    { freq: 988,  start: 0,     dur: 0.13 }, // B5
+    { freq: 988,  start: 0.17,  dur: 0.13 }, // B5 (repeat)
+    { freq: 1318, start: 0.36,  dur: 0.26 }, // E6 — higher + longer for emphasis
+  ];
+
+  pulses.forEach(({ freq, start, dur }) => {
+    const t0 = now + start;
+    const t1 = t0 + dur;
     const osc = ctx.createOscillator();
-    const localGain = ctx.createGain();
-    const start = now + (index * 0.18);
-    const end = start + 0.16;
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, start);
-    localGain.gain.setValueAtTime(0.0001, start);
-    localGain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-    localGain.gain.exponentialRampToValueAtTime(0.0001, end);
-    osc.connect(localGain);
-    localGain.connect(gain);
-    osc.start(start);
-    osc.stop(end + 0.02);
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, t0);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3500, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.32, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t1);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t1 + 0.02);
   });
 }
 
@@ -5106,8 +5126,19 @@ async function setExamStatus(id, status) {
     if (!ok) return;
     // Auto-submit all active sessions
     const sessions = DB.getSessionsByExam(id).filter(s => !s.submitted);
+    const closedAt = new Date().toISOString();
     sessions.forEach(s => {
-      DB.updateSession(s.id, { submitted: true, autoSubmitted: true, endTime: new Date().toISOString() });
+      DB.updateSession(s.id, {
+        submitted: true,
+        autoSubmitted: true,
+        submitReason: 'exam_closed',
+        endTime: closedAt,
+        activities: [
+          ...(Array.isArray(s.activities) ? s.activities : []),
+          { type: 'exam_closed', timestamp: closedAt, details: 'Auto-submitted: exam was closed by professor' },
+        ],
+      });
+      DB.addLog({ sessionId: s.id, studentId: s.studentId, examId: id, type: 'exam_closed', details: 'Auto-submitted: exam was closed by professor' });
     });
     DB.updateExam(id, { status: 'closed', closedAt: new Date().toISOString() });
     showToast('Exam closed.', 'success');
@@ -7690,6 +7721,7 @@ async function forceSubmitStudent(sessionId) {
   const session = DB.getSession(sessionId);
   if (!session) return;
   const exam = DB.getExam(session.examId);
+  const forcedAt = new Date().toISOString();
   let score = 0, max = 0;
   if (exam) {
     exam.questions.forEach(q => {
@@ -7699,8 +7731,19 @@ async function forceSubmitStudent(sessionId) {
       if (ans && ans.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase()) score += q.points;
     });
   }
-  DB.updateSession(sessionId, { submitted: true, autoSubmitted: true, endTime: new Date().toISOString(), score, maxScore: max });
-  DB.addLog({ sessionId, studentId: session.studentId, examId: session.examId, type: 'force_submit', details: 'Force submitted by admin' });
+  DB.updateSession(sessionId, {
+    submitted: true,
+    autoSubmitted: true,
+    submitReason: 'force_submit',
+    endTime: forcedAt,
+    score,
+    maxScore: max,
+    activities: [
+      ...(Array.isArray(session.activities) ? session.activities : []),
+      { type: 'force_submit', timestamp: forcedAt, details: 'Force submitted by professor' },
+    ],
+  });
+  DB.addLog({ sessionId, studentId: session.studentId, examId: session.examId, type: 'force_submit', details: 'Force submitted by professor' });
   showToast('Student force-submitted.', 'success');
   renderMonitoringTable(monitorExamId);
 }

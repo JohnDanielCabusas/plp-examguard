@@ -104,6 +104,7 @@ const ExamApp = {
   _brightnessCheckFails: 0,  // perceptual check: failed attempts
   _brightnessCheckAnswer: null, // index of the tile holding the symbol
   _chatPollTimer: null,
+  _sessionSyncTimer: null,
   _dashInterval: null,      // dashboard poll interval
   _courseInterval: null,    // course-view exams poll interval
   _fullscreenInteractionGraceUntil: 0,
@@ -129,6 +130,7 @@ const ExamApp = {
   _refreshPageHideHandler: null,
   _refreshUnloadCleanupTimer: null,
   _portalDataChangedTimer: null,
+  _remoteForceSubmitSessionId: null,
   _REFRESH_AUTO_SUBMIT_KEY: 'acs_exam_refresh_auto_submit',
 
   _repairStudentEmail(studentSession) {
@@ -2270,6 +2272,7 @@ const ExamApp = {
   },
 
   startWaitingPoll() {
+    this._stopSessionSyncPolling();
     this.stopPoll();
     this.pollInterval = setInterval(async () => {
       // Re-fetch from Supabase, not just the local cache, so the exam still
@@ -2452,9 +2455,11 @@ const ExamApp = {
   _beginExamRuntime() {
     if (this._examRuntimeStarted) return;
     this._examRuntimeStarted = true;
+    this._remoteForceSubmitSessionId = null;
     this._rememberTrustedInteraction(2000);
     this._enableRefreshProtection();
     this._initConnectionMonitor();
+    this._startSessionSyncPolling();
     this.requestFullscreen();
     this.initAntiCheat();
     this.startTimer();
@@ -2469,6 +2474,197 @@ const ExamApp = {
     // exam — the camera's ambient-light monitor only catches a dim screen
     // after the fact, so this check still runs even when the camera is on.
     this._startBrightnessCheck();
+  },
+
+  _getLiveSession() {
+    if (!this.session) return null;
+    return DB.getSession(this.session.id)
+      || (this.exam ? DB.getStudentSession(this.exam.id, this.session.studentId) : null)
+      || null;
+  },
+
+  _isForceSubmittedSession(session) {
+    const activities = Array.isArray(session?.activities) ? session.activities : [];
+    return activities.some(activity => activity?.type === 'force_submit');
+  },
+
+  _startSessionSyncPolling() {
+    if (this._sessionSyncTimer || !this.session) return;
+    this._sessionSyncTimer = setInterval(() => {
+      if (!this.session || this.session.submitted) return;
+      this._pollRemoteSessionState();
+    }, 1200);
+  },
+
+  _stopSessionSyncPolling() {
+    if (this._sessionSyncTimer) {
+      clearInterval(this._sessionSyncTimer);
+      this._sessionSyncTimer = null;
+    }
+  },
+
+  _applyLiveSessionLocally(liveSession) {
+    if (!liveSession?.id || !DB?.KEYS?.sessions || typeof DB._read !== 'function' || typeof DB._write !== 'function') return;
+    const sessions = [...DB._read(DB.KEYS.sessions, [])];
+    const index = sessions.findIndex(session => session.id === liveSession.id);
+    if (index >= 0) sessions[index] = { ...sessions[index], ...liveSession };
+    else sessions.push(liveSession);
+    DB._write(DB.KEYS.sessions, sessions);
+  },
+
+  _pollRemoteSessionState() {
+    const client = window.SupabaseSync?._client || window.supabase;
+    if (!client || !this.session?.id) return;
+    client.from('sessions').select('*').eq('id', this.session.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data || !data.submitted) return;
+        const normalized = window.SupabaseSync?._dbToJsSession
+          ? window.SupabaseSync._dbToJsSession(data)
+          : {
+              ...this.session,
+              submitted: !!data.submitted,
+              autoSubmitted: !!data.auto_submitted,
+              endTime: data.end_time || null,
+              warnings: Number(data.warnings || 0),
+              activities: Array.isArray(data.activities) ? data.activities : [],
+              answers: data.answers && typeof data.answers === 'object' ? data.answers : {},
+              score: data.score ?? null,
+              maxScore: data.max_score ?? null,
+              scoreReleased: !!data.score_released,
+            };
+        this._applyLiveSessionLocally(normalized);
+        this._syncLiveSessionState();
+      })
+      .catch(() => {});
+  },
+
+  _syncLiveSessionState() {
+    if (!this.exam || !this.session) return;
+    const previousSession = this.session;
+    const liveSession = this._getLiveSession();
+    if (!liveSession) return;
+
+    this.session = liveSession;
+    if (liveSession.answers && typeof liveSession.answers === 'object') {
+      this.answers = liveSession.answers;
+    }
+    if (typeof liveSession.warnings === 'number') {
+      this.warnings = liveSession.warnings;
+      const warningNumEl = document.getElementById('warning-num');
+      if (warningNumEl) warningNumEl.textContent = this.warnings;
+    }
+
+    if (!previousSession?.submitted && liveSession.submitted) {
+      if (this._isForceSubmittedSession(liveSession)) {
+        this._showForceSubmitModal(liveSession);
+      } else {
+        this._teardownActiveExamForRemoteSubmission(liveSession);
+        this._showSubmitted(true);
+      }
+    }
+  },
+
+  _teardownActiveExamForRemoteSubmission(liveSession) {
+    this._stopSessionSyncPolling();
+    this._disableRefreshProtection();
+    this.stopTimer();
+    this.destroyAntiCheat();
+    this.stopPoll();
+    this._pendingManualSubmit = false;
+    this._intentionalFullscreenExit = true;
+    this.session = liveSession || this.session;
+    this.answers = liveSession?.answers && typeof liveSession.answers === 'object'
+      ? liveSession.answers
+      : this.answers;
+    this.warnings = typeof liveSession?.warnings === 'number' ? liveSession.warnings : this.warnings;
+
+    const warningNumEl = document.getElementById('warning-num');
+    if (warningNumEl) warningNumEl.textContent = this.warnings;
+
+    [
+      'confirm-submit-modal',
+      'confirm-logout-modal',
+      'confirm-unenroll-modal',
+      'exam-policies-modal',
+      'webcam-consent-modal',
+      'webcam-decline-reason-modal',
+      'violations-info-modal',
+    ].forEach((id) => {
+      const modal = document.getElementById(id);
+      if (modal && !modal.classList.contains('hidden')) {
+        unlockBodyScroll();
+        modal.classList.add('hidden');
+      }
+    });
+
+    const warningOverlay = document.getElementById('warning-overlay');
+    if (warningOverlay) warningOverlay.style.display = 'none';
+    const offlineOverlay = document.getElementById('offline-overlay');
+    if (offlineOverlay) offlineOverlay.style.display = 'none';
+    this._hideFullscreenLock();
+
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (document.webkitFullscreenElement) {
+      document.webkitExitFullscreen && document.webkitExitFullscreen();
+    }
+  },
+
+  _ensureForceSubmitModal() {
+    let modal = document.getElementById('force-submit-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'force-submit-modal';
+    modal.className = 'modal-backdrop hidden';
+    modal.innerHTML = `
+      <div class="modal-dialog modal-sm">
+        <div class="modal-body confirm-dialog">
+          <div class="confirm-icon" style="background:#fdecea;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b3261e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 9v4"/>
+              <path d="M12 17h.01"/>
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            </svg>
+          </div>
+          <div class="confirm-title" id="force-submit-title">Exam Force-Submitted</div>
+          <div class="confirm-message" id="force-submit-message">Your professor has submitted your current answers and ended this attempt.</div>
+          <div class="confirm-actions">
+            <button type="button" class="btn btn-primary examv2-interactive" id="force-submit-view-result-btn">View Result</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const viewResultBtn = modal.querySelector('#force-submit-view-result-btn');
+    if (viewResultBtn) viewResultBtn.onclick = () => this.acknowledgeForceSubmit();
+
+    return modal;
+  },
+
+  _showForceSubmitModal(liveSession) {
+    if (!liveSession || this._remoteForceSubmitSessionId === liveSession.id) return;
+    this._remoteForceSubmitSessionId = liveSession.id;
+    this._teardownActiveExamForRemoteSubmission(liveSession);
+
+    const modal = this._ensureForceSubmitModal();
+    const title = document.getElementById('force-submit-title');
+    const message = document.getElementById('force-submit-message');
+    if (title) title.textContent = 'Exam Force-Submitted';
+    if (message) {
+      message.textContent = 'Your professor has force-submitted your exam. Leave the exam now and continue to your result page.';
+    }
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  acknowledgeForceSubmit() {
+    const modal = document.getElementById('force-submit-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      unlockBodyScroll();
+      modal.classList.add('hidden');
+    }
+    this._showSubmitted(true);
   },
 
   // ============================================================
@@ -2692,6 +2888,10 @@ const ExamApp = {
 
   // Called from the global acsDataChanged listener while an exam is in progress.
   _handleExamDataChange(table) {
+    if (table === 'sessions') {
+      this._syncLiveSessionState();
+      return;
+    }
     // Keep the chat live on both the active-exam and post-submit screens.
     const chatVisible = !document.getElementById('state-exam')?.classList.contains('hidden')
       || !document.getElementById('state-submitted')?.classList.contains('hidden');
@@ -5647,6 +5847,7 @@ const ExamApp = {
   },
 
   returnToLogin() {
+    this._stopSessionSyncPolling();
     this._disableRefreshProtection();
     this._examRuntimeStarted = false;
     const policiesModal = document.getElementById('exam-policies-modal');
@@ -5687,6 +5888,7 @@ const ExamApp = {
     submitModal.classList.add('hidden');
 
     this._disableRefreshProtection();
+    this._stopSessionSyncPolling();
     this.stopTimer();
     this.destroyAntiCheat(); // also calls stopCamera()
     this.stopPoll();
@@ -5706,9 +5908,15 @@ const ExamApp = {
     const score = this.calculateScore();
 
     if (this.session) {
+      const autoSubmitted = trigger === 'auto' || trigger === 'timeout';
+      // Records WHY the session ended up auto-submitted (violations vs. time
+      // running out) so the professor's Reports tab can show the real reason
+      // instead of guessing from the warning count after the fact.
+      const submitReason = trigger === 'timeout' ? 'timeout' : trigger === 'auto' ? 'violations' : 'manual';
       DB.updateSession(this.session.id, {
         submitted: true,
-        autoSubmitted: trigger === 'auto' || trigger === 'timeout',
+        autoSubmitted,
+        submitReason,
         endTime: new Date().toISOString(),
         answers: this.answers,
         score: score.earned,
@@ -5720,6 +5928,7 @@ const ExamApp = {
       } else if (trigger === 'auto') {
         DB.addLog({ sessionId: this.session.id, studentId: this.session.studentId, examId: this.exam.id, type: 'auto_submit', details: 'Auto-submitted: max warnings reached' });
       }
+      this.session = this._getLiveSession() || { ...this.session, submitted: true, autoSubmitted, submitReason };
     }
 
     this._showSubmitted(true);
@@ -5745,7 +5954,12 @@ const ExamApp = {
 
     if (freshSubmit) {
       // Immediately after submitting
-      if (session && session.autoSubmitted) {
+      if (session && this._isForceSubmittedSession(session)) {
+        iconWrap.innerHTML = _submittedIcon('auto');
+        iconWrap.className = 'submitted-icon-wrap auto';
+        titleEl.textContent = 'Exam Force-Submitted';
+        msgEl.textContent = 'Your professor ended this attempt and submitted your current answers.';
+      } else if (session && session.autoSubmitted) {
         iconWrap.innerHTML = _submittedIcon('auto');
         iconWrap.className = 'submitted-icon-wrap auto';
         titleEl.textContent = 'Exam Auto-Submitted';
@@ -5784,7 +5998,13 @@ const ExamApp = {
       `;
     }
     if (autoNote) {
-      if (session && session.autoSubmitted) {
+      if (session && this._isForceSubmittedSession(session)) {
+        autoNote.classList.remove('hidden');
+        autoNote.innerHTML = `
+          <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Force-Submitted</span></span>
+          <span class="submitted-auto-text">Your professor submitted your exam for you.</span>
+        `;
+      } else if (session && session.autoSubmitted) {
         autoNote.classList.remove('hidden');
         autoNote.innerHTML = `
           <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Auto-Submitted</span></span>
