@@ -131,6 +131,7 @@ const ExamApp = {
   _refreshUnloadCleanupTimer: null,
   _portalDataChangedTimer: null,
   _remoteForceSubmitSessionId: null,
+  _pendingCameraRequirementNotice: null,
   _REFRESH_AUTO_SUBMIT_KEY: 'acs_exam_refresh_auto_submit',
 
   _repairStudentEmail(studentSession) {
@@ -2476,6 +2477,100 @@ const ExamApp = {
     this._startBrightnessCheck();
   },
 
+  _ensureCameraMonitoringActive() {
+    if (!this._cameraRequired || this._cameraStream || this._cameraReacquiring) return;
+    this.initCamera();
+  },
+
+  _ensureCameraRequirementNoticeModal() {
+    let modal = document.getElementById('camera-requirement-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'camera-requirement-modal';
+    modal.className = 'modal-backdrop hidden';
+    modal.innerHTML = `
+      <div class="modal-dialog modal-sm">
+        <div class="modal-body confirm-dialog">
+          <div class="confirm-icon" id="camera-requirement-icon" style="background:#e8f5ec;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 7l-7 5 7 5V7z" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            </svg>
+          </div>
+          <div class="confirm-title" id="camera-requirement-title">Camera Requirement Updated</div>
+          <div class="confirm-message" id="camera-requirement-message">Your professor updated your webcam requirement.</div>
+          <div class="confirm-actions">
+            <button type="button" class="btn btn-primary examv2-interactive" id="camera-requirement-action-btn">Continue</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const actionBtn = modal.querySelector('#camera-requirement-action-btn');
+    if (actionBtn) actionBtn.onclick = () => this.acknowledgeCameraRequirementNotice();
+
+    return modal;
+  },
+
+  _showCameraRequirementNotice(mode) {
+    this._pendingCameraRequirementNotice = mode;
+    const modal = this._ensureCameraRequirementNoticeModal();
+    const icon = document.getElementById('camera-requirement-icon');
+    const title = document.getElementById('camera-requirement-title');
+    const message = document.getElementById('camera-requirement-message');
+    const actionBtn = document.getElementById('camera-requirement-action-btn');
+
+    if (mode === 'disabled') {
+      if (icon) {
+        icon.style.background = '#e8f5ec';
+        icon.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f5132" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>`;
+      }
+      if (title) title.textContent = 'Webcam Requirement Turned Off';
+      if (message) message.textContent = 'Your professor allowed you to continue this exam without webcam monitoring. Your camera has been turned off.';
+      if (actionBtn) actionBtn.textContent = 'Continue Exam';
+    } else {
+      if (icon) {
+        icon.style.background = '#fff7e6';
+        icon.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9a6700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>`;
+      }
+      if (title) title.textContent = 'Webcam Requirement Turned Back On';
+      if (message) message.textContent = 'Your professor requires webcam monitoring again. Turn your webcam back on to continue the exam.';
+      if (actionBtn) actionBtn.textContent = 'Turn On Webcam';
+    }
+
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  acknowledgeCameraRequirementNotice() {
+    const mode = this._pendingCameraRequirementNotice;
+    const modal = document.getElementById('camera-requirement-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      unlockBodyScroll();
+      modal.classList.add('hidden');
+    }
+    this._pendingCameraRequirementNotice = null;
+
+    if (mode === 'enabled') {
+      if (this._webcamConsentAccepted) {
+        this._ensureCameraMonitoringActive();
+      } else {
+        this._requestWebcamConsent();
+      }
+    }
+  },
+
   _getLiveSession() {
     if (!this.session) return null;
     return DB.getSession(this.session.id)
@@ -2493,6 +2588,7 @@ const ExamApp = {
     this._sessionSyncTimer = setInterval(() => {
       if (!this.session || this.session.submitted) return;
       this._pollRemoteSessionState();
+      this._pollRemoteExamState();
     }, 1200);
   },
 
@@ -2510,6 +2606,15 @@ const ExamApp = {
     if (index >= 0) sessions[index] = { ...sessions[index], ...liveSession };
     else sessions.push(liveSession);
     DB._write(DB.KEYS.sessions, sessions);
+  },
+
+  _applyLiveExamLocally(liveExam) {
+    if (!liveExam?.id || !DB?.KEYS?.exams || typeof DB._read !== 'function' || typeof DB._write !== 'function') return;
+    const exams = [...DB._read(DB.KEYS.exams, [])];
+    const index = exams.findIndex(exam => exam.id === liveExam.id);
+    if (index >= 0) exams[index] = { ...exams[index], ...liveExam };
+    else exams.push(liveExam);
+    DB._write(DB.KEYS.exams, exams);
   },
 
   _pollRemoteSessionState() {
@@ -2534,6 +2639,26 @@ const ExamApp = {
             };
         this._applyLiveSessionLocally(normalized);
         this._syncLiveSessionState();
+      })
+      .catch(() => {});
+  },
+
+  _pollRemoteExamState() {
+    const client = window.SupabaseSync?._client || window.supabase;
+    if (!client || !this.exam?.id) return;
+    client.from('exams').select('*').eq('id', this.exam.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) return;
+        const normalized = window.SupabaseSync?._dbToJsExam
+          ? window.SupabaseSync._dbToJsExam(data)
+          : {
+              ...this.exam,
+              cameraExemptStudentIds: Array.isArray(data.camera_exempt_student_ids) ? data.camera_exempt_student_ids : [],
+              requireCamera: !!data.require_camera,
+            };
+        this._applyLiveExamLocally(normalized);
+        this.exam = DB.getExam(this.exam.id) || normalized;
+        this._syncCameraExemptionState();
       })
       .catch(() => {});
   },
@@ -2585,6 +2710,7 @@ const ExamApp = {
       'confirm-submit-modal',
       'confirm-logout-modal',
       'confirm-unenroll-modal',
+      'camera-requirement-modal',
       'exam-policies-modal',
       'webcam-consent-modal',
       'webcam-decline-reason-modal',
@@ -2913,10 +3039,11 @@ const ExamApp = {
   // so "Re-enable webcam" never actually resumed monitoring on the student's side.
   _syncCameraExemptionState() {
     if (!this.exam || !this.session || !this.exam.requireCamera) return;
+    const examVisible = !document.getElementById('state-exam')?.classList.contains('hidden');
+    if (!examVisible) return;
     const nowExempt = DB.isStudentCameraExempt(this.exam.id, this.session.studentId);
     if (nowExempt && this._cameraRequired) {
       this._cameraRequired = false;
-      this._webcamConsentAccepted = true;
       this.stopCamera();
       const camOff = document.getElementById('camera-off-overlay');
       if (camOff) camOff.style.display = 'none';
@@ -2928,7 +3055,7 @@ const ExamApp = {
       const reasonModal = document.getElementById('webcam-decline-reason-modal');
       if (reasonModal && !reasonModal.classList.contains('hidden')) { unlockBodyScroll(); reasonModal.classList.add('hidden'); }
       this._hideWebcamWaitOverlay();
-      this._showToast('Your professor turned off the camera requirement for you.', 'success');
+      this._showCameraRequirementNotice('disabled');
       if (!this._examRuntimeStarted) {
         this._beginExamRuntime();
       }
@@ -2936,9 +3063,8 @@ const ExamApp = {
       // Professor turned the requirement back on — re-request consent before the
       // webcam is reactivated (a camera is never turned on without consent).
       this._cameraRequired = true;
-      this._webcamConsentAccepted = false;
-      this._showToast('Your professor turned the webcam requirement back on for you.', 'info');
-      this._requestWebcamConsent();
+      this._hideWebcamWaitOverlay();
+      this._showCameraRequirementNotice('enabled');
     }
   },
 
@@ -3270,7 +3396,8 @@ const ExamApp = {
     const modal = document.getElementById('webcam-consent-modal');
     if (!modal) {
       this._webcamConsentAccepted = true;
-      this._beginExamRuntime();
+      if (this._examRuntimeStarted) this._ensureCameraMonitoringActive();
+      else this._beginExamRuntime();
       return;
     } // fallback if markup is missing
     modal.classList.remove('hidden');
@@ -3283,7 +3410,8 @@ const ExamApp = {
     modal?.classList.add('hidden');
     this._webcamConsentAccepted = true;
     this._recordActivity('camera_consent_given', 'Student consented to webcam monitoring');
-    this._beginExamRuntime();
+    if (this._examRuntimeStarted) this._ensureCameraMonitoringActive();
+    else this._beginExamRuntime();
   },
 
   declineWebcamConsent() {
@@ -5850,6 +5978,9 @@ const ExamApp = {
     this._stopSessionSyncPolling();
     this._disableRefreshProtection();
     this._examRuntimeStarted = false;
+    const cameraRequirementModal = document.getElementById('camera-requirement-modal');
+    if (cameraRequirementModal && !cameraRequirementModal.classList.contains('hidden')) unlockBodyScroll();
+    cameraRequirementModal?.classList.add('hidden');
     const policiesModal = document.getElementById('exam-policies-modal');
     if (policiesModal && !policiesModal.classList.contains('hidden')) unlockBodyScroll();
     policiesModal?.classList.add('hidden');
