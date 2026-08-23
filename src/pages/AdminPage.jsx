@@ -895,9 +895,25 @@ export default function AdminPage() {
               <div className="card" id="report-card">
                 <div className="card-header">
                   <span className="card-title" id="report-exam-title">Choose an exam to load results and rankings</span>
-                  <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
-                    <span className="badge badge-info" id="report-submitted-count" />
-                    <span className="badge badge-success" id="report-avg-score" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      type="button"
+                      id="report-sort-btn"
+                      className="monitor-sort-btn"
+                      onClick={() => window.toggleReportNameSort?.()}
+                      title="Sort results by student last name"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18" />
+                        <path d="M7 12h10" />
+                        <path d="M10 18h4" />
+                      </svg>
+                      <span id="report-sort-btn-label">Last name A-Z</span>
+                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
+                      <span className="badge badge-info" id="report-submitted-count" />
+                      <span className="badge badge-success" id="report-avg-score" />
+                    </div>
                   </div>
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>

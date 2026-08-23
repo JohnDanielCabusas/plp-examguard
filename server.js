@@ -8,9 +8,25 @@ const { handleMonitorRoute } = require('./server/monitor-route.cjs');
 const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
 const { cleanupProfessorActivityLog } = require('./server/auth-service.cjs');
 
+function normalizeHost(value) {
+  const normalized = String(value || '').trim();
+  return normalized || '0.0.0.0';
+}
+
+function normalizePort(...candidates) {
+  for (const candidate of candidates) {
+    const port = Number(candidate);
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535) {
+      return port;
+    }
+  }
+  return 4300;
+}
+
 // Serve from the Vite build output in production
 const rootDir = path.join(__dirname, 'dist');
-const port = Number(process.env.PORT) || 3000;
+const host = normalizeHost(process.env.HOST);
+const basePort = normalizePort(process.env.PORT);
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -107,11 +123,26 @@ server.on('upgrade', (req, socket, head) => {
     });
 });
 
-server.listen(port, () => {
-  console.log(`TUKLAS running at http://localhost:${port}`);
-  console.log(`Serving from: ${rootDir}`);
-  console.log(`Run "npm run build" first to generate the dist/ folder.`);
+function startServer(port) {
+  server.listen(port, host, () => {
+    console.log(`TUKLAS running at http://${host}:${port}`);
+    console.log(`Serving from: ${rootDir}`);
+    console.log(`Run "npm run build" first to generate the dist/ folder.`);
+  });
+}
+
+server.on('error', (error) => {
+  if ((error?.code === 'EACCES' || error?.code === 'EADDRINUSE') && server._retryCount < 5) {
+    server._retryCount = (server._retryCount || 0) + 1;
+    const nextPort = basePort + server._retryCount;
+    console.warn(`Port ${error.port || basePort} is unavailable (${error.code}). Retrying on ${nextPort}...`);
+    setTimeout(() => startServer(nextPort), 150);
+    return;
+  }
+  throw error;
 });
+
+startServer(basePort);
 
 // Database maintenance: trim the professor activity log so it can't grow
 // without bound. Runs once at startup, then once every 24h for as long as

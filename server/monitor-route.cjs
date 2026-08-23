@@ -1,7 +1,15 @@
 const crypto = require('crypto');
-const { query } = require('./db.cjs');
+const path = require('path');
+const { getPool, query } = require('./db.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const { broadcastViolation } = require('./monitor-websocket.cjs');
+const {
+  readEvidenceFile,
+} = require('./violation-evidence-store.cjs');
+const {
+  downloadStorageObject,
+  uploadStorageObject,
+} = require('./supabase-storage.cjs');
 const {
   jsonResponse,
   readJsonBody,
@@ -14,6 +22,13 @@ const DEFAULT_VIOLATION_LIMIT = 50;
 const MAX_VIOLATION_LIMIT = 200;
 const STREAM_HEARTBEAT_MS = 15000;
 const monitorStreamClients = new Map();
+const REPLAYABLE_VIOLATION_TYPES = new Set([
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+]);
 
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -46,6 +61,154 @@ function normalizeMonitorViolation(row) {
     warningCount: Number(row.warning_count || 0),
     createdAt: row.created_at || null,
   };
+}
+
+function isReplayableViolationType(type) {
+  return REPLAYABLE_VIOLATION_TYPES.has(String(type || '').trim());
+}
+
+function normalizeEvidenceMimeType(rawMimeType) {
+  const mimeType = String(rawMimeType || '').trim().toLowerCase();
+  if (mimeType === 'video/mp4') return 'video/mp4';
+  return 'video/webm';
+}
+
+function extensionForMimeType(mimeType) {
+  return mimeType === 'video/mp4' ? 'mp4' : 'webm';
+}
+
+function normalizeReviewStatus(rawStatus) {
+  const status = String(rawStatus || '').trim().toLowerCase();
+  return ['pending', 'confirmed', 'dismissed'].includes(status) ? status : 'pending';
+}
+
+function normalizeEvidenceDuration(rawDurationMs) {
+  const durationMs = Number.parseInt(String(rawDurationMs ?? 0), 10);
+  if (!Number.isFinite(durationMs) || durationMs < 0) return 0;
+  return Math.min(durationMs, 10000);
+}
+
+function normalizeWarningAdjustment(rawAdjustment) {
+  const adjustment = Number.parseInt(String(rawAdjustment ?? 0), 10);
+  if (!Number.isFinite(adjustment)) return 0;
+  if (adjustment > 0) return 0;
+  if (adjustment < -1) return -1;
+  return adjustment;
+}
+
+function decodeBase64Payload(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return null;
+  const match = value.match(/^data:.*?;base64,(.+)$/i);
+  const payload = match ? match[1] : value;
+  return Buffer.from(payload, 'base64');
+}
+
+function isSupportedEvidenceBuffer(buffer, mimeType) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 128) return false;
+  if (mimeType === 'video/mp4') return buffer.subarray(4, 8).toString('ascii') === 'ftyp';
+  return buffer[0] === 0x1a
+    && buffer[1] === 0x45
+    && buffer[2] === 0xdf
+    && buffer[3] === 0xa3;
+}
+
+function normalizeEvidenceRow(row) {
+  const storageBucket = row.storage_bucket || '';
+  return {
+    id: row.id,
+    violationEventId: row.violation_event_id,
+    ownerAdminId: row.owner_admin_id || '',
+    examId: row.exam_id || '',
+    sessionId: row.session_id || '',
+    studentId: row.student_id || '',
+    violationType: row.violation_type || 'unknown',
+    evidenceType: row.evidence_type || 'pre_violation_webcam_clip',
+    storageBucket,
+    storagePath: row.storage_path || '',
+    mimeType: row.mime_type || 'video/webm',
+    clipStartedAt: row.clip_started_at || null,
+    clipEndedAt: row.clip_ended_at || null,
+    triggeredAt: row.triggered_at || null,
+    durationMs: Number(row.duration_ms || 0),
+    fileSizeBytes: Number(row.file_size_bytes || 0),
+    reviewStatus: row.review_status || 'pending',
+    reviewNotes: row.review_notes || '',
+    warningAdjustment: Number(row.warning_adjustment || 0),
+    warningApplied: !!row.warning_applied,
+    reviewedBy: row.reviewed_by || '',
+    reviewedAt: row.reviewed_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+    rawWarnings: Number(row.raw_warnings ?? 0),
+    adjustedWarnings: Number(row.adjusted_warnings ?? row.raw_warnings ?? 0),
+    playbackUrl: row.id
+      ? `/api/monitor/violation-evidence/${encodeURIComponent(row.id)}/file`
+      : '',
+  };
+}
+
+async function getSessionWarningSummary(sessionId) {
+  const { rows } = await query(
+    `select greatest(
+              0,
+              coalesce(s.warnings, 0)
+              - coalesce(sum(case when ve.warning_applied then ve.warning_adjustment else 0 end), 0)
+            ) as raw_warnings,
+            greatest(0, coalesce(s.warnings, 0)) as adjusted_warnings
+       from public.sessions s
+       left join public.violation_evidence ve on ve.session_id = s.id
+      where s.id = $1
+      group by s.id, s.warnings
+      limit 1`,
+    [sessionId],
+  );
+  const row = rows[0] || null;
+  return {
+    rawWarnings: Number(row?.raw_warnings ?? 0),
+    adjustedWarnings: Number(row?.adjusted_warnings ?? row?.raw_warnings ?? 0),
+  };
+}
+
+async function getViolationEventForStudent(sessionId, violationEventId, examId, studentId) {
+  const { rows } = await query(
+    `select ve.id,
+            ve.owner_admin_id,
+            ve.exam_id,
+            ve.session_id,
+            ve.student_id,
+            ve.violation_type,
+            ve.created_at
+       from public.violation_events ve
+      where ve.id = $1
+        and ve.session_id = $2
+        and ve.exam_id = $3
+        and upper(coalesce(ve.student_id, '')) = upper($4)
+      limit 1`,
+    [violationEventId, sessionId, examId, studentId],
+  );
+  return rows[0] || null;
+}
+
+async function getEvidenceRecordForProfessor(adminId, evidenceId) {
+  const { rows } = await query(
+    `select ve.*,
+            greatest(
+              0,
+              coalesce(sess.warnings, 0)
+              - coalesce(sum(case when peer.warning_applied then peer.warning_adjustment else 0 end), 0)
+            ) as raw_warnings,
+            greatest(0, coalesce(sess.warnings, 0)) as adjusted_warnings
+       from public.violation_evidence ve
+       left join public.sessions sess on sess.id = ve.session_id
+       left join public.violation_evidence peer on peer.session_id = ve.session_id
+      where ve.id = $1
+        and ve.owner_admin_id = $2
+      group by ve.id, sess.warnings
+      limit 1`,
+    [evidenceId, adminId],
+  );
+  return rows[0] || null;
 }
 
 function writeSseEvent(res, eventName, payload) {
@@ -230,6 +393,350 @@ async function handleViolationList(req, res, url) {
   });
 }
 
+async function handleViolationEvidenceInsert(req, res, body) {
+  const student = await getCurrentStudentSession(req);
+  if (!student) return forbid(res);
+
+  const violationEventId = String(body?.violationEventId || '').trim();
+  const sessionId = String(body?.sessionId || '').trim();
+  const examId = String(body?.examId || '').trim();
+  const studentId = String(body?.studentId || '').trim().toUpperCase();
+  const violationType = String(body?.violationType || '').trim();
+  const evidenceType = String(body?.evidenceType || 'pre_violation_webcam_clip').trim() || 'pre_violation_webcam_clip';
+  const mimeType = normalizeEvidenceMimeType(body?.mimeType);
+  const clipStartedAt = String(body?.clipStartedAt || '').trim();
+  const clipEndedAt = String(body?.clipEndedAt || '').trim();
+  const triggeredAt = String(body?.triggeredAt || '').trim();
+  const durationMs = normalizeEvidenceDuration(body?.durationMs);
+  const fileSizeBytes = Number.parseInt(String(body?.fileSizeBytes ?? 0), 10);
+  const payloadBuffer = decodeBase64Payload(body?.clipBase64 || '');
+
+  if (!violationEventId) return badRequest(res, 'Violation event ID is required.');
+  if (!sessionId) return badRequest(res, 'Session ID is required.');
+  if (!examId) return badRequest(res, 'Exam ID is required.');
+  if (!studentId) return badRequest(res, 'Student ID is required.');
+  if (!violationType) return badRequest(res, 'Violation type is required.');
+  if (!clipStartedAt || !clipEndedAt || !triggeredAt) return badRequest(res, 'Clip timestamps are required.');
+  if (!payloadBuffer?.length) return badRequest(res, 'Replay clip payload is required.');
+  if (!isSupportedEvidenceBuffer(payloadBuffer, mimeType)) {
+    return badRequest(res, 'Replay clip is not a valid WebM or MP4 video.');
+  }
+  if (student.studentId !== studentId) return forbid(res);
+  if (!isReplayableViolationType(violationType)) {
+    return badRequest(res, 'Replay evidence is only supported for webcam-detected violations.');
+  }
+
+  const violationEvent = await getViolationEventForStudent(sessionId, violationEventId, examId, studentId);
+  if (!violationEvent) {
+    return jsonResponse(res, 404, { success: false, message: 'Matching violation event not found for this session.' });
+  }
+
+  const evidenceId = createId();
+  const storageBucket = 'violation-evidence';
+  const storagePath = path.posix.join(
+    'replays',
+    examId,
+    sessionId,
+    `${violationEventId}.${extensionForMimeType(mimeType)}`,
+  );
+
+  await uploadStorageObject(storageBucket, storagePath, payloadBuffer, mimeType);
+
+  const insertResult = await query(
+    `insert into public.violation_evidence (
+       id,
+       violation_event_id,
+       owner_admin_id,
+       exam_id,
+       session_id,
+       student_id,
+       violation_type,
+       evidence_type,
+       storage_bucket,
+       storage_path,
+       mime_type,
+       clip_started_at,
+       clip_ended_at,
+       triggered_at,
+       duration_ms,
+       file_size_bytes
+     ) values (
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+       $12::timestamptz, $13::timestamptz, $14::timestamptz, $15, $16
+     )
+     on conflict (violation_event_id) do update
+       set storage_bucket = excluded.storage_bucket,
+           storage_path = excluded.storage_path,
+           mime_type = excluded.mime_type,
+           clip_started_at = excluded.clip_started_at,
+           clip_ended_at = excluded.clip_ended_at,
+           triggered_at = excluded.triggered_at,
+           duration_ms = excluded.duration_ms,
+           file_size_bytes = excluded.file_size_bytes,
+           updated_at = now()
+     returning *`,
+    [
+      evidenceId,
+      violationEventId,
+      String(violationEvent.owner_admin_id || '').trim() || null,
+      examId,
+      sessionId,
+      studentId,
+      violationType,
+      evidenceType,
+       storageBucket,
+       storagePath,
+       mimeType,
+      clipStartedAt,
+      clipEndedAt,
+      triggeredAt,
+      durationMs,
+      Number.isFinite(fileSizeBytes) && fileSizeBytes > 0 ? fileSizeBytes : payloadBuffer.length,
+     ],
+  );
+
+  const summary = await getSessionWarningSummary(sessionId);
+  jsonResponse(res, 200, {
+    success: true,
+    evidence: {
+      ...normalizeEvidenceRow(insertResult.rows[0] || {}),
+      rawWarnings: summary.rawWarnings,
+      adjustedWarnings: summary.adjustedWarnings,
+    },
+  });
+}
+
+async function handleViolationEvidenceList(req, res, url) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+
+  const examId = String(url.searchParams.get('examId') || '').trim();
+  const sessionId = String(url.searchParams.get('sessionId') || '').trim();
+  const violationEventId = String(url.searchParams.get('violationEventId') || '').trim();
+  const values = [admin.id];
+  const where = ['ve.owner_admin_id = $1'];
+
+  if (examId) {
+    values.push(examId);
+    where.push(`ve.exam_id = $${values.length}`);
+  }
+  if (sessionId) {
+    values.push(sessionId);
+    where.push(`ve.session_id = $${values.length}`);
+  }
+  if (violationEventId) {
+    values.push(violationEventId);
+    where.push(`ve.violation_event_id = $${values.length}`);
+  }
+
+  const { rows } = await query(
+    `select ve.*,
+            greatest(
+              0,
+              coalesce(sess.warnings, 0)
+              - coalesce(sum(case when peer.warning_applied then peer.warning_adjustment else 0 end), 0)
+            ) as raw_warnings,
+            greatest(0, coalesce(sess.warnings, 0)) as adjusted_warnings
+       from public.violation_evidence ve
+       left join public.sessions sess on sess.id = ve.session_id
+       left join public.violation_evidence peer on peer.session_id = ve.session_id
+      where ${where.join(' and ')}
+      group by ve.id, sess.warnings
+      order by ve.created_at desc, ve.id desc`,
+    values,
+  );
+
+  jsonResponse(res, 200, {
+    success: true,
+    evidence: rows.map(normalizeEvidenceRow),
+  });
+}
+
+async function handleViolationEvidenceReview(req, res, evidenceId, body) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+
+  const reviewStatus = normalizeReviewStatus(body?.reviewStatus);
+  const reviewNotes = String(body?.reviewNotes || '').trim();
+  let warningAdjustment = normalizeWarningAdjustment(body?.warningAdjustment);
+
+  if (!['confirmed', 'dismissed'].includes(reviewStatus)) {
+    return badRequest(res, 'Review status must be confirmed or dismissed.');
+  }
+
+  if (reviewStatus === 'confirmed') warningAdjustment = 0;
+  if (reviewStatus === 'dismissed' && warningAdjustment === 0) warningAdjustment = -1;
+
+  const client = await getPool().connect();
+  let updatedEvidence = null;
+  let updatedSession = null;
+  let reopened = false;
+
+  try {
+    await client.query('begin');
+    const existingResult = await client.query(
+      `select ve.*,
+              sess.warnings as session_warnings,
+              sess.submitted as session_submitted,
+              sess.auto_submitted as session_auto_submitted,
+              sess.submit_reason as session_submit_reason
+         from public.violation_evidence ve
+         join public.sessions sess on sess.id = ve.session_id
+        where ve.id = $1
+          and ve.owner_admin_id = $2
+        for update of ve, sess`,
+      [evidenceId, admin.id],
+    );
+    const existing = existingResult.rows[0] || null;
+    if (!existing) {
+      await client.query('rollback');
+      return jsonResponse(res, 404, { success: false, message: 'Violation evidence record not found.' });
+    }
+
+    const previousAppliedAdjustment = existing.warning_applied
+      ? normalizeWarningAdjustment(existing.warning_adjustment)
+      : 0;
+    const warningDelta = warningAdjustment - previousAppliedAdjustment;
+    const evidenceResult = await client.query(
+      `update public.violation_evidence
+          set review_status = $3,
+              review_notes = $4,
+              warning_adjustment = $5,
+              warning_applied = true,
+              reviewed_by = $6,
+              reviewed_at = now()
+        where id = $1
+          and owner_admin_id = $2
+        returning *`,
+      [evidenceId, admin.id, reviewStatus, reviewNotes || null, warningAdjustment, admin.id],
+    );
+    updatedEvidence = evidenceResult.rows[0] || existing;
+
+    if (warningDelta !== 0) {
+      const activity = [{
+        type: warningDelta < 0 ? 'violation_review_dismissed' : 'violation_review_confirmed',
+        timestamp: new Date().toISOString(),
+        detail: warningDelta < 0
+          ? 'Professor dismissed webcam violation replay as a false positive'
+          : 'Professor changed replay review to confirmed',
+      }];
+      const sessionResult = await client.query(
+        `update public.sessions
+            set warnings = greatest(0, coalesce(warnings, 0) + $2),
+                activities = coalesce(activities, '[]'::jsonb) || $3::jsonb
+          where id = $1
+          returning *`,
+        [existing.session_id, warningDelta, JSON.stringify(activity)],
+      );
+      updatedSession = sessionResult.rows[0] || null;
+    } else {
+      const sessionResult = await client.query('select * from public.sessions where id = $1', [existing.session_id]);
+      updatedSession = sessionResult.rows[0] || null;
+    }
+
+    const adjustmentResult = await client.query(
+      `select coalesce(sum(warning_adjustment), 0)::integer as applied_adjustment
+         from public.violation_evidence
+        where session_id = $1
+          and warning_applied = true`,
+      [existing.session_id],
+    );
+    const appliedAdjustment = Number(adjustmentResult.rows[0]?.applied_adjustment || 0);
+    const adjustedWarnings = Number(updatedSession?.warnings || 0);
+    const recordedWarnings = Math.max(0, adjustedWarnings - appliedAdjustment);
+    const wasWarningAutoSubmit = updatedSession?.submit_reason === 'violations'
+      || (!updatedSession?.submit_reason && !!updatedSession?.auto_submitted && recordedWarnings >= 3);
+
+    if (
+      reviewStatus === 'dismissed'
+      && updatedSession?.submitted
+      && updatedSession?.auto_submitted
+      && adjustedWarnings < 3
+      && wasWarningAutoSubmit
+    ) {
+      const reopenActivity = [{
+        type: 'violation_review_reopened',
+        timestamp: new Date().toISOString(),
+        detail: 'Exam reopened after professor dismissed a webcam violation replay',
+      }];
+      const reopenedResult = await client.query(
+        `update public.sessions
+            set submitted = false,
+                auto_submitted = false,
+                submit_reason = null,
+                start_time = case
+                  when start_time is not null and end_time is not null then start_time + (now() - end_time)
+                  else start_time
+                end,
+                end_time = null,
+                score = null,
+                score_released = false,
+                activities = coalesce(activities, '[]'::jsonb) || $2::jsonb
+          where id = $1
+          returning *`,
+        [existing.session_id, JSON.stringify(reopenActivity)],
+      );
+      updatedSession = reopenedResult.rows[0] || updatedSession;
+      reopened = true;
+    }
+
+    updatedEvidence.raw_warnings = recordedWarnings;
+    updatedEvidence.adjusted_warnings = Number(updatedSession?.warnings || 0);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  jsonResponse(res, 200, {
+    success: true,
+    evidence: normalizeEvidenceRow(updatedEvidence),
+    session: updatedSession,
+    reopened,
+  });
+}
+
+async function handleViolationEvidenceFile(req, res, evidenceId) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+
+  const evidence = await getEvidenceRecordForProfessor(admin.id, evidenceId);
+  if (!evidence?.storage_path) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Evidence file not found.');
+    return;
+  }
+
+  if (evidence.storage_bucket === 'local-server') {
+    const { data } = await readEvidenceFile(evidence.storage_path);
+    res.writeHead(200, {
+      'Content-Type': evidence.mime_type || 'video/webm',
+      'Content-Length': data.length,
+      'Cache-Control': 'private, no-store',
+      'Accept-Ranges': 'bytes',
+    });
+    res.end(data);
+    return;
+  }
+
+  const object = await downloadStorageObject(
+    evidence.storage_bucket,
+    evidence.storage_path,
+    String(req.headers.range || '').trim(),
+  );
+  const headers = {
+    'Content-Type': evidence.mime_type || 'video/webm',
+    'Content-Length': object.contentLength || object.data.length,
+    'Cache-Control': 'private, no-store',
+    'Accept-Ranges': object.acceptRanges || 'bytes',
+  };
+  if (object.contentRange) headers['Content-Range'] = object.contentRange;
+  res.writeHead(object.status === 206 ? 206 : 200, headers);
+  res.end(object.data);
+}
+
 async function handleSessionList(req, res, url) {
   const admin = await getCurrentProfessorSession(req);
   if (!admin) return forbid(res);
@@ -284,6 +791,8 @@ async function handleMonitorStream(req, res) {
 async function handleMonitorRoute(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
+  const evidenceReviewMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/review$/);
+  const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
 
   try {
     if (pathname === '/api/monitor/violation') {
@@ -305,6 +814,36 @@ async function handleMonitorRoute(req, res) {
     if (pathname === '/api/monitor/sessions') {
       if (req.method !== 'GET') return methodNotAllowed(res);
       return handleSessionList(req, res, url);
+    }
+
+    if (pathname === '/api/monitor/violation-evidence') {
+      if (req.method === 'GET') return handleViolationEvidenceList(req, res, url);
+      if (req.method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch {
+          return badRequest(res, 'Invalid JSON body.');
+        }
+        return handleViolationEvidenceInsert(req, res, body);
+      }
+      return methodNotAllowed(res);
+    }
+
+    if (evidenceReviewMatch) {
+      if (req.method !== 'PATCH') return methodNotAllowed(res);
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return badRequest(res, 'Invalid JSON body.');
+      }
+      return handleViolationEvidenceReview(req, res, decodeURIComponent(evidenceReviewMatch[1]), body);
+    }
+
+    if (evidenceFileMatch) {
+      if (req.method !== 'GET') return methodNotAllowed(res);
+      return handleViolationEvidenceFile(req, res, decodeURIComponent(evidenceFileMatch[1]));
     }
 
     if (pathname === '/api/monitor/stream') {

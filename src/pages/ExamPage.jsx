@@ -573,6 +573,9 @@ export default function ExamPage() {
             </div>
 
             <div className="submitted-actions">
+              <button type="button" id="btn-resume-reopened-exam" data-exam-control="true" className="course-exam-cta course-exam-cta-primary examv2-interactive" onClick={() => window.ExamApp.resumeReopenedExam()} style={{ display: 'none' }}>
+                Resume Reopened Exam
+              </button>
               <button type="button" id="btn-review-answers" data-exam-control="true" className="course-exam-cta course-exam-cta-secondary examv2-interactive" onClick={() => window.ExamApp.showReview()} style={{ display: 'none' }}>
                 <ReviewLabel />
               </button>

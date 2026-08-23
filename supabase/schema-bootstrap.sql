@@ -74,6 +74,10 @@ alter table if exists public.superadmin alter column email drop not null;
 alter table if exists public.sessions add column if not exists essay_grades jsonb not null default '{}'::jsonb;
 alter table if exists public.sessions add column if not exists ai_detections jsonb not null default '{}'::jsonb;
 alter table if exists public.sessions add column if not exists camera_snapshots jsonb not null default '[]'::jsonb;
+alter table if exists public.sessions add column if not exists submit_reason text;
+alter table if exists public.sessions drop constraint if exists sessions_submit_reason_check;
+alter table if exists public.sessions add constraint sessions_submit_reason_check
+  check (submit_reason is null or submit_reason in ('manual', 'violations', 'timeout', 'force_submit', 'exam_closed'));
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.exams add column if not exists exam_policies jsonb not null default '[]'::jsonb;
@@ -143,6 +147,92 @@ create index if not exists violation_events_owner_admin_exam_created_idx
 create index if not exists violation_events_session_created_idx
   on public.violation_events (session_id, created_at desc);
 alter table if exists public.violation_events enable row level security;
+drop policy if exists violation_events_no_direct_client_access on public.violation_events;
+create policy violation_events_no_direct_client_access
+  on public.violation_events
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
+
+-- Private webcam replay metadata. Each violation can own exactly one
+-- retry-safe 10-second pre-violation clip in Supabase Storage.
+create table if not exists public.violation_evidence (
+  id text primary key,
+  violation_event_id text not null references public.violation_events(id) on delete cascade,
+  owner_admin_id text,
+  exam_id text not null,
+  session_id text not null,
+  student_id text not null,
+  violation_type text not null,
+  evidence_type text not null default 'pre_violation_webcam_clip',
+  storage_bucket text not null default 'violation-evidence',
+  storage_path text not null,
+  mime_type text not null default 'video/webm',
+  clip_started_at timestamptz not null,
+  clip_ended_at timestamptz not null,
+  triggered_at timestamptz not null,
+  duration_ms integer not null default 0,
+  file_size_bytes bigint,
+  review_status text not null default 'pending',
+  review_notes text,
+  warning_adjustment integer not null default 0,
+  warning_applied boolean not null default false,
+  reviewed_by text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint violation_evidence_review_status_check check (review_status in ('pending', 'confirmed', 'dismissed')),
+  constraint violation_evidence_warning_adjustment_check check (warning_adjustment <= 0),
+  constraint violation_evidence_time_window_check check (clip_started_at <= clip_ended_at and clip_ended_at <= triggered_at),
+  constraint violation_evidence_duration_check check (duration_ms >= 0 and duration_ms <= 10000),
+  constraint violation_evidence_replayable_type_check check (violation_type in ('no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off'))
+);
+
+alter table if exists public.violation_evidence
+  add column if not exists warning_applied boolean not null default false;
+create unique index if not exists violation_evidence_violation_event_unique_idx on public.violation_evidence (violation_event_id);
+create index if not exists violation_evidence_owner_exam_created_idx on public.violation_evidence (owner_admin_id, exam_id, created_at desc);
+create index if not exists violation_evidence_session_created_idx on public.violation_evidence (session_id, created_at desc);
+create index if not exists violation_evidence_review_status_idx on public.violation_evidence (review_status, created_at desc);
+alter table if exists public.violation_evidence enable row level security;
+drop policy if exists violation_evidence_no_direct_client_access on public.violation_evidence;
+create policy violation_evidence_no_direct_client_access
+  on public.violation_evidence
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
+
+create or replace function public.set_violation_evidence_updated_at()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+drop trigger if exists violation_evidence_set_updated_at on public.violation_evidence;
+create trigger violation_evidence_set_updated_at
+before update on public.violation_evidence
+for each row
+execute function public.set_violation_evidence_updated_at();
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('violation-evidence', 'violation-evidence', false, 10485760, array['video/webm', 'video/mp4'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists violation_evidence_anon_insert on storage.objects;
+create policy violation_evidence_anon_insert on storage.objects for insert to anon with check (bucket_id = 'violation-evidence');
+drop policy if exists violation_evidence_anon_select on storage.objects;
+create policy violation_evidence_anon_select on storage.objects for select to anon using (bucket_id = 'violation-evidence');
+drop policy if exists violation_evidence_anon_update on storage.objects;
+create policy violation_evidence_anon_update on storage.objects for update to anon using (bucket_id = 'violation-evidence') with check (bucket_id = 'violation-evidence');
 
 -- Publish core live-monitoring tables to Supabase Realtime so professor and
 -- student clients receive pushes without requiring a browser refresh.

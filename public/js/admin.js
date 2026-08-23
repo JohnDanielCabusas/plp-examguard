@@ -15,6 +15,7 @@ let currentSection = 'dashboard';
 let monitorInterval = null;
 let monitorExamId = null;
 let monitorNameSort = 'asc';
+let reportNameSort = 'asc';
 let reportInterval = null;
 let sectionPollInterval = null;
 let currentQBuilderExamId = null;
@@ -46,8 +47,15 @@ let _violationSocket = null;
 let _violationSocketReconnectTimer = null;
 let _monitorSessionPollInterval = null;
 let _monitorSessionPollInFlight = false;
+let _monitorEvidenceRecords = [];
+let _monitorEvidencePollInFlight = false;
+let _lastMonitorEvidencePollAt = 0;
+let _activeViolationReview = null;
+let _activeViolationReplayObjectUrl = '';
 let _recentViolationEventKeys = new Map();
 const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
+const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set(['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off']);
+const MONITOR_EVIDENCE_POLL_MS = 2500;
 
 function readAdminSectionFromUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -199,6 +207,88 @@ function getSessionSnapshotByTimestamp(session, timestamp) {
     .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())[0] || null;
 }
 
+function renderViolationReviewAction(session, activity, index) {
+  if (!isReplayableMonitorViolationType(activity?.type)) return '';
+  const evidence = getBestEvidenceForActivity(session?.id || '', activity);
+  const reviewBadge = evidence
+    ? `<span class="activity-log-review-badge tone-${getEvidenceReviewTone(evidence.reviewStatus)}">${escHtml(formatEvidenceReviewStatus(evidence.reviewStatus))}</span>`
+    : `<span class="activity-log-review-badge tone-missing">Replay unavailable</span>`;
+  return `
+    <div class="activity-log-review-row">
+      <button
+        type="button"
+        class="activity-log-review-btn"
+        ${evidence ? '' : 'disabled'}
+        onclick="openViolationReview('${escAttr(session?.id || '')}', ${index})"
+      >${evidence ? 'Review replay' : 'Replay unavailable'}</button>
+      ${reviewBadge}
+    </div>
+  `;
+}
+
+function buildStudentLogBody(session) {
+  const activities = Array.isArray(session?.activities) ? session.activities : [];
+  const studentName = session?.studentName || session?.studentId || 'Student';
+  const studentMeta = getStudentMonitorMeta(session);
+  const initial = studentName.charAt(0).toUpperCase();
+  const rawWarnings = getSessionRawWarningCount(session);
+  const adjustedWarnings = getEffectiveSessionWarningCount(session);
+  const adjustment = getSessionWarningAdjustment(session?.id || '');
+  const studentCardHtml = `
+    <div class="activity-log-viewing-label">Viewing logs for</div>
+    <div class="activity-log-student-card">
+      <div class="activity-log-student-avatar">${escHtml(initial)}</div>
+      <div class="activity-log-student-copy">
+        <div class="activity-log-student-name">${escHtml(studentName)}</div>
+        <div class="activity-log-student-meta">${escHtml(studentMeta)}</div>
+      </div>
+    </div>
+  `;
+
+  if (!activities.length) {
+    return `
+      ${studentCardHtml}
+      <div class="activity-log-empty"><p>No suspicious activity recorded.</p></div>
+    `;
+  }
+
+  return `
+    ${studentCardHtml}
+    <div class="activity-log-warning-summary">
+      <div class="activity-log-warning-card">
+        <span class="activity-log-warning-label">Recorded warnings</span>
+        <span class="activity-log-warning-value">${rawWarnings}</span>
+      </div>
+      <div class="activity-log-warning-card">
+        <span class="activity-log-warning-label">Adjusted warnings</span>
+        <span class="activity-log-warning-value">${adjustedWarnings}</span>
+      </div>
+      <div class="activity-log-warning-card">
+        <span class="activity-log-warning-label">Review adjustment</span>
+        <span class="activity-log-warning-value">${adjustment}</span>
+      </div>
+    </div>
+    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
+    ${renderBehaviorSummary(activities)}
+    <div class="activity-log-section-title">Activity Timeline</div>
+    <div class="activity-log-timeline">
+      ${activities.map((activity, index) => `
+        <div class="activity-log-timeline-item">
+          <div class="activity-log-timeline-rail">
+            <span class="activity-log-timeline-dot tone-${getActivityTone(activity.type)}"></span>
+          </div>
+          <div class="activity-log-timeline-card log-item">
+            <div class="activity-log-timeline-time">${formatDateTime(activity.timestamp)}</div>
+            <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
+            <div class="log-detail">${escHtml(activity.detail)}</div>
+            ${renderViolationReviewAction(session, activity, index)}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
@@ -257,6 +347,141 @@ function isViolationAlertActivity(activity) {
 
 function isCriticalViolationType(type) {
   return CRITICAL_VIOLATION_TYPES.has(type);
+}
+
+function isReplayableMonitorViolationType(type) {
+  return REPLAYABLE_MONITOR_VIOLATION_TYPES.has(String(type || '').trim());
+}
+
+function getMonitorEvidenceForExam(examId) {
+  return _monitorEvidenceRecords.filter(record => !examId || record.examId === examId);
+}
+
+function getSessionEvidenceRecords(sessionId) {
+  return _monitorEvidenceRecords.filter(record => record.sessionId === sessionId);
+}
+
+function getSessionWarningAdjustment(sessionId) {
+  return getSessionEvidenceRecords(sessionId)
+    .filter(record => record.warningApplied)
+    .reduce((sum, record) => sum + Number(record.warningAdjustment || 0), 0);
+}
+
+function getSessionRawWarningCount(session) {
+  return Math.max(0, Number(session?.warnings || 0) - getSessionWarningAdjustment(session?.id || ''));
+}
+
+function getEffectiveSessionWarningCount(session) {
+  return Math.max(0, Number(session?.warnings || 0));
+}
+
+function formatEvidenceReviewStatus(status) {
+  if (status === 'confirmed') return 'Replay reviewed';
+  if (status === 'dismissed') return 'Dismissed false positive';
+  return 'Pending review';
+}
+
+function getEvidenceReviewTone(status) {
+  if (status === 'confirmed') return 'confirmed';
+  if (status === 'dismissed') return 'dismissed';
+  return 'pending';
+}
+
+function getBestEvidenceForActivity(sessionId, activity) {
+  if (!sessionId || !activity?.type || !isReplayableMonitorViolationType(activity.type)) return null;
+  const activityAt = new Date(activity.timestamp || 0).getTime();
+  const candidates = getSessionEvidenceRecords(sessionId)
+    .filter(record => record.violationType === activity.type)
+    .slice()
+    .sort((a, b) => {
+      const aDelta = Math.abs(new Date(a.triggeredAt || 0).getTime() - activityAt);
+      const bDelta = Math.abs(new Date(b.triggeredAt || 0).getTime() - activityAt);
+      return aDelta - bDelta;
+    });
+  if (!candidates.length) return null;
+  const best = candidates[0];
+  const delta = Math.abs(new Date(best.triggeredAt || 0).getTime() - activityAt);
+  return delta <= 30000 ? best : null;
+}
+
+function getBestEvidenceForSnapshot(sessionId, snapshot) {
+  if (!sessionId || !snapshot?.violationType || !isReplayableMonitorViolationType(snapshot.violationType)) return null;
+  const snapshotAt = new Date(snapshot.timestamp || 0).getTime();
+  const candidates = getSessionEvidenceRecords(sessionId)
+    .filter(record => record.violationType === snapshot.violationType)
+    .slice()
+    .sort((a, b) => {
+      const aDelta = Math.abs(new Date(a.triggeredAt || a.clipEndedAt || 0).getTime() - snapshotAt);
+      const bDelta = Math.abs(new Date(b.triggeredAt || b.clipEndedAt || 0).getTime() - snapshotAt);
+      return aDelta - bDelta;
+    });
+  if (!candidates.length) return null;
+  const best = candidates[0];
+  const delta = Math.abs(new Date(best.triggeredAt || best.clipEndedAt || 0).getTime() - snapshotAt);
+  return delta <= 30000 ? best : null;
+}
+
+function getBestReplayActivityIndex(session, violationType, timestamp) {
+  if (!session || !violationType) return -1;
+  const activities = Array.isArray(session.activities) ? session.activities : [];
+  const targetAt = new Date(timestamp || 0).getTime();
+  let bestIndex = -1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+
+  activities.forEach((activity, index) => {
+    if (activity?.type !== violationType) return;
+    const delta = Math.abs(new Date(activity.timestamp || 0).getTime() - targetAt);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestIndex = index;
+    }
+  });
+
+  return bestDelta <= 30000 ? bestIndex : -1;
+}
+
+function getSupabasePlaybackClient() {
+  return window.SupabaseSync?._client || window.supabase || null;
+}
+
+async function resolveEvidencePlaybackUrl(evidence) {
+  if (!evidence) return '';
+  const candidates = [];
+  if (evidence.playbackUrl) candidates.push(evidence.playbackUrl);
+  if (evidence.storageBucket && evidence.storageBucket !== 'local-server' && evidence.storagePath) {
+    const client = getSupabasePlaybackClient();
+    if (client?.storage?.from) {
+      const { data, error } = await client.storage
+        .from(evidence.storageBucket)
+        .createSignedUrl(evidence.storagePath, 300);
+      if (!error && data?.signedUrl) candidates.push(data.signedUrl);
+      else if (error) console.warn('[Monitor] Unable to create replay URL:', error.message || error);
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error(`Replay request failed (${response.status}).`);
+      const blob = await response.blob();
+      if (blob.size < 128) throw new Error('The stored replay file is empty.');
+
+      const signature = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+      const isWebm = signature.length >= 4
+        && signature[0] === 0x1a
+        && signature[1] === 0x45
+        && signature[2] === 0xdf
+        && signature[3] === 0xa3;
+      const isMp4 = signature.length >= 8
+        && String.fromCharCode(...signature.slice(4, 8)) === 'ftyp';
+      if (!isWebm && !isMp4) throw new Error('The stored replay is not a valid WebM or MP4 file.');
+
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.warn('[Monitor] Unable to load replay video:', error?.message || error);
+    }
+  }
+  return '';
 }
 
 function getViolationActivitySignature(activity) {
@@ -6605,13 +6830,17 @@ function getMonitorLastName(name) {
   return parts[parts.length - 1]?.toLowerCase() || '';
 }
 
-function compareMonitorSessionsByLastName(a, b) {
+function compareSessionsByLastName(a, b, sortDirection) {
   const lastNameA = getMonitorLastName(a.studentName || a.studentId);
   const lastNameB = getMonitorLastName(b.studentName || b.studentId);
-  const direction = monitorNameSort === 'desc' ? -1 : 1;
+  const direction = sortDirection === 'desc' ? -1 : 1;
   const lastNameCompare = lastNameA.localeCompare(lastNameB, undefined, { sensitivity: 'base' });
   if (lastNameCompare !== 0) return lastNameCompare * direction;
   return String(a.studentName || a.studentId || '').localeCompare(String(b.studentName || b.studentId || ''), undefined, { sensitivity: 'base' }) * direction;
+}
+
+function compareMonitorSessionsByLastName(a, b) {
+  return compareSessionsByLastName(a, b, monitorNameSort);
 }
 
 function syncMonitorSortButton() {
@@ -6754,10 +6983,20 @@ function renderCameraGrid(examId) {
   container.style.display = 'grid';
 
   container.innerHTML = entries.map(({ session, snapshot }) => {
-    const warningCount = Number(snapshot?.warningCount ?? session.warnings ?? 0);
+    const rawWarningCount = getSessionRawWarningCount(session);
+    const adjustedWarningCount = Math.max(0, getEffectiveSessionWarningCount(session));
+    const warningCount = adjustedWarningCount;
     const warnColor = warningCount >= 3 ? '#dc2626' : warningCount >= 2 ? '#f59e0b' : '#eab308';
     const warnBadge = `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${warningCount}/3</div>`;
     const violationLabel = getBehaviorLabel(snapshot?.violationType || 'camera_off');
+    const replayEvidence = getBestEvidenceForSnapshot(session.id, snapshot);
+    const warnSuffix = warningCount !== rawWarningCount ? ` <span style="font-size:10px;font-weight:700;opacity:0.86;">raw ${rawWarningCount}</span>` : '';
+    const displayWarnBadge = warningCount !== rawWarningCount
+      ? `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);" title="Adjusted warnings: ${warningCount}. Recorded warnings: ${rawWarningCount}.">Warning ${warningCount}/3${warnSuffix}</div>`
+      : warnBadge;
+    const replayBadge = replayEvidence
+      ? `<div style="position:absolute;right:10px;bottom:68px;background:rgba(16,185,129,0.92);color:#052e16;font-size:10px;font-weight:800;padding:4px 8px;border-radius:999px;">Replay ready</div>`
+      : '';
 
     const timeAgo = snapshot?.timestamp ? (() => {
       const secs = Math.floor((Date.now() - new Date(snapshot.timestamp).getTime()) / 1000);
@@ -6767,11 +7006,12 @@ function renderCameraGrid(examId) {
 
     const initial = (session.studentName || '?').charAt(0).toUpperCase();
 
-    return `<button type="button" onclick="viewCameraSnapshot('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border-radius:4px;border:1px solid var(--border);padding:0;cursor:pointer;text-align:left;">
+    return `<button type="button" onclick="openCameraGridViolationReview('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border-radius:4px;border:1px solid var(--border);padding:0;cursor:pointer;text-align:left;">
       <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
         style="width:100%;height:100%;object-fit:cover;display:block;"
         onerror="this.style.display='none'" />
-      ${warnBadge}
+      ${displayWarnBadge}
+      ${replayBadge}
       <div style="position:absolute;top:10px;left:10px;background:rgba(15,23,42,0.76);color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:20px;backdrop-filter:blur(4px);text-transform:uppercase;letter-spacing:0.05em;">${escHtml(violationLabel)}</div>
       <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">
         <div style="display:flex;align-items:center;gap:8px;">
@@ -6793,9 +7033,21 @@ function onMonitorExamChange() {
   document.getElementById('log-body').innerHTML = `<div class="activity-log-empty"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   pollMonitorSessions({ immediate: true });
+  refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true }).catch(() => {});
   renderMonitoringTable(monitorExamId);
   // With no selected exam, keep the compact sessions layout visible.
   setMonitorView(monitorExamId ? _monitorView : 'table');
+}
+
+function syncReportSortButton() {
+  const label = document.getElementById('report-sort-btn-label');
+  if (label) label.textContent = reportNameSort === 'desc' ? 'Last name Z-A' : 'Last name A-Z';
+}
+
+function toggleReportNameSort() {
+  reportNameSort = reportNameSort === 'asc' ? 'desc' : 'asc';
+  syncReportSortButton();
+  renderReportTable();
 }
 
 function toggleMonitorNameSort() {
@@ -6819,6 +7071,7 @@ function startMonitoring() {
   };
   refresh();
   pollMonitorSessions({ immediate: true });
+  refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true }).catch(() => {});
   _monitorSessionPollInterval = setInterval(() => pollMonitorSessions(), MONITOR_SESSION_POLL_MS);
   // Realtime session pushes drive the live monitoring UX. Keep a slow silent
   // fallback refresh in case the app server route becomes temporarily unavailable.
@@ -6891,6 +7144,7 @@ function normalizeMonitorSessionRow(row) {
     maxScore: row.max_score ?? null,
     submitted: !!row.submitted,
     autoSubmitted: !!row.auto_submitted,
+    submitReason: row.submit_reason || null,
     scoreReleased: !!row.score_released,
     essayGrades: row.essay_grades || {},
     aiDetections: row.ai_detections || {},
@@ -6942,6 +7196,7 @@ async function pollMonitorSessions(options = {}) {
     const result = await monitorApiRequest(`/api/monitor/sessions?examId=${encodeURIComponent(examId)}`);
     if (!result.success) return;
     applyMonitorSessionsSnapshot(examId, result.sessions || []);
+    await refreshViolationEvidence({ examId, force: !!options.immediate, silent: true });
     refreshViolationAlerts();
     if (currentSection === 'monitoring') {
       renderMonitoringSectionLive();
@@ -7092,7 +7347,7 @@ function renderMonitoringTable(examId) {
   // ── Stats strip ──────────────────────────────────────────
   const inProgress = sessions.filter(s => !s.submitted).length;
   const submitted  = sessions.filter(s => s.submitted).length;
-  const flagged    = sessions.filter(s => s.warnings >= 2).length;
+  const flagged    = sessions.filter(s => getEffectiveSessionWarningCount(s) >= 2).length;
 
   const stats = [
     { color:'blue', value: sessions.length, label:'Total',
@@ -7137,9 +7392,12 @@ function renderMonitoringTable(examId) {
     const pct = totalQs > 0 ? Math.round((answered / totalQs) * 100) : 0;
     const initial = (s.studentName || s.studentId).charAt(0).toUpperCase();
     const color   = chipColor(s.studentId);
+    const rawWarnings = getSessionRawWarningCount(s);
+    const effectiveWarnings = getEffectiveSessionWarningCount(s);
+    const hasAdjustment = effectiveWarnings !== rawWarnings;
     const latestViolation = getLatestAlertableSessionActivity(s);
     const freshViolation = isMonitorRowViolationFresh(s.id);
-    const criticalViolation = !!(latestViolation && (Number(s.warnings || 0) >= 2 || isCriticalViolationType(latestViolation.type)));
+    const criticalViolation = !!(latestViolation && (effectiveWarnings >= 2 || isCriticalViolationType(latestViolation.type)));
     const rowClassName = [
       'monitor-session-row',
       latestViolation ? 'monitor-session-row-alert' : '',
@@ -7162,8 +7420,8 @@ function renderMonitoringTable(examId) {
           : '<span class="ms-badge ms-badge-green">Submitted</span>')
       : '<span class="ms-badge ms-badge-blue">In Progress</span>';
 
-    const warnHtml = s.warnings > 0
-      ? `<span class="ms-warn-pill">${s.warnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>`
+    const warnHtml = rawWarnings > 0
+      ? `<div class="ms-warn-wrap"><span class="ms-warn-pill" title="Recorded warnings: ${rawWarnings}. Adjusted warnings: ${effectiveWarnings}.">${effectiveWarnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>${hasAdjustment ? `<span class="ms-warn-adjust">raw ${rawWarnings}</span>` : ''}</div>`
       : `<span style="color:#d1d5db;font-size:13px;">—</span>`;
 
     const activityCount = (s.activities || []).length;
@@ -7563,6 +7821,9 @@ function showStudentLog(sessionId) {
   const session = DB.getSession(sessionId);
   if (!session) return;
   document.getElementById('log-student-name').textContent = ' — ' + session.studentName;
+  document.getElementById('log-student-name').textContent = '';
+  document.getElementById('log-body').innerHTML = buildStudentLogBody(session);
+  return;
   const activities = session.activities || [];
   const studentName = session.studentName || session.studentId || 'Student';
   const studentMeta = getStudentMonitorMeta(session);
@@ -7615,6 +7876,9 @@ function refreshOpenStudentLog() {
   if (!session) return;
   _setEye(_activeLogSessionId, true);
 
+  document.getElementById('log-student-name').textContent = '';
+  document.getElementById('log-body').innerHTML = buildStudentLogBody(session);
+  return;
   const activities = session.activities || [];
   const studentName = session.studentName || session.studentId || 'Student';
   const studentMeta = getStudentMonitorMeta(session);
@@ -8534,6 +8798,7 @@ function renderReportSessionTime(session) {
 }
 
 function renderReportTable() {
+  syncReportSortButton();
   const examId = document.getElementById('report-exam-select').value;
   const pdfBtn = document.getElementById('btn-generate-pdf');
   const releaseBtn = document.getElementById('btn-release-scores');
@@ -8566,7 +8831,7 @@ function renderReportTable() {
   }
 
   const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
-  const sorted = [...sessions].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const sorted = [...sessions].sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 
   const summaryEl = document.getElementById('report-summary');
   summaryEl.classList.remove('hidden');
@@ -9355,6 +9620,15 @@ function closeModal(id) {
   if (!modal) return;
   if (!modal.classList.contains('hidden')) unlockBodyScroll();
   modal.classList.add('hidden');
+  if (id === 'modal-violation-review') {
+    const video = document.getElementById('violation-review-video');
+    if (video) {
+      try { video.pause(); } catch (_) {}
+      video.removeAttribute('src');
+      video.load?.();
+    }
+    _activeViolationReview = null;
+  }
 }
 
 // Close modal on backdrop click
@@ -9480,6 +9754,305 @@ function escAttr(str) {
   return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+async function refreshViolationEvidence(options = {}) {
+  const examId = String(options.examId || monitorExamId || '').trim();
+  if (!examId) {
+    _monitorEvidenceRecords = [];
+    return [];
+  }
+  if (_monitorEvidencePollInFlight && !options.force) return _monitorEvidenceRecords;
+  if (!options.force && (Date.now() - _lastMonitorEvidencePollAt) < MONITOR_EVIDENCE_POLL_MS) return _monitorEvidenceRecords;
+
+  _monitorEvidencePollInFlight = true;
+  try {
+    const result = await monitorApiRequest(`/api/monitor/violation-evidence?examId=${encodeURIComponent(examId)}`);
+    if (!result.success) return _monitorEvidenceRecords;
+    _monitorEvidenceRecords = Array.isArray(result.evidence) ? result.evidence : [];
+    _lastMonitorEvidencePollAt = Date.now();
+    if (!options.silent && currentSection === 'monitoring') {
+      renderMonitoringSectionLive();
+      refreshOpenStudentLog();
+    }
+    return _monitorEvidenceRecords;
+  } finally {
+    _monitorEvidencePollInFlight = false;
+  }
+}
+
+function ensureViolationReviewStyles() {
+  if (document.getElementById('violation-review-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'violation-review-styles';
+  style.textContent = `
+    .ms-warn-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .ms-warn-adjust { font-size:10px; font-weight:700; color:var(--text-muted, #6b7280); }
+    .activity-log-warning-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:16px; }
+    .activity-log-warning-card { border:1px solid var(--border, #e5e7eb); border-radius:12px; background:var(--surface, #fff); padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+    .activity-log-warning-label { font-size:11px; font-weight:800; color:var(--text-muted, #6b7280); text-transform:uppercase; letter-spacing:0.04em; }
+    .activity-log-warning-value { font-size:20px; font-weight:800; color:var(--text, #111827); }
+    .activity-log-review-row { margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .activity-log-review-btn { border:1px solid var(--border, #d1d5db); background:var(--surface-2, #f9fafb); color:var(--text, #111827); border-radius:10px; padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer; }
+    .activity-log-review-btn:disabled { cursor:not-allowed; opacity:0.6; }
+    .activity-log-review-badge, .violation-review-status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-size:11px; font-weight:800; }
+    .violation-review-status { align-self:flex-start; width:max-content; max-width:100%; padding:4px 9px; font-size:10px; line-height:1.2; white-space:nowrap; }
+    .activity-log-review-badge.tone-pending, .violation-review-status.tone-pending { background:#fef3c7; color:#92400e; }
+    .activity-log-review-badge.tone-confirmed, .violation-review-status.tone-confirmed { background:#dcfce7; color:#166534; }
+    .activity-log-review-badge.tone-dismissed, .violation-review-status.tone-dismissed { background:#fee2e2; color:#991b1b; }
+    .activity-log-review-badge.tone-missing, .violation-review-status.tone-missing { background:#e5e7eb; color:#4b5563; }
+    .violation-review-meta-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+    .violation-review-meta-card { border:1px solid var(--border, #e5e7eb); border-radius:12px; background:var(--surface, #fff); padding:10px 12px; }
+    .violation-review-meta-label { font-size:11px; font-weight:800; color:var(--text-muted, #6b7280); text-transform:uppercase; letter-spacing:0.04em; }
+    .violation-review-meta-value { font-size:13px; font-weight:700; color:var(--text, #111827); margin-top:6px; line-height:1.45; }
+    .violation-review-player { width:100%; border-radius:12px; border:1px solid var(--border, #d1d5db); background:#000; }
+    .violation-review-empty { padding:18px; border:1px dashed var(--border, #d1d5db); border-radius:12px; color:var(--text-muted, #6b7280); font-size:13px; line-height:1.55; }
+    .violation-review-notes { width:100%; min-height:90px; resize:vertical; margin-top:12px; }
+    .violation-review-detail { margin:14px 0; font-size:13px; line-height:1.6; color:var(--text, #111827); }
+    .violation-review-reviewed { display:flex; align-items:center; gap:8px; margin:-2px 0 14px; padding:10px 12px; border:1px solid var(--border,#d1d5db); border-radius:10px; background:var(--surface-2,#f8fafc); color:var(--text-muted,#64748b); font-size:12px; font-weight:700; line-height:1.45; }
+    .violation-review-reviewed.hidden { display:none; }
+    @media (max-width: 720px) { .violation-review-meta-grid { grid-template-columns:1fr; } }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureViolationReviewModal() {
+  ensureViolationReviewStyles();
+  if (document.getElementById('modal-violation-review')) return;
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop hidden';
+  modal.id = 'modal-violation-review';
+  modal.innerHTML = `
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span class="modal-title" id="violation-review-title">Violation Review</span>
+          <span id="violation-review-status" class="violation-review-status tone-pending">Pending review</span>
+        </div>
+        <button class="modal-close" onclick="closeViolationReview()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div class="violation-review-meta-grid">
+          <div class="violation-review-meta-card"><div class="violation-review-meta-label">Student</div><div class="violation-review-meta-value" id="violation-review-student">Student</div><div class="violation-review-meta-value" id="violation-review-meta" style="font-size:12px;font-weight:600;color:var(--text-muted,#6b7280);">-</div></div>
+          <div class="violation-review-meta-card"><div class="violation-review-meta-label">Violation</div><div class="violation-review-meta-value" id="violation-review-type">-</div><div class="violation-review-meta-value" id="violation-review-time" style="font-size:12px;font-weight:600;color:var(--text-muted,#6b7280);">-</div></div>
+          <div class="violation-review-meta-card"><div class="violation-review-meta-label">Recorded warnings</div><div class="violation-review-meta-value" id="violation-review-recorded">0</div></div>
+          <div class="violation-review-meta-card"><div class="violation-review-meta-label">Adjusted warnings</div><div class="violation-review-meta-value" id="violation-review-adjusted">0</div></div>
+        </div>
+        <div id="violation-review-reviewed" class="violation-review-reviewed hidden">Replay reviewed. This decision can still be edited.</div>
+        <div style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Last 10 seconds before detection</div>
+        <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
+        <div id="violation-review-empty" class="violation-review-empty">Replay unavailable for this violation.</div>
+        <div id="violation-review-detail" class="violation-review-detail">Violation details appear here.</div>
+        <textarea id="violation-review-notes" class="form-control violation-review-notes" placeholder="Optional review notes for this violation"></textarea>
+      </div>
+      <div class="modal-footer" id="violation-review-actions">
+        <button class="btn btn-secondary" onclick="closeViolationReview()">Close</button>
+        <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss False Positive</button>
+        <button id="violation-review-confirm-btn" class="btn btn-primary" onclick="submitViolationReviewDecision('confirmed')">Confirm Violation</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeViolationReview();
+  });
+}
+
+async function openViolationReview(sessionId, activityIndex) {
+  ensureViolationReviewModal();
+  const session = DB.getSession(sessionId);
+  const activity = Array.isArray(session?.activities) ? session.activities[Number(activityIndex)] : null;
+  if (!session || !activity) return;
+
+  const evidence = getBestEvidenceForActivity(sessionId, activity);
+  const rawWarnings = getSessionRawWarningCount(session);
+  const adjustedWarnings = getEffectiveSessionWarningCount(session);
+
+  _activeViolationReview = {
+    sessionId,
+    activityIndex: Number(activityIndex),
+    evidenceId: evidence?.id || '',
+  };
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText('violation-review-title', `${getBehaviorLabel(activity.type)} Review`);
+  setText('violation-review-student', session.studentName || session.studentId || 'Student');
+  setText('violation-review-meta', getStudentMonitorMeta(session) || session.studentId || '-');
+  setText('violation-review-type', getBehaviorLabel(activity.type));
+  setText('violation-review-time', formatDateTime(activity.timestamp));
+  setText('violation-review-recorded', String(rawWarnings));
+  setText('violation-review-adjusted', String(adjustedWarnings));
+  setText('violation-review-detail', activity.detail || 'Violation recorded.');
+  setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay unavailable');
+
+  const notesEl = document.getElementById('violation-review-notes');
+  if (notesEl) notesEl.value = evidence?.reviewNotes || '';
+
+  const statusBadge = document.getElementById('violation-review-status');
+  if (statusBadge) statusBadge.className = `violation-review-status tone-${evidence ? getEvidenceReviewTone(evidence.reviewStatus) : 'missing'}`;
+  const reviewedEl = document.getElementById('violation-review-reviewed');
+  const isReviewed = evidence && ['confirmed', 'dismissed'].includes(evidence.reviewStatus);
+  if (reviewedEl) {
+    reviewedEl.classList.toggle('hidden', !isReviewed);
+    reviewedEl.textContent = evidence?.reviewStatus === 'confirmed'
+      ? `Replay reviewed and confirmed${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}. You can still change this decision.`
+      : `Replay reviewed and dismissed as a false positive${evidence?.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}. You can still change this decision.`;
+  }
+  const dismissBtn = document.getElementById('violation-review-dismiss-btn');
+  const confirmBtn = document.getElementById('violation-review-confirm-btn');
+  if (dismissBtn) dismissBtn.textContent = evidence?.reviewStatus === 'dismissed' ? 'Keep Dismissed' : 'Dismiss False Positive';
+  if (confirmBtn) confirmBtn.textContent = evidence?.reviewStatus === 'confirmed' ? 'Keep Confirmed' : 'Confirm Violation';
+
+  const video = document.getElementById('violation-review-video');
+  const empty = document.getElementById('violation-review-empty');
+  const actions = document.getElementById('violation-review-actions');
+
+  if (_activeViolationReplayObjectUrl) {
+    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
+    _activeViolationReplayObjectUrl = '';
+  }
+  if (video) {
+    video.pause?.();
+    video.onerror = null;
+    video.onloadedmetadata = null;
+  }
+
+  if (evidence && video && empty) {
+    const playbackUrl = await resolveEvidencePlaybackUrl(evidence);
+    if (playbackUrl) {
+      _activeViolationReplayObjectUrl = playbackUrl;
+      video.src = playbackUrl;
+      video.style.display = '';
+      video.onerror = () => {
+        video.style.display = 'none';
+        empty.style.display = '';
+        empty.textContent = 'This stored replay could not be decoded. New webcam violations will be saved with a corrected video format.';
+      };
+      video.onloadedmetadata = () => {
+        empty.style.display = 'none';
+      };
+      video.load?.();
+      empty.style.display = 'none';
+      if (actions) actions.style.display = '';
+    } else {
+      if (video) {
+        video.removeAttribute('src');
+        video.style.display = 'none';
+        video.load?.();
+      }
+      empty.style.display = '';
+      empty.textContent = 'Replay metadata exists, but the video file could not be opened. Check the Supabase Storage bucket and policies for violation evidence.';
+      if (actions) actions.style.display = evidence ? '' : 'none';
+    }
+  } else {
+    if (video) {
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      video.load?.();
+    }
+    if (empty) {
+      empty.style.display = '';
+      empty.textContent = 'Replay unavailable for this violation. The warning remains in the audit trail, but no pre-violation clip was captured successfully.';
+    }
+    if (actions) actions.style.display = 'none';
+  }
+
+  openModal('modal-violation-review');
+}
+window.openViolationReview = openViolationReview;
+
+function closeViolationReview() {
+  const video = document.getElementById('violation-review-video');
+  if (video) {
+    video.pause?.();
+    video.removeAttribute('src');
+    video.load?.();
+  }
+  if (_activeViolationReplayObjectUrl) {
+    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
+    _activeViolationReplayObjectUrl = '';
+  }
+  closeModal('modal-violation-review');
+}
+window.closeViolationReview = closeViolationReview;
+
+async function dismissViolationEvidence(evidenceId, sessionId = '', activityIndex = -1) {
+  if (!evidenceId) return;
+  const ok = await showConfirm({
+    title: 'Dismiss false positive?',
+    message: 'This will reduce the adjusted warning count by 1 while keeping the original violation in the audit trail.',
+    confirmLabel: 'Dismiss Violation',
+    confirmClass: 'btn btn-danger',
+  });
+  if (!ok) return;
+  _activeViolationReview = {
+    sessionId: sessionId || '',
+    activityIndex: Number.isFinite(Number(activityIndex)) ? Number(activityIndex) : -1,
+    evidenceId,
+  };
+  await submitViolationReviewDecision('dismissed');
+}
+window.dismissViolationEvidence = dismissViolationEvidence;
+
+function openCameraGridViolationReview(sessionId, snapshotTimestamp = '') {
+  const session = DB.getSession(sessionId);
+  if (!session) return;
+  const snapshot = getSessionSnapshotByTimestamp(session, snapshotTimestamp);
+  if (!snapshot) return viewCameraSnapshot(sessionId, snapshotTimestamp);
+
+  const evidence = getBestEvidenceForSnapshot(sessionId, snapshot);
+  const activityIndex = getBestReplayActivityIndex(session, snapshot.violationType, snapshot.timestamp);
+  if (evidence && activityIndex >= 0) {
+    openViolationReview(sessionId, activityIndex);
+    return;
+  }
+
+  viewCameraSnapshot(sessionId, snapshotTimestamp);
+}
+window.openCameraGridViolationReview = openCameraGridViolationReview;
+
+async function submitViolationReviewDecision(reviewStatus) {
+  if (!_activeViolationReview?.evidenceId) return;
+  const notesEl = document.getElementById('violation-review-notes');
+  const result = await monitorApiRequest(`/api/monitor/violation-evidence/${encodeURIComponent(_activeViolationReview.evidenceId)}/review`, {
+    method: 'PATCH',
+    body: {
+      reviewStatus,
+      reviewNotes: String(notesEl?.value || '').trim(),
+      warningAdjustment: reviewStatus === 'dismissed' ? -1 : 0,
+    },
+  });
+
+  if (!result.success) {
+    showToast(result.message || 'Unable to save violation review right now.', 'error');
+    return;
+  }
+
+  const nextRecord = result.evidence || null;
+  if (nextRecord?.id) {
+    const existingIndex = _monitorEvidenceRecords.findIndex(record => record.id === nextRecord.id);
+    if (existingIndex >= 0) _monitorEvidenceRecords[existingIndex] = nextRecord;
+    else _monitorEvidenceRecords.unshift(nextRecord);
+  }
+
+  if (result.session?.id && result.session?.exam_id) {
+    applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
+  }
+
+  await refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true });
+  renderMonitoringSectionLive();
+  refreshOpenStudentLog();
+  if (_activeViolationReview?.sessionId) openViolationReview(_activeViolationReview.sessionId, _activeViolationReview.activityIndex);
+  showToast(reviewStatus === 'dismissed'
+    ? (result.reopened
+      ? 'False positive dismissed. The warning was deducted and the student exam was reopened.'
+      : 'False positive dismissed and the student warning count was updated live.')
+    : 'Violation review confirmed.', 'success');
+}
+window.submitViolationReviewDecision = submitViolationReviewDecision;
+
 function formatDate(iso) {
   if (!iso) return '—';
   try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
@@ -9502,21 +10075,49 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
   const img = document.getElementById('modal-cam-img');
   const timeEl = document.getElementById('modal-cam-time');
   const emptyEl = document.getElementById('modal-cam-empty');
+  let actionsEl = document.getElementById('modal-cam-actions');
+  if (!actionsEl && timeEl?.parentElement) {
+    actionsEl = document.createElement('div');
+    actionsEl.id = 'modal-cam-actions';
+    actionsEl.style.display = 'none';
+    actionsEl.style.marginTop = '12px';
+    actionsEl.style.gap = '10px';
+    actionsEl.style.flexWrap = 'wrap';
+    timeEl.parentElement.appendChild(actionsEl);
+  }
 
   document.getElementById('modal-cam-title').textContent = `Camera — ${session.studentName}`;
   const snaps = session.cameraSnapshots || [];
   if (snaps.length > 0) {
     const selected = getSessionSnapshotByTimestamp(session, snapshotTimestamp);
+    const evidence = getBestEvidenceForSnapshot(sessionId, selected);
+    const activityIndex = getBestReplayActivityIndex(session, selected?.violationType, selected?.timestamp);
     img.src = selected?.imageData || '';
     img.style.display = '';
     const label = selected?.violationType ? `${getBehaviorLabel(selected.violationType)} • ` : '';
     timeEl.textContent = selected ? `${label}Captured at ${formatDateTime(selected.timestamp)}` : '';
     emptyEl.style.display = 'none';
+    if (actionsEl) {
+      if (evidence) {
+        actionsEl.innerHTML = `
+          ${activityIndex >= 0 ? `<button class="btn btn-primary" onclick="openViolationReview('${escAttr(sessionId)}', ${activityIndex})">Review Replay</button>` : ''}
+          <button class="btn btn-danger" onclick="dismissViolationEvidence('${escAttr(evidence.id)}', '${escAttr(sessionId)}', ${activityIndex})">Dismiss False Positive</button>
+        `;
+        actionsEl.style.display = 'flex';
+      } else {
+        actionsEl.innerHTML = '';
+        actionsEl.style.display = 'none';
+      }
+    }
   } else {
     img.src = '';
     img.style.display = 'none';
     timeEl.textContent = '';
     emptyEl.style.display = '';
+    if (actionsEl) {
+      actionsEl.innerHTML = '';
+      actionsEl.style.display = 'none';
+    }
   }
   openModal('modal-camera-snap');
 }

@@ -39,6 +39,7 @@ const ExamApp = {
   markedForReview: new Set(), // set of question indices marked for review
   timeRemaining: 0,
   _examRuntimeStarted: false,
+  _pendingReviewReopen: false,
   _blurTimer: null,         // debounce timer for window blur
   _visTimer: null,          // grace timer for tab-hidden (visibilitychange)
   _fsLossTimer: null,       // grace timer for fullscreen-exit — forgives transient display blips (e.g. brightness/HDR re-sync)
@@ -53,6 +54,12 @@ const ExamApp = {
   _warningCountdownMode: null, // 'focus' | 'read' | 'info'
   _cameraStream: null,      // MediaStream from camera
   _snapInterval: null,      // periodic snapshot interval
+  _violationClipRecorders: [],
+  _violationClipSpawnTimer: null,
+  _violationClipMimeType: '',
+  _violationClipChunkMs: 1000,
+  _violationClipSegmentMs: 10000,
+  _violationClipOverlapMs: 5000,
   _cameraPrompting: false,  // true while camera permission dialog is open
   _motionInterval: null,    // motion detection interval
   _prevFrameData: null,
@@ -339,7 +346,7 @@ const ExamApp = {
   },
 
   _notifyProfessorViolation(type, detail, warningCount) {
-    if (!this.session?.id || !this.exam?.id) return;
+    if (!this.session?.id || !this.exam?.id) return Promise.resolve(null);
 
     const payload = {
       sessionId: this.session.id,
@@ -351,27 +358,241 @@ const ExamApp = {
       warningCount: Number(warningCount || 0),
     };
 
-    fetch('/api/monitor/violation', {
+    return fetch('/api/monitor/violation', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       keepalive: true,
     }).then(async (response) => {
-      if (response.ok) return;
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        return data?.violation || null;
+      }
       let message = '';
       try {
         const data = await response.json();
         message = data?.message || '';
       } catch (_) {}
       console.warn('[Monitor] Violation notify failed:', response.status, message || 'Unknown server error');
+      return null;
     }).catch((error) => {
       console.warn('[Monitor] Unable to notify professor about violation:', error?.message || error);
+      return null;
     });
   },
 
   _isCameraViolationType(type) {
     return ['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off'].includes(type);
+  },
+
+  _isReplayableCameraViolationType(type) {
+    return this._isCameraViolationType(type);
+  },
+
+  _startViolationReplayBuffer() {
+    this._stopViolationReplayBuffer();
+    if (!this._cameraStream || typeof MediaRecorder === 'undefined') return;
+
+    const mimeCandidates = ['video/webm;codecs=vp8', 'video/webm'];
+    let mimeType = '';
+    mimeCandidates.some((candidate) => {
+      if (typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(candidate)) return false;
+      mimeType = candidate;
+      return true;
+    });
+
+    this._violationClipMimeType = mimeType;
+    this._violationClipRecorders = [];
+
+    try {
+      this._startViolationReplaySegment();
+      this._violationClipSpawnTimer = setInterval(
+        () => {
+          try {
+            this._startViolationReplaySegment();
+          } catch (error) {
+            console.warn('[Monitor] Unable to rotate violation replay buffer:', error?.message || error);
+          }
+        },
+        this._violationClipOverlapMs,
+      );
+    } catch (error) {
+      console.warn('[Monitor] Unable to start violation replay buffer:', error?.message || error);
+      if (this._violationClipSpawnTimer) clearInterval(this._violationClipSpawnTimer);
+      this._violationClipSpawnTimer = null;
+      this._violationClipMimeType = '';
+      this._violationClipRecorders = [];
+    }
+  },
+
+  _startViolationReplaySegment() {
+    if (!this._cameraStream?.active || typeof MediaRecorder === 'undefined') return null;
+
+    const recorder = this._violationClipMimeType
+      ? new MediaRecorder(this._cameraStream, {
+          mimeType: this._violationClipMimeType,
+          videoBitsPerSecond: 320000,
+        })
+      : new MediaRecorder(this._cameraStream, { videoBitsPerSecond: 320000 });
+    this._violationClipMimeType = recorder.mimeType || this._violationClipMimeType || 'video/webm';
+    const segment = {
+      recorder,
+      chunks: [],
+      startedAt: Date.now(),
+      endedAt: 0,
+      stopTimer: null,
+      resolveFinished: null,
+      finished: null,
+    };
+    segment.finished = new Promise((resolve) => {
+      segment.resolveFinished = resolve;
+    });
+
+    recorder.ondataavailable = (event) => {
+      if (event?.data?.size) segment.chunks.push(event.data);
+    };
+    recorder.onerror = () => segment.resolveFinished?.(null);
+    recorder.onstop = () => {
+      if (segment.stopTimer) clearTimeout(segment.stopTimer);
+      segment.endedAt = segment.endedAt || Date.now();
+      const blob = segment.chunks.length
+        ? new Blob(segment.chunks, { type: recorder.mimeType || this._violationClipMimeType || 'video/webm' })
+        : null;
+      segment.resolveFinished?.(blob?.size ? blob : null);
+      segment.resolveFinished = null;
+      this._violationClipRecorders = this._violationClipRecorders.filter(item => item !== segment);
+    };
+
+    recorder.start(this._violationClipChunkMs);
+    segment.stopTimer = setTimeout(() => {
+      segment.endedAt = Date.now();
+      if (recorder.state !== 'inactive') recorder.stop();
+    }, this._violationClipSegmentMs);
+    this._violationClipRecorders.push(segment);
+    return segment;
+  },
+
+  _stopViolationReplayBuffer() {
+    if (this._violationClipSpawnTimer) clearInterval(this._violationClipSpawnTimer);
+    this._violationClipSpawnTimer = null;
+    const segments = Array.isArray(this._violationClipRecorders)
+      ? this._violationClipRecorders.slice()
+      : [];
+    this._violationClipRecorders = [];
+    segments.forEach((segment) => {
+      try {
+        if (segment.stopTimer) clearTimeout(segment.stopTimer);
+        segment.recorder.ondataavailable = null;
+        segment.recorder.onstop = null;
+        segment.resolveFinished?.(null);
+        if (segment.recorder.state !== 'inactive') segment.recorder.stop();
+      } catch (_) {}
+    });
+    this._violationClipMimeType = '';
+  },
+
+  _blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Unable to read replay clip.'));
+      reader.readAsDataURL(blob);
+    });
+  },
+
+  async _capturePreViolationReplayClip(type) {
+    if (!this._isReplayableCameraViolationType(type)) return null;
+    const triggeredAtMs = Date.now();
+    const candidates = (Array.isArray(this._violationClipRecorders) ? this._violationClipRecorders : [])
+      .filter(segment => segment?.recorder?.state === 'recording')
+      .sort((a, b) => a.startedAt - b.startedAt);
+    const segment = candidates[0];
+    if (!segment) return null;
+
+    segment.endedAt = triggeredAtMs;
+    if (segment.stopTimer) clearTimeout(segment.stopTimer);
+    try {
+      segment.recorder.requestData?.();
+      segment.recorder.stop();
+    } catch (_) {
+      return null;
+    }
+
+    const clipBlob = await segment.finished;
+    if (!clipBlob?.size) return null;
+    const clipStartedAtMs = Number(segment.startedAt || triggeredAtMs);
+    const clipEndedAtMs = triggeredAtMs;
+    const mimeType = clipBlob.type || this._violationClipMimeType || 'video/webm';
+
+    if (!this._violationClipRecorders.some(item => item?.recorder?.state === 'recording')) {
+      try { this._startViolationReplaySegment(); } catch (_) {}
+    }
+
+    return {
+      evidenceType: 'pre_violation_webcam_clip',
+      violationType: type,
+      mimeType,
+      clipStartedAt: new Date(clipStartedAtMs).toISOString(),
+      clipEndedAt: new Date(clipEndedAtMs).toISOString(),
+      triggeredAt: new Date(triggeredAtMs).toISOString(),
+      durationMs: Math.min(10000, Math.max(0, clipEndedAtMs - clipStartedAtMs)),
+      fileSizeBytes: clipBlob.size,
+      clipBlob,
+    };
+  },
+
+  async _persistViolationReplayEvidence(payload) {
+    const response = await fetch('/api/monitor/violation-evidence', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || `Replay upload failed (${response.status}).`);
+    }
+    const data = await response.json().catch(() => ({}));
+    return data?.evidence || null;
+  },
+
+  async _uploadViolationReplayEvidence(violation, clipPayload) {
+    if (!violation?.id || !clipPayload || !this.session?.id || !this.exam?.id) return null;
+    const basePayload = {
+      violationEventId: violation.id,
+      sessionId: this.session.id,
+      examId: this.exam.id,
+      studentId: this.session.studentId || '',
+      evidenceType: clipPayload.evidenceType || 'pre_violation_webcam_clip',
+      violationType: clipPayload.violationType,
+      mimeType: clipPayload.mimeType || 'video/webm',
+      clipStartedAt: clipPayload.clipStartedAt,
+      clipEndedAt: clipPayload.clipEndedAt,
+      triggeredAt: clipPayload.triggeredAt,
+      durationMs: Number(clipPayload.durationMs || 0),
+      fileSizeBytes: Number(clipPayload.fileSizeBytes || clipPayload.clipBlob?.size || 0),
+    };
+
+    try {
+      const clipBase64 = clipPayload.clipBase64 || await this._blobToDataUrl(clipPayload.clipBlob);
+      const payload = { ...basePayload, clipBase64 };
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          return await this._persistViolationReplayEvidence(payload);
+        } catch (error) {
+          lastError = error;
+          if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 750));
+        }
+      }
+
+      throw lastError || new Error('Unable to save replay evidence.');
+    } catch (error) {
+      console.warn('[Monitor] Unable to upload replay evidence:', error?.message || error);
+      return null;
+    }
   },
 
   _captureCameraFrameData() {
@@ -2587,9 +2808,9 @@ const ExamApp = {
   _startSessionSyncPolling() {
     if (this._sessionSyncTimer || !this.session) return;
     this._sessionSyncTimer = setInterval(() => {
-      if (!this.session || this.session.submitted) return;
+      if (!this.session) return;
       this._pollRemoteSessionState();
-      this._pollRemoteExamState();
+      if (!this.session.submitted) this._pollRemoteExamState();
     }, 1200);
   },
 
@@ -2623,13 +2844,14 @@ const ExamApp = {
     if (!client || !this.session?.id) return;
     client.from('sessions').select('*').eq('id', this.session.id).maybeSingle()
       .then(({ data, error }) => {
-        if (error || !data || !data.submitted) return;
+        if (error || !data) return;
         const normalized = window.SupabaseSync?._dbToJsSession
           ? window.SupabaseSync._dbToJsSession(data)
           : {
               ...this.session,
               submitted: !!data.submitted,
               autoSubmitted: !!data.auto_submitted,
+              submitReason: data.submit_reason || null,
               endTime: data.end_time || null,
               warnings: Number(data.warnings || 0),
               activities: Array.isArray(data.activities) ? data.activities : [],
@@ -2667,6 +2889,7 @@ const ExamApp = {
   _syncLiveSessionState() {
     if (!this.exam || !this.session) return;
     const previousSession = this.session;
+    const previousWarnings = Number(previousSession?.warnings || 0);
     const liveSession = this._getLiveSession();
     if (!liveSession) return;
 
@@ -2680,6 +2903,11 @@ const ExamApp = {
       if (warningNumEl) warningNumEl.textContent = this.warnings;
     }
 
+    if (previousSession?.submitted && !liveSession.submitted) {
+      this._showReviewReopenedState(liveSession);
+      return;
+    }
+
     if (!previousSession?.submitted && liveSession.submitted) {
       if (this._isForceSubmittedSession(liveSession)) {
         this._showForceSubmitModal(liveSession);
@@ -2687,7 +2915,62 @@ const ExamApp = {
         this._teardownActiveExamForRemoteSubmission(liveSession);
         this._showSubmitted(true);
       }
+      return;
     }
+
+    if (
+      !liveSession.submitted
+      && previousWarnings < 3
+      && Number(liveSession.warnings || 0) >= 3
+    ) {
+      this.submitExam('auto');
+    }
+  },
+
+  _showReviewReopenedState(liveSession) {
+    this._pendingReviewReopen = true;
+    this._examRuntimeStarted = false;
+    this.session = liveSession;
+    this.answers = liveSession.answers || this.answers || {};
+    this.warnings = Number(liveSession.warnings || 0);
+    this.showState('submitted');
+    this._startSessionSyncPolling();
+
+    const titleEl = document.getElementById('submitted-title');
+    const msgEl = document.getElementById('submitted-msg');
+    const iconWrap = document.getElementById('submitted-icon-wrap');
+    const autoNote = document.getElementById('submitted-auto-note');
+    const resumeBtn = document.getElementById('btn-resume-reopened-exam');
+    const reviewBtn = document.getElementById('btn-review-answers');
+    if (titleEl) titleEl.textContent = 'Exam Reopened';
+    if (msgEl) msgEl.textContent = 'Your professor dismissed a webcam violation. Your warning was deducted and you may continue this attempt.';
+    if (iconWrap) {
+      iconWrap.innerHTML = _submittedIcon('success');
+      iconWrap.className = 'submitted-icon-wrap success';
+    }
+    if (autoNote) {
+      autoNote.classList.remove('hidden');
+      autoNote.innerHTML = `
+        <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Professor reviewed replay</span></span>
+        <span class="submitted-auto-text">Select Resume Reopened Exam to continue with your saved answers.</span>
+      `;
+    }
+    if (resumeBtn) resumeBtn.style.display = '';
+    if (reviewBtn) reviewBtn.style.display = 'none';
+  },
+
+  resumeReopenedExam() {
+    const liveSession = this.session?.id ? (DB.getSession(this.session.id) || this.session) : null;
+    if (!liveSession || liveSession.submitted || !this._pendingReviewReopen) return;
+    this._pendingReviewReopen = false;
+    this.session = liveSession;
+    this.answers = liveSession.answers || {};
+    this.warnings = Number(liveSession.warnings || 0);
+    const resumeBtn = document.getElementById('btn-resume-reopened-exam');
+    if (resumeBtn) resumeBtn.style.display = 'none';
+    this._prepareExamShell();
+    this._continueExamLaunch();
+    this._showToast('Your exam is active again. Your saved answers have been restored.', 'success');
   },
 
   _teardownActiveExamForRemoteSubmission(liveSession) {
@@ -3654,6 +3937,7 @@ const ExamApp = {
       this._cameraPrompting = false;
       this._cameraStream = stream;
       video.srcObject = stream;
+      this._startViolationReplayBuffer();
       if (statusText) statusText.textContent = 'Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
       this._startCameraWatchdog();
@@ -3762,6 +4046,7 @@ const ExamApp = {
       this._cameraStream = stream;
       const video = document.getElementById('camera-feed');
       if (video) video.srcObject = stream;
+      this._startViolationReplayBuffer();
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';
       const statusText = document.getElementById('camera-status-text');
@@ -4640,6 +4925,7 @@ const ExamApp = {
     if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
     if (this._motionInterval) { clearInterval(this._motionInterval); this._motionInterval = null; }
     if (this._snapInterval)   { clearInterval(this._snapInterval);   this._snapInterval = null; }
+    this._stopViolationReplayBuffer();
     this._faceDetectInFlight = false;
     this._prevFrameData = null;
     this._noMotionSec = 0;
@@ -4831,7 +5117,17 @@ const ExamApp = {
     this._cancelReadCountdown();
 
     this.warnings++;
-    this._notifyProfessorViolation(type, detail, this.warnings);
+    const replayClipPromise = this._capturePreViolationReplayClip(type).catch((error) => {
+      console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
+      return null;
+    });
+    const violationPromise = this._notifyProfessorViolation(type, detail, this.warnings);
+    Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
+      if (!violation || !replayClip) return null;
+      return this._uploadViolationReplayEvidence(violation, replayClip);
+    }).catch((error) => {
+      console.warn('[Monitor] Replay evidence pipeline failed:', error?.message || error);
+    });
 
     this._recordActivity(type, detail);
     DB.updateSession(this.session.id, { warnings: this.warnings });
@@ -6182,6 +6478,9 @@ const ExamApp = {
 
   _showSubmitted(freshSubmit) {
     this.showState('submitted');
+    this._pendingReviewReopen = false;
+    const resumeBtn = document.getElementById('btn-resume-reopened-exam');
+    if (resumeBtn) resumeBtn.style.display = 'none';
 
     // Keep the professor chat reachable after submission.
     if (this.exam && this.session) {
@@ -6193,6 +6492,9 @@ const ExamApp = {
     }
 
     const session = this.session ? DB.getSession(this.session.id) : null;
+    const warningAutoSubmit = session?.autoSubmitted
+      && (session.submitReason === 'violations' || (!session.submitReason && Number(session.warnings || 0) >= 3));
+    if (warningAutoSubmit) this._startSessionSyncPolling();
     const titleEl  = document.getElementById('submitted-title');
     const msgEl    = document.getElementById('submitted-msg');
     const iconWrap = document.getElementById('submitted-icon-wrap');

@@ -6,9 +6,28 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
+const { handleMonitorRoute } = require('./server/monitor-route.cjs');
+const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
+
+function resolveHost(env) {
+  const value = String(env.VITE_HOST || env.HOST || '').trim();
+  return value || '0.0.0.0';
+}
+
+function resolvePort(...candidates) {
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isInteger(value) && value >= 1024 && value <= 65535) {
+      return value;
+    }
+  }
+  return 4173;
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const host = resolveHost(env);
+  const port = resolvePort(env.VITE_PORT, env.PORT, process.env.VITE_PORT, process.env.PORT);
   process.env.SMTP_HOST = env.SMTP_HOST || process.env.SMTP_HOST;
   process.env.SMTP_PORT = env.SMTP_PORT || process.env.SMTP_PORT;
   process.env.SMTP_SECURE = env.SMTP_SECURE || process.env.SMTP_SECURE;
@@ -22,6 +41,8 @@ export default defineConfig(({ mode }) => {
   process.env.SUPABASE_DB_USER = env.SUPABASE_DB_USER || process.env.SUPABASE_DB_USER;
   process.env.SUPABASE_DB_PASSWORD = env.SUPABASE_DB_PASSWORD || process.env.SUPABASE_DB_PASSWORD;
   process.env.SUPABASE_DB_SSL = env.SUPABASE_DB_SSL || process.env.SUPABASE_DB_SSL;
+  process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD = env.AUTH_DEFAULT_SYSADMIN_PASSWORD || process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD;
   process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD = env.AUTH_DEFAULT_PROFESSOR_PASSWORD || process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD;
   process.env.AUTH_DEFAULT_PROFESSOR_USERNAME = env.AUTH_DEFAULT_PROFESSOR_USERNAME || process.env.AUTH_DEFAULT_PROFESSOR_USERNAME;
@@ -33,10 +54,19 @@ export default defineConfig(({ mode }) => {
       {
         name: 'rewrite-clean-urls',
         configureServer(server) {
+          server.httpServer?.on('upgrade', (req, socket, head) => {
+            Promise.resolve(handleMonitorWebSocketUpgrade(req, socket, head)).catch(() => {
+              try { socket.destroy(); } catch (_) {}
+            });
+          });
           server.middlewares.use((req, res, next) => {
             const pathname = req.url ? new URL(req.url, 'http://localhost').pathname : '';
             if (pathname.startsWith('/api/auth/')) {
               handleAuthRoute(req, res);
+              return;
+            }
+            if (pathname.startsWith('/api/monitor/')) {
+              handleMonitorRoute(req, res);
               return;
             }
             if (pathname === '/api/email/send-verification') {
@@ -52,6 +82,18 @@ export default defineConfig(({ mode }) => {
       },
     ],
     publicDir: 'public',
+    server: {
+      host,
+      port,
+      strictPort: false,
+      allowedHosts: true,
+    },
+    preview: {
+      host,
+      port,
+      strictPort: false,
+      allowedHosts: true,
+    },
     build: {
       rollupOptions: {
         input: {
