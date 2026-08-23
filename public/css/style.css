@@ -307,6 +307,8 @@
 [data-theme="dark"] .tbl-btn-edit svg.edit-icon { fill: var(--text) !important; }
 [data-theme="dark"] .btn-action-ghost:hover svg.edit-icon,
 [data-theme="dark"] .tbl-btn-edit:hover svg.edit-icon { fill: #fff !important; }
+[data-theme="dark"] .btn-action-ghost svg.share-icon { stroke: var(--text) !important; }
+[data-theme="dark"] .btn-action-ghost:hover svg.share-icon { stroke: #fff !important; }
 
 [data-theme="dark"] .tbl-btn-archive {
   background: var(--surface-2) !important;
@@ -344,6 +346,7 @@
   color: var(--text) !important;
   border-color: var(--border) !important;
 }
+[data-theme="dark"] .pushable-white .pushable-front svg { stroke: var(--text) !important; }
 
 /* Dropdowns / selects */
 [data-theme="dark"] select,
@@ -2700,6 +2703,13 @@ tr:hover td { background: #F8FDF8; }
   fill: #0f2d1a;
   transition: right 0.3s, margin 0.3s, fill 0.3s;
 }
+.btn-action-ghost svg.share-icon {
+  width: 12px; height: 12px;
+  position: absolute;
+  right: 14px;
+  stroke: #0f2d1a;
+  transition: right 0.3s, margin 0.3s, stroke 0.3s;
+}
 .btn-action-ghost:hover {
   background: #1a4d2a;
   color: transparent;
@@ -2711,6 +2721,7 @@ tr:hover td { background: #F8FDF8; }
               transform 250ms cubic-bezier(.3,.7,.4,1.5);
 }
 .btn-action-ghost:hover svg.edit-icon { right: 50%; transform: translateX(50%); margin: 0; fill: #fff; }
+.btn-action-ghost:hover svg.share-icon { right: 50%; transform: translateX(50%); margin: 0; stroke: #fff; }
 .btn-action-ghost:active {
   transform: translateY(-1px);
   box-shadow: 0 2px 0 #0a2316;
@@ -10583,7 +10594,7 @@ tr:hover td { background: #fafbfc !important; }
 
 .exam-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
 .exam-cards-grid:has(.empty-state) {
@@ -10749,19 +10760,62 @@ tr:hover td { background: #fafbfc !important; }
 .exam-stat svg { color: #9ca3af; flex-shrink: 0; }
 
 .exam-card-date {
-  font-size: 11px;
-  color: #9ca3af;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .exam-card-footer {
-  padding: 10px 18px;
+  padding: 12px 14px;
   border-top: 1px solid rgba(0,0,0,0.06);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: #e8ecef;
   flex-wrap: wrap;
+}
+.exam-card-footer > * {
+  flex: 0 0 auto;
+}
+
+/* Sized so Edit/Share/Archive/More sit in a single row without the
+   card itself needing to get wider. */
+.exam-card-footer .btn-action-ghost {
+  height: 34px;
+  min-width: 0;
+  padding: 0 30px 0 14px;
+  font-size: 12px;
+}
+.exam-card-footer .btn-action-ghost svg.edit-icon,
+.exam-card-footer .btn-action-ghost svg.share-icon {
+  right: 12px;
+}
+.exam-card-footer .btn-action-ghost:hover svg.edit-icon,
+.exam-card-footer .btn-action-ghost:hover svg.share-icon {
+  right: 50%;
+}
+.exam-card-footer .tbl-btn-archive {
+  height: 34px;
+  min-width: 0;
+  padding: 0 32px 0 12px;
+  font-size: 12px;
+}
+.exam-card-footer .tbl-btn-archive svg.archive-icon {
+  right: 12px;
+}
+.exam-card-footer .tbl-btn-archive:hover svg.archive-icon {
+  right: 50%;
+}
+.exam-card-footer .pushable-front {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+.exam-card-footer .pushable-icon-only .pushable-front {
+  padding: 8px 13px;
+  justify-content: center;
 }
 
 /* ============================================================
@@ -11546,6 +11600,11 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), color 0.18s;
 }
 .qe-type-dd.open .qtd-chevron { transform: rotate(180deg); color: #166534; }
+
+.history-chevron {
+  transition: transform 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+details[open] > summary .history-chevron { transform: rotate(180deg); }
 
 .qtd-panel {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 99999;

@@ -2553,92 +2553,94 @@ function getStudentExamHistory(student) {
   });
 }
 
-function renderStudentCourseChips(courses) {
-  if (!courses.length) {
-    return `<div style="font-size:13px;color:var(--text-muted);">Not enrolled in any active course.</div>`;
-  }
-
-  return `
-    <div style="display:flex;flex-wrap:wrap;gap:8px;">
-      ${courses.map(course => `
-        <span style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text);">
-          <span>${escHtml(course.name || 'Untitled Course')}</span>
-          ${course.code ? `<span style="color:var(--text-muted);font-weight:600;">${escHtml(course.code)}</span>` : ''}
-        </span>
-      `).join('')}
-    </div>
-  `;
-}
-
 function openStudentHistoryReview(sessionId) {
   closeModal('modal-student-history');
   requestAnimationFrame(() => viewStudentAnswers(sessionId, 'reports'));
 }
 
-function renderStudentExamHistoryAccordion(entry) {
-  const { exam, course, session, violationCount, scorePercent, statusText } = entry;
-  const scoreLabel = session?.submitted
-    ? `${session.score ?? 0}/${session.maxScore ?? 0}${scorePercent !== null ? ` (${scorePercent}%)` : ''}`
-    : session
-      ? 'In Progress'
-      : 'Not Taken';
-  const dropdownHint = session?.submitted
-    ? 'Click to open or close details and review.'
-    : 'Click to open or close details.';
+function historyChevronIcon(size = 14) {
+  return `<svg class="history-chevron" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"/></svg>`;
+}
+
+function groupStudentHistoryByCourse(history) {
+  const groups = new Map();
+  history.forEach(entry => {
+    const key = entry.course?.id || 'uncategorized';
+    if (!groups.has(key)) groups.set(key, { course: entry.course, entries: [] });
+    groups.get(key).entries.push(entry);
+  });
+  return Array.from(groups.values());
+}
+
+function renderStudentExamHistoryRow(entry) {
+  const { exam, session, violationCount, scorePercent, statusText } = entry;
   const activities = Array.isArray(session?.activities) ? session.activities : [];
-  const timelineHtml = activities.length
-    ? `
-      <div style="margin-top:12px;display:grid;gap:8px;">
+
+  const scoreTone = scorePercent === null ? 'var(--text-muted)' : scorePercent >= 60 ? 'var(--success)' : 'var(--danger)';
+  const scoreBig = session?.submitted
+    ? (scorePercent !== null ? `${scorePercent}%` : '-')
+    : '-';
+  const scoreSub = session?.submitted
+    ? `${session.score ?? 0}/${session.maxScore ?? 0} pts`
+    : 'In Progress';
+
+  const violationsHtml = activities.length ? `
+    <details style="margin-top:10px;">
+      <summary class="btn-action" style="cursor:pointer;font-size:13px;font-weight:700;color:var(--text);background:var(--surface-2);border:1px solid var(--border);padding:9px 16px;border-radius:8px;display:inline-flex;align-items:center;gap:8px;">
+        Violation log (${activities.length})
+        ${historyChevronIcon(14)}
+      </summary>
+      <div style="margin-top:8px;display:grid;gap:6px;">
         ${activities.map(activity => `
-          <div class="log-item">
+          <div class="log-item" style="margin-bottom:0;">
             <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
             <div class="log-detail">${escHtml(activity.detail || 'Violation recorded')}</div>
             <div class="log-time">${formatDateTime(activity.timestamp)}</div>
           </div>
         `).join('')}
       </div>
-    `
-    : `<div style="margin-top:12px;font-size:12px;color:var(--text-muted);">No violation logs recorded for this exam.</div>`;
+    </details>
+  ` : '';
 
   return `
-    <details style="border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:0 4px 18px rgba(0,0,0,0.05);overflow:hidden;">
-      <summary style="list-style:none;cursor:pointer;padding:16px 18px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;" title="${escHtml(dropdownHint)}">
-        <div style="min-width:0;flex:1;">
-          <div style="font-size:16px;font-weight:800;color:var(--text);">${escHtml(exam.title || 'Untitled Exam')}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+    <div style="border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px 14px;display:flex;align-items:flex-start;gap:14px;">
+      <div style="flex-shrink:0;min-width:56px;text-align:center;">
+        <div style="font-size:18px;font-weight:800;color:${scoreTone};line-height:1.1;">${scoreBig}</div>
+        <div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-top:2px;white-space:nowrap;">${escHtml(scoreSub)}</div>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(exam.title || 'Untitled Exam')}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+          ${escHtml(statusText)} • ${violationCount} violation${violationCount !== 1 ? 's' : ''}
+        </div>
+        ${violationsHtml}
+      </div>
+      ${session?.submitted ? `<button class="btn-action btn-action-ghost" style="flex-shrink:0;" onclick="openStudentHistoryReview('${session.id}')">Review${icEyeFill}</button>` : ''}
+    </div>
+  `;
+}
+
+function renderStudentCourseHistoryAccordion(group) {
+  const { course, entries } = group;
+  const totalViolations = entries.reduce((sum, entry) => sum + entry.violationCount, 0);
+
+  return `
+    <details style="border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;">
+      <summary style="list-style:none;cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          ${historyChevronIcon(16)}
+          <div style="font-size:14px;font-weight:800;color:var(--text);">
             ${escHtml(course?.name || 'Unknown Course')}
-            ${course?.code ? ` • ${escHtml(course.code)}` : ''}
+            ${course?.code ? `<span style="color:var(--text-muted);font-weight:600;"> • ${escHtml(course.code)}</span>` : ''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Status: ${escHtml(statusText)}</span>
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Score: ${escHtml(scoreLabel)}</span>
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Violations: ${violationCount}</span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:11px;font-weight:700;color:var(--text-muted);">${entries.length} exam${entries.length !== 1 ? 's' : ''}</span>
+          <span style="font-size:11px;font-weight:700;color:var(--text-muted);">${totalViolations} violation${totalViolations !== 1 ? 's' : ''}</span>
         </div>
       </summary>
-      <div style="padding:0 18px 16px;">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-          ${session?.submitted ? `<button class="btn-action btn-action-ghost" onclick="openStudentHistoryReview('${session.id}')">Review${icEyeFill}</button>` : ''}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;">
-          <div class="student-info-box" style="margin:0;">
-            <div class="info-row"><span class="info-label">Course</span><span class="info-value">${escHtml(course?.code || course?.name || '-')}</span></div>
-            <div class="info-row"><span class="info-label">Status</span><span class="info-value">${escHtml(statusText)}</span></div>
-          </div>
-          <div class="student-info-box" style="margin:0;">
-            <div class="info-row"><span class="info-label">Score</span><span class="info-value">${escHtml(scoreLabel)}</span></div>
-            <div class="info-row"><span class="info-label">Warnings</span><span class="info-value">${session ? String(session.warnings || 0) : '0'}</span></div>
-          </div>
-          <div class="student-info-box" style="margin:0;">
-            <div class="info-row"><span class="info-label">Violations</span><span class="info-value">${violationCount}</span></div>
-            <div class="info-row"><span class="info-label">Submitted</span><span class="info-value">${session?.submitted ? formatDateTime(session.endTime || session.createdAt) : 'Not yet'}</span></div>
-          </div>
-        </div>
-        <div style="margin-top:4px;">
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">Violation History</div>
-          ${activities.length ? renderBehaviorSummary(activities) : ''}
-          ${timelineHtml}
-        </div>
+      <div style="padding:0 16px 14px;display:grid;gap:8px;">
+        ${entries.map(renderStudentExamHistoryRow).join('')}
       </div>
     </details>
   `;
@@ -2710,8 +2712,7 @@ function viewStudentHistory(studentId) {
   const student = DB.getStudentById(studentId);
   if (!student) return;
 
-  const courses = getStudentCourseMembership(student);
-  const history = getStudentExamHistory(student);
+  const history = getStudentExamHistory(student).filter(entry => entry.session);
   const titleEl = document.getElementById('modal-student-history-title');
   const bodyEl = document.getElementById('modal-student-history-body');
   if (!titleEl || !bodyEl) return;
@@ -2731,19 +2732,13 @@ function viewStudentHistory(studentId) {
       </div>
 
       <div>
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;">Courses</div>
-        ${renderStudentCourseChips(courses)}
-      </div>
-
-      <div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <div style="font-size:13px;font-weight:700;color:var(--text);">Exam History</div>
-          <div style="font-size:12px;color:var(--text-muted);">${history.length} exam${history.length !== 1 ? 's' : ''} across this student's courses</div>
+          <div style="font-size:12px;color:var(--text-muted);">${history.length} exam${history.length !== 1 ? 's' : ''} taken across this student's courses</div>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Each exam row is a dropdown. Click it to expand the full history, then click it again to close.</div>
         ${history.length
-          ? `<div style="display:grid;gap:14px;">${history.map(renderStudentExamHistoryAccordion).join('')}</div>`
-          : `<div class="empty-state"><p>No exams found for this student's courses yet.</p></div>`}
+          ? `<div style="display:grid;gap:10px;">${groupStudentHistoryByCourse(history).map(renderStudentCourseHistoryAccordion).join('')}</div>`
+          : `<div class="empty-state"><p>This student hasn't taken any exams yet.</p></div>`}
       </div>
     </div>
   `;
@@ -2921,9 +2916,12 @@ function renderExams() {
         <div class="exam-card-header-deco"></div>
         <div class="exam-card-letter">${(e.title||'?').charAt(0).toUpperCase()}</div>
         <div style="position:relative;z-index:1;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-            ${statusBadge(e.status)}
-            ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy access code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+              ${statusBadge(e.status)}
+              ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy access code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
+            </div>
+            <div class="exam-card-date" title="Date created">${formatDate(e.createdAt)}</div>
           </div>
           <div class="exam-card-title">${escHtml(e.title)}</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">${subjectName}</div>
@@ -2945,7 +2943,6 @@ function renderExams() {
             <div class="exam-stat-lab">Points</div>
           </div>
         </div>
-        <div class="exam-card-date">${formatDate(e.createdAt)}</div>
       </div>
       <div class="exam-card-footer" onclick="event.stopPropagation()">
         ${actions}
@@ -2987,15 +2984,15 @@ function buildMoreItems(e) {
 
 function buildExamActions(e) {
   const icEdit    = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-  const icShare   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51L8.59 10.49"/></svg>`;
+  const icShare   = `<svg class="share-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51L8.59 10.49"/></svg>`;
   const icArchive = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
   const icMore    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>`;
 
   const pb = (label, icon, onclick, variant = 'white') =>
-    `<button class="pushable pushable-${variant}" onclick="${onclick}">
+    `<button class="pushable pushable-${variant}${label ? '' : ' pushable-icon-only'}" onclick="${onclick}"${label ? '' : ` aria-label="More actions" title="More actions"`}>
       <span class="pushable-shadow"></span>
       <span class="pushable-edge"></span>
-      <span class="pushable-front">${icon} ${label}</span>
+      <span class="pushable-front">${icon}${label ? ` ${label}` : ''}</span>
     </button>`;
 
   let btns = '';
@@ -3007,7 +3004,7 @@ function buildExamActions(e) {
   if (['ready','active','closed'].includes(e.status)) {
     btns += `<button class="tbl-btn tbl-btn-archive" onclick="setExamStatus('${e.id}','archived')">Archive${icArchiveFill}</button>`;
   }
-  btns += pb('More', icMore, `openMoreModal('${e.id}')`, 'white');
+  btns += pb('', icMore, `openMoreModal('${e.id}')`, 'white');
   return btns;
 }
 
