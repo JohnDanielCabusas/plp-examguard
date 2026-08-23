@@ -29,8 +29,6 @@ The project uses a modern web application stack focused on reliability, speed, a
 - Deployment: Vercel or similar hosting platform
 - Version Control: Git / GitHub
 
-> If your team is using a slightly different frontend or backend setup, update the stack listed here to match the exact implementation in your repository.
-
 ## Prerequisites
 
 Before installing and running the system, make sure you have:
