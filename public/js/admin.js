@@ -522,8 +522,8 @@ function syncViolationSoundToggle() {
   if (!btn || !label || !icon) return;
 
   btn.classList.toggle('is-muted', _violationSoundMuted);
-  btn.title = _violationSoundMuted ? 'Unmute violation alert sounds' : 'Mute violation alert sounds';
-  label.textContent = _violationSoundMuted ? 'Muted' : 'Sound On';
+  btn.title = _violationSoundMuted ? 'Unmute alert sounds' : 'Mute alert sounds';
+  label.textContent = _violationSoundMuted ? 'Unmute' : 'Mute';
   icon.innerHTML = _violationSoundMuted ? VIOLATION_SOUND_ICON_OFF : VIOLATION_SOUND_ICON_ON;
 }
 
@@ -1339,6 +1339,7 @@ function showProfMessagePopup(title, detail, kind) {
 function notifyForStudentMessages(list) {
   if (!_msgNotifySeeded) return; // don't pop the pre-login backlog
   const openStudentId = _profChatCtx?.studentId || null;
+  let playedSound = false;
   (list || []).forEach(m => {
     if (!m || m.senderRole !== 'student' || m.readAt) return;
     if (_notifiedMsgIds.has(m.id)) return;
@@ -1347,6 +1348,10 @@ function notifyForStudentMessages(list) {
     // Log to the bell centre (unseen → badge) regardless of the toast.
     addBellNotification({ id: m.id, kind: m.type === 'report' ? 'report' : 'message', who, body: m.body, at: m.createdAt, studentId: m.studentId, examId: m.examId }, false);
     if (m.studentId === openStudentId) return; // reading it — skip the toast
+    if (!playedSound) {
+      playedSound = true;
+      playViolationSound().catch(() => {});
+    }
     if (m.type === 'report') showProfMessagePopup(`${who} reported a problem`, m.body, 'report');
     else showProfMessagePopup(`New message from ${who}`, m.body, 'message');
   });
@@ -2069,7 +2074,7 @@ function viewEnrolledStudents(subjectId) {
               <td style="text-align:center;">${statusBadge(e.status)}</td>
               <td style="text-align:center;">
                 <div class="table-actions">
-                  <button class="btn-action btn-action-ghost" onclick="showSection('exams');openExamEditor('${e.id}');">Open${icEditFill}</button>
+                  <button class="btn-action btn-action-ghost" onclick="showSection('exams');openExamEditor('${e.id}');">Open${icEyeFill}</button>
                 </div>
               </td>
             </tr>`).join('')}
@@ -5396,7 +5401,14 @@ async function reopenExam(id) {
         cameraSnapshots: [],
       });
     });
-    DB.updateExam(id, { status: 'active', reopenedAt: new Date().toISOString(), scoringReleased: false });
+    DB.updateExam(id, {
+      status: 'active',
+      reopenedAt: new Date().toISOString(),
+      scoringReleased: false,
+      // Webcam exemptions are temporary overrides for a specific attempt. When
+      // everyone retakes, the next attempt should go back to the exam's base rules.
+      cameraExemptStudentIds: [],
+    });
     showToast('Exam reopened. All students can retake the exam.', 'success');
   } else {
     // Just reopen for new/unsubmitted students; keep existing submissions
@@ -7394,7 +7406,6 @@ function renderMonitoringTable(examId) {
     const color   = chipColor(s.studentId);
     const rawWarnings = getSessionRawWarningCount(s);
     const effectiveWarnings = getEffectiveSessionWarningCount(s);
-    const hasAdjustment = effectiveWarnings !== rawWarnings;
     const latestViolation = getLatestAlertableSessionActivity(s);
     const freshViolation = isMonitorRowViolationFresh(s.id);
     const criticalViolation = !!(latestViolation && (effectiveWarnings >= 2 || isCriticalViolationType(latestViolation.type)));
@@ -7421,7 +7432,7 @@ function renderMonitoringTable(examId) {
       : '<span class="ms-badge ms-badge-blue">In Progress</span>';
 
     const warnHtml = rawWarnings > 0
-      ? `<div class="ms-warn-wrap"><span class="ms-warn-pill" title="Recorded warnings: ${rawWarnings}. Adjusted warnings: ${effectiveWarnings}.">${effectiveWarnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>${hasAdjustment ? `<span class="ms-warn-adjust">raw ${rawWarnings}</span>` : ''}</div>`
+      ? `<div class="ms-warn-wrap"><span class="ms-warn-pill" title="Recorded warnings: ${rawWarnings}. Adjusted warnings: ${effectiveWarnings}.">${effectiveWarnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div>`
       : `<span style="color:#d1d5db;font-size:13px;">—</span>`;
 
     const activityCount = (s.activities || []).length;
@@ -9352,6 +9363,10 @@ async function allowStudentRetake(sessionId) {
     `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nTheir previous submission, answers, and score will be cleared.`
   );
   if (!ok) return;
+  if (exam?.id && session.studentId) {
+    // A fresh retake should restore the original webcam requirement for this exam.
+    DB.setStudentCameraExempt(exam.id, session.studentId, false);
+  }
   DB.updateSession(sessionId, {
     submitted:     false,
     autoSubmitted: false,

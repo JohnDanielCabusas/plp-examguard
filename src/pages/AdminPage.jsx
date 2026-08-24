@@ -376,13 +376,13 @@ export default function AdminPage() {
             <div className="topbar-actions">
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="topbar-date" />
 
-              <button
-                type="button"
-                className="topbar-sound-btn"
-                id="violation-sound-toggle"
-                title="Mute violation alert sounds"
-                onClick={() => window.toggleViolationSound?.()}
-              >
+                <button
+                  type="button"
+                  className="topbar-sound-btn"
+                  id="violation-sound-toggle"
+                  title="Mute alert sounds"
+                  onClick={() => window.toggleViolationSound?.()}
+                >
                 <span className="topbar-sound-btn-icon" id="violation-sound-icon" aria-hidden="true">
                   <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />

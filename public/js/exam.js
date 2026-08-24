@@ -1160,27 +1160,46 @@ const ExamApp = {
     }
 
     if (exam.status === 'active') {
-      if (!this.session) {
-        this.session = DB.addSession({
-          examId: exam.id,
-          examCode: exam.code,
-          studentId: studentSession.studentId,
-          studentName: studentSession.studentName || studentSession.studentId,
-          yearLevel: studentSession.yearLevel || (portalStudent ? portalStudent.yearLevel : ''),
-          section: studentSession.section || (portalStudent ? portalStudent.section : ''),
-          startTime: null,
-          endTime: null,
-          answers: {},
-          warnings: 0,
-          activities: [],
-          score: null,
-          maxScore: exam.questions.reduce((sum, q) => sum + q.points, 0),
-          submitted: false,
-          autoSubmitted: false,
-          scoreReleased: false,
-        });
+      const launchActiveExam = () => {
+        if (!this.session) {
+          this.session = DB.addSession({
+            examId: exam.id,
+            examCode: exam.code,
+            studentId: studentSession.studentId,
+            studentName: studentSession.studentName || studentSession.studentId,
+            yearLevel: studentSession.yearLevel || (portalStudent ? portalStudent.yearLevel : ''),
+            section: studentSession.section || (portalStudent ? portalStudent.section : ''),
+            startTime: null,
+            endTime: null,
+            answers: {},
+            warnings: 0,
+            activities: [],
+            score: null,
+            maxScore: exam.questions.reduce((sum, q) => sum + q.points, 0),
+            submitted: false,
+            autoSubmitted: false,
+            scoreReleased: false,
+          });
+        }
+        this.startExam();
+      };
+
+      // A professor can revoke a student's temporary webcam exemption right when
+      // granting a retake. Pull the latest exam row before a fresh attempt starts
+      // so we don't relaunch using a stale cached exemption and leave the camera off.
+      const needsFreshExamRules = !!(exam.requireCamera && (!this.session || !this.session.startTime));
+      if (needsFreshExamRules && window.SupabaseSync?.refreshExams) {
+        Promise.resolve(window.SupabaseSync.refreshExams())
+          .catch(() => {})
+          .then(() => {
+            const latestExam = DB.getExam(exam.id);
+            if (latestExam) this.exam = latestExam;
+            launchActiveExam();
+          });
+        return;
       }
-      this.startExam();
+
+      launchActiveExam();
       return;
     }
 
@@ -2602,22 +2621,36 @@ const ExamApp = {
       .filter(Boolean);
   },
 
+  _getExamRulesChecklist() {
+    const baselineRules = [
+      'Stay on the exam screen and remain in fullscreen until you submit.',
+      'Do not copy, paste, take screenshots, refresh the page, or switch to other apps or tabs.',
+      'Work independently and follow all instructions set for this exam.',
+      'Repeated or confirmed violations may trigger warnings or automatic submission.',
+    ];
+
+    if (this.exam?.requireCamera) {
+      baselineRules.splice(
+        3,
+        0,
+        'Keep your webcam on, your face visible, and your lighting clear throughout this attempt unless your professor explicitly turns the webcam requirement off for the current attempt.',
+      );
+    }
+
+    return [...baselineRules, ...this._getExamPolicies()];
+  },
+
   _shouldShowExamPolicies() {
     if (!this.session) return false;
-    const policies = this._getExamPolicies();
-    if (!policies.length) return false;
     const session = DB.getSession(this.session.id);
     const activities = Array.isArray(session?.activities) ? session.activities : [];
-    return !activities.some(activity => activity?.type === 'exam_policies_acknowledged');
+    const hasAcknowledgedPolicies = activities.some(activity => activity?.type === 'exam_policies_acknowledged');
+    return !hasAcknowledgedPolicies || !session?.startTime;
   },
 
   _requestExamPolicies() {
-    const policies = this._getExamPolicies();
-    if (!policies.length) {
-      this._continueExamLaunch();
-      return;
-    }
-
+    const rules = this._getExamRulesChecklist();
+    const customPolicies = this._getExamPolicies();
     const modal = document.getElementById('exam-policies-modal');
     const list = document.getElementById('exam-policies-modal-list');
     const empty = document.getElementById('exam-policies-modal-empty');
@@ -2633,8 +2666,8 @@ const ExamApp = {
       if (liveSession?.startTime) DB.updateSession(this.session.id, { startTime: null });
     }
 
-    list.innerHTML = policies.map(policy => `<li>${_esc(policy)}</li>`).join('');
-    empty.style.display = policies.length ? 'none' : '';
+    list.innerHTML = rules.map(rule => `<li>${_esc(rule)}</li>`).join('');
+    empty.style.display = customPolicies.length ? 'none' : '';
     if (professorLine) {
       const professor = DB.getAdminById(this.exam?.ownerAdminId);
       const professorName = String(professor?.name || DB.getSettings?.().adminName || '').trim();
@@ -2653,8 +2686,8 @@ const ExamApp = {
     const modal = document.getElementById('exam-policies-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
-    const count = this._getExamPolicies().length;
-    this._recordActivity('exam_policies_acknowledged', `Student acknowledged ${count} exam polic${count === 1 ? 'y' : 'ies'}`);
+    const count = this._getExamRulesChecklist().length;
+    this._recordActivity('exam_policies_acknowledged', `Student acknowledged ${count} exam rule${count === 1 ? '' : 's'}`);
     this._continueExamLaunch();
   },
 

@@ -844,7 +844,7 @@ export default function ExamPage() {
                 <span id="exam-policies-modal-professor" className="exam-policies-professor-name" />
               </div>
               <div id="exam-policies-modal-empty" className="exam-policies-empty-note" style={{ display: 'none' }}>
-                No custom exam policies were provided for this exam.
+                No extra professor-specific rules were provided for this exam.
               </div>
               <ol id="exam-policies-modal-list" className="exam-policies-modal-list" />
             </div>
