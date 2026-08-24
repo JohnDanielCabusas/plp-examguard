@@ -223,7 +223,7 @@ export default function LoginPage() {
 
   const getAdminResetEmailValue = () => (adminResetEmail || adminResetEmailRef.current?.value || adminEmail || '').trim().toLowerCase();
 
-  const getStudentEmailValue = () => (studentEmail || studentEmailRef.current?.value || '').trim().toLowerCase();
+  const getStudentEmailValue = () => (studentEmailRef.current?.value || studentEmail || '').trim().toLowerCase();
 
   const professorGoBack = () => {
     setAdminStep('email');
@@ -486,6 +486,7 @@ export default function LoginPage() {
 
   const studentGoBack = () => {
     setStudentStep(1);
+    setStudentEmail('');
     setStep1Error('');
     setStep2aError('');
     setStep2bError('');
@@ -527,16 +528,25 @@ export default function LoginPage() {
         if (showErrors) setStep1Error(studentStatus?.message || 'Unable to validate the student email right now. Please try again.');
         return { success: false, reason: 'lookup-failed' };
       }
-      if (studentStatus?.hasPassword) {
+      if (studentStatus?.exists) {
         setStudentEmail(email);
         setStudentVerifyMessage('');
         setStudentResendCooldown(0);
         setStep1Error('');
         if (advanceToPassword) {
-          setStudentStep('2a');
-          requestAnimationFrame(() => studentPasswordRef.current?.focus());
+          if (studentStatus?.hasPassword) {
+            setStudentStep('2a');
+            requestAnimationFrame(() => studentPasswordRef.current?.focus());
+          } else {
+            setStudentStep('2b');
+            requestAnimationFrame(() => setupNameRef.current?.focus());
+          }
         }
-        return { success: true, status: 'existing', studentStatus };
+        return {
+          success: true,
+          status: studentStatus?.hasPassword ? 'existing' : 'setup-needed',
+          studentStatus,
+        };
       }
       return { success: true, status: 'verification-needed', studentStatus };
     } catch (error) {
@@ -556,7 +566,7 @@ export default function LoginPage() {
     try {
       const lookup = await resolveStudentEmailStatus(email);
       if (!lookup.success) return;
-      if (lookup.status === 'existing') return;
+      if (lookup.status === 'existing' || lookup.status === 'setup-needed') return;
       setStudentEmailSendBusy(true);
       result = await window.Auth.beginStudentEmailVerification(email);
       if (!result.success) { setStep1Error(result.message); return; }
