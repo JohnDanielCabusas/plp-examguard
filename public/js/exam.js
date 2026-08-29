@@ -907,6 +907,27 @@ const ExamApp = {
     if (footerMeta) footerMeta.textContent = this._formatFooterMeta(sess);
   },
 
+  _getDashboardGreetingName(sess) {
+    const name = String(sess?.studentName || sess?.studentId || 'Student').trim();
+    if (!name) return 'Student';
+
+    const commaIndex = name.indexOf(',');
+    if (commaIndex > 0) return name.slice(0, commaIndex).trim() || name;
+
+    return name.split(/\s+/)[0] || name;
+  },
+
+  _renderDashboardGreeting(sess) {
+    const greetEl = document.getElementById('dash-greeting');
+    if (!greetEl) return;
+
+    const hr = new Date().getHours();
+    const greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+    const greetingName = this._getDashboardGreetingName(sess);
+    const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    greetEl.innerHTML = `<div class="dash-greeting-text">${greet}, ${_esc(greetingName)}!</div><div class="dash-greeting-sub">${dateStr}</div>`;
+  },
+
   _getPortalStudent(studentId) {
     const student = DB.getStudent(studentId);
     return student && !student.archived ? student : null;
@@ -1244,9 +1265,10 @@ const ExamApp = {
     if (tab === 'home') {
       this._currentCourseId = null;
       this._currentCourseArchivedView = false;
+      const sess = Auth.getStudentSession();
+      this._renderDashboardGreeting(sess);
+      this._renderDashboard(sess);
       if (!this._dashInterval) {
-        const sess = Auth.getStudentSession();
-        this._renderDashboard(sess);
         this._dashInterval = setInterval(() => this._renderDashboard(Auth.getStudentSession()), 5000);
       }
     } else if (tab !== 'course') {
@@ -1298,6 +1320,7 @@ const ExamApp = {
         this._loadSettingsForm();
         return;
       }
+      this._renderDashboardGreeting(Auth.getStudentSession());
       this._renderDashboard(Auth.getStudentSession());
     }, 150);
   },
@@ -1388,6 +1411,7 @@ const ExamApp = {
     };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
     this._refreshPortalIdentity(updated);
+    this._renderDashboardGreeting(updated);
     this._renderDashboard(updated);
 
     if (this.session && this.session.studentId === sess.studentId) {
@@ -1932,17 +1956,7 @@ const ExamApp = {
     if (logoEl && settings.logoUrl) logoEl.src = settings.logoUrl;
 
     this._refreshPortalIdentity(sess);
-
-    // Greeting
-    const name = sess.studentName || sess.studentId;
-    const greetEl = document.getElementById('dash-greeting');
-    if (greetEl) {
-      const hr = new Date().getHours();
-      const greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
-      const firstName = name.split(/[,\s]/)[0];
-      const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-      greetEl.innerHTML = `<div class="dash-greeting-text">${greet}, ${_esc(firstName)}!</div><div class="dash-greeting-sub">${dateStr}</div>`;
-    }
+    this._renderDashboardGreeting(sess);
 
     // Input listeners (set once)
     const codeInput = document.getElementById('exam-access-code-input');
