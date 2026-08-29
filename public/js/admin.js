@@ -3200,7 +3200,7 @@ function buildMoreItems(e) {
     items += `<button class="action-dd-item" onclick="reopenExam('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Reopen Exam</button>`;
   }
   if (['active','closed'].includes(e.status)) {
-    items += `<button class="action-dd-item" onclick="viewExamResults('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Results</button>`;
+    items += `<button class="action-dd-item" onclick="openExamResultsInReports('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Results</button>`;
     if (e.scoringReleased) {
       items += `<button class="action-dd-item" onclick="hideScoreByExam('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg> Hide Scores</button>`;
     } else {
@@ -6331,6 +6331,24 @@ function handleQImageUpload(idx, input) {
 function clearQImage(idx) {
   updateQField(idx, 'imageUrl', '');
   renderQuestionsList(currentQBuilderExamId);
+}
+
+async function openExamResultsInReports(examId) {
+  const exam = DB.getExam(examId);
+  if (!exam) return;
+
+  closeModal('modal-more-actions');
+  await showSection('reports');
+
+  const sel = document.getElementById('report-exam-select');
+  if (!sel) return;
+
+  if (![...sel.options].some(option => option.value === examId)) {
+    loadReportExams();
+  }
+
+  sel.value = examId;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function viewExamResults(examId) {
