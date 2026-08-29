@@ -5489,11 +5489,82 @@ function renderQuestionsList(examId) {
       });
     });
   }
+  refreshQuestionIssue();
   updateQBadge(examId);
   updateSelectAllUI();
   repositionExamScrollFab();
   renderExamOutline();
   requestAnimationFrame(updateExamScrollFabDirection);
+}
+
+function normalizeQuestionDuplicateText(value, { preserveCase = false } = {}) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  return preserveCase ? normalized : normalized.toLowerCase();
+}
+
+function getQuestionDuplicateKey(q) {
+  if (!q) return null;
+
+  const content = normalizeQuestionDuplicateText(q.content);
+  const options = Array.isArray(q.options)
+    ? q.options.map(option => normalizeQuestionDuplicateText(option)).filter(Boolean)
+    : [];
+  const correctAnswer = normalizeQuestionDuplicateText(q.correctAnswer);
+  const correctAnswerIndices = Array.isArray(q.correctAnswerIndices)
+    ? [...q.correctAnswerIndices].sort((a, b) => a - b)
+    : [];
+  const answers = Array.isArray(q.answers)
+    ? q.answers.map(answer => normalizeQuestionDuplicateText(answer)).filter(Boolean)
+    : [];
+  const pairs = Array.isArray(q.pairs)
+    ? q.pairs.map(pair => ({
+        term: normalizeQuestionDuplicateText(pair?.term),
+        match: normalizeQuestionDuplicateText(pair?.match),
+      })).filter(pair => pair.term || pair.match)
+    : [];
+  const language = normalizeQuestionDuplicateText(q.language);
+  const starterCode = normalizeQuestionDuplicateText(q.starterCode, { preserveCase: true });
+  const expectedOutput = normalizeQuestionDuplicateText(q.expectedOutput, { preserveCase: true });
+
+  if (!content && !options.length && !correctAnswer && !correctAnswerIndices.length && !answers.length && !pairs.length && !language && !starterCode && !expectedOutput) {
+    return null;
+  }
+
+  return JSON.stringify({
+    content,
+    options,
+    correctAnswer,
+    correctAnswerIndices,
+    answers,
+    pairs,
+    language,
+    starterCode,
+    expectedOutput,
+  });
+}
+
+function getDuplicateQuestionMap(questions) {
+  const grouped = new Map();
+  (questions || []).forEach((question, idx) => {
+    const key = getQuestionDuplicateKey(question);
+    if (!key) return;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(idx);
+  });
+
+  const duplicates = new Map();
+  grouped.forEach(indices => {
+    if (indices.length < 2) return;
+    indices.forEach(idx => {
+      duplicates.set(idx, indices.filter(otherIdx => otherIdx !== idx));
+    });
+  });
+  return duplicates;
+}
+
+function getDuplicateQuestionBannerHtml(indices) {
+  const labels = indices.map(idx => `Q${idx + 1}`).join(', ');
+  return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg> Duplicate question detected. Matches ${escHtml(labels)} exactly in content and answer setup.`;
 }
 
 // ── Enumeration helpers ──────────────────────────────────
@@ -5713,24 +5784,49 @@ function getQuestionIssue(q) {
   return null;
 }
 
-// Re-checks one question's completeness and patches just its card in-place
-// (no full list re-render, so focus/scroll/typing isn't disturbed).
-function refreshQuestionIssue(idx) {
+// Re-checks question warnings in-place so typing/focus isn't disturbed.
+function refreshQuestionIssue() {
   const exam = DB.getExam(currentQBuilderExamId);
-  const q = exam?.questions?.[idx];
-  const card = document.getElementById('qblock-' + idx);
-  if (!q || !card) return;
-  const issue = getQuestionIssue(q);
-  card.classList.toggle('qe-card-incomplete', !!issue);
-  const body = card.querySelector('.qe-card-body');
-  const banner = card.querySelector('.qe-issue-banner');
-  if (issue) {
-    const html = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${escHtml(issue)}`;
-    if (banner) banner.innerHTML = html;
-    else if (body) body.insertAdjacentHTML('afterbegin', `<div class="qe-issue-banner">${html}</div>`);
-  } else if (banner) {
-    banner.remove();
-  }
+  const questions = exam?.questions || [];
+  const duplicateMap = getDuplicateQuestionMap(questions);
+
+  questions.forEach((q, idx) => {
+    const card = document.getElementById('qblock-' + idx);
+    if (!card) return;
+
+    const issue = getQuestionIssue(q);
+    const duplicates = duplicateMap.get(idx) || [];
+    const body = card.querySelector('.qe-card-body');
+    if (!body) return;
+
+    card.classList.toggle('qe-card-incomplete', !!issue);
+    card.classList.toggle('qe-card-duplicate', duplicates.length > 0);
+
+    const issueHtml = issue
+      ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${escHtml(issue)}`
+      : '';
+    let issueBanner = card.querySelector('.qe-issue-banner');
+    if (issue) {
+      if (issueBanner) issueBanner.innerHTML = issueHtml;
+      else body.insertAdjacentHTML('afterbegin', `<div class="qe-issue-banner">${issueHtml}</div>`);
+    } else if (issueBanner) {
+      issueBanner.remove();
+    }
+
+    const duplicateHtml = duplicates.length ? getDuplicateQuestionBannerHtml(duplicates) : '';
+    let duplicateBanner = card.querySelector('.qe-duplicate-banner');
+    if (duplicates.length) {
+      if (duplicateBanner) {
+        duplicateBanner.innerHTML = duplicateHtml;
+      } else {
+        issueBanner = card.querySelector('.qe-issue-banner');
+        if (issueBanner) issueBanner.insertAdjacentHTML('afterend', `<div class="qe-duplicate-banner">${duplicateHtml}</div>`);
+        else body.insertAdjacentHTML('afterbegin', `<div class="qe-duplicate-banner">${duplicateHtml}</div>`);
+      }
+    } else if (duplicateBanner) {
+      duplicateBanner.remove();
+    }
+  });
 }
 
 function buildQuestionBlock(q, idx) {
@@ -5930,6 +6026,9 @@ function buildQuestionBlock(q, idx) {
           </div>
           <span class="qe-pts-label">Pts</span>
           <input type="number" class="qe-pts-input" value="${q.points}" min="1" onchange="updateQField(${idx},'points',parseInt(this.value)||1)" />
+          <button class="qe-dup-btn" onclick="duplicateQuestion(${idx})" title="Duplicate question" aria-label="Duplicate question">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+          </button>
           <button class="qe-del-btn" onclick="removeQuestion(${idx})" title="Delete question">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
@@ -6086,6 +6185,45 @@ function addQuestion(type) {
     last.scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => last.classList.remove('qe-new'), 300);
   }
+}
+
+function cloneQuestionForDuplicate(question) {
+  return {
+    ...question,
+    id: DB.generateId(),
+    options: Array.isArray(question?.options) ? [...question.options] : [],
+    correctAnswerIndices: Array.isArray(question?.correctAnswerIndices) ? [...question.correctAnswerIndices] : [],
+    answers: Array.isArray(question?.answers) ? [...question.answers] : [],
+    pairs: Array.isArray(question?.pairs) ? question.pairs.map(pair => ({ ...pair })) : [],
+  };
+}
+
+function shiftSelectedQuestionIndicesForInsert(insertIdx) {
+  if (!selectedQuestionIndices.size) return;
+  selectedQuestionIndices = new Set(
+    [...selectedQuestionIndices].map(idx => (idx > insertIdx ? idx + 1 : idx))
+  );
+}
+
+function duplicateQuestion(idx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const sourceQuestion = exam?.questions?.[idx];
+  if (!exam || !sourceQuestion) return;
+
+  const questions = [...exam.questions];
+  questions.splice(idx + 1, 0, cloneQuestionForDuplicate(sourceQuestion));
+  shiftSelectedQuestionIndicesForInsert(idx);
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+
+  const duplicatedCard = document.getElementById('qblock-' + (idx + 1));
+  if (duplicatedCard) {
+    duplicatedCard.classList.add('qe-new');
+    duplicatedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => duplicatedCard.classList.remove('qe-new'), 300);
+  }
+
+  showToast('Question duplicated.', 'success');
 }
 
 function removeQuestion(idx) {

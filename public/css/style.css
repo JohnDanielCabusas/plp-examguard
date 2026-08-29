@@ -11157,14 +11157,17 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .qe-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.09); }
 .qe-card.q-dragging { opacity: 0.35; transform: scale(0.99); }
 .qe-card.q-drag-over { border-color: #1a6b35; box-shadow: 0 0 0 3px rgba(26,107,53,0.12); }
-.qe-card.qe-card-incomplete { border-top-color: #dc2626 !important; }
-.qe-issue-banner {
+.qe-card.qe-card-incomplete,
+.qe-card.qe-card-duplicate { border-top-color: #dc2626 !important; }
+.qe-issue-banner,
+.qe-duplicate-banner {
   display: flex; align-items: center; gap: 6px;
   background: #fef2f2; color: #b91c1c;
   font-size: 12px; font-weight: 600;
   padding: 7px 10px; border-radius: 8px; margin-bottom: 10px;
 }
-[data-theme="dark"] .qe-issue-banner {
+[data-theme="dark"] .qe-issue-banner,
+[data-theme="dark"] .qe-duplicate-banner {
   background: rgba(248,113,113,0.15) !important;
   color: #fca5a5 !important;
 }
@@ -11657,6 +11660,13 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s; flex-shrink: 0;
 }
+.qe-dup-btn {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid #d1d5db; background: #fff; color: #6b7280;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.qe-dup-btn:hover { background: #f3f4f6; color: #374151; border-color: #9ca3af; }
 .qe-del-btn:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
 .qe-required-star {
   color: #dc2626;
@@ -11665,6 +11675,16 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 [data-theme="dark"] .qe-required-group {
   border-left-color: #4b5563;
+}
+[data-theme="dark"] .qe-dup-btn {
+  background: var(--surface-2) !important;
+  border-color: var(--border) !important;
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .qe-dup-btn:hover {
+  background: #26323d !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
 }
 [data-theme="dark"] .qe-required-star {
   color: #f87171;
