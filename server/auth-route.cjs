@@ -3,7 +3,6 @@ const { sendVerificationEmail } = require('./email-service.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const {
   createCode,
-  ensureDefaultAuthRecords,
   normalizeProfessor,
   normalizeStudent,
   normalizeSysAdmin,
@@ -34,7 +33,6 @@ const {
 } = require('./auth-service.cjs');
 
 const verificationStore = new Map();
-let defaultAuthRecordsPromise = null;
 const TEN_MINUTES = 10 * 60 * 1000;
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_COOKIE = 'acs_admin_auth';
@@ -853,13 +851,6 @@ async function handleAuthRoute(req, res) {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
 
   try {
-    if (!defaultAuthRecordsPromise) {
-      defaultAuthRecordsPromise = ensureDefaultAuthRecords().catch((error) => {
-        defaultAuthRecordsPromise = null;
-        throw error;
-      });
-    }
-    await defaultAuthRecordsPromise;
     switch (pathname) {
       case '/api/auth/professor/login': await handleProfessorLogin(req, res, body); return true;
       case '/api/auth/professor/continue': await handleProfessorContinue(res, body); return true;
