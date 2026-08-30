@@ -706,6 +706,7 @@ export default function ExamPage() {
           <video id="camera-feed" className="camera-feed" autoPlay muted playsInline />
           <canvas id="camera-canvas" style={{ display: 'none' }} />
           <span className="camera-live-label">REC</span>
+          <span id="yolo-camera-status" className="yolo-camera-status" data-state="idle">Object scan off</span>
           <div id="camera-blocked-msg" className="camera-blocked-msg" style={{ display: 'none', position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
             <span>Camera<br />blocked</span>
           </div>

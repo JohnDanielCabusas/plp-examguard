@@ -1,0 +1,41 @@
+{
+  "name": "TUKLAS phone specialist",
+  "version": "tuklas-phone-specialist-v1",
+  "modelProfile": "tuklas",
+  "detectorRole": "phone-specialist",
+  "modelUrl": "/models/tuklas-yolo11n-openimages-v1.onnx",
+  "sha256": "5ed3804e6ed69655b848f4942d55f5b77143aa0da4b6c405f90360618b86fde2",
+  "inputSize": 640,
+  "frameIntervalMs": 450,
+  "defaultConfidence": 0.55,
+  "nmsThreshold": 0.45,
+  "maxDetections": 10,
+  "confidenceThresholds": {
+    "mobile_phone": 0.1
+  },
+  "verificationThresholds": {
+    "mobile_phone": 0.22
+  },
+  "verificationCandidateLimits": {
+    "mobile_phone": 3
+  },
+  "partialVisibilityPadding": 0.42,
+  "scanRegions": [
+    { "x": 0.0, "y": 0.0, "width": 0.65, "height": 0.65 },
+    { "x": 0.35, "y": 0.0, "width": 0.65, "height": 0.65 },
+    { "x": 0.0, "y": 0.35, "width": 0.65, "height": 0.65 },
+    { "x": 0.35, "y": 0.35, "width": 0.65, "height": 0.65 }
+  ],
+  "verificationMargin": 0.02,
+  "verificationPadding": 0.14,
+  "policyMappings": {
+    "mobile_phone": "mobile_phone"
+  },
+  "classNames": [
+    "mobile_phone",
+    "laptop",
+    "computer_monitor",
+    "book",
+    "person"
+  ]
+}

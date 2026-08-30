@@ -1,0 +1,37 @@
+{
+  "name": "TUKLAS YOLO11n Open Images V7 detector",
+  "version": "tuklas-openimages-yolo11n-v1",
+  "modelProfile": "tuklas",
+  "modelUrl": "/models/tuklas-yolo11n-openimages-v1.onnx",
+  "sha256": "5ed3804e6ed69655b848f4942d55f5b77143aa0da4b6c405f90360618b86fde2",
+  "inputSize": 640,
+  "frameIntervalMs": 250,
+  "defaultConfidence": 0.55,
+  "nmsThreshold": 0.45,
+  "maxDetections": 20,
+  "confidenceThresholds": {
+    "mobile_phone": 0.12,
+    "laptop_monitor": 0.6,
+    "book_textbook": 0.16
+  },
+  "verificationThresholds": {
+    "mobile_phone": 0.24,
+    "laptop_monitor": 0.5,
+    "book_textbook": 0.26
+  },
+  "verificationMargin": 0.03,
+  "verificationPadding": 0.18,
+  "policyMappings": {
+    "mobile_phone": "mobile_phone",
+    "laptop": "laptop_monitor",
+    "computer_monitor": "laptop_monitor",
+    "book": "book_textbook"
+  },
+  "classNames": [
+    "mobile_phone",
+    "laptop",
+    "computer_monitor",
+    "book",
+    "person"
+  ]
+}

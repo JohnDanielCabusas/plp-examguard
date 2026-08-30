@@ -7839,7 +7839,7 @@ body.exam-page {
   gap: 8px;
 }
 .camera-feed-wrap {
-  width: 182px;
+  width: 200px;
   aspect-ratio: 4/3;
   background: #111827;
   border-radius: 14px;
@@ -7866,6 +7866,39 @@ body.exam-page {
   padding: 4px 8px;
   border-radius: 6px;
   letter-spacing: 0.8px;
+}
+.yolo-camera-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: 116px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.82);
+  color: #e5e7eb;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(5px);
+}
+.yolo-camera-status[data-state="loading"],
+.yolo-camera-status[data-state="degraded"] { color: #fde68a; }
+.yolo-camera-status[data-state="ready"] { color: #86efac; }
+.yolo-camera-status[data-state="candidate"] {
+  border-color: rgba(251, 191, 36, 0.6);
+  background: rgba(120, 53, 15, 0.88);
+  color: #fef3c7;
+}
+.yolo-camera-status[data-state="detected"],
+.yolo-camera-status[data-state="error"] {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(127, 29, 29, 0.9);
+  color: #fee2e2;
 }
 .camera-status-bar {
   font-size: 13px;
@@ -8541,6 +8574,9 @@ input[type="password"]::-ms-clear {
 .log-type.ctrl_c_attempt { color: #7c3aed; }
 .log-type.ctrl_v_attempt { color: #2563eb; }
 .log-type.camera_denied  { color: #7c3aed; }
+.log-type.restricted_phone,
+.log-type.secondary_computer,
+.log-type.restricted_book { color: #b91c1c; }
 .log-type.force_submit   { color: #0f2d1a; }
 .log-type.auto_submit    { color: #ef4444; }
 .log-type.timeout        { color: #dc2626; }
@@ -8554,6 +8590,9 @@ input[type="password"]::-ms-clear {
 .log-item:has(.log-type.ctrl_c_attempt)   { border-left-color: #c4b5fd; }
 .log-item:has(.log-type.ctrl_v_attempt)   { border-left-color: #93c5fd; }
 .log-item:has(.log-type.camera_denied)    { border-left-color: #c4b5fd; }
+.log-item:has(.log-type.restricted_phone),
+.log-item:has(.log-type.secondary_computer),
+.log-item:has(.log-type.restricted_book) { border-left-color: #f87171; }
 .log-item:has(.log-type.auto_submit)      { border-left-color: #fca5a5; }
 .log-item:has(.log-type.timeout)          { border-left-color: #fca5a5; }
 

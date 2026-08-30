@@ -28,6 +28,9 @@ const REPLAYABLE_VIOLATION_TYPES = new Set([
   'look_down',
   'low_brightness',
   'camera_off',
+  'restricted_phone',
+  'secondary_computer',
+  'restricted_book',
 ]);
 
 function createId() {
@@ -58,8 +61,43 @@ function normalizeMonitorViolation(row) {
     studentName: row.student_name || '',
     violationType: row.violation_type || 'unknown',
     detail: row.detail || '',
+    detectionMetadata: row.detection_metadata && typeof row.detection_metadata === 'object'
+      ? row.detection_metadata
+      : {},
     warningCount: Number(row.warning_count || 0),
     createdAt: row.created_at || null,
+  };
+}
+
+function normalizeDetectionMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const boundingBox = value.boundingBox && typeof value.boundingBox === 'object'
+    ? {
+        x: Math.max(0, Number(value.boundingBox.x || 0)),
+        y: Math.max(0, Number(value.boundingBox.y || 0)),
+        width: Math.max(0, Number(value.boundingBox.width || 0)),
+        height: Math.max(0, Number(value.boundingBox.height || 0)),
+        frameWidth: Math.max(0, Number(value.boundingBox.frameWidth || 0)),
+        frameHeight: Math.max(0, Number(value.boundingBox.frameHeight || 0)),
+      }
+    : null;
+  return {
+    source: String(value.source || '').slice(0, 40),
+    objectClass: String(value.objectClass || '').slice(0, 80),
+    objectLabel: String(value.objectLabel || '').slice(0, 120),
+    rawClass: String(value.rawClass || '').slice(0, 80),
+    confidence: Math.max(0, Math.min(1, Number(value.confidence || 0))),
+    averageConfidence: Math.max(0, Math.min(1, Number(value.averageConfidence || 0))),
+    verificationConfidence: Math.max(0, Math.min(1, Number(value.verificationConfidence || 0))),
+    fullFrameConfidence: Math.max(0, Math.min(1, Number(value.fullFrameConfidence || 0))),
+    boundingBox,
+    frameHits: Math.max(0, Math.min(100, Number(value.frameHits || 0))),
+    confirmationMs: Math.max(0, Math.min(60000, Number(value.confirmationMs || 0))),
+    modelVersion: String(value.modelVersion || '').slice(0, 120),
+    inferenceBackend: String(value.inferenceBackend || '').slice(0, 40),
+    inferenceMs: Math.max(0, Math.min(60000, Number(value.inferenceMs || 0))),
+    policyMode: String(value.policyMode || '').slice(0, 20),
+    policyDecision: String(value.policyDecision || '').slice(0, 40),
   };
 }
 
@@ -273,6 +311,7 @@ async function handleViolationInsert(req, res, body) {
   const studentName = String(body?.studentName || '').trim();
   const violationType = String(body?.violationType || '').trim();
   const detail = String(body?.detail || '').trim();
+  const detectionMetadata = normalizeDetectionMetadata(body?.detectionMetadata);
   const warningCount = Number.parseInt(String(body?.warningCount ?? 0), 10);
 
   if (!sessionId) return badRequest(res, 'Session ID is required.');
@@ -319,6 +358,7 @@ async function handleViolationInsert(req, res, body) {
     studentName: effectiveStudentName,
     violationType,
     detail,
+    detectionMetadata,
     warningCount: effectiveWarningCount,
     createdAt,
   };
@@ -330,11 +370,11 @@ async function handleViolationInsert(req, res, body) {
 
   const insertResult = await query(
     `insert into public.violation_events (
-       id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, warning_count, created_at
+       id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz
+       $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::timestamptz
      )
-     returning id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, warning_count, created_at`,
+     returning id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at`,
     [
       eventId,
       ownerAdminId,
@@ -344,6 +384,7 @@ async function handleViolationInsert(req, res, body) {
       effectiveStudentName,
       violationType,
       detail,
+      JSON.stringify(detectionMetadata),
       effectiveWarningCount,
       createdAt,
     ],
@@ -377,7 +418,7 @@ async function handleViolationList(req, res, url) {
 
   values.push(limit);
   const { rows } = await query(
-    `select id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, warning_count, created_at
+    `select id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at
        from public.violation_events
       where ${where.join(' and ')}
       order by created_at asc, id asc

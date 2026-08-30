@@ -81,6 +81,14 @@ alter table if exists public.sessions add constraint sessions_submit_reason_chec
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.exams add column if not exists exam_policies jsonb not null default '[]'::jsonb;
+alter table if exists public.exams add column if not exists object_monitoring jsonb not null default '{}'::jsonb;
+update public.exams
+set object_monitoring = jsonb_build_object(
+  'enabled', coalesce(require_camera, false),
+  'mode', 'enforce',
+  'allowSecondaryComputer', false,
+  'allowBooks', false
+);
 alter table if exists public.subjects add column if not exists school_year text;
 alter table if exists public.subjects add column if not exists manage_access text;
 update public.subjects set manage_access = 'restrict' where manage_access is null or btrim(coalesce(manage_access, '')) = '';
@@ -139,6 +147,7 @@ create table if not exists public.violation_events (
   student_name text,
   violation_type text not null,
   detail text,
+  detection_metadata jsonb not null default '{}'::jsonb,
   warning_count integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -191,6 +200,23 @@ create table if not exists public.violation_evidence (
 
 alter table if exists public.violation_evidence
   add column if not exists warning_applied boolean not null default false;
+alter table if exists public.violation_events
+  add column if not exists detection_metadata jsonb not null default '{}'::jsonb;
+alter table if exists public.violation_evidence
+  drop constraint if exists violation_evidence_replayable_type_check;
+alter table if exists public.violation_evidence
+  add constraint violation_evidence_replayable_type_check check (
+    violation_type in (
+      'no_person',
+      'multiple_people',
+      'look_down',
+      'low_brightness',
+      'camera_off',
+      'restricted_phone',
+      'secondary_computer',
+      'restricted_book'
+    )
+  );
 create unique index if not exists violation_evidence_violation_event_unique_idx on public.violation_evidence (violation_event_id);
 create index if not exists violation_evidence_owner_exam_created_idx on public.violation_evidence (owner_admin_id, exam_id, created_at desc);
 create index if not exists violation_evidence_session_created_idx on public.violation_evidence (session_id, created_at desc);
@@ -267,7 +293,7 @@ insert into public.superadmin (id, username, password, name, email, department)
 values (
   'main',
   'sysadmin',
-  'pbkdf2_sha256$210000$RJXkCxVfJy2ylVAlFoVO5g==$UmOBzFrUOtuBsNnoOFBXaG9EIoRtoEZ0CiYodPNjYx0=',
+  null,
   'System Administrator',
   'sysadmin@school.edu',
   null
@@ -281,7 +307,7 @@ insert into public.professors (id, username, password, name, email, department)
 select
   'admin1',
   'admin',
-  'pbkdf2_sha256$210000$RJXkCxVfJy2ylVAlFoVO5g==$UmOBzFrUOtuBsNnoOFBXaG9EIoRtoEZ0CiYodPNjYx0=',
+  null,
   'Administrator',
   'admin@school.edu',
   null

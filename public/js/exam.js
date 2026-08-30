@@ -26,6 +26,42 @@ function setEnrollStatus(el, text, variant, options = {}) {
   }
 }
 
+const EXAM_EXTERNAL_ASSETS = new Map();
+
+function loadExamScript(src) {
+  if (EXAM_EXTERNAL_ASSETS.has(src)) return EXAM_EXTERNAL_ASSETS.get(src);
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Unable to load ${src}`));
+    document.head.appendChild(script);
+  }).catch(error => {
+    EXAM_EXTERNAL_ASSETS.delete(src);
+    throw error;
+  });
+  EXAM_EXTERNAL_ASSETS.set(src, promise);
+  return promise;
+}
+
+function loadExamStylesheet(href) {
+  if (EXAM_EXTERNAL_ASSETS.has(href)) return EXAM_EXTERNAL_ASSETS.get(href);
+  const promise = new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.onload = () => resolve();
+    link.onerror = () => reject(new Error(`Unable to load ${href}`));
+    document.head.appendChild(link);
+  }).catch(error => {
+    EXAM_EXTERNAL_ASSETS.delete(href);
+    throw error;
+  });
+  EXAM_EXTERNAL_ASSETS.set(href, promise);
+  return promise;
+}
+
 const ExamApp = {
   session: null,            // DB session object
   exam: null,               // DB exam object
@@ -77,7 +113,21 @@ const ExamApp = {
   _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
   _faceModelReady: false,
+  _faceModelPromise: null,
+  _codeEditorRuntimePromise: null,
   _faceDetectInFlight: false,
+  _yoloMonitor: null,
+  _yoloPhoneMonitor: null,
+  _yoloPhoneStatus: null,
+  _yoloPolicy: null,
+  _yoloStatus: 'idle',
+  _yoloStatusDetail: null,
+  _yoloDetectedUntil: 0,
+  _lastYoloResult: null,
+  _yoloConfigSignature: '',
+  _yoloPreloadScheduled: false,
+  _yoloPreloadPromise: null,
+  _yoloStartGeneration: 0,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _presenceConfirmSec: 0,
   _lastPresenceSeenAt: 0,
@@ -319,7 +369,7 @@ const ExamApp = {
     return this._applyRefreshAutoSubmitMarker(marker);
   },
 
-  _recordActivity(type, detail) {
+  _recordActivity(type, detail, metadata = null) {
     if (!this.session) return null;
     const session = DB.getSession(this.session.id);
     if (!session) return null;
@@ -329,6 +379,7 @@ const ExamApp = {
       detail,
       timestamp: new Date().toISOString(),
     };
+    if (metadata && typeof metadata === 'object') activity.metadata = metadata;
     const activities = [...(session.activities || []), activity];
     DB.updateSession(this.session.id, { activities });
 
@@ -345,7 +396,7 @@ const ExamApp = {
     return activity;
   },
 
-  _notifyProfessorViolation(type, detail, warningCount) {
+  _notifyProfessorViolation(type, detail, warningCount, detectionMetadata = null) {
     if (!this.session?.id || !this.exam?.id) return Promise.resolve(null);
 
     const payload = {
@@ -357,6 +408,9 @@ const ExamApp = {
       detail,
       warningCount: Number(warningCount || 0),
     };
+    if (detectionMetadata && typeof detectionMetadata === 'object') {
+      payload.detectionMetadata = detectionMetadata;
+    }
 
     return fetch('/api/monitor/violation', {
       method: 'POST',
@@ -383,7 +437,16 @@ const ExamApp = {
   },
 
   _isCameraViolationType(type) {
-    return ['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off'].includes(type);
+    return [
+      'no_person',
+      'multiple_people',
+      'look_down',
+      'low_brightness',
+      'camera_off',
+      'restricted_phone',
+      'secondary_computer',
+      'restricted_book',
+    ].includes(type);
   },
 
   _isReplayableCameraViolationType(type) {
@@ -595,7 +658,7 @@ const ExamApp = {
     }
   },
 
-  _captureCameraFrameData() {
+  _captureCameraFrameData(detectionMetadata = null) {
     const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('camera-canvas');
     if (!video || !canvas || !this._cameraStream || video.readyState < 2) return null;
@@ -607,6 +670,25 @@ const ExamApp = {
     ctx.scale(-1, 1);
     ctx.drawImage(video, -320, 0, 320, 240);
     ctx.restore();
+    const box = detectionMetadata?.boundingBox;
+    if (box && Number(box.frameWidth) > 0 && Number(box.frameHeight) > 0) {
+      const scaleX = 320 / Number(box.frameWidth);
+      const scaleY = 240 / Number(box.frameHeight);
+      const width = Number(box.width || 0) * scaleX;
+      const height = Number(box.height || 0) * scaleY;
+      const x = 320 - ((Number(box.x || 0) + Number(box.width || 0)) * scaleX);
+      const y = Number(box.y || 0) * scaleY;
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, width, height);
+      const label = String(detectionMetadata.objectLabel || detectionMetadata.objectClass || 'Restricted object');
+      ctx.font = 'bold 11px sans-serif';
+      const labelWidth = Math.min(310, ctx.measureText(label).width + 10);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(x, Math.max(0, y - 18), labelWidth, 18);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x + 5, Math.max(12, y - 5));
+    }
     return canvas.toDataURL('image/jpeg', 0.6);
   },
 
@@ -626,13 +708,14 @@ const ExamApp = {
     return liveSnapshot ? [liveSnapshot, ...nextViolations] : nextViolations;
   },
 
-  _captureCameraViolationSnapshot(type, detail, warningCount) {
+  _captureCameraViolationSnapshot(type, detail, warningCount, detectionMetadata = null) {
     if (!this.session || !this.exam?.requireCamera || !this._isCameraViolationType(type)) return null;
     return this.captureSnapshot({
       kind: 'violation',
       violationType: type,
       detail,
       warningCount,
+      detectionMetadata,
       fallbackToLatest: true,
     });
   },
@@ -1133,6 +1216,7 @@ const ExamApp = {
     }
 
     this.exam = exam;
+    this._preloadYoloObjectModel();
 
     const portalStudent = this._getPortalStudent(studentSession.studentId);
     if (!portalStudent) {
@@ -2538,6 +2622,7 @@ const ExamApp = {
       const latestExam = DB.getExam(this.exam.id);
       if (!latestExam) return;
       this.exam = latestExam;
+      this._preloadYoloObjectModel();
       const studentSession = Auth.getStudentSession();
       const portalStudent = studentSession ? this._getPortalStudent(studentSession.studentId) : null;
       const existingSession = studentSession ? DB.getStudentSession(this.exam.id, studentSession.studentId) : null;
@@ -2635,25 +2720,6 @@ const ExamApp = {
       .filter(Boolean);
   },
 
-  _getExamRulesChecklist() {
-    const baselineRules = [
-      'Stay on the exam screen and remain in fullscreen until you submit.',
-      'Do not copy, paste, take screenshots, refresh the page, or switch to other apps or tabs.',
-      'Work independently and follow all instructions set for this exam.',
-      'Repeated or confirmed violations may trigger warnings or automatic submission.',
-    ];
-
-    if (this.exam?.requireCamera) {
-      baselineRules.splice(
-        3,
-        0,
-        'Keep your webcam on, your face visible, and your lighting clear throughout this attempt unless your professor explicitly turns the webcam requirement off for the current attempt.',
-      );
-    }
-
-    return [...baselineRules, ...this._getExamPolicies()];
-  },
-
   _shouldShowExamPolicies() {
     if (!this.session) return false;
     const session = DB.getSession(this.session.id);
@@ -2663,7 +2729,6 @@ const ExamApp = {
   },
 
   _requestExamPolicies() {
-    const rules = this._getExamRulesChecklist();
     const customPolicies = this._getExamPolicies();
     const modal = document.getElementById('exam-policies-modal');
     const list = document.getElementById('exam-policies-modal-list');
@@ -2680,7 +2745,7 @@ const ExamApp = {
       if (liveSession?.startTime) DB.updateSession(this.session.id, { startTime: null });
     }
 
-    list.innerHTML = rules.map(rule => `<li>${_esc(rule)}</li>`).join('');
+    list.innerHTML = customPolicies.map(rule => `<li>${_esc(rule)}</li>`).join('');
     empty.style.display = customPolicies.length ? 'none' : '';
     if (professorLine) {
       const professor = DB.getAdminById(this.exam?.ownerAdminId);
@@ -2700,7 +2765,7 @@ const ExamApp = {
     const modal = document.getElementById('exam-policies-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
-    const count = this._getExamRulesChecklist().length;
+    const count = this._getExamPolicies().length;
     this._recordActivity('exam_policies_acknowledged', `Student acknowledged ${count} exam rule${count === 1 ? '' : 's'}`);
     this._continueExamLaunch();
   },
@@ -2925,9 +2990,13 @@ const ExamApp = {
               ...this.exam,
               cameraExemptStudentIds: Array.isArray(data.camera_exempt_student_ids) ? data.camera_exempt_student_ids : [],
               requireCamera: !!data.require_camera,
+              objectMonitoring: data.object_monitoring && typeof data.object_monitoring === 'object'
+                ? data.object_monitoring
+                : {},
             };
         this._applyLiveExamLocally(normalized);
         this.exam = DB.getExam(this.exam.id) || normalized;
+        this._syncYoloMonitoringForExam();
         this._syncCameraExemptionState();
       })
       .catch(() => {});
@@ -3980,33 +4049,39 @@ const ExamApp = {
     this._cameraPrompting = true;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: false,
+      });
       this._cameraPrompting = false;
       this._cameraStream = stream;
-      video.srcObject = stream;
       this._startViolationReplayBuffer();
       if (statusText) statusText.textContent = 'Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
       this._startCameraWatchdog();
 
       // Wait for video to be ready then check for presence before starting
-      video.onloadeddata = () => {
+      let cameraReadyHandled = false;
+      const handleCameraReady = () => {
+        if (cameraReadyHandled) return;
+        cameraReadyHandled = true;
+        this._startYoloObjectMonitoring(video);
         if (statusText) statusText.textContent = 'Loading face detection...';
-        // Load BlazeFace model if available, then start detection
-        if (window.blazeface) {
-          window.blazeface.load().then(model => {
-            this._faceModel = model;
-            this._faceModelReady = true;
-            if (statusText) statusText.textContent = 'Face detection ready';
-          }).catch(() => {
-            this._faceModelReady = false;
-          }).finally(() => {
-            setTimeout(() => this._checkInitialPresence(video), 500);
-          });
-        } else {
-          setTimeout(() => this._checkInitialPresence(video), 1500);
-        }
+        // Basic motion monitoring starts immediately. Face detection upgrades
+        // it in the background once TensorFlow and BlazeFace are available.
+        setTimeout(() => this._checkInitialPresence(video), 500);
+        this._loadFaceDetectionModel().then(() => {
+          if (statusText) statusText.textContent = 'Face detection ready';
+        }).catch(error => {
+          this._faceModelReady = false;
+          if (statusText) statusText.textContent = 'Monitoring';
+          console.warn('[Camera] Face detection fallback active:', error?.message || error);
+        });
       };
+      video.onloadeddata = handleCameraReady;
+      video.srcObject = stream;
+      video.play().catch(() => {});
+      if (video.readyState >= 2) handleCameraReady();
     } catch (err) {
       this._cameraPrompting = false;
       if (statusText) statusText.textContent = 'Camera denied';
@@ -4016,6 +4091,379 @@ const ExamApp = {
       // until the student re-enables it.
       this._startCameraWatchdog();
     }
+  },
+
+  _loadFaceDetectionModel() {
+    if (this._faceModelReady && this._faceModel) return Promise.resolve(this._faceModel);
+    if (this._faceModelPromise) return this._faceModelPromise;
+
+    this._faceModelPromise = loadExamScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0/dist/tf.min.js')
+      .then(() => loadExamScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js'))
+      .then(() => {
+        if (!window.blazeface?.load) throw new Error('BlazeFace did not initialize.');
+        return window.blazeface.load();
+      })
+      .then(model => {
+        this._faceModel = model;
+        this._faceModelReady = true;
+        return model;
+      })
+      .catch(error => {
+        this._faceModelPromise = null;
+        throw error;
+      });
+    return this._faceModelPromise;
+  },
+
+  _getObjectMonitoringConfig() {
+    const raw = this.exam?.objectMonitoring || {};
+    if (window.YoloProctor?.normalizeConfig) {
+      return {
+        ...window.YoloProctor.normalizeConfig(raw),
+        enabled: !!this.exam?.requireCamera,
+        mode: 'enforce',
+        allowSecondaryComputer: false,
+        allowBooks: false,
+      };
+    }
+    return {
+      enabled: !!this.exam?.requireCamera,
+      mode: 'enforce',
+      allowSecondaryComputer: false,
+      allowBooks: false,
+    };
+  },
+
+  _preloadYoloObjectModel() {
+    if (
+      !this.exam?.requireCamera
+      || !window.YoloProctor?.preloadModel
+      || this._yoloPreloadScheduled
+      || this._yoloPreloadPromise
+    ) return;
+
+    this._yoloPreloadScheduled = true;
+    const preload = () => {
+      this._yoloPreloadScheduled = false;
+      if (!this.exam?.requireCamera || this._yoloPreloadPromise) return;
+      this._yoloPreloadPromise = window.YoloProctor.preloadModel('/models/yolo-proctor-v1.json')
+        .then(details => (
+          details?.modelProfile === 'coco'
+            ? window.YoloProctor.preloadModel('/models/yolo-phone-specialist-v1.json')
+            : details
+        ))
+        .catch(error => {
+          this._yoloPreloadPromise = null;
+          console.warn('[YOLO] Model preload deferred:', error?.message || error);
+        });
+    };
+
+    // The model is large. Let the dashboard/waiting-room requests and first
+    // paint finish before using bandwidth for this optional warm-up.
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(preload, { timeout: 4000 });
+    } else {
+      setTimeout(preload, 1500);
+    }
+  },
+
+  _setYoloStatus(state, detail = {}) {
+    this._yoloStatus = state;
+    this._yoloStatusDetail = detail;
+    const container = document.getElementById('camera-container');
+    if (!container) return;
+    container.dataset.objectDetection = state;
+    const indicator = document.getElementById('yolo-camera-status');
+    const labels = {
+      idle: 'Object scan off',
+      loading: 'Object scan loading',
+      ready: 'Object scan active',
+      degraded: 'Object scan retrying',
+      error: 'Object scan unavailable',
+    };
+    if (indicator) {
+      indicator.dataset.state = state;
+      indicator.textContent = labels[state] || 'Object scan unavailable';
+      indicator.title = detail.message || indicator.textContent;
+    }
+    container.title = state === 'ready'
+      ? 'Object detection active.'
+      : state === 'error'
+        ? 'Object detection unavailable; standard camera monitoring remains active.'
+        : '';
+  },
+
+  async _startYoloObjectMonitoring(video) {
+    this._stopYoloObjectMonitoring();
+    if (!this.exam?.requireCamera || !video) return;
+    const generation = this._yoloStartGeneration;
+    this._setYoloStatus('loading');
+
+    try {
+      await window.YoloProctor?.load?.();
+    } catch (error) {
+      if (generation !== this._yoloStartGeneration) return;
+      this._setYoloStatus('error');
+      console.warn('[YOLO] Object monitoring runtime is unavailable:', error?.message || error);
+      return;
+    }
+    if (generation !== this._yoloStartGeneration) return;
+
+    const config = this._getObjectMonitoringConfig();
+    if (!config.enabled) return;
+    if (!window.YoloProctor?.createMonitor || !window.YoloProctor?.createPolicy) {
+      this._setYoloStatus('error');
+      console.warn('[YOLO] Object monitoring runtime is unavailable.');
+      return;
+    }
+
+    this._yoloPolicy = window.YoloProctor.createPolicy(config);
+    this._yoloConfigSignature = JSON.stringify(config);
+    this._yoloMonitor = window.YoloProctor.createMonitor({
+      video,
+      manifestUrl: '/models/yolo-proctor-v1.json',
+      onStatus: status => {
+        this._setYoloStatus(status.state || 'unknown', status);
+        if (
+          status.state === 'ready'
+          && status.modelProfile === 'coco'
+          && generation === this._yoloStartGeneration
+        ) {
+          this._startYoloPhoneSpecialist(video, generation);
+        }
+        if (status.state === 'error') {
+          console.warn('[YOLO] Object monitoring disabled:', status.message || 'Model unavailable');
+        }
+      },
+      onResult: result => this._handleYoloResult(result),
+    });
+
+    try {
+      await this._yoloMonitor.start();
+    } catch (error) {
+      this._setYoloStatus('error');
+      this._yoloMonitor?.stop();
+      this._yoloMonitor = null;
+      console.warn('[YOLO] Unable to start object monitoring:', error?.message || error);
+    }
+  },
+
+  async _startYoloPhoneSpecialist(video, generation) {
+    if (
+      this._yoloPhoneMonitor
+      || generation !== this._yoloStartGeneration
+      || !this.exam?.requireCamera
+      || !video
+    ) return;
+
+    const monitor = window.YoloProctor.createMonitor({
+      video,
+      manifestUrl: '/models/yolo-phone-specialist-v1.json',
+      onStatus: status => {
+        if (generation !== this._yoloStartGeneration) return;
+        this._yoloPhoneStatus = status;
+        if (status.state === 'ready') {
+          const indicator = document.getElementById('yolo-camera-status');
+          if (indicator) indicator.title = 'Object detection and screen-away phone detection are active.';
+        }
+        if (status.state === 'error') {
+          console.warn('[YOLO] Phone-back specialist unavailable:', status.message || 'Model unavailable');
+        }
+      },
+      onResult: result => this._handleYoloResult(result),
+    });
+    this._yoloPhoneMonitor = monitor;
+    try {
+      await monitor.start();
+    } catch (error) {
+      if (this._yoloPhoneMonitor === monitor) this._yoloPhoneMonitor = null;
+      monitor.stop();
+      console.warn('[YOLO] Unable to start phone-back specialist:', error?.message || error);
+    }
+  },
+
+  _stopYoloObjectMonitoring() {
+    this._yoloStartGeneration += 1;
+    this._yoloMonitor?.stop();
+    this._yoloPhoneMonitor?.stop();
+    this._yoloMonitor = null;
+    this._yoloPhoneMonitor = null;
+    this._yoloPhoneStatus = null;
+    this._yoloPolicy?.reset?.();
+    this._yoloPolicy = null;
+    this._lastYoloResult = null;
+    this._yoloConfigSignature = '';
+    this._setYoloStatus('idle');
+  },
+
+  _syncYoloMonitoringForExam() {
+    const config = this._getObjectMonitoringConfig();
+    const signature = JSON.stringify(config);
+    const video = document.getElementById('camera-feed');
+    if (!config.enabled || !this.exam?.requireCamera) {
+      if (this._yoloMonitor) this._stopYoloObjectMonitoring();
+      return;
+    }
+    if (!this._yoloMonitor && this._cameraStream && video?.readyState >= 2) {
+      this._startYoloObjectMonitoring(video);
+      return;
+    }
+    if (this._yoloPolicy && signature !== this._yoloConfigSignature) {
+      this._yoloPolicy.updateConfig(config);
+      this._yoloConfigSignature = signature;
+    }
+  },
+
+  _handleYoloResult(result = {}) {
+    if (!this._yoloPolicy || !this.session || !this.exam) return;
+    this._lastYoloResult = result;
+    const detections = (result.detections || []).map(detection => ({
+      ...detection,
+      detectorRole: result.detectorRole || 'primary',
+    }));
+    const events = this._yoloPolicy.evaluate(detections, {
+      now: Date.now(),
+      modelVersion: result.modelVersion || '',
+      backend: result.backend || '',
+      detectorRole: result.detectorRole || 'primary',
+      inferenceMs: result.inferenceMs || 0,
+    });
+    this._renderYoloDetectionProgress();
+    events.forEach(event => this._handleYoloPolicyEvent(event));
+  },
+
+  _renderYoloDetectionProgress() {
+    const indicator = document.getElementById('yolo-camera-status');
+    if (!indicator || this._yoloStatus !== 'ready') return;
+    const confirmed = this._yoloPolicy?.getConfirmedDetections?.()[0];
+    if (confirmed) {
+      indicator.dataset.state = 'detected';
+      indicator.textContent = `${confirmed.objectLabel} detected`;
+      indicator.title = `${confirmed.objectLabel} detected.`;
+      return;
+    }
+    if (Date.now() < this._yoloDetectedUntil) return;
+    const progress = this._yoloPolicy?.getDetectionProgress?.() || [];
+    const best = progress.sort((a, b) => b.confidence - a.confidence)[0];
+    if (!best) {
+      indicator.dataset.state = 'ready';
+      indicator.textContent = 'Object scan active';
+      indicator.title = 'Object detection is active and scanning the webcam.';
+      return;
+    }
+    const shortLabels = {
+      mobile_phone: 'phone',
+      laptop_monitor: 'computer',
+      book_textbook: 'book',
+    };
+    const shortLabel = shortLabels[best.objectClass] || 'object';
+    indicator.dataset.state = 'candidate';
+    indicator.textContent = `Checking ${shortLabel}`;
+    indicator.title = 'Keep the object visible for confirmation.';
+  },
+
+  getYoloDiagnostics() {
+    const config = this._getObjectMonitoringConfig();
+    const video = document.getElementById('camera-feed');
+    return {
+      enabledForExam: config.enabled,
+      mode: config.mode,
+      cameraRequired: !!this.exam?.requireCamera,
+      cameraActive: !!this._cameraStream?.getVideoTracks?.().some(track => track.readyState === 'live'),
+      videoReadyState: Number(video?.readyState || 0),
+      status: this._yoloStatus,
+      backend: this._yoloStatusDetail?.backend || this._lastYoloResult?.backend || '',
+      modelVersion: this._yoloStatusDetail?.modelVersion || this._lastYoloResult?.modelVersion || '',
+      modelProfile: this._yoloStatusDetail?.modelProfile || this._lastYoloResult?.modelProfile || '',
+      phoneSpecialistStatus: this._yoloPhoneStatus?.state || 'off',
+      phoneSpecialistVersion: this._yoloPhoneStatus?.modelVersion || '',
+      inferenceMs: Number(this._lastYoloResult?.inferenceMs || 0),
+      detections: Array.isArray(this._lastYoloResult?.detections)
+        ? this._lastYoloResult.detections.map(detection => ({
+            className: detection.rawClass,
+            policyClass: detection.objectClass,
+            confidence: Math.round(Number(detection.confidence || 0) * 1000) / 10,
+          }))
+        : [],
+    };
+  },
+
+  _recordYoloDetectionSummary(event) {
+    if (!this.session?.id) return;
+    const session = DB.getSession(this.session.id);
+    if (!session) return;
+    const cache = { ...(session.aiDetections || {}) };
+    const prior = cache.objectMonitoring && typeof cache.objectMonitoring === 'object'
+      ? cache.objectMonitoring
+      : { counts: {} };
+    const counts = { ...(prior.counts || {}) };
+    counts[event.objectClass] = Number(counts[event.objectClass] || 0) + 1;
+    cache.objectMonitoring = {
+      counts,
+      latest: { ...event, detectedAt: new Date().toISOString() },
+      modelVersion: event.modelVersion || prior.modelVersion || '',
+      updatedAt: new Date().toISOString(),
+    };
+    DB.updateSession(this.session.id, { aiDetections: cache });
+  },
+
+  _handleYoloPolicyEvent(event) {
+    const mode = event.policyMode || this._getObjectMonitoringConfig().mode;
+    const detail = `A ${event.objectLabel.toLowerCase()} was detected in the student's camera.`;
+    const metadata = {
+      source: 'yolo',
+      objectClass: event.objectClass,
+      objectLabel: event.objectLabel,
+      rawClass: event.rawClass || '',
+      confidence: Number(event.confidence || 0),
+      averageConfidence: Number(event.averageConfidence || 0),
+      verificationConfidence: Number(event.verificationConfidence || 0),
+      fullFrameConfidence: Number(event.fullFrameConfidence || 0),
+      boundingBox: event.boundingBox || null,
+      frameHits: Number(event.frameHits || 0),
+      confirmationMs: Number(event.confirmationMs || 0),
+      modelVersion: event.modelVersion || '',
+      inferenceBackend: event.inferenceBackend || '',
+      detectorRole: event.detectorRole || 'primary',
+      inferenceMs: Number(event.inferenceMs || 0),
+      policyMode: mode,
+      policyDecision: event.policyDecision || mode,
+    };
+
+    this._yoloDetectedUntil = Date.now() + 2500;
+    const indicator = document.getElementById('yolo-camera-status');
+    if (indicator) {
+      indicator.dataset.state = 'detected';
+      indicator.textContent = `${event.objectLabel} detected`;
+      indicator.title = `${event.objectLabel} detected.`;
+    }
+
+    this._recordYoloDetectionSummary({ ...event, policyMode: mode });
+    if (mode === 'shadow') return;
+    if (mode === 'enforce') {
+      const issueWhenWarningSlotIsReady = () => {
+        if (!this.session || !this.exam || !this._examRuntimeStarted || !this._cameraStream) return;
+        if (this._getObjectMonitoringConfig().mode !== 'enforce' || this.warnings >= 3) return;
+        const elapsed = this._lastWarningTime ? Date.now() - this._lastWarningTime : 1500;
+        const waitMs = Math.max(0, 1500 - elapsed);
+        if (waitMs > 0) {
+          setTimeout(issueWhenWarningSlotIsReady, waitMs + 25);
+          return;
+        }
+        this.issueWarning(event.violationType, detail, metadata);
+      };
+      issueWhenWarningSlotIsReady();
+      return;
+    }
+
+    const replayClipPromise = this._capturePreViolationReplayClip(event.violationType).catch(() => null);
+    const violationPromise = this._notifyProfessorViolation(event.violationType, detail, this.warnings, metadata);
+    Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
+      if (!violation || !replayClip) return null;
+      return this._uploadViolationReplayEvidence(violation, replayClip);
+    }).catch(error => console.warn('[YOLO] Alert evidence failed:', error?.message || error));
+    this._recordActivity(event.violationType, detail, metadata);
+    this._captureCameraViolationSnapshot(event.violationType, detail, this.warnings, metadata);
   },
 
   // ── Camera-off detection ─────────────────────────────────────
@@ -4088,11 +4536,15 @@ const ExamApp = {
     this._cameraReacquiring = true;
     this._cameraPrompting = true; // suppress focus-loss warnings if a permission dialog opens
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: false,
+      });
       if (this._cameraStream) this._cameraStream.getTracks().forEach(t => t.stop());
       this._cameraStream = stream;
       const video = document.getElementById('camera-feed');
       if (video) video.srcObject = stream;
+      if (video) this._startYoloObjectMonitoring(video);
       this._startViolationReplayBuffer();
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';
@@ -4897,7 +5349,7 @@ const ExamApp = {
   },
 
   // Keep captureSnapshot for admin monitoring thumbnails (less frequent)
-  captureSnapshot() {
+  _captureLegacySnapshot() {
     const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('camera-canvas');
     if (!video || !canvas || !this._cameraStream || !this.session) return;
@@ -4926,6 +5378,7 @@ const ExamApp = {
       violationType = '',
       detail = '',
       warningCount = null,
+      detectionMetadata = null,
       fallbackToLatest = false,
     } = options;
 
@@ -4933,7 +5386,7 @@ const ExamApp = {
       const session = DB.getSession(this.session.id);
       if (!session) return null;
 
-      let imageData = this._captureCameraFrameData();
+      let imageData = this._captureCameraFrameData(detectionMetadata);
       let usedFallback = false;
 
       if (!imageData && fallbackToLatest) {
@@ -4955,6 +5408,7 @@ const ExamApp = {
       if (violationType) snapshot.violationType = violationType;
       if (detail) snapshot.detail = detail;
       if (Number.isFinite(warningCount)) snapshot.warningCount = warningCount;
+      if (detectionMetadata && typeof detectionMetadata === 'object') snapshot.detectionMetadata = detectionMetadata;
       if (usedFallback) snapshot.usedFallback = true;
 
       DB.updateSession(this.session.id, {
@@ -4967,6 +5421,7 @@ const ExamApp = {
   },
 
   stopCamera() {
+    this._stopYoloObjectMonitoring();
     this._cameraPrompting = false;
     this._cameraRecoveryGraceUntil = 0;
     if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
@@ -5139,7 +5594,7 @@ const ExamApp = {
     });
   },
 
-  issueWarning(type, detail) {
+  issueWarning(type, detail, detectionMetadata = null) {
     if (!this.session) return;
     if (this.warnings >= 3) return;
     if (type === 'fullscreen_exit') {
@@ -5168,7 +5623,7 @@ const ExamApp = {
       console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
       return null;
     });
-    const violationPromise = this._notifyProfessorViolation(type, detail, this.warnings);
+    const violationPromise = this._notifyProfessorViolation(type, detail, this.warnings, detectionMetadata);
     Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
       if (!violation || !replayClip) return null;
       return this._uploadViolationReplayEvidence(violation, replayClip);
@@ -5176,9 +5631,9 @@ const ExamApp = {
       console.warn('[Monitor] Replay evidence pipeline failed:', error?.message || error);
     });
 
-    this._recordActivity(type, detail);
+    this._recordActivity(type, detail, detectionMetadata);
     DB.updateSession(this.session.id, { warnings: this.warnings });
-    this._captureCameraViolationSnapshot(type, detail, this.warnings);
+    this._captureCameraViolationSnapshot(type, detail, this.warnings, detectionMetadata);
 
     // Update warning badge in header
     const warningNumEl = document.getElementById('warning-num');
@@ -5222,6 +5677,9 @@ const ExamApp = {
       look_down:       'Looking down away from the screen/camera for too long was detected.',
       low_brightness:  'The camera view is too dark — improve your room lighting so your professor can see you clearly.',
       camera_off:      'Your webcam was turned off or blocked. Camera monitoring is required during the exam.',
+      restricted_phone: 'A mobile phone was detected in the camera frame.',
+      secondary_computer: 'A secondary computer or display was detected in the camera frame.',
+      restricted_book: 'A book or textbook was detected during this closed-book exam.',
     };
 
     msgEl.textContent  = messages[type] || detail;
@@ -5612,6 +6070,29 @@ const ExamApp = {
     });
   },
 
+  _loadCodeEditorRuntime() {
+    if (window.CodeMirror) return Promise.resolve(window.CodeMirror);
+    if (this._codeEditorRuntimePromise) return this._codeEditorRuntimePromise;
+
+    const base = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16';
+    this._codeEditorRuntimePromise = Promise.all([
+      loadExamStylesheet(`${base}/codemirror.min.css`),
+      loadExamStylesheet(`${base}/theme/dracula.min.css`),
+    ])
+      .then(() => loadExamScript(`${base}/codemirror.min.js`))
+      .then(() => Promise.all([
+        loadExamScript(`${base}/mode/python/python.min.js`),
+        loadExamScript(`${base}/mode/javascript/javascript.min.js`),
+        loadExamScript(`${base}/mode/clike/clike.min.js`),
+      ]))
+      .then(() => window.CodeMirror)
+      .catch(error => {
+        this._codeEditorRuntimePromise = null;
+        throw error;
+      });
+    return this._codeEditorRuntimePromise;
+  },
+
   _initCodeEditors() {
     const LANG_MODE = { python:'python', javascript:'javascript', java:'clike', cpp:'clike', c:'clike', php:'php' };
     this.questionOrder.forEach(q => {
@@ -5619,10 +6100,10 @@ const ExamApp = {
       const wrap = document.getElementById('coding-cm-' + q.id);
       const src  = document.getElementById('coding-textarea-' + q.id);
       if (!wrap || !src || wrap.dataset.cmInit) return;
-      wrap.dataset.cmInit = '1';
 
       if (!window.CodeMirror) {
-        // Fallback: plain textarea if CodeMirror not loaded
+        // Keep the editor usable while CodeMirror downloads or if its CDN is
+        // unavailable. It is upgraded without losing the current answer.
         src.style.display = '';
         this._applyCodingFallbackTheme(src);
         src.oninput = () => ExamApp.selectAnswer(q.id, src.value);
@@ -5630,6 +6111,8 @@ const ExamApp = {
         return;
       }
 
+      wrap.dataset.cmInit = '1';
+      src.style.display = 'none';
       const cm = window.CodeMirror(wrap, {
         value: (this.answers[q.id] !== undefined ? this.answers[q.id] : src.value) || '',
         mode: LANG_MODE[q.language || 'python'] || 'python',
@@ -5969,10 +6452,18 @@ const ExamApp = {
     const wrap = document.querySelector('.examv2-main');
     if (wrap) wrap.scrollTop = 0;
 
-    // Initialize CodeMirror for any coding questions now visible
+    // Show a plain editor immediately, then enhance it only when a coding
+    // question actually needs CodeMirror.
     requestAnimationFrame(() => {
       this._initCodeEditors();
-      requestAnimationFrame(() => this._refreshVisibleCodeEditors());
+      const currentQuestion = questions[idx];
+      if (currentQuestion?.type !== 'coding') return;
+      this._loadCodeEditorRuntime()
+        .then(() => {
+          this._initCodeEditors();
+          requestAnimationFrame(() => this._refreshVisibleCodeEditors());
+        })
+        .catch(error => console.warn('[Editor] CodeMirror fallback active:', error?.message || error));
     });
 
     this._updateNavGrid();

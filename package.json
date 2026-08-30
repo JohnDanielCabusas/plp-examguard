@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
+    "test:yolo": "node scripts/test-yolo-policy.mjs && node scripts/smoke-test-yolo-model.mjs && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-coco-v1.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-tuklas-v1.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-phone-specialist-v1.json",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "dotenv": "^17.4.2",
     "nodemailer": "^9.0.1",
+    "onnxruntime-web": "^1.29.0",
     "pg": "^8.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

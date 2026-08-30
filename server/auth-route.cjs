@@ -3,6 +3,7 @@ const { sendVerificationEmail } = require('./email-service.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const {
   createCode,
+  ensureDefaultAuthRecords,
   normalizeProfessor,
   normalizeStudent,
   normalizeSysAdmin,
@@ -33,6 +34,7 @@ const {
 } = require('./auth-service.cjs');
 
 const verificationStore = new Map();
+let defaultAuthRecordsPromise = null;
 const TEN_MINUTES = 10 * 60 * 1000;
 const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_COOKIE = 'acs_admin_auth';
@@ -851,6 +853,13 @@ async function handleAuthRoute(req, res) {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
 
   try {
+    if (!defaultAuthRecordsPromise) {
+      defaultAuthRecordsPromise = ensureDefaultAuthRecords().catch((error) => {
+        defaultAuthRecordsPromise = null;
+        throw error;
+      });
+    }
+    await defaultAuthRecordsPromise;
     switch (pathname) {
       case '/api/auth/professor/login': await handleProfessorLogin(req, res, body); return true;
       case '/api/auth/professor/continue': await handleProfessorContinue(res, body); return true;
@@ -890,7 +899,8 @@ async function handleAuthRoute(req, res) {
     }
   } catch (error) {
     const connectivityIssue = isConnectivityIssue(error);
-    const message = error?.code === 'AUTH_DB_CONFIG_MISSING'
+    const message = (error?.code === 'AUTH_DB_CONFIG_MISSING'
+      || error?.code === 'AUTH_BOOTSTRAP_CONFIG_MISSING')
       ? error.message
       : toUserMessage(error, 'Unable to process authentication request.', { context: 'auth' });
     jsonResponse(res, connectivityIssue ? 503 : 500, { success: false, message, connectivityIssue });

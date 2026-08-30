@@ -18,6 +18,7 @@ const SupabaseSync = {
   _sessionCameraSnapshotsSupported: true,
   _examPoliciesSupported: true,
   _examCameraExemptSupported: true,
+  _examObjectMonitoringSupported: true,
   // Set false the first time a messages write/read fails because the table
   // doesn't exist yet (schema-bootstrap.sql not applied). Keeps the chat feature
   // from spamming sync-error toasts on databases that pre-date it.
@@ -37,6 +38,16 @@ const SupabaseSync = {
   // excluded_student_ids value — it would just echo back the stale server-side copy and
   // clobber the correct local one. Cleared once a write that includes the field succeeds.
   _examIdsWithUnsyncedExclusions: new Set(),
+
+  _normalizeObjectMonitoring(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+      enabled: !!source.enabled,
+      mode: 'enforce',
+      allowSecondaryComputer: false,
+      allowBooks: false,
+    };
+  },
 
   _writeLocal(key, value) {
     window.DB?._write?.(key, value);
@@ -501,6 +512,12 @@ const SupabaseSync = {
           normalized.examPolicies = prior.examPolicies;
         }
       }
+      if (!('object_monitoring' in r)) {
+        const prior = existingById.get(normalized.id);
+        if (prior?.objectMonitoring && typeof prior.objectMonitoring === 'object') {
+          normalized.objectMonitoring = this._normalizeObjectMonitoring(prior.objectMonitoring);
+        }
+      }
       return normalized;
     });
   },
@@ -716,6 +733,12 @@ const SupabaseSync = {
           const prior = current.find(r => r.id === normalized.id);
           if (prior && Array.isArray(prior.examPolicies)) {
             normalized.examPolicies = prior.examPolicies;
+          }
+        }
+        if (table === 'exams' && row && !('object_monitoring' in row)) {
+          const prior = current.find(r => r.id === normalized.id);
+          if (prior?.objectMonitoring && typeof prior.objectMonitoring === 'object') {
+            normalized.objectMonitoring = this._normalizeObjectMonitoring(prior.objectMonitoring);
           }
         }
         const nextRow = table === 'sessions'
@@ -1008,6 +1031,13 @@ const SupabaseSync = {
             if (!retryError) return;
             continue;
           }
+          if (this._isMissingExamObjectMonitoringError(table, retryError) && this._examObjectMonitoringSupported !== false) {
+            this._examObjectMonitoringSupported = false;
+            retryRow = this._withoutExamObjectMonitoring(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           break;
         }
         error = retryError;
@@ -1190,6 +1220,12 @@ const SupabaseSync = {
     }
     if (this._examCameraExemptSupported !== false) {
       row.camera_exempt_student_ids = Array.isArray(d.cameraExemptStudentIds) ? d.cameraExemptStudentIds : [];
+    }
+    if (this._examObjectMonitoringSupported !== false) {
+      row.object_monitoring = {
+        ...this._normalizeObjectMonitoring(d.objectMonitoring),
+        enabled: !!d.requireCamera,
+      };
     }
     return row;
   },
@@ -1437,6 +1473,10 @@ const SupabaseSync = {
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
       excludedStudentIds: Array.isArray(r.excluded_student_ids) ? r.excluded_student_ids : [],
       cameraExemptStudentIds: Array.isArray(r.camera_exempt_student_ids) ? r.camera_exempt_student_ids : [],
+      objectMonitoring: {
+        ...this._normalizeObjectMonitoring(r.object_monitoring),
+        enabled: !!r.require_camera,
+      },
       ownerAdminId: r.owner_admin_id || '',
       startedAt: r.started_at || null,
       closedAt: r.closed_at || null,
@@ -1582,6 +1622,17 @@ const SupabaseSync = {
   _withoutExamPolicies(row) {
     const next = { ...row };
     delete next.exam_policies;
+    return next;
+  },
+
+  _isMissingExamObjectMonitoringError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'exams' && message.includes(`Could not find the 'object_monitoring' column`);
+  },
+
+  _withoutExamObjectMonitoring(row) {
+    const next = { ...row };
+    delete next.object_monitoring;
     return next;
   },
 

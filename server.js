@@ -40,6 +40,7 @@ const contentTypes = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.webp': 'image/webp',
+  '.onnx': 'application/octet-stream',
 };
 
 const routeMap = {
@@ -62,9 +63,17 @@ function sendFile(res, filePath) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
+    const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+    const isVersionedModel = ext === '.onnx';
+    const isHashedAsset = relativePath.startsWith('assets/') && /-[A-Za-z0-9_-]{8,}\./.test(path.basename(filePath));
+    const cacheControl = isVersionedModel || isHashedAsset
+      ? 'public, max-age=31536000, immutable'
+      : ext === '.html' || relativePath === 'models/yolo-proctor-v1.json'
+        ? 'no-cache'
+        : 'public, max-age=3600';
     res.writeHead(200, {
       'Content-Type': contentTypes[ext] || 'application/octet-stream',
-      'Cache-Control': 'no-store',
+      'Cache-Control': cacheControl,
     });
     res.end(data);
   });

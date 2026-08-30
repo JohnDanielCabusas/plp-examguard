@@ -54,7 +54,19 @@ let _activeViolationReview = null;
 let _activeViolationReplayObjectUrl = '';
 let _recentViolationEventKeys = new Map();
 const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
-const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set(['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off']);
+const YOLO_VIOLATION_TYPES = [
+  'restricted_phone',
+  'secondary_computer',
+  'restricted_book',
+];
+const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+  ...YOLO_VIOLATION_TYPES,
+]);
 const MONITOR_EVIDENCE_POLL_MS = 2500;
 
 function readAdminSectionFromUrl() {
@@ -133,6 +145,9 @@ const BEHAVIOR_LABELS = {
   low_brightness: 'Low Screen Brightness',
   low_brightness_prompt: 'Brightness Prompt Shown',
   camera_off: 'Camera Turned Off',
+  restricted_phone: 'Mobile Phone Detected',
+  secondary_computer: 'Secondary Computer Detected',
+  restricted_book: 'Book or Textbook Detected',
   camera_restored: 'Camera Restored',
   brightness_check_passed: 'Brightness Check Passed',
   brightness_check_failed: 'Brightness Check Failed',
@@ -168,6 +183,7 @@ const VIOLATION_ALERTABLE_TYPES = new Set([
   'screenshot',
   'brightness_check_failed',
   'brightness_check_skipped',
+  ...YOLO_VIOLATION_TYPES,
 ]);
 const CRITICAL_VIOLATION_TYPES = new Set([
   'multiple_people',
@@ -175,6 +191,7 @@ const CRITICAL_VIOLATION_TYPES = new Set([
   'fullscreen_exit',
   'camera_denied',
   'screenshot',
+  'restricted_phone',
 ]);
 const VIOLATION_SOUND_PREF_KEY = 'acs_violation_sound_muted';
 const VIOLATION_SOUND_ICON_ON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
@@ -187,7 +204,14 @@ function getBehaviorLabel(type) {
   return BEHAVIOR_LABELS[type] || String(type || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
-const CAMERA_GRID_VIOLATION_TYPES = new Set(['no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off']);
+const CAMERA_GRID_VIOLATION_TYPES = new Set([
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+  ...YOLO_VIOLATION_TYPES,
+]);
 
 function getSessionCameraGridSnapshots(session) {
   const snapshots = Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots : [];
@@ -650,6 +674,7 @@ function buildViolationAlertEntry(session, activity) {
     detail: activity?.detail || 'Violation recorded',
     at: activity?.timestamp || new Date().toISOString(),
     warningCount: Number(session?.warnings || 0),
+    detectionMetadata: activity?.metadata || {},
   };
 }
 
@@ -674,6 +699,7 @@ function buildViolationAlertEntryFromEvent(event) {
     detail: event?.detail || 'Violation recorded',
     at: event?.createdAt || new Date().toISOString(),
     warningCount: Number(event?.warningCount ?? session?.warnings ?? 0),
+    detectionMetadata: event?.detectionMetadata || matchingActivity?.metadata || {},
   };
 }
 
@@ -814,6 +840,7 @@ function applyViolationEventToLocalSession(event) {
       type: event.violationType || 'unknown',
       detail: event.detail || 'Violation recorded',
       timestamp: event.createdAt || new Date().toISOString(),
+      metadata: event.detectionMetadata || {},
     });
   }
 
@@ -3357,6 +3384,7 @@ async function submitShareExam() {
           shuffleQuestions: !!exam.shuffleQuestions,
           shuffleAnswers: !!exam.shuffleAnswers,
           requireCamera: !!exam.requireCamera,
+          objectMonitoring: normalizeObjectMonitoringConfig(exam.objectMonitoring, exam.requireCamera),
           requireAIDetection: !!exam.requireAIDetection,
           allowReview: !!exam.allowReview,
           status: exam.status || 'draft',
@@ -3619,6 +3647,7 @@ async function acceptExamShare(shareId) {
     shuffleQuestions: !!snapshotExam.shuffleQuestions,
     shuffleAnswers: !!snapshotExam.shuffleAnswers,
     requireCamera: !!snapshotExam.requireCamera,
+    objectMonitoring: normalizeObjectMonitoringConfig(snapshotExam.objectMonitoring, snapshotExam.requireCamera),
     requireAIDetection: !!snapshotExam.requireAIDetection,
     allowReview: !!snapshotExam.allowReview,
     status: 'draft',
@@ -3763,6 +3792,7 @@ async function saveDuplicatedExam() {
     shuffleQuestions: !!sourceExam.shuffleQuestions,
     shuffleAnswers: !!sourceExam.shuffleAnswers,
     requireCamera: !!sourceExam.requireCamera,
+    objectMonitoring: normalizeObjectMonitoringConfig(sourceExam.objectMonitoring, sourceExam.requireCamera),
     requireAIDetection: !!sourceExam.requireAIDetection,
     allowReview: !!sourceExam.allowReview,
     status: 'draft',
@@ -4190,6 +4220,32 @@ function normalizeExamPolicies(policies) {
     .filter(Boolean);
 }
 
+function normalizeObjectMonitoringConfig(value = {}, cameraEnabled = null) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    enabled: cameraEnabled === null ? !!source.enabled : !!cameraEnabled,
+    mode: 'enforce',
+    allowSecondaryComputer: false,
+    allowBooks: false,
+  };
+}
+
+function getObjectMonitoringEditorState() {
+  const requireCamera = !!document.getElementById('exam-require-camera')?.checked;
+  return normalizeObjectMonitoringConfig({}, requireCamera);
+}
+
+function setObjectMonitoringEditorState() {
+  syncExamObjectMonitoringControls();
+}
+
+function syncExamObjectMonitoringControls() {
+  const cameraToggle = document.getElementById('exam-require-camera');
+  if (!cameraToggle) return;
+  updateExamEditorSaveButtonState();
+}
+window.syncExamObjectMonitoringControls = syncExamObjectMonitoringControls;
+
 function setExamPolicyDraftValues(policies) {
   const list = document.getElementById('exam-policies-list');
   if (list) list._policies = normalizeExamPolicies(policies);
@@ -4381,6 +4437,7 @@ function getExamEditorDetailsState() {
     shuffleQuestions: !!document.getElementById('exam-shuffle-q')?.checked,
     shuffleAnswers: !!document.getElementById('exam-shuffle-a')?.checked,
     requireCamera: !!document.getElementById('exam-require-camera')?.checked,
+    objectMonitoring: getObjectMonitoringEditorState(),
     requireAIDetection: !!document.getElementById('exam-ai-detect')?.checked,
     allowReview: !!document.getElementById('exam-allow-review')?.checked,
   };
@@ -4456,6 +4513,7 @@ function bindExamEditorDirtyListeners() {
     el.addEventListener('input', updateExamEditorSaveButtonState);
     el.addEventListener('change', updateExamEditorSaveButtonState);
   });
+  document.getElementById('exam-require-camera')?.addEventListener('change', syncExamObjectMonitoringControls);
 }
 
 function bindExamEditorPersistenceHooks() {
@@ -4564,6 +4622,7 @@ function openExamEditor(id) {
   document.getElementById('exam-shuffle-q').checked = false;
   document.getElementById('exam-shuffle-a').checked = false;
   document.getElementById('exam-require-camera').checked = false;
+  setObjectMonitoringEditorState({});
   document.getElementById('exam-ai-detect').checked = false;
   document.getElementById('exam-allow-review').checked = false;
   renderExamPoliciesEditor([]);
@@ -4591,6 +4650,7 @@ function openExamEditor(id) {
     document.getElementById('exam-shuffle-q').checked = e.shuffleQuestions || false;
     document.getElementById('exam-shuffle-a').checked = e.shuffleAnswers || false;
     document.getElementById('exam-require-camera').checked = e.requireCamera || false;
+    setObjectMonitoringEditorState(e.objectMonitoring || {});
     document.getElementById('exam-ai-detect').checked = e.requireAIDetection || false;
     document.getElementById('exam-allow-review').checked = e.allowReview || false;
     renderExamPoliciesEditor(e.examPolicies || []);
@@ -5047,6 +5107,7 @@ function saveExamFromEditor() {
   const shuffleQuestions = document.getElementById('exam-shuffle-q').checked;
   const shuffleAnswers = document.getElementById('exam-shuffle-a').checked;
   const requireCamera = document.getElementById('exam-require-camera').checked;
+  const objectMonitoring = getObjectMonitoringEditorState();
   const requireAIDetection = document.getElementById('exam-ai-detect').checked;
   const allowReview = document.getElementById('exam-allow-review').checked;
 
@@ -5056,7 +5117,7 @@ function saveExamFromEditor() {
   if (isExamCodeTaken(code, id)) { showToast(`Exam code "${code}" is already in use by another exam. Please choose a different code.`, 'error'); return; }
   if (description.length > 100) { showToast('Description must be 100 characters or fewer.', 'error'); return; }
 
-  const data = { title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview };
+  const data = { title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, objectMonitoring, requireAIDetection, allowReview };
 
   let examId = id;
   if (id) {
@@ -5158,6 +5219,7 @@ function saveExam() {
   const shuffleQuestions = document.getElementById('exam-shuffle-q').checked;
   const shuffleAnswers = document.getElementById('exam-shuffle-a').checked;
   const requireCamera = document.getElementById('exam-require-camera').checked;
+  const objectMonitoring = getObjectMonitoringEditorState();
   const requireAIDetection = document.getElementById('exam-ai-detect').checked;
   const targetYearLevels = [...document.querySelectorAll('.exam-year-cb:checked')].map(cb => cb.value);
   const targetSections   = [...document.querySelectorAll('.exam-section-cb:checked')].map(cb => cb.value);
@@ -5184,6 +5246,7 @@ function saveExam() {
       shuffleQuestions,
       shuffleAnswers,
       requireCamera,
+      objectMonitoring,
       requireAIDetection,
       allowReview,
       excludedStudentIds: pruneExamExcludedStudentIds(existingExam?.excludedStudentIds, subjectId),
@@ -5191,7 +5254,7 @@ function saveExam() {
     });
     showToast('Exam updated.', 'success');
   } else {
-    const exam = DB.addExam({ title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
+    const exam = DB.addExam({ title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, objectMonitoring, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');
@@ -8107,7 +8170,7 @@ async function exportActivityLog() {
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', 'copy_attempt', 'screenshot'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, 'copy_attempt', 'screenshot'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
@@ -10041,6 +10104,7 @@ async function openViolationReview(sessionId, activityIndex) {
     sessionId,
     activityIndex: Number(activityIndex),
     evidenceId: evidence?.id || '',
+    policyMode: activity?.metadata?.policyMode || '',
   };
 
   const setText = (id, value) => {
@@ -10055,7 +10119,11 @@ async function openViolationReview(sessionId, activityIndex) {
   setText('violation-review-time', formatDateTime(activity.timestamp));
   setText('violation-review-recorded', String(rawWarnings));
   setText('violation-review-adjusted', String(adjustedWarnings));
-  setText('violation-review-detail', activity.detail || 'Violation recorded.');
+  const metadata = activity.metadata || {};
+  const metadataDetail = metadata.source === 'yolo'
+    ? ` Model ${metadata.modelVersion || 'YOLO'} reported ${Math.round(Number(metadata.confidence || 0) * 100)}% confidence after ${Number(metadata.frameHits || 0)} confirmed frames in ${Number(metadata.confirmationMs || 0)} ms (${metadata.policyMode || 'alert'} mode).`
+    : '';
+  setText('violation-review-detail', `${activity.detail || 'Violation recorded.'}${metadataDetail}`);
   setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay unavailable');
 
   const notesEl = document.getElementById('violation-review-notes');
@@ -10151,9 +10219,15 @@ window.closeViolationReview = closeViolationReview;
 
 async function dismissViolationEvidence(evidenceId, sessionId = '', activityIndex = -1) {
   if (!evidenceId) return;
+  const activity = sessionId && Number(activityIndex) >= 0
+    ? DB.getSession(sessionId)?.activities?.[Number(activityIndex)]
+    : null;
+  const alertOnly = activity?.metadata?.policyMode === 'alert';
   const ok = await showConfirm({
     title: 'Dismiss false positive?',
-    message: 'This will reduce the adjusted warning count by 1 while keeping the original violation in the audit trail.',
+    message: alertOnly
+      ? 'This will mark the YOLO alert as a false positive while keeping it in the audit trail. No warning was issued for this alert.'
+      : 'This will reduce the adjusted warning count by 1 while keeping the original violation in the audit trail.',
     confirmLabel: 'Dismiss Violation',
     confirmClass: 'btn btn-danger',
   });
@@ -10162,6 +10236,7 @@ async function dismissViolationEvidence(evidenceId, sessionId = '', activityInde
     sessionId: sessionId || '',
     activityIndex: Number.isFinite(Number(activityIndex)) ? Number(activityIndex) : -1,
     evidenceId,
+    policyMode: activity?.metadata?.policyMode || '',
   };
   await submitViolationReviewDecision('dismissed');
 }
@@ -10192,7 +10267,7 @@ async function submitViolationReviewDecision(reviewStatus) {
     body: {
       reviewStatus,
       reviewNotes: String(notesEl?.value || '').trim(),
-      warningAdjustment: reviewStatus === 'dismissed' ? -1 : 0,
+      warningAdjustment: reviewStatus === 'dismissed' && _activeViolationReview.policyMode !== 'alert' ? -1 : 0,
     },
   });
 
@@ -10266,7 +10341,11 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
     img.src = selected?.imageData || '';
     img.style.display = '';
     const label = selected?.violationType ? `${getBehaviorLabel(selected.violationType)} • ` : '';
-    timeEl.textContent = selected ? `${label}Captured at ${formatDateTime(selected.timestamp)}` : '';
+    const metadata = selected?.detectionMetadata || {};
+    const yoloMeta = metadata.source === 'yolo'
+      ? ` | ${Math.round(Number(metadata.confidence || 0) * 100)}% | ${metadata.modelVersion || 'YOLO'} | ${metadata.policyMode || 'alert'} mode`
+      : '';
+    timeEl.textContent = selected ? `${label}Captured at ${formatDateTime(selected.timestamp)}${yoloMeta}` : '';
     emptyEl.style.display = 'none';
     if (actionsEl) {
       if (evidence) {
