@@ -109,7 +109,7 @@ const ExamApp = {
   _FACE_PRESENCE_CONFIRM_SEC: 1.2,
   _MULTIPLE_FACE_WARN_SEC: 3,
   _MULTIPLE_FACE_CONFIRM_SEC: 1.2,
-  _LOOK_DOWN_WARN_SEC: 20,
+  _LOOK_DOWN_WARN_SEC: 10,
   _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
   _faceModelReady: false,
@@ -139,6 +139,7 @@ const ExamApp = {
   _lookDownWarningIssued: false,
   _facePoseBaseline: null,
   _facePoseBaselineSamples: 0,
+  _latestFaceContext: null,
   _lastCameraDetectAt: 0,
   _brightnessBaseline: null, // luminance baseline recorded at exam start
   _darkSeconds: 0,           // consecutive seconds below brightness threshold
@@ -4327,6 +4328,7 @@ const ExamApp = {
       backend: result.backend || '',
       detectorRole: result.detectorRole || 'primary',
       inferenceMs: result.inferenceMs || 0,
+      faceContext: this._latestFaceContext,
     });
     this._renderYoloDetectionProgress();
     events.forEach(event => this._handleYoloPolicyEvent(event));
@@ -4622,6 +4624,7 @@ const ExamApp = {
     this._lastPresenceSeenAt = this._getDetectionNow();
     this._facePoseBaseline = null;
     this._facePoseBaselineSamples = 0;
+    this._latestFaceContext = null;
     this._lastCameraDetectAt = 0;
     this._brightnessBaseline = null; // reset baseline so first frames calibrate it
     this._darkSeconds = 0;
@@ -5003,6 +5006,19 @@ const ExamApp = {
       const frameHeight = video.videoHeight || 240;
       const predictions = await this._faceModel.estimateFaces(video, false);
       const { primaryFace, extraFaces, drawFaces } = this._classifyFacePredictions(predictions, frameWidth, frameHeight);
+      this._latestFaceContext = primaryFace ? {
+        capturedAt: Date.now(),
+        frameWidth,
+        frameHeight,
+        faces: [primaryFace, ...extraFaces].map(face => ({
+          x: face.x1,
+          y: face.y1,
+          width: face.width,
+          height: face.height,
+          nose: face.nose,
+          mouth: face.mouth,
+        })),
+      } : null;
       const secondaryFaceSeconds = extraFaces.length ? this._trackSecondaryFace(extraFaces[0], deltaSec) : 0;
       const multipleFacesConfirmed = secondaryFaceSeconds >= this._MULTIPLE_FACE_CONFIRM_SEC;
       const lookDownEvaluation = primaryFace && !extraFaces.length ? this._evaluateLookingDown(primaryFace) : { isLookingDown: false, metrics: null };
@@ -5125,6 +5141,7 @@ const ExamApp = {
     } catch(e) {
       // Model error — fall back to motion detection silently
       this._lastCameraDetectAt = 0;
+      this._latestFaceContext = null;
       this._detectMotion(video);
     } finally {
       this._faceDetectInFlight = false;
@@ -5442,6 +5459,7 @@ const ExamApp = {
     this._lookDownWarningIssued = false;
     this._facePoseBaseline = null;
     this._facePoseBaselineSamples = 0;
+    this._latestFaceContext = null;
     this._lowLightSeconds = 0;
     this._lowLightWarningIssued = false;
     this._hideBrightnessPrompt();

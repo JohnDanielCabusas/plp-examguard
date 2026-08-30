@@ -12,7 +12,16 @@ function detection(objectClass, confidence = 0.9, boundingBox = null) {
     fullFrameConfidence: confidence,
     verificationConfidence: confidence,
     verified: true,
-    boundingBox: boundingBox || { x: 10, y: 12, width: 40, height: 60, frameWidth: 640, frameHeight: 480 },
+    boundingBox: boundingBox || { x: 210, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480 },
+    ...(objectClass === 'mobile_phone' ? {
+      humanContext: {
+        available: true,
+        personDetected: true,
+        nearPerson: true,
+        overlapRatio: 0.65,
+        proximityRatio: 0,
+      },
+    } : {}),
   };
 }
 
@@ -35,9 +44,9 @@ events.push(...policy.evaluate(
   [detection('mobile_phone')],
   { now: 1000, modelVersion: 'test-v1', backend: 'wasm' },
 ));
-assert.equal(events.length, 1, 'A very clear verified phone may use one-frame confirmation.');
+assert.equal(events.length, 0, 'A single phone-shaped frame must not issue a violation.');
 events.push(...policy.evaluate([detection('mobile_phone')], { now: 2000, modelVersion: 'test-v1', backend: 'wasm' }));
-assert.equal(events.length, 1);
+assert.equal(events.length, 1, 'A clear phone must confirm on a repeated frame.');
 assert.equal(events[0].violationType, 'restricted_phone');
 assert.equal(events[0].policyDecision, 'warning');
 assert.equal(events[0].modelVersion, 'test-v1');
@@ -48,6 +57,7 @@ assert.equal(events.length, 1, 'A continuously visible object must not emit dupl
 policy.evaluate([], { now: 12000 });
 const resetEvents = [];
 resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13000 }));
+resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13500 }));
 assert.equal(resetEvents.length, 1, 'An object may emit again only after a confirmed absence.');
 
 const authorizedPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', allowBooks: true, calibrationMs: 0 });
@@ -108,6 +118,60 @@ for (let index = 0; index < 5; index += 1) {
   );
 }
 assert.equal(unverifiedEvents.length, 0, 'Unverified full-frame candidates must never emit warnings.');
+
+const facialFeaturePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+const faceContext = {
+  frameWidth: 640,
+  frameHeight: 480,
+  faces: [{
+    x: 220,
+    y: 100,
+    width: 180,
+    height: 180,
+    nose: { x: 308, y: 205 },
+    mouth: { x: 308, y: 242 },
+  }],
+};
+let facialFeatureEvents = [];
+for (let index = 0; index < 6; index += 1) {
+  const now = 1000 + (index * 500);
+  facialFeatureEvents = facialFeatureEvents.concat(facialFeaturePolicy.evaluate([
+    detection('mobile_phone', 0.92, {
+      x: 292 + index,
+      y: 184,
+      width: 32,
+      height: 52,
+      frameWidth: 640,
+      frameHeight: 480,
+    }),
+  ], { now, faceContext: { ...faceContext, capturedAt: now } }));
+}
+assert.equal(
+  facialFeatureEvents.length,
+  0,
+  'A small high-confidence box on the face nose/mouth landmarks must not be treated as a phone.',
+);
+
+const faceOverlapPhonePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+let faceOverlapPhoneEvents = [];
+for (let index = 0; index < 2; index += 1) {
+  const now = 5000 + (index * 500);
+  faceOverlapPhoneEvents = faceOverlapPhoneEvents.concat(faceOverlapPhonePolicy.evaluate([
+    detection('mobile_phone', 0.82, {
+      x: 315,
+      y: 155,
+      width: 130,
+      height: 205,
+      frameWidth: 640,
+      frameHeight: 480,
+    }),
+  ], { now, faceContext: { ...faceContext, capturedAt: now } }));
+}
+assert.equal(
+  faceOverlapPhoneEvents.length,
+  1,
+  'A clearly sized phone held in front of the student must not be suppressed by face filtering.',
+);
 
 const bookPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
 let bookEvents = [];
@@ -189,7 +253,7 @@ assert.equal(calibratedEvents.length, 1, 'A phone entering after calibration mus
 
 const fastPathPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
 let fastPathEvents = [];
-for (let index = 0; index < 1; index += 1) {
+for (let index = 0; index < 2; index += 1) {
   fastPathEvents = fastPathEvents.concat(
     fastPathPolicy.evaluate([detection('mobile_phone', 0.8, realPhoneBox)], { now: 1000 + (index * 500) }),
   );
@@ -219,6 +283,53 @@ assert.equal(
   'A verified moving screen-away phone from the specialist must confirm after calibration.',
 );
 assert.equal(phoneBackEvents[0].detectorRole, 'phone-specialist');
+
+const startupPhoneSpecialistPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
+let startupPhoneEvents = [];
+for (let index = 0; index < 3; index += 1) {
+  startupPhoneEvents = startupPhoneEvents.concat(
+    startupPhoneSpecialistPolicy.evaluate([{
+      ...detection('mobile_phone', 0.35, realPhoneBox),
+      rawClass: 'mobile_phone',
+      detectorRole: 'phone-specialist',
+    }], {
+      now: 1000 + (index * 650),
+      detectorRole: 'phone-specialist',
+    }),
+  );
+}
+assert.equal(
+  startupPhoneEvents.length,
+  1,
+  'A clearly sized phone shown during startup must not be learned as background furniture.',
+);
+
+const mixedDetectorPhonePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+let mixedDetectorPhoneEvents = [];
+for (let index = 0; index < 2; index += 1) {
+  mixedDetectorPhoneEvents = mixedDetectorPhoneEvents.concat(
+    mixedDetectorPhonePolicy.evaluate([
+      detection('mobile_phone', 0.6, realPhoneBox),
+    ], { now: 1000 + (index * 500), detectorRole: 'primary' }),
+  );
+}
+for (let index = 0; index < 3; index += 1) {
+  mixedDetectorPhoneEvents = mixedDetectorPhoneEvents.concat(
+    mixedDetectorPhonePolicy.evaluate([{
+      ...detection('mobile_phone', 0.35, realPhoneBox),
+      rawClass: 'mobile_phone',
+      detectorRole: 'phone-specialist',
+    }], {
+      now: 2000 + (index * 650),
+      detectorRole: 'phone-specialist',
+    }),
+  );
+}
+assert.equal(
+  mixedDetectorPhoneEvents.length,
+  1,
+  'Repeated specialist evidence must confirm a steady phone even when a stronger primary candidate owns the track.',
+);
 
 const tiledPartialPhonePolicy = new YoloObjectPolicy({
   enabled: true,
@@ -262,8 +373,112 @@ for (let index = 0; index < 6; index += 1) {
 }
 assert.equal(
   stationaryPhoneBackEvents.length,
+  1,
+  'A clearly sized stationary phone from the specialist must confirm after an extra frame.',
+);
+
+const angledShelfPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+const angledShelfBox = {
+  x: 1,
+  y: 0,
+  width: 190,
+  height: 90,
+  frameWidth: 640,
+  frameHeight: 480,
+};
+let angledShelfEvents = [];
+for (let index = 0; index < 8; index += 1) {
+  angledShelfEvents = angledShelfEvents.concat(angledShelfPolicy.evaluate([{
+    ...detection('mobile_phone', 0.9, {
+      ...angledShelfBox,
+      x: angledShelfBox.x + (index % 2),
+      width: angledShelfBox.width + (index % 3),
+    }),
+    rawClass: 'mobile_phone',
+    detectorRole: 'phone-specialist',
+    humanContext: {
+      available: true,
+      personDetected: true,
+      nearPerson: false,
+      overlapRatio: 0,
+      proximityRatio: 0.8,
+    },
+  }], {
+    now: 5000 + (index * 650),
+    detectorRole: 'phone-specialist',
+  }));
+}
+assert.equal(
+  angledShelfEvents.length,
   0,
-  'A stationary specialist candidate must not turn furniture into a phone warning.',
+  'A large static shelf candidate pinned to a frame edge must not be treated as a phone.',
+);
+
+const movingEdgePhonePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+let movingEdgePhoneEvents = [];
+for (let index = 0; index < 3; index += 1) {
+  movingEdgePhoneEvents = movingEdgePhoneEvents.concat(movingEdgePhonePolicy.evaluate([
+    detection('mobile_phone', 0.82, {
+      x: index * 25,
+      y: 150,
+      width: 90,
+      height: 150,
+      frameWidth: 640,
+      frameHeight: 480,
+    }),
+  ], { now: 1000 + (index * 500), detectorRole: 'primary' }));
+}
+assert.equal(
+  movingEdgePhoneEvents.length,
+  1,
+  'A real phone entering from the frame edge must still confirm after clear movement.',
+);
+
+const squareFurniturePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+let squareFurnitureEvents = [];
+for (let index = 0; index < 8; index += 1) {
+  squareFurnitureEvents = squareFurnitureEvents.concat(squareFurniturePolicy.evaluate([
+    detection('mobile_phone', 0.98, {
+      x: 240 + (index % 2),
+      y: 150,
+      width: 112,
+      height: 105,
+      frameWidth: 640,
+      frameHeight: 480,
+    }),
+  ], { now: 1000 + (index * 500), detectorRole: 'primary' }));
+}
+assert.equal(
+  squareFurnitureEvents.length,
+  0,
+  'A verified square object must be rejected even when the detector reports very high phone confidence.',
+);
+
+const interiorFurniturePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+let interiorFurnitureEvents = [];
+for (let index = 0; index < 8; index += 1) {
+  interiorFurnitureEvents = interiorFurnitureEvents.concat(interiorFurniturePolicy.evaluate([{
+    ...detection('mobile_phone', 0.92, {
+      x: 70 + (index % 3),
+      y: 80 + (index % 2),
+      width: 165,
+      height: 90,
+      frameWidth: 640,
+      frameHeight: 480,
+    }),
+    humanContext: {
+      available: true,
+      personDetected: true,
+      nearPerson: false,
+      overlapRatio: 0,
+      proximityRatio: 0.55,
+    },
+  }], { now: 1000 + (index * 500), detectorRole: 'primary' }));
+}
+assert.equal(
+  interiorFurnitureEvents.length,
+  0,
+  'Phone-shaped furniture away from the student must not confirm from static detector jitter.',
 );
 
 const furnitureCalibrationPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });

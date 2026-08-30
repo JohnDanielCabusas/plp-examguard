@@ -202,6 +202,10 @@ function getPolicyClass(rawClass) {
   return manifest.policyMappings?.[rawClass] || '';
 }
 
+function getContextClass(rawClass) {
+  return rawClass === 'person' ? 'person' : '';
+}
+
 function getConfidenceThreshold(rawClass, objectClass) {
   return Number(
     manifest.confidenceThresholds?.[objectClass]
@@ -209,6 +213,10 @@ function getConfidenceThreshold(rawClass, objectClass) {
     ?? manifest.defaultConfidence
     ?? 0.55,
   );
+}
+
+function getContextConfidenceThreshold(contextClass) {
+  return Number(manifest.contextConfidenceThresholds?.[contextClass] ?? 0.25);
 }
 
 function parseChannelFirstOutput(output, transform) {
@@ -232,7 +240,12 @@ function parseChannelFirstOutput(output, transform) {
 
     const rawClass = manifest.classNames?.[bestClassIndex] || String(bestClassIndex);
     const objectClass = getPolicyClass(rawClass);
-    if (!objectClass || bestScore < getConfidenceThreshold(rawClass, objectClass)) continue;
+    const contextClass = getContextClass(rawClass);
+    if (!objectClass && !contextClass) continue;
+    const threshold = objectClass
+      ? getConfidenceThreshold(rawClass, objectClass)
+      : getContextConfidenceThreshold(contextClass);
+    if (bestScore < threshold) continue;
 
     const centerX = output.data[anchor];
     const centerY = output.data[anchors + anchor];
@@ -246,7 +259,7 @@ function parseChannelFirstOutput(output, transform) {
       transform,
     );
     if (boundingBox.width < 4 || boundingBox.height < 4) continue;
-    detections.push({ rawClass, objectClass, confidence: bestScore, boundingBox });
+    detections.push({ rawClass, objectClass, contextClass, confidence: bestScore, boundingBox });
   }
   return detections;
 }
@@ -264,7 +277,12 @@ function parseEndToEndOutput(output, transform) {
     const classIndex = Math.round(Number(output.data[offset + 5] || 0));
     const rawClass = manifest.classNames?.[classIndex] || String(classIndex);
     const objectClass = getPolicyClass(rawClass);
-    if (!objectClass || confidence < getConfidenceThreshold(rawClass, objectClass)) continue;
+    const contextClass = getContextClass(rawClass);
+    if (!objectClass && !contextClass) continue;
+    const threshold = objectClass
+      ? getConfidenceThreshold(rawClass, objectClass)
+      : getContextConfidenceThreshold(contextClass);
+    if (confidence < threshold) continue;
     const boundingBox = mapBoundingBox(
       output.data[offset],
       output.data[offset + 1],
@@ -273,7 +291,7 @@ function parseEndToEndOutput(output, transform) {
       transform,
     );
     if (boundingBox.width < 4 || boundingBox.height < 4) continue;
-    detections.push({ rawClass, objectClass, confidence, boundingBox });
+    detections.push({ rawClass, objectClass, contextClass, confidence, boundingBox });
   }
   return detections;
 }
@@ -323,9 +341,55 @@ function getPolicyScores(output) {
   return scores;
 }
 
+function humanContextForDetection(detection, contextDetections) {
+  const contextAvailable = Array.isArray(manifest.classNames) && manifest.classNames.includes('person');
+  const people = contextDetections.filter(candidate => candidate.contextClass === 'person');
+  const box = detection.boundingBox;
+  if (!box) {
+    return {
+      available: contextAvailable,
+      personDetected: people.length > 0,
+      nearPerson: false,
+      overlapRatio: 0,
+      proximityRatio: null,
+    };
+  }
+
+  const boxArea = Math.max(1, box.width * box.height);
+  const centerX = box.x + (box.width / 2);
+  const centerY = box.y + (box.height / 2);
+  let overlapRatio = 0;
+  let proximityRatio = Infinity;
+  people.forEach(person => {
+    const personBox = person.boundingBox;
+    if (!personBox) return;
+    const left = Math.max(box.x, personBox.x);
+    const top = Math.max(box.y, personBox.y);
+    const right = Math.min(box.x + box.width, personBox.x + personBox.width);
+    const bottom = Math.min(box.y + box.height, personBox.y + personBox.height);
+    const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+    overlapRatio = Math.max(overlapRatio, intersection / boxArea);
+
+    const gapX = Math.max(personBox.x - centerX, 0, centerX - (personBox.x + personBox.width));
+    const gapY = Math.max(personBox.y - centerY, 0, centerY - (personBox.y + personBox.height));
+    const personScale = Math.max(1, personBox.width, personBox.height);
+    proximityRatio = Math.min(proximityRatio, Math.hypot(gapX, gapY) / personScale);
+  });
+
+  return {
+    available: contextAvailable,
+    personDetected: people.length > 0,
+    nearPerson: overlapRatio >= 0.15 || proximityRatio <= 0.08,
+    overlapRatio,
+    proximityRatio: Number.isFinite(proximityRatio) ? proximityRatio : null,
+  };
+}
+
 async function verifyDetections(detections, transform) {
+  const contextDetections = detections.filter(detection => detection.contextClass);
   const candidateCounts = new Map();
   const candidates = [...detections]
+    .filter(detection => detection.objectClass)
     .sort((a, b) => b.confidence - a.confidence)
     .filter(detection => {
       const count = candidateCounts.get(detection.objectClass) || 0;
@@ -395,6 +459,7 @@ async function verifyDetections(detections, transform) {
       confidence: verificationConfidence,
       verified: true,
       verificationConfidence,
+      humanContext: humanContextForDetection(detection, contextDetections),
     });
   }
   return verified;

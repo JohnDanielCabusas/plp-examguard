@@ -133,13 +133,21 @@ staged TUKLAS model as a slower phone-only specialist after primary monitoring
 is ready. Only its `mobile_phone` output is consumed. This improves coverage of
 phone backs, cases, dark screens, and partial views while COCO continues to
 handle laptops, monitors, and books. Specialist candidates still require crop
-verification, temporal confirmation, and actual object movement before a
-violation is issued. The specialist has its own short calibration window for
-stable shelf and furniture regions, and can verify up to three phone candidates
-so a false shelf candidate does not hide a real phone elsewhere in the frame.
-It rotates through four overlapping close-up regions and retries verification
-with wider context, improving recall when only a phone edge, corner, camera
-cluster, or part of its case is visible. The model still cannot learn every
+verification and temporal confirmation. Small or ambiguous candidates require
+actual object movement, while a clearly sized stationary phone requires an extra
+confirmed frame before a violation is issued. Objects pinned to a frame edge
+cannot use the stationary-phone shortcut and must move substantially into the
+scene, preventing shelves and wall fixtures from confirming as phones. Square
+candidates are rejected, and phone-shaped candidates away from the detected
+student require four observations plus substantial movement. The worker keeps
+person detections as validation context only; they never become violations.
+The specialist has its own short
+calibration window for stable shelf and furniture regions, and can verify up to
+three phone candidates so a false shelf candidate does not hide a real phone
+elsewhere in the frame. It alternates a full-frame scan with four overlapping
+close-up regions and retries verification with wider context, improving recall
+when only a phone edge, corner, camera cluster, or part of its case is visible.
+The model still cannot learn every
 occlusion from configuration alone: consent-based training and test images must
 include phones partly covered by hands, sleeves, desks, bags, and the frame edge.
 
