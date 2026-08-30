@@ -55,6 +55,11 @@ const DB = {
 
   _getCurrentAdminId() {
     try {
+      // A system admin browsing in the same tab/session that still carries a
+      // leftover professor `acs_admin_session` (e.g. navigated from admin.html
+      // to super-admin.html without logging out) must never be scoped down to
+      // that one professor's records — sysadmin context always wins.
+      if (window.Auth?.getSysAdminSession?.()) return null;
       return window.Auth?.getAdminSession?.()?.id || null;
     } catch {
       return null;

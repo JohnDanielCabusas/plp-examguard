@@ -840,6 +840,16 @@ export default function AdminPage() {
                         <span id="monitor-sort-btn-label">Last name A-Z</span>
                       </button>
                       <span id="monitor-count" className="monitor-count-chip">0 students</span>
+                      <button
+                        type="button"
+                        id="monitor-export-all-btn"
+                        className="monitor-export-all-btn"
+                        onClick={() => window.exportAllActivityLogs?.()}
+                        title="Export all session records as Excel"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export All
+                      </button>
                     </div>
                   </div>
                   <div className="table-wrapper monitor-table-shell">
@@ -856,9 +866,14 @@ export default function AdminPage() {
                       <span className="monitor-panel-title">Activity Log</span>
                       <span id="log-student-name" className="monitor-log-student" />
                     </div>
-                    <button id="btn-export-log" className="monitor-export-btn" onClick={() => window.exportActivityLog?.()} title="Export Activity Log as Excel">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                      Export Excel
+                    <button
+                      id="btn-export-log"
+                      className="monitor-export-btn"
+                      onClick={() => window.exportSelectedActivityLog?.()}
+                      title="Export this student's activity log as Excel"
+                      aria-label="Export this student's activity log as Excel"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </button>
                   </div>
                   <div className="activity-log-body" id="log-body">
@@ -1747,28 +1762,33 @@ export default function AdminPage() {
       <div className="modal-backdrop hidden" id="modal-violation-alert" data-no-backdrop-close="true">
         <div className="modal-dialog modal-sm violation-alert-modal">
           <div className="modal-header violation-alert-modal-header">
-            <div className="violation-alert-header-copy">
-              <div className="violation-alert-header-row">
-                <div className="violation-alert-header-icon" aria-hidden="true">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-                    <path d="M12 9v4" />
-                    <path d="M12 17h.01" />
-                  </svg>
-                </div>
-                <span className="violation-alert-severity" id="violation-alert-severity">Immediate Attention</span>
+            <div className="violation-alert-header-row">
+              <div className="violation-alert-header-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                  <path d="M12 9v4" />
+                  <path d="M12 17h.01" />
+                </svg>
               </div>
-              <span className="violation-alert-kicker">Live violation alert</span>
-              <span className="modal-title">Student suspicious activity detected</span>
-              <div className="violation-alert-subtitle">A student triggered a suspicious activity event during the examination.</div>
+              <span className="modal-title violation-alert-title">Live violation alert</span>
             </div>
+            <span className="violation-alert-severity" id="violation-alert-severity">Warning</span>
           </div>
           <div className="modal-body violation-alert-modal-body">
             <div className="violation-alert-student-card">
               <div className="violation-alert-avatar" id="violation-alert-avatar">S</div>
               <div className="violation-alert-student-copy">
+                <div className="violation-alert-student-label">Student</div>
                 <div className="violation-alert-student-name" id="violation-alert-student-name">Student Name</div>
                 <div className="violation-alert-student-meta" id="violation-alert-student-meta">Student ID</div>
+              </div>
+            </div>
+
+            <div className="violation-alert-flag">
+              <div className="violation-alert-flag-icon" id="violation-alert-icon" aria-hidden="true" />
+              <div className="violation-alert-flag-copy">
+                <span className="violation-alert-flag-label">Violation Detected</span>
+                <span className="violation-alert-flag-value" id="violation-alert-type">-</span>
               </div>
             </div>
 
@@ -1778,23 +1798,28 @@ export default function AdminPage() {
                 <span className="violation-alert-item-value" id="violation-alert-exam-name">-</span>
               </div>
               <div className="violation-alert-item">
-                <span className="violation-alert-item-label">Violation</span>
-                <span className="violation-alert-item-value" id="violation-alert-type">-</span>
-              </div>
-              <div className="violation-alert-item">
-                <span className="violation-alert-item-label">Recorded at</span>
-                <span className="violation-alert-item-value" id="violation-alert-time">-</span>
-              </div>
-              <div className="violation-alert-item">
                 <span className="violation-alert-item-label">Warnings</span>
-                <span className="violation-alert-item-value" id="violation-alert-warning-count">0</span>
+                <span className="violation-alert-warning-badge" id="violation-alert-warning-count">0</span>
               </div>
             </div>
 
-            <div className="violation-alert-details" id="violation-alert-detail">Violation details appear here.</div>
+            <div className="violation-alert-item violation-alert-item-wide">
+              <span className="violation-alert-item-label">Recorded at</span>
+              <span className="violation-alert-item-value" id="violation-alert-time">-</span>
+            </div>
+
             <div className="violation-alert-queue hidden" id="violation-alert-queue-indicator">0 more alerts waiting</div>
           </div>
           <div className="modal-footer violation-alert-modal-footer">
+            <button
+              className="btn btn-secondary hidden"
+              id="violation-alert-dismiss-all-btn"
+              type="button"
+              onClick={() => window.acknowledgeAllViolationAlerts?.()}
+              title="Dismiss every queued violation alert without reviewing them one by one"
+            >
+              Dismiss All
+            </button>
             <button className="btn btn-primary" type="button" onClick={() => window.acknowledgeViolationAlert?.()}>
               OK
             </button>

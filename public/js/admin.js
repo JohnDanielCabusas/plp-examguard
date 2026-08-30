@@ -33,6 +33,7 @@ let currentSharedExamsTab = 'received';
 let _violationAlertQueue = [];
 let _activeViolationAlert = null;
 let _queuedViolationAlertIds = new Set();
+let _alertedViolationIds = new Set();
 let _seenViolationActivityBySession = new Map();
 let _violationAlertSeeded = false;
 let _monitorViolationFlashExpirations = new Map();
@@ -166,6 +167,31 @@ const BEHAVIOR_LABELS = {
   force_submit: 'Force Submitted',
   timeout: 'Time Expired',
 };
+const VIOLATION_TYPE_ICON_SVGS = {
+  no_person: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/>',
+  multiple_people: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  look_down: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  low_brightness: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  brightness_check_failed: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  brightness_check_skipped: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  camera_off: '<path d="M16 16v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  camera_denied: '<path d="M16 16v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  window_blur: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>',
+  tab_switch: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14"/><path d="M3 9h5"/>',
+  fullscreen_exit: '<path d="M4 20V4"/><path d="M4 20h6"/><path d="M4 20l6-6"/><path d="M20 4v16"/><path d="M20 4h-6"/><path d="M20 4l-6 6"/>',
+  copy_attempt: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  ctrl_c_attempt: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  paste_attempt: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+  ctrl_v_attempt: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+  screenshot: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  restricted_phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/>',
+  secondary_computer: '<rect x="2" y="4" width="20" height="13" rx="2"/><line x1="2" y1="17" x2="22" y2="17"/><path d="M8 21h8"/>',
+  restricted_book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+};
+function getViolationTypeIconSvg(type) {
+  const inner = VIOLATION_TYPE_ICON_SVGS[type] || '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+}
 const VIOLATION_ALERTABLE_TYPES = new Set([
   'no_person',
   'multiple_people',
@@ -717,6 +743,7 @@ function renderViolationAlertModal() {
   const meta = session ? getStudentMonitorMeta(session) : (_activeViolationAlert.studentId || '-');
   const queueIndicator = document.getElementById('violation-alert-queue-indicator');
   const severityEl = document.getElementById('violation-alert-severity');
+  const iconEl = document.getElementById('violation-alert-icon');
   const isCritical = Number(_activeViolationAlert.warningCount || 0) >= 2 || isCriticalViolationType(_activeViolationAlert.type);
 
   const setText = (id, value) => {
@@ -731,14 +758,20 @@ function renderViolationAlertModal() {
   setText('violation-alert-type', getBehaviorLabel(_activeViolationAlert.type));
   setText('violation-alert-time', formatDateTime(_activeViolationAlert.at));
   setText('violation-alert-warning-count', String(_activeViolationAlert.warningCount || 0));
-  setText('violation-alert-detail', _activeViolationAlert.detail || 'Violation recorded.');
+  if (iconEl) iconEl.innerHTML = getViolationTypeIconSvg(_activeViolationAlert.type);
   modal.dataset.severity = isCritical ? 'critical' : 'warning';
-  if (severityEl) severityEl.textContent = isCritical ? 'Critical Violation' : 'Immediate Attention';
+  if (severityEl) severityEl.textContent = isCritical ? 'Critical' : 'Warning';
 
+  const remaining = _violationAlertQueue.length;
   if (queueIndicator) {
-    const remaining = _violationAlertQueue.length;
     queueIndicator.textContent = `${remaining} more alert${remaining === 1 ? '' : 's'} waiting`;
     queueIndicator.classList.toggle('hidden', remaining <= 0);
+  }
+
+  const dismissAllBtn = document.getElementById('violation-alert-dismiss-all-btn');
+  if (dismissAllBtn) {
+    dismissAllBtn.textContent = `Dismiss All (${remaining + 1})`;
+    dismissAllBtn.classList.toggle('hidden', remaining <= 0);
   }
 
   if (modal.classList.contains('hidden')) openModal(modalId);
@@ -761,10 +794,30 @@ function acknowledgeViolationAlert() {
 }
 window.acknowledgeViolationAlert = acknowledgeViolationAlert;
 
+// Lets a professor clear a large backlog (e.g. "30 more alerts waiting") in one
+// click instead of clicking OK on every single queued alert one by one.
+function acknowledgeAllViolationAlerts() {
+  if (_activeViolationAlert?.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+  _violationAlertQueue.forEach((entry) => {
+    if (entry?.id) _queuedViolationAlertIds.delete(entry.id);
+  });
+  _violationAlertQueue = [];
+  _activeViolationAlert = null;
+  renderViolationAlertModal();
+}
+window.acknowledgeAllViolationAlerts = acknowledgeAllViolationAlerts;
+
 function queueViolationAlert(entry) {
   if (!entry?.id) return;
+  // _queuedViolationAlertIds only tracks alerts that are currently queued/active and
+  // gets cleared on acknowledge, so it can't stop a duplicate that arrives (e.g. via a
+  // slow HTTP poll racing the WebSocket push for the same event) after the first copy
+  // was already dismissed. _alertedViolationIds is never cleared, so once a violation
+  // has been shown once it can never pop up again for the same underlying event.
+  if (_alertedViolationIds.has(entry.id)) return;
   if (_queuedViolationAlertIds.has(entry.id) || _activeViolationAlert?.id === entry.id) return;
 
+  _alertedViolationIds.add(entry.id);
   _queuedViolationAlertIds.add(entry.id);
   _violationAlertQueue.push(entry);
   addBellNotification({
@@ -8156,7 +8209,7 @@ function refreshOpenStudentLog() {
   `;
 }
 
-async function exportActivityLog() {
+async function exportAllActivityLogs() {
   const examId = monitorExamId;
   const exam   = examId ? DB.getExam(examId) : null;
   const sessions = DB.getSessions().filter(s => (!examId || s.examId === examId));
@@ -8166,6 +8219,28 @@ async function exportActivityLog() {
     return;
   }
 
+  const filenameBase = `activity-log${exam ? '-' + exam.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : ''}`;
+  await buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase);
+}
+window.exportAllActivityLogs = exportAllActivityLogs;
+
+async function exportSelectedActivityLog() {
+  const session = _activeLogSessionId ? DB.getSession(_activeLogSessionId) : null;
+  if (!session) {
+    showToast('Select a student to export their activity log.', 'warning');
+    return;
+  }
+
+  const exam = session.examId ? DB.getExam(session.examId) : null;
+  const namePart = (session.studentName || session.studentId || 'student').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  await buildAndDownloadActivityLogWorkbook([session], exam, `activity-log-${namePart}`);
+}
+window.exportSelectedActivityLog = exportSelectedActivityLog;
+
+// Shared by exportAllActivityLogs (every session in the current exam) and
+// exportSelectedActivityLog (just the one session picked in the Activity Log
+// panel) so both buttons produce the exact same workbook design/format.
+async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase) {
   const ExcelJSLib = window.ExcelJS;
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
@@ -8305,7 +8380,7 @@ async function exportActivityLog() {
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const filename = `activity-log${exam ? '-' + exam.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : ''}-${new Date().toISOString().slice(0,10)}.xlsx`;
+  const filename = `${filenameBase}-${new Date().toISOString().slice(0,10)}.xlsx`;
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
@@ -9462,7 +9537,7 @@ async function exportExamReportPdf() {
   drawPdfSectionTitle(doc, 'Examination Information', detailY);
   detailY = drawPdfInfoBlock(doc, detailY + 4, [
     ['Examination', exam.title, 'Course', subject?.name || 'N/A'],
-    ['School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Time Limit', `${exam.timeLimit || 0} minutes`],
+    ['School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Time Limit', `${exam.timeLimit || 0} minute${Number(exam.timeLimit) === 1 ? '' : 's'}`],
     ['Prepared By', generatedBy, 'Date Generated', reportStamp],
   ]) + 6;
 
