@@ -8,20 +8,12 @@ const PASSWORD_PREFIX = 'pbkdf2_sha256';
 const PASSWORD_ITERATIONS = 210000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = 'sha256';
+const DEFAULT_SYSADMIN_PASSWORD = String(process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD || 'admin123');
+const DEFAULT_PROFESSOR_PASSWORD = String(process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD || 'admin123');
+const DEFAULT_PASSWORD_USERNAME = String(process.env.AUTH_DEFAULT_PROFESSOR_USERNAME || 'admin').trim().toLowerCase();
+const DEFAULT_PASSWORD_EMAIL = String(process.env.AUTH_DEFAULT_PROFESSOR_EMAIL || 'admin@school.edu').trim().toLowerCase();
 const ACTIVITY_LOG_RETENTION_DAYS = 15;
 const PROFESSOR_OWNED_TABLES = ['students', 'subjects', 'exams', 'sessions', 'logs'];
-
-function getRequiredBootstrapPassword(environmentName) {
-  const value = String(process.env[environmentName] || '');
-  if (value.length < 12) {
-    const error = new Error(
-      `${environmentName} must be set to at least 12 characters before creating default accounts.`,
-    );
-    error.code = 'AUTH_BOOTSTRAP_CONFIG_MISSING';
-    throw error;
-  }
-  return value;
-}
 
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -136,54 +128,28 @@ async function ensureRowPassword(table, idColumn, idValue, row, fallbackPassword
 
 async function ensureDefaultAuthRecords() {
   let sysAdmin = await getSysAdminRow();
-  let sysAdminBootstrapPassword = null;
-  if (!sysAdmin || !String(sysAdmin.password || '').trim()) {
-    sysAdminBootstrapPassword = getRequiredBootstrapPassword('AUTH_DEFAULT_SYSADMIN_PASSWORD');
-  }
   if (!sysAdmin) {
     const sysAdminResult = await query(
       `insert into public.superadmin (id, username, password, name, email, department)
        values ('main', 'sysadmin', $1, 'System Administrator', 'sysadmin@school.edu', null)
        returning id, username, password, name, email, department`,
-      [await hashPassword(sysAdminBootstrapPassword)],
+      [await hashPassword(DEFAULT_SYSADMIN_PASSWORD)],
     );
     sysAdmin = sysAdminResult.rows[0] || null;
   }
-  sysAdmin = await ensureRowPassword(
-    'superadmin',
-    'id',
-    'main',
-    sysAdmin,
-    sysAdminBootstrapPassword,
-  );
+  sysAdmin = await ensureRowPassword('superadmin', 'id', 'main', sysAdmin, DEFAULT_SYSADMIN_PASSWORD);
 
   let defaultProfessor = await getProfessorById('admin1');
-  let professorBootstrapPassword = null;
-  if (!defaultProfessor || !String(defaultProfessor.password || '').trim()) {
-    professorBootstrapPassword = getRequiredBootstrapPassword('AUTH_DEFAULT_PROFESSOR_PASSWORD');
-  }
   if (!defaultProfessor) {
-    const defaultProfessorUsername = String(
-      process.env.AUTH_DEFAULT_PROFESSOR_USERNAME || 'admin',
-    ).trim().toLowerCase();
-    const defaultProfessorEmail = String(
-      process.env.AUTH_DEFAULT_PROFESSOR_EMAIL || 'admin@school.edu',
-    ).trim().toLowerCase();
     const professorResult = await query(
       `insert into public.professors (id, username, password, name, email, department)
        values ('admin1', $1, $2, 'Administrator', $3, null)
        returning id, username, password, name, email, department, created_at`,
-      [defaultProfessorUsername, await hashPassword(professorBootstrapPassword), defaultProfessorEmail],
+      [DEFAULT_PASSWORD_USERNAME, await hashPassword(DEFAULT_PROFESSOR_PASSWORD), DEFAULT_PASSWORD_EMAIL],
     );
     defaultProfessor = professorResult.rows[0] || null;
   }
-  defaultProfessor = await ensureRowPassword(
-    'professors',
-    'id',
-    'admin1',
-    defaultProfessor,
-    professorBootstrapPassword,
-  );
+  defaultProfessor = await ensureRowPassword('professors', 'id', 'admin1', defaultProfessor, DEFAULT_PROFESSOR_PASSWORD);
 
   return {
     sysAdmin,

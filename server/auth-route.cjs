@@ -899,8 +899,7 @@ async function handleAuthRoute(req, res) {
     }
   } catch (error) {
     const connectivityIssue = isConnectivityIssue(error);
-    const message = (error?.code === 'AUTH_DB_CONFIG_MISSING'
-      || error?.code === 'AUTH_BOOTSTRAP_CONFIG_MISSING')
+    const message = error?.code === 'AUTH_DB_CONFIG_MISSING'
       ? error.message
       : toUserMessage(error, 'Unable to process authentication request.', { context: 'auth' });
     jsonResponse(res, connectivityIssue ? 503 : 500, { success: false, message, connectivityIssue });
