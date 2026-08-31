@@ -48,6 +48,7 @@ let _violationSocket = null;
 let _violationSocketReconnectTimer = null;
 let _monitorSessionPollInterval = null;
 let _monitorSessionPollInFlight = false;
+let _monitorEvidencePollInterval = null;
 let _monitorEvidenceRecords = [];
 let _monitorEvidencePollInFlight = false;
 let _lastMonitorEvidencePollAt = 0;
@@ -262,7 +263,7 @@ function renderViolationReviewAction(session, activity, index) {
   const evidence = getBestEvidenceForActivity(session?.id || '', activity);
   const reviewBadge = evidence
     ? `<span class="activity-log-review-badge tone-${getEvidenceReviewTone(evidence.reviewStatus)}">${escHtml(formatEvidenceReviewStatus(evidence.reviewStatus))}</span>`
-    : `<span class="activity-log-review-badge tone-missing">Replay unavailable</span>`;
+    : `<span class="activity-log-review-badge tone-missing">Replay processing</span>`;
   return `
     <div class="activity-log-review-row">
       <button
@@ -270,7 +271,7 @@ function renderViolationReviewAction(session, activity, index) {
         class="activity-log-review-btn"
         ${evidence ? '' : 'disabled'}
         onclick="openViolationReview('${escAttr(session?.id || '')}', ${index})"
-      >${evidence ? 'Review replay' : 'Replay unavailable'}</button>
+      >${evidence ? 'Review replay' : 'Preparing replay…'}</button>
       ${reviewBadge}
     </div>
   `;
@@ -916,6 +917,27 @@ function processIncomingViolationEvent(event) {
   if (_activeLogSessionId === entry.sessionId) refreshOpenStudentLog();
   if (currentSection === 'monitoring' && monitorExamId && monitorExamId === entry.examId) {
     pollMonitorSessions({ immediate: true });
+    refreshViolationEvidence({ examId: entry.examId, force: true, silent: false }).catch(() => {});
+  }
+}
+
+function processIncomingViolationEvidence(evidence) {
+  if (!evidence?.id) return;
+  const existingIndex = _monitorEvidenceRecords.findIndex(record => record.id === evidence.id);
+  if (existingIndex >= 0) _monitorEvidenceRecords[existingIndex] = evidence;
+  else _monitorEvidenceRecords.unshift(evidence);
+  _lastMonitorEvidencePollAt = Date.now();
+
+  if (currentSection === 'monitoring' && (!monitorExamId || evidence.examId === monitorExamId)) {
+    renderMonitoringSectionLive();
+    refreshOpenStudentLog();
+    if (_activeViolationReview?.sessionId === evidence.sessionId) {
+      const session = DB.getSession(_activeViolationReview.sessionId);
+      const activity = session?.activities?.[_activeViolationReview.activityIndex];
+      if (activity && getBestEvidenceForActivity(evidence.sessionId, activity)?.id === evidence.id) {
+        openViolationReview(_activeViolationReview.sessionId, _activeViolationReview.activityIndex);
+      }
+    }
   }
 }
 
@@ -7357,6 +7379,10 @@ function startMonitoring() {
   pollMonitorSessions({ immediate: true });
   refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true }).catch(() => {});
   _monitorSessionPollInterval = setInterval(() => pollMonitorSessions(), MONITOR_SESSION_POLL_MS);
+  _monitorEvidencePollInterval = setInterval(() => {
+    if (!monitorExamId) return;
+    refreshViolationEvidence({ examId: monitorExamId, silent: false }).catch(() => {});
+  }, MONITOR_EVIDENCE_POLL_MS);
   // Realtime session pushes drive the live monitoring UX. Keep a slow silent
   // fallback refresh in case the app server route becomes temporarily unavailable.
   monitorInterval = setInterval(refresh, 45000);
@@ -7366,6 +7392,7 @@ function startMonitoring() {
 function stopMonitoring() {
   if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
   if (_monitorSessionPollInterval) { clearInterval(_monitorSessionPollInterval); _monitorSessionPollInterval = null; }
+  if (_monitorEvidencePollInterval) { clearInterval(_monitorEvidencePollInterval); _monitorEvidencePollInterval = null; }
   const badge = document.getElementById('monitor-live-badge');
   if (badge) badge.classList.add('hidden');
 }
@@ -7574,6 +7601,10 @@ function startViolationEventStream() {
       }
       if (message?.type === 'violation' && message.payload) {
         processIncomingViolationEvent(message.payload);
+        return;
+      }
+      if (message?.type === 'violation-evidence' && message.payload) {
+        processIncomingViolationEvidence(message.payload);
       }
     } catch (_) {}
   });
@@ -10076,11 +10107,19 @@ async function refreshViolationEvidence(options = {}) {
   try {
     const result = await monitorApiRequest(`/api/monitor/violation-evidence?examId=${encodeURIComponent(examId)}`);
     if (!result.success) return _monitorEvidenceRecords;
+    const activeReviewWasWaiting = !!_activeViolationReview?.sessionId && !_activeViolationReview.evidenceId;
     _monitorEvidenceRecords = Array.isArray(result.evidence) ? result.evidence : [];
     _lastMonitorEvidencePollAt = Date.now();
     if (!options.silent && currentSection === 'monitoring') {
       renderMonitoringSectionLive();
       refreshOpenStudentLog();
+      if (activeReviewWasWaiting) {
+        const session = DB.getSession(_activeViolationReview.sessionId);
+        const activity = session?.activities?.[_activeViolationReview.activityIndex];
+        if (getBestEvidenceForActivity(_activeViolationReview.sessionId, activity)) {
+          openViolationReview(_activeViolationReview.sessionId, _activeViolationReview.activityIndex);
+        }
+      }
     }
     return _monitorEvidenceRecords;
   } finally {
@@ -10148,7 +10187,7 @@ function ensureViolationReviewModal() {
         <div id="violation-review-reviewed" class="violation-review-reviewed hidden">Replay reviewed. This decision can still be edited.</div>
         <div style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Last 10 seconds before detection</div>
         <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
-        <div id="violation-review-empty" class="violation-review-empty">Replay unavailable for this violation.</div>
+        <div id="violation-review-empty" class="violation-review-empty">Replay is processing.</div>
         <div id="violation-review-detail" class="violation-review-detail">Violation details appear here.</div>
         <textarea id="violation-review-notes" class="form-control violation-review-notes" placeholder="Optional review notes for this violation"></textarea>
       </div>
@@ -10199,7 +10238,7 @@ async function openViolationReview(sessionId, activityIndex) {
     ? ` Model ${metadata.modelVersion || 'YOLO'} reported ${Math.round(Number(metadata.confidence || 0) * 100)}% confidence after ${Number(metadata.frameHits || 0)} confirmed frames in ${Number(metadata.confirmationMs || 0)} ms (${metadata.policyMode || 'alert'} mode).`
     : '';
   setText('violation-review-detail', `${activity.detail || 'Violation recorded.'}${metadataDetail}`);
-  setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay unavailable');
+  setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay processing');
 
   const notesEl = document.getElementById('violation-review-notes');
   if (notesEl) notesEl.value = evidence?.reviewNotes || '';
@@ -10268,7 +10307,7 @@ async function openViolationReview(sessionId, activityIndex) {
     }
     if (empty) {
       empty.style.display = '';
-      empty.textContent = 'Replay unavailable for this violation. The warning remains in the audit trail, but no pre-violation clip was captured successfully.';
+      empty.textContent = 'The replay is still processing. This view will update automatically when the clip is ready.';
     }
     if (actions) actions.style.display = 'none';
   }

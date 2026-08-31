@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { getPool, query } = require('./db.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
-const { broadcastViolation } = require('./monitor-websocket.cjs');
+const { broadcastViolation, broadcastViolationEvidence } = require('./monitor-websocket.cjs');
 const {
   readEvidenceFile,
 } = require('./violation-evidence-store.cjs');
@@ -537,13 +537,15 @@ async function handleViolationEvidenceInsert(req, res, body) {
   );
 
   const summary = await getSessionWarningSummary(sessionId);
+  const evidence = {
+    ...normalizeEvidenceRow(insertResult.rows[0] || {}),
+    rawWarnings: summary.rawWarnings,
+    adjustedWarnings: summary.adjustedWarnings,
+  };
+  broadcastViolationEvidence(String(violationEvent.owner_admin_id || '').trim(), evidence);
   jsonResponse(res, 200, {
     success: true,
-    evidence: {
-      ...normalizeEvidenceRow(insertResult.rows[0] || {}),
-      rawWarnings: summary.rawWarnings,
-      adjustedWarnings: summary.adjustedWarnings,
-    },
+    evidence,
   });
 }
 

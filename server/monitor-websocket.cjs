@@ -140,6 +140,14 @@ function broadcastViolation(adminId, violation) {
   });
 }
 
+function broadcastViolationEvidence(adminId, evidence) {
+  if (!adminId || !evidence) return;
+  broadcastProfessorMessage(adminId, {
+    type: 'violation-evidence',
+    payload: evidence,
+  });
+}
+
 function attachSocketLifecycle(client) {
   const { socket } = client;
 
@@ -240,4 +248,5 @@ async function handleMonitorWebSocketUpgrade(req, socket, head) {
 module.exports = {
   handleMonitorWebSocketUpgrade,
   broadcastViolation,
+  broadcastViolationEvidence,
 };
