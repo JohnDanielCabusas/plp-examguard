@@ -1,10 +1,10 @@
 const DEFAULT_OBJECT_MONITORING = Object.freeze({
   enabled: false,
   mode: 'alert',
-  allowSecondaryComputer: false,
-  allowBooks: false,
 });
 
+// Mobile phones are the only restricted object. Mouse is learned solely as a
+// negative class so a phone-shaped desk mouse is not reported as a phone.
 const POLICY_RULES = Object.freeze({
   mobile_phone: {
     violationType: 'restricted_phone',
@@ -33,28 +33,6 @@ const POLICY_RULES = Object.freeze({
     backgroundMinimumMovement: 0.18,
     requiresVerification: true,
   },
-  laptop_monitor: {
-    violationType: 'secondary_computer',
-    label: 'Secondary computer or display',
-    allowKey: 'allowSecondaryComputer',
-    hitCount: 5,
-    windowMs: 5500,
-    absenceResetMs: 10000,
-  },
-  book_textbook: {
-    violationType: 'restricted_book',
-    label: 'Book or textbook',
-    allowKey: 'allowBooks',
-    hitCount: 2,
-    fastHitCount: 1,
-    fastConfidence: 0.82,
-    windowMs: 3000,
-    absenceResetMs: 7000,
-    minimumPeakConfidence: 0.3,
-    minimumAverageConfidence: 0.25,
-    calibrationBypassConfidence: 0.82,
-    requiresVerification: true,
-  },
 });
 
 export function normalizeObjectMonitoring(value = {}) {
@@ -63,8 +41,6 @@ export function normalizeObjectMonitoring(value = {}) {
     ...DEFAULT_OBJECT_MONITORING,
     enabled: !!value?.enabled,
     mode,
-    allowSecondaryComputer: !!value?.allowSecondaryComputer,
-    allowBooks: !!value?.allowBooks,
   };
 }
 

@@ -7,10 +7,9 @@ import * as ort from 'onnxruntime-web';
 const manifestPath = resolve(process.argv[2] || 'public/models/yolo-proctor-v1.json');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
 const mappings = manifest.policyMappings || {};
+const negativeMappings = manifest.negativeMappings || {};
 const classNames = Array.isArray(manifest.classNames) ? manifest.classNames : [];
-const requiredPolicies = manifest.detectorRole === 'phone-specialist'
-  ? new Set(['mobile_phone'])
-  : new Set(['mobile_phone', 'laptop_monitor', 'book_textbook']);
+const requiredPolicies = new Set(['mobile_phone']);
 
 assert.ok(classNames.length > 0, 'YOLO manifest must include model class names.');
 assert.equal(
@@ -25,6 +24,18 @@ for (const policyClass of requiredPolicies) {
   assert.ok(
     Object.values(mappings).includes(policyClass),
     `YOLO manifest is missing policy class: ${policyClass}`,
+  );
+}
+assert.deepEqual(
+  [...new Set(Object.values(mappings))],
+  ['mobile_phone'],
+  'Mobile phones must be the only restricted object class in the manifest.',
+);
+for (const rawClass of Object.keys(negativeMappings)) {
+  assert.ok(classNames.includes(rawClass), `Negative-mapped class is absent from model: ${rawClass}`);
+  assert.ok(
+    !Object.keys(mappings).includes(rawClass),
+    `Class cannot be both restricted and negative: ${rawClass}`,
   );
 }
 for (const [index, region] of (manifest.scanRegions || []).entries()) {

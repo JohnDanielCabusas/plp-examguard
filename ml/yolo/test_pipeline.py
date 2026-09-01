@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
+from dataset_config import TRAINED_CLASS_NAMES
 from prepare_openimages import (
     clipped_yolo_box,
     select_balanced_image_ids,
@@ -16,6 +17,7 @@ from train_export import (
     TUKLAS_CLASS_NAMES,
     detect_profile,
     sanitize_onnx_metadata,
+    sync_phone_specialist_manifest,
 )
 from train import validate_dataset_scale
 from promote_model import resolve_model_path, validate_training_report
@@ -52,25 +54,19 @@ class DatasetConversionTests(unittest.TestCase):
             detections_path = root / "detections.csv"
             classes_path.write_text(
                 "phone_id,Mobile phone\n"
-                "laptop_id,Laptop\n"
-                "monitor_id,Computer monitor\n"
-                "book_id,Book\n"
-                "person_id,Person\n",
+                "mouse_id,Computer mouse\n",
                 encoding="utf-8",
             )
             detections_path.write_text(
                 "ImageID,LabelName\n"
                 "phone_image,phone_id\n"
-                "laptop_image,laptop_id\n"
-                "monitor_image,monitor_id\n"
-                "book_image,book_id\n"
-                "person_image,person_id\n",
+                "mouse_image,mouse_id\n",
                 encoding="utf-8",
             )
             image_ids, counts = select_balanced_image_ids(
                 classes_path, detections_path, per_class_limit=1, seed=42
             )
-        self.assertEqual(len(image_ids), 5)
+        self.assertEqual(len(image_ids), 2)
         self.assertTrue(all(count == 1 for count in counts.values()))
 
     def test_multilabel_image_counts_toward_each_class_quota(self):
@@ -80,19 +76,13 @@ class DatasetConversionTests(unittest.TestCase):
             detections_path = root / "detections.csv"
             classes_path.write_text(
                 "phone_id,Mobile phone\n"
-                "laptop_id,Laptop\n"
-                "monitor_id,Computer monitor\n"
-                "book_id,Book\n"
-                "person_id,Person\n",
+                "mouse_id,Computer mouse\n",
                 encoding="utf-8",
             )
             detections_path.write_text(
                 "ImageID,LabelName\n"
                 "shared,phone_id\n"
-                "shared,laptop_id\n"
-                "shared,monitor_id\n"
-                "shared,book_id\n"
-                "shared,person_id\n",
+                "shared,mouse_id\n",
                 encoding="utf-8",
             )
             image_ids, counts = select_balanced_image_ids(
@@ -102,6 +92,28 @@ class DatasetConversionTests(unittest.TestCase):
         self.assertTrue(all(count == 1 for count in counts.values()))
 
 class ExportProfileTests(unittest.TestCase):
+    def test_syncs_phone_specialist_to_new_tuklas_artifact(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            specialist_path = root / "yolo-phone-specialist-v1.json"
+            specialist_path.write_text(
+                json.dumps({"detectorRole": "phone-specialist", "scanRegions": []}),
+                encoding="utf-8",
+            )
+            primary = {
+                "version": "tuklas-phone-mouse-yolo11n-v2",
+                "modelUrl": "/models/tuklas-yolo11n-phone-mouse-v2.onnx",
+                "sha256": "abc123",
+                "inputSize": 640,
+                "negativeConfidenceThresholds": {"mouse": 0.15},
+                "classNames": ["mobile_phone", "mouse"],
+            }
+            self.assertEqual(sync_phone_specialist_manifest(root, primary), specialist_path)
+            specialist = json.loads(specialist_path.read_text(encoding="utf-8"))
+            self.assertEqual(specialist["sha256"], "abc123")
+            self.assertEqual(specialist["classNames"], ["mobile_phone", "mouse"])
+            self.assertEqual(specialist["negativeMappings"], {"mouse": "mouse"})
+
     def test_sanitizes_local_user_paths_from_onnx_metadata(self):
         import onnx
         from onnx import TensorProto, helper
@@ -142,7 +154,7 @@ class ExportProfileTests(unittest.TestCase):
 
     def test_rejects_incomplete_custom_profile(self):
         with self.assertRaises(ValueError):
-            detect_profile(["mobile_phone", "laptop", "book", "person"], "auto")
+            detect_profile(["mobile_phone"], "auto")
 
 
 class ProductionDatasetTests(unittest.TestCase):
@@ -150,10 +162,7 @@ class ProductionDatasetTests(unittest.TestCase):
         audit = {
             "splits": {
                 split: {
-                    "images_by_class": {
-                        name: 5
-                        for name in ("mobile_phone", "laptop", "computer_monitor", "book", "person")
-                    }
+                    "images_by_class": {name: 5 for name in TRAINED_CLASS_NAMES}
                 }
                 for split in ("train", "val", "test")
             }
@@ -190,7 +199,7 @@ class ProductionDatasetTests(unittest.TestCase):
 
     @staticmethod
     def _production_report():
-        class_names = ("mobile_phone", "laptop", "computer_monitor", "book", "person")
+        class_names = TRAINED_CLASS_NAMES
         return {
             "dataset_audit": {
                 split: {

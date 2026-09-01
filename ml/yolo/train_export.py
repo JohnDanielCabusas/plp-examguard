@@ -12,7 +12,13 @@ from pathlib import Path
 
 import onnx
 
-from dataset_config import POLICY_MAPPINGS as TUKLAS_POLICY_MAPPINGS, YOLO_ROOT
+from dataset_config import (
+    NEGATIVE_CONFIDENCE_THRESHOLDS,
+    NEGATIVE_MAPPINGS as TUKLAS_NEGATIVE_MAPPINGS,
+    POLICY_MAPPINGS as TUKLAS_POLICY_MAPPINGS,
+    TRAINED_CLASS_NAMES,
+    YOLO_ROOT,
+)
 
 ULTRALYTICS_CONFIG_ROOT = YOLO_ROOT / "artifacts" / "ultralytics-config"
 ULTRALYTICS_CONFIG_ROOT.mkdir(parents=True, exist_ok=True)
@@ -26,11 +32,18 @@ COCO_POLICY_MAPPINGS = {
     # COCO commonly labels the back or edge of a handheld phone as a remote.
     # Policy confirmation still requires crop verification and temporal evidence.
     "remote": "mobile_phone",
-    "laptop": "laptop_monitor",
-    "tv": "laptop_monitor",
-    "book": "book_textbook",
 }
-TUKLAS_CLASS_NAMES = set(TUKLAS_POLICY_MAPPINGS) | {"person"}
+# The stock COCO checkpoint already ships a "mouse" class; reuse it as the
+# negative signal there instead of retraining. The custom TUKLAS profile uses
+# its own Open-Images-trained "mouse" class via TUKLAS_NEGATIVE_MAPPINGS.
+COCO_NEGATIVE_MAPPINGS = {
+    "mouse": "mouse",
+}
+# Required for a checkpoint to be auto-detected and exported as the "tuklas"
+# profile -- every class the custom detector was trained on, not just the
+# ones currently mapped to a policy violation, so a partially retrained or
+# mismatched checkpoint is never silently exported.
+TUKLAS_CLASS_NAMES = set(TRAINED_CLASS_NAMES)
 LOCAL_HOME_PATTERNS = (
     re.compile(r"(?i)\b[A-Z]:[\\/]+Users[\\/]+[^\\/\s'\";,}\]]+"),
     re.compile(r"(?i)(?<![A-Za-z0-9_.-])/(?:home|Users)/[^/\s'\";,}\]]+"),
@@ -39,6 +52,7 @@ LOCAL_HOME_PATTERNS = (
 PROFILES = {
     "coco": {
         "mappings": COCO_POLICY_MAPPINGS,
+        "negative_mappings": COCO_NEGATIVE_MAPPINGS,
         "name": "YOLO11n COCO proctoring baseline",
         "version": "yolo11n-coco-v1",
         "model_name": "yolo11n.onnx",
@@ -46,10 +60,11 @@ PROFILES = {
     },
     "tuklas": {
         "mappings": TUKLAS_POLICY_MAPPINGS,
+        "negative_mappings": TUKLAS_NEGATIVE_MAPPINGS,
         "name": "TUKLAS YOLO11n Open Images V7 detector",
-        "version": "tuklas-openimages-yolo11n-v1",
-        "model_name": "tuklas-yolo11n-openimages-v1.onnx",
-        "manifest_name": "yolo-proctor-tuklas-v1.json",
+        "version": "tuklas-phone-mouse-yolo11n-v2",
+        "model_name": "tuklas-yolo11n-phone-mouse-v2.onnx",
+        "manifest_name": "yolo-proctor-tuklas-v2.json",
     },
 }
 
@@ -120,7 +135,7 @@ def detect_profile(class_names: list[str], requested_profile: str) -> str:
         return "coco"
     raise ValueError(
         "Unable to detect a supported class profile. Expected either COCO names "
-        "or mobile_phone/laptop/computer_monitor/book/person."
+        f"or {', '.join(sorted(TUKLAS_CLASS_NAMES))}."
     )
 
 
@@ -141,14 +156,23 @@ def build_manifest(
 ) -> dict:
     profile = PROFILES[profile_name]
     mappings = profile["mappings"]
+    negative_mappings = profile.get("negative_mappings", {})
     required_classes = TUKLAS_CLASS_NAMES if profile_name == "tuklas" else set(mappings)
     missing_classes = sorted(required_classes - set(class_names))
     if missing_classes:
         raise ValueError(
             f"The {profile_name} model is missing required classes: {', '.join(missing_classes)}"
         )
-    if "person" in mappings:
+    if "person" in mappings or "person" in negative_mappings:
         raise ValueError("Person must remain a context class and cannot map to a violation.")
+    overlapping_classes = sorted(set(mappings) & set(negative_mappings))
+    if overlapping_classes:
+        raise ValueError(f"Class cannot be both restricted and negative: {overlapping_classes}")
+    missing_negative_sources = sorted(set(negative_mappings) - set(class_names))
+    if missing_negative_sources:
+        raise ValueError(
+            f"The {profile_name} model is missing negative classes: {', '.join(missing_negative_sources)}"
+        )
     return {
         "name": profile["name"],
         "version": version,
@@ -162,19 +186,52 @@ def build_manifest(
         "maxDetections": 20,
         "confidenceThresholds": {
             "mobile_phone": 0.12,
-            "laptop_monitor": 0.6,
-            "book_textbook": 0.16,
         },
         "verificationThresholds": {
             "mobile_phone": 0.24,
-            "laptop_monitor": 0.5,
-            "book_textbook": 0.26,
         },
         "verificationMargin": 0.03,
         "verificationPadding": 0.18,
         "policyMappings": mappings,
+        "negativeMappings": negative_mappings,
+        "negativeConfidenceThresholds": {
+            negative_class: NEGATIVE_CONFIDENCE_THRESHOLDS.get(negative_class, 0.2)
+            for negative_class in sorted(set(negative_mappings.values()))
+        },
         "classNames": class_names,
     }
+
+
+def sync_phone_specialist_manifest(
+    output_dir: Path,
+    primary_manifest: dict,
+) -> Path | None:
+    """Point the existing specialist profile at the newly exported TUKLAS model."""
+    specialist_path = output_dir / "yolo-phone-specialist-v1.json"
+    if not specialist_path.exists():
+        return None
+    specialist = json.loads(specialist_path.read_text(encoding="utf-8"))
+    specialist.update(
+        {
+            "version": f"{primary_manifest['version']}-specialist",
+            "modelProfile": "tuklas",
+            "detectorRole": "phone-specialist",
+            "modelUrl": primary_manifest["modelUrl"],
+            "sha256": primary_manifest["sha256"],
+            "inputSize": primary_manifest["inputSize"],
+            "policyMappings": TUKLAS_POLICY_MAPPINGS,
+            "negativeMappings": TUKLAS_NEGATIVE_MAPPINGS,
+            "negativeConfidenceThresholds": primary_manifest[
+                "negativeConfidenceThresholds"
+            ],
+            "classNames": primary_manifest["classNames"],
+        }
+    )
+    specialist_path.write_text(
+        json.dumps(specialist, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return specialist_path
 
 
 def main() -> None:
@@ -215,8 +272,15 @@ def main() -> None:
     )
     manifest_path = output_dir / manifest_name
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    specialist_path = (
+        sync_phone_specialist_manifest(output_dir, manifest)
+        if profile_name == "tuklas"
+        else None
+    )
     print(f"Exported staged model: {target_model}")
     print(f"Created staged manifest: {manifest_path}")
+    if specialist_path:
+        print(f"Updated phone specialist manifest: {specialist_path}")
     print("Run promote_model.py after metrics and webcam validation to activate it.")
 
 

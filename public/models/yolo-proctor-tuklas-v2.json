@@ -1,9 +1,9 @@
 {
   "name": "TUKLAS YOLO11n Open Images V7 detector",
-  "version": "tuklas-openimages-yolo11n-v1",
+  "version": "tuklas-phone-mouse-yolo11n-v2",
   "modelProfile": "tuklas",
-  "modelUrl": "/models/tuklas-yolo11n-openimages-v1.onnx",
-  "sha256": "bc673e49856a9702922ca2d659171ec50e3bc6d8a7c7153dd15c9e4c26e440ae",
+  "modelUrl": "/models/tuklas-yolo11n-phone-mouse-v2.onnx",
+  "sha256": "69975d7d1b2b64139759ca019f4cd0d1fcf9dcae957b0a204669043b1f967f8f",
   "inputSize": 640,
   "frameIntervalMs": 250,
   "defaultConfidence": 0.55,

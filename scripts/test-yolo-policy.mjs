@@ -28,14 +28,11 @@ function detection(objectClass, confidence = 0.9, boundingBox = null) {
 const normalized = normalizeObjectMonitoring({
   enabled: true,
   mode: 'enforce',
-  allowBooks: true,
   legacySetting: true,
 });
 assert.deepEqual(normalized, {
   enabled: true,
   mode: 'enforce',
-  allowSecondaryComputer: false,
-  allowBooks: true,
 });
 
 const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
@@ -59,15 +56,6 @@ const resetEvents = [];
 resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13000 }));
 resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13500 }));
 assert.equal(resetEvents.length, 1, 'An object may emit again only after a confirmed absence.');
-
-const authorizedPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', allowBooks: true, calibrationMs: 0 });
-for (let index = 0; index < 6; index += 1) {
-  assert.equal(
-    authorizedPolicy.evaluate([detection('book_textbook')], { now: 1000 + (index * 1000) }).length,
-    0,
-    'Authorized books must not emit restricted-object events.',
-  );
-}
 
 const shadowPolicy = new YoloObjectPolicy({ enabled: true, mode: 'shadow', calibrationMs: 0 });
 let shadowEvents = [];
@@ -171,41 +159,6 @@ assert.equal(
   faceOverlapPhoneEvents.length,
   1,
   'A clearly sized phone held in front of the student must not be suppressed by face filtering.',
-);
-
-const bookPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
-let bookEvents = [];
-for (let index = 0; index < 2; index += 1) {
-  bookEvents = bookEvents.concat(
-    bookPolicy.evaluate([detection('book_textbook', 0.55)], { now: 1000 + (index * 500) }),
-  );
-}
-assert.equal(bookEvents.length, 1, 'A verified book must confirm after two scans.');
-assert.equal(bookEvents[0].violationType, 'restricted_book');
-
-const calibratedBookPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
-const shelfBookBox = { x: 500, y: 80, width: 90, height: 160, frameWidth: 640, frameHeight: 480 };
-for (let index = 0; index < 6; index += 1) {
-  assert.equal(
-    calibratedBookPolicy.evaluate(
-      [detection('book_textbook', 0.7, shelfBookBox)],
-      { now: 1000 + (index * 700) },
-    ).length,
-    0,
-    'A stationary background book must not alert during calibration.',
-  );
-}
-assert.equal(
-  calibratedBookPolicy.evaluate([detection('book_textbook', 0.7, shelfBookBox)], { now: 6000 }).length,
-  0,
-  'A calibrated bookshelf region must remain non-violating.',
-);
-const heldBookBox = { x: 210, y: 180, width: 180, height: 220, frameWidth: 640, frameHeight: 480 };
-calibratedBookPolicy.evaluate([detection('book_textbook', 0.7, heldBookBox)], { now: 6500 });
-assert.equal(
-  calibratedBookPolicy.evaluate([detection('book_textbook', 0.7, heldBookBox)], { now: 6900 }).length,
-  1,
-  'A book introduced outside the calibrated shelf region must still alert.',
 );
 
 const calibratedPolicy = new YoloObjectPolicy({ enabled: true, mode: 'alert' });

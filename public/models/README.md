@@ -11,14 +11,21 @@ Model URLs must include a versioned filename or query string. The production
 server caches ONNX files as immutable assets, while the active manifest is
 always revalidated so a promoted model can select a new cached URL safely.
 
-The active model must map all of these policy classes:
+The active model must map this policy class:
 
 - `mobile_phone`
-- `laptop_monitor`
-- `book_textbook`
 
-`person` may be present in model classes for context, but it must never appear
-in `policyMappings`. A person detection alone is not a cheating violation.
+`mobile_phone` is the only restricted object. `person` may be present in model
+classes for context, but it must never appear in `policyMappings`. A person
+detection alone is not a cheating violation.
+
+A model may also declare `negativeMappings` (e.g. `{"mouse": "mouse"}`) for
+raw classes that must never be treated as a violation but exist to suppress a
+restricted class's false positives at the same detector box -- for example, a
+computer mouse's shape being confused for a mobile phone. `negativeMappings`
+must never overlap with `policyMappings`, and `person` must never appear
+there either. See `ml/yolo/dataset_config.py` and
+`src/lib/proctoring/yolo/yoloWorker.js` for how negative classes are used.
 
 The browser verifies the model SHA-256 before inference. Every restricted
 candidate must also pass isolated-crop and temporal policy checks before it can

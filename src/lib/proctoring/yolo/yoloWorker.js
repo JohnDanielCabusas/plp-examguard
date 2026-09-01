@@ -9,6 +9,8 @@ let sourceContext = null;
 let verificationCanvas = null;
 let verificationContext = null;
 let scanRegionIndex = 0;
+let negativeClassIndexCache = null;
+let negativeClassIndexCacheManifest = null;
 
 function intersectionOverUnion(a, b) {
   const left = Math.max(a.x, b.x);
@@ -202,6 +204,29 @@ function getPolicyClass(rawClass) {
   return manifest.policyMappings?.[rawClass] || '';
 }
 
+// Negative classes (e.g. a computer mouse) are never restricted themselves;
+// they exist so that phone-shaped desk objects out-compete a false
+// "mobile_phone" detection instead of being reported as one.
+function getNegativeClass(rawClass) {
+  return manifest.negativeMappings?.[rawClass] || '';
+}
+
+// A YOLO anchor only ever reports the single highest-scoring class. A
+// confidently (mis)classified "cell phone" anchor can outscore "mouse" at
+// that exact box and never let "mouse" win the argmax at all, so a negative
+// class can't rely on separately winning its own detection to compete with
+// the restricted class. Indices are looked up directly instead so the raw
+// mouse score at that same anchor can be read regardless of which class won.
+function negativeClassIndices() {
+  if (negativeClassIndexCacheManifest !== manifest) {
+    negativeClassIndexCacheManifest = manifest;
+    negativeClassIndexCache = (manifest.classNames || [])
+      .map((rawClass, index) => ({ index, negativeClass: getNegativeClass(rawClass) }))
+      .filter(entry => entry.negativeClass);
+  }
+  return negativeClassIndexCache;
+}
+
 function getContextClass(rawClass) {
   return rawClass === 'person' ? 'person' : '';
 }
@@ -217,6 +242,31 @@ function getConfidenceThreshold(rawClass, objectClass) {
 
 function getContextConfidenceThreshold(contextClass) {
   return Number(manifest.contextConfidenceThresholds?.[contextClass] ?? 0.25);
+}
+
+function getNegativeConfidenceThreshold(negativeClass) {
+  return Number(manifest.negativeConfidenceThresholds?.[negativeClass] ?? 0.2);
+}
+
+function detectionThreshold(objectClass, contextClass, negativeClass, rawClass) {
+  if (objectClass) return getConfidenceThreshold(rawClass, objectClass);
+  if (contextClass) return getContextConfidenceThreshold(contextClass);
+  return getNegativeConfidenceThreshold(negativeClass);
+}
+
+// A restricted-object detection that sits on top of an equally or more
+// confident negative detection (e.g. "cell phone" and "mouse" boxes on the
+// same desk object) is the negative object, not contraband.
+function suppressNegativeMatches(detections) {
+  const negatives = detections.filter(candidate => candidate.negativeClass);
+  if (!negatives.length) return detections;
+  return detections.filter(detection => {
+    if (!detection.objectClass) return true;
+    return !negatives.some(negative => (
+      Number(negative.confidence || 0) >= Number(detection.confidence || 0)
+      && intersectionOverUnion(negative.boundingBox, detection.boundingBox) >= 0.45
+    ));
+  });
 }
 
 function parseChannelFirstOutput(output, transform) {
@@ -238,14 +288,29 @@ function parseChannelFirstOutput(output, transform) {
       }
     }
 
-    const rawClass = manifest.classNames?.[bestClassIndex] || String(bestClassIndex);
-    const objectClass = getPolicyClass(rawClass);
-    const contextClass = getContextClass(rawClass);
-    if (!objectClass && !contextClass) continue;
-    const threshold = objectClass
-      ? getConfidenceThreshold(rawClass, objectClass)
-      : getContextConfidenceThreshold(contextClass);
-    if (bestScore < threshold) continue;
+    let rawClass = manifest.classNames?.[bestClassIndex] || String(bestClassIndex);
+    let objectClass = getPolicyClass(rawClass);
+    let contextClass = getContextClass(rawClass);
+    let negativeClass = getNegativeClass(rawClass);
+    let finalScore = bestScore;
+
+    if (objectClass) {
+      for (const candidate of negativeClassIndices()) {
+        const negativeScore = output.data[((candidate.index + 4) * anchors) + anchor];
+        if (negativeScore >= getNegativeConfidenceThreshold(candidate.negativeClass)) {
+          rawClass = manifest.classNames[candidate.index];
+          objectClass = '';
+          contextClass = '';
+          negativeClass = candidate.negativeClass;
+          finalScore = negativeScore;
+          break;
+        }
+      }
+    }
+
+    if (!objectClass && !contextClass && !negativeClass) continue;
+    const threshold = detectionThreshold(objectClass, contextClass, negativeClass, rawClass);
+    if (finalScore < threshold) continue;
 
     const centerX = output.data[anchor];
     const centerY = output.data[anchors + anchor];
@@ -259,7 +324,7 @@ function parseChannelFirstOutput(output, transform) {
       transform,
     );
     if (boundingBox.width < 4 || boundingBox.height < 4) continue;
-    detections.push({ rawClass, objectClass, contextClass, confidence: bestScore, boundingBox });
+    detections.push({ rawClass, objectClass, contextClass, negativeClass, confidence: finalScore, boundingBox });
   }
   return detections;
 }
@@ -278,10 +343,9 @@ function parseEndToEndOutput(output, transform) {
     const rawClass = manifest.classNames?.[classIndex] || String(classIndex);
     const objectClass = getPolicyClass(rawClass);
     const contextClass = getContextClass(rawClass);
-    if (!objectClass && !contextClass) continue;
-    const threshold = objectClass
-      ? getConfidenceThreshold(rawClass, objectClass)
-      : getContextConfidenceThreshold(contextClass);
+    const negativeClass = getNegativeClass(rawClass);
+    if (!objectClass && !contextClass && !negativeClass) continue;
+    const threshold = detectionThreshold(objectClass, contextClass, negativeClass, rawClass);
     if (confidence < threshold) continue;
     const boundingBox = mapBoundingBox(
       output.data[offset],
@@ -291,7 +355,7 @@ function parseEndToEndOutput(output, transform) {
       transform,
     );
     if (boundingBox.width < 4 || boundingBox.height < 4) continue;
-    detections.push({ rawClass, objectClass, contextClass, confidence, boundingBox });
+    detections.push({ rawClass, objectClass, contextClass, negativeClass, confidence, boundingBox });
   }
   return detections;
 }
@@ -301,11 +365,12 @@ function parseOutput(output, transform) {
   const detections = dimensions.length === 3 && dimensions[2] === 6
     ? parseEndToEndOutput(output, transform)
     : parseChannelFirstOutput(output, transform);
-  return nonMaximumSuppression(
+  const suppressed = nonMaximumSuppression(
     detections,
     Number(manifest.nmsThreshold || 0.45),
     Number(manifest.maxDetections || 20),
   );
+  return suppressNegativeMatches(suppressed);
 }
 
 function getPolicyScores(output) {
@@ -313,14 +378,21 @@ function getPolicyScores(output) {
   const scores = {};
   if (dimensions.length !== 3) return scores;
 
+  // Negative classes (e.g. "mouse") are tracked under a "negative:" prefixed
+  // key so a verification crop that scores higher for the negative than the
+  // restricted class competes it out via the margin check below, without
+  // colliding with an actual policy class of the same name.
   if (Number(dimensions[2] || 0) === 6) {
     const rows = Number(dimensions[1] || 0);
     for (let row = 0; row < rows; row += 1) {
       const offset = row * 6;
       const classIndex = Math.round(Number(output.data[offset + 5] || 0));
-      const objectClass = getPolicyClass(manifest.classNames?.[classIndex] || String(classIndex));
-      if (!objectClass) continue;
-      scores[objectClass] = Math.max(Number(scores[objectClass] || 0), Number(output.data[offset + 4] || 0));
+      const rawClass = manifest.classNames?.[classIndex] || String(classIndex);
+      const objectClass = getPolicyClass(rawClass);
+      const negativeClass = objectClass ? '' : getNegativeClass(rawClass);
+      const scoreKey = objectClass || (negativeClass && `negative:${negativeClass}`);
+      if (!scoreKey) continue;
+      scores[scoreKey] = Math.max(Number(scores[scoreKey] || 0), Number(output.data[offset + 4] || 0));
     }
     return scores;
   }
@@ -329,14 +401,17 @@ function getPolicyScores(output) {
   const anchors = Number(dimensions[2] || 0);
   const classCount = channels - 4;
   for (let classIndex = 0; classIndex < classCount; classIndex += 1) {
-    const objectClass = getPolicyClass(manifest.classNames?.[classIndex] || String(classIndex));
-    if (!objectClass) continue;
-    let bestScore = Number(scores[objectClass] || 0);
+    const rawClass = manifest.classNames?.[classIndex] || String(classIndex);
+    const objectClass = getPolicyClass(rawClass);
+    const negativeClass = objectClass ? '' : getNegativeClass(rawClass);
+    const scoreKey = objectClass || (negativeClass && `negative:${negativeClass}`);
+    if (!scoreKey) continue;
+    let bestScore = Number(scores[scoreKey] || 0);
     const offset = (classIndex + 4) * anchors;
     for (let anchor = 0; anchor < anchors; anchor += 1) {
       bestScore = Math.max(bestScore, Number(output.data[offset + anchor] || 0));
     }
-    scores[objectClass] = bestScore;
+    scores[scoreKey] = bestScore;
   }
   return scores;
 }
@@ -416,7 +491,7 @@ async function verifyDetections(detections, transform) {
       ?? manifest.defaultConfidence
       ?? 0.55,
     );
-    const supportsTightRetry = ['mobile_phone', 'book_textbook'].includes(detection.objectClass);
+    const supportsTightRetry = detection.objectClass === 'mobile_phone';
     if (
       detection.objectClass === 'mobile_phone'
       && Number(scores[detection.objectClass] || 0) < threshold
@@ -546,3 +621,12 @@ self.addEventListener('message', async (event) => {
     });
   }
 });
+
+// Exported purely for the Node-side regression test in
+// scripts/test-yolo-worker-parsing.mjs. These bindings are unused by the
+// browser Worker runtime itself and add no behavior there.
+export function __setManifestForTesting(nextManifest) {
+  manifest = nextManifest;
+  negativeClassIndexCacheManifest = null;
+}
+export { parseOutput, suppressNegativeMatches };

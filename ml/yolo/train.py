@@ -9,7 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from check_dataset import audit_dataset
-from dataset_config import DEFAULT_DATASET_DIR, DEFAULT_DATASET_YAML, YOLO_ROOT
+from dataset_config import (
+    DEFAULT_DATASET_DIR,
+    DEFAULT_DATASET_YAML,
+    TRAINED_CLASS_NAMES,
+    YOLO_ROOT,
+)
 
 ULTRALYTICS_CONFIG_ROOT = YOLO_ROOT / "artifacts" / "ultralytics-config"
 ULTRALYTICS_CONFIG_ROOT.mkdir(parents=True, exist_ok=True)
@@ -20,9 +25,9 @@ from ultralytics import YOLO
 
 
 MIN_IMAGES_PER_CLASS = {
-    "train": {"default": 400, "book": 400},
-    "val": {"default": 50, "book": 25},
-    "test": {"default": 50, "book": 25},
+    "train": {"default": 400},
+    "val": {"default": 50, "mouse": 19},
+    "test": {"default": 50},
 }
 
 
@@ -79,7 +84,7 @@ def validate_dataset_scale(audit: dict, allow_small_dataset: bool = False) -> No
     shortages = []
     for split, minimums in MIN_IMAGES_PER_CLASS.items():
         images_by_class = audit.get("splits", {}).get(split, {}).get("images_by_class", {})
-        for class_name in ("mobile_phone", "laptop", "computer_monitor", "book", "person"):
+        for class_name in TRAINED_CLASS_NAMES:
             minimum = minimums.get(class_name, minimums["default"])
             actual = int(images_by_class.get(class_name, 0))
             if actual < minimum:

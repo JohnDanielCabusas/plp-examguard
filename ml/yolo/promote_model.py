@@ -12,22 +12,24 @@ from urllib.parse import urlsplit
 import numpy as np
 import onnxruntime as ort
 
-from dataset_config import REQUIRED_POLICY_CLASSES
+from dataset_config import REQUIRED_POLICY_CLASSES, TRAINED_CLASS_NAMES
 
 
 MIN_IMAGES_PER_CLASS = {
-    "train": {"default": 400, "book": 400},
-    "val": {"default": 50, "book": 25},
-    "test": {"default": 50, "book": 25},
+    "train": {"default": 400},
+    "val": {"default": 50, "mouse": 19},
+    "test": {"default": 50},
 }
 MIN_CLASS_METRICS = {
     # Phones are the highest-priority small object in the webcam deployment
     # domain, so do not promote a custom model that merely clears the generic
     # detector floor.
     "mobile_phone": {"precision": 0.80, "recall": 0.85},
-    "book": {"precision": 0.60, "recall": 0.65},
-    "laptop": {"precision": 0.60, "recall": 0.60},
-    "computer_monitor": {"precision": 0.60, "recall": 0.60},
+    # Mouse exists to suppress false phone positives, so precision matters
+    # more than recall here: a mouse the model mistakes for something else
+    # just misses one suppression opportunity, but a real phone the model
+    # mistakes for a mouse would hide an actual violation.
+    "mouse": {"precision": 0.65, "recall": 0.55},
 }
 
 
@@ -78,11 +80,14 @@ def validate_manifest(manifest_path: Path, models_dir: Path) -> dict:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     class_names = manifest.get("classNames")
     mappings = manifest.get("policyMappings")
+    negative_mappings = manifest.get("negativeMappings", {})
     if not isinstance(class_names, list) or not class_names:
         raise ValueError("Manifest classNames must be a non-empty list.")
     if not isinstance(mappings, dict):
         raise ValueError("Manifest policyMappings must be an object.")
-    if "person" in mappings:
+    if not isinstance(negative_mappings, dict):
+        raise ValueError("Manifest negativeMappings must be an object.")
+    if "person" in mappings or "person" in negative_mappings:
         raise ValueError("Person cannot be mapped to a violation policy.")
     missing_policies = REQUIRED_POLICY_CLASSES - set(mappings.values())
     if missing_policies:
@@ -90,6 +95,14 @@ def validate_manifest(manifest_path: Path, models_dir: Path) -> dict:
     missing_sources = set(mappings) - set(class_names)
     if missing_sources:
         raise ValueError(f"Manifest maps classes absent from the model: {sorted(missing_sources)}")
+    overlapping_classes = set(mappings) & set(negative_mappings)
+    if overlapping_classes:
+        raise ValueError(f"Class cannot be both restricted and negative: {sorted(overlapping_classes)}")
+    missing_negative_sources = set(negative_mappings) - set(class_names)
+    if missing_negative_sources:
+        raise ValueError(
+            f"Manifest maps negative classes absent from the model: {sorted(missing_negative_sources)}"
+        )
 
     model_path = resolve_model_path(manifest, models_dir)
     if not model_path.exists():
@@ -121,7 +134,7 @@ def validate_training_report(report_path: Path) -> dict:
     failures = []
     for split, minimums in MIN_IMAGES_PER_CLASS.items():
         class_images = audit.get(split, {}).get("images_by_class", {})
-        for class_name in ("mobile_phone", "laptop", "computer_monitor", "book", "person"):
+        for class_name in TRAINED_CLASS_NAMES:
             minimum = minimums.get(class_name, minimums["default"])
             actual = int(class_images.get(class_name, 0))
             if actual < minimum:

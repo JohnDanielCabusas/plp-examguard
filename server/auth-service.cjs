@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { promisify } = require('util');
-const { getPool, query } = require('./db.cjs');
+const { connect, query } = require('./db.cjs');
 
 const pbkdf2 = promisify(crypto.pbkdf2);
 
@@ -439,7 +439,7 @@ async function recoverProfessorOwnership(professor) {
   }
 
   const [{ candidateId }] = recoverable;
-  const client = await getPool().connect();
+  const client = await connect();
 
   try {
     await client.query('begin');

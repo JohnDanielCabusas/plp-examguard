@@ -24,6 +24,14 @@ function resolvePort(...candidates) {
   return 4173;
 }
 
+function ignoreNonFrontendWatchPath(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  return /(?:^|\/)\.venv(?:\/|$)/.test(normalized)
+    || /(?:^|\/)ml(?:\/|$)/.test(normalized)
+    || /(?:^|\/)weights(?:\/|$)/.test(normalized)
+    || /(?:^|\/)__pycache__(?:\/|$)/.test(normalized);
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const host = resolveHost(env);
@@ -87,6 +95,17 @@ export default defineConfig(({ mode }) => {
       port,
       strictPort: false,
       allowedHosts: true,
+      // A Vite full reload during a live exam is indistinguishable from a
+      // student refresh and can trigger the exam's anti-refresh submission.
+      // Keep every student exam stable; developers refresh deliberately after
+      // making changes instead of Vite reloading connected exam clients.
+      hmr: false,
+      // The Python YOLO environment can contain tens of thousands of files.
+      // Watching it exhausts Windows handles and makes Vite appear stuck even
+      // though the HTTP port is already listening.
+      watch: {
+        ignored: ignoreNonFrontendWatchPath,
+      },
     },
     preview: {
       host,

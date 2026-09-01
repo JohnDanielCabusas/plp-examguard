@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const path = require('path');
-const { getPool, query } = require('./db.cjs');
+const { connect, query } = require('./db.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const { broadcastViolation, broadcastViolationEvidence } = require('./monitor-websocket.cjs');
 const {
@@ -610,7 +610,7 @@ async function handleViolationEvidenceReview(req, res, evidenceId, body) {
   if (reviewStatus === 'confirmed') warningAdjustment = 0;
   if (reviewStatus === 'dismissed' && warningAdjustment === 0) warningAdjustment = -1;
 
-  const client = await getPool().connect();
+  const client = await connect();
   let updatedEvidence = null;
   let updatedSession = null;
   let reopened = false;
@@ -846,21 +846,21 @@ async function handleMonitorRoute(req, res) {
       } catch {
         return badRequest(res, 'Invalid JSON body.');
       }
-      return handleViolationInsert(req, res, body);
+      return await handleViolationInsert(req, res, body);
     }
 
     if (pathname === '/api/monitor/violations') {
       if (req.method !== 'GET') return methodNotAllowed(res);
-      return handleViolationList(req, res, url);
+      return await handleViolationList(req, res, url);
     }
 
     if (pathname === '/api/monitor/sessions') {
       if (req.method !== 'GET') return methodNotAllowed(res);
-      return handleSessionList(req, res, url);
+      return await handleSessionList(req, res, url);
     }
 
     if (pathname === '/api/monitor/violation-evidence') {
-      if (req.method === 'GET') return handleViolationEvidenceList(req, res, url);
+      if (req.method === 'GET') return await handleViolationEvidenceList(req, res, url);
       if (req.method === 'POST') {
         let body;
         try {
@@ -868,7 +868,7 @@ async function handleMonitorRoute(req, res) {
         } catch {
           return badRequest(res, 'Invalid JSON body.');
         }
-        return handleViolationEvidenceInsert(req, res, body);
+        return await handleViolationEvidenceInsert(req, res, body);
       }
       return methodNotAllowed(res);
     }
@@ -881,17 +881,17 @@ async function handleMonitorRoute(req, res) {
       } catch {
         return badRequest(res, 'Invalid JSON body.');
       }
-      return handleViolationEvidenceReview(req, res, decodeURIComponent(evidenceReviewMatch[1]), body);
+      return await handleViolationEvidenceReview(req, res, decodeURIComponent(evidenceReviewMatch[1]), body);
     }
 
     if (evidenceFileMatch) {
       if (req.method !== 'GET') return methodNotAllowed(res);
-      return handleViolationEvidenceFile(req, res, decodeURIComponent(evidenceFileMatch[1]));
+      return await handleViolationEvidenceFile(req, res, decodeURIComponent(evidenceFileMatch[1]));
     }
 
     if (pathname === '/api/monitor/stream') {
       if (req.method !== 'GET') return methodNotAllowed(res);
-      return handleMonitorStream(req, res);
+      return await handleMonitorStream(req, res);
     }
 
     return false;

@@ -5,14 +5,10 @@ and promotion pipeline described in `TUKLAS_Open_Images_V7_YOLO_Guide.md`.
 The target classes are:
 
 - `mobile_phone`
-- `laptop`
-- `computer_monitor`
-- `book`
-- `person`
+- `mouse` (negative-only; never a violation)
 
-`person` is retained as model context but is never mapped directly to a
-violation. The professor's exam policy still determines whether computers and
-books are permitted.
+Mobile phones are the only restricted objects. Mouse is trained as an explicit
+alternative so phone-shaped desk mice can suppress false phone detections.
 
 ## 1. Set up Python
 
@@ -57,13 +53,16 @@ download so these files are not fetched and parsed again.
 ```
 
 The defaults request up to 600 images per class for training and 50 per class
-for validation and testing. The 50-image evaluation target reflects the
-smallest available official validation class while keeping all splits balanced.
+for validation and testing. Open Images V7 contains only 19 unique mouse images
+in its official validation split, so the preparation script keeps 50 phone
+validation images and uses all 19 mouse validation images without duplicating
+images or mixing official splits.
 Deduplication means the final total image count can be lower.
 Open Images' official train, validation, and test splits remain separate.
-Production training refuses datasets with fewer than 400 train images or 50
-validation/test images for any class. `--allow-small-dataset` exists only for
-pipeline smoke tests and its output must not be promoted.
+Production training refuses datasets with fewer than 400 train images, 50
+phone validation/test images, 19 mouse validation images, or 50 mouse test
+images. `--allow-small-dataset` exists only for pipeline smoke tests and its
+output must not be promoted.
 
 Generated data, model runs, and weights are ignored by Git. Open Images V7
 images are licensed under CC BY 2.0; the generated metadata retains each Open
@@ -84,13 +83,12 @@ also writes confusion matrices and plots under `ml/yolo/runs/`.
 
 Before export, compare phone recall and false positives with the COCO baseline.
 The custom model must be tested on consent-based webcam scenes containing phone
-fronts, backs, cases, partial phones, books, monitors, the known shelf, and
-normal no-object scenes. Similar frames from one recording must stay in one
-split.
+fronts, backs, cases, partial phones, computer mice, the known shelf, and normal
+no-phone scenes. Similar frames from one recording must stay in one split.
 
-Do not automatically filter Open Images boxes to approximate webcam scenes. A
-curation experiment reduced held-book recall, so targeted, consent-based webcam
-examples should instead be added and audited as a separate dataset source.
+Do not automatically filter Open Images boxes to approximate webcam scenes.
+Targeted, consent-based webcam examples should instead be added and audited as
+a separate dataset source.
 
 ## 5. Test the trained weights with a webcam
 
@@ -111,10 +109,10 @@ Press `Q` in the prediction window to close it.
 
 This creates versioned staged assets without changing the active exam model:
 
-- `public/models/tuklas-yolo11n-openimages-v1.onnx`
-- `public/models/yolo-proctor-tuklas-v1.json`
+- `public/models/tuklas-yolo11n-phone-mouse-v2.onnx`
+- `public/models/yolo-proctor-tuklas-v2.json`
 
-The browser runtime automatically consumes the five custom class names through
+The browser runtime automatically consumes the two custom class names through
 the manifest. The existing object confirmation, crop verification, warning,
 and professor-notification policies remain unchanged.
 
@@ -131,8 +129,7 @@ visits use the browser cache.
 When the active detector is the COCO baseline, the browser also starts the
 staged TUKLAS model as a slower phone-only specialist after primary monitoring
 is ready. Only its `mobile_phone` output is consumed. This improves coverage of
-phone backs, cases, dark screens, and partial views while COCO continues to
-handle laptops, monitors, and books. Specialist candidates still require crop
+phone backs, cases, dark screens, and partial views. Specialist candidates still require crop
 verification and temporal confirmation. Small or ambiguous candidates require
 actual object movement, while a clearly sized stationary phone requires an extra
 confirmed frame before a violation is issued. Objects pinned to a frame edge
@@ -157,7 +154,7 @@ First run a dry validation and the JavaScript regression suite:
 
 ```powershell
 .\.venv\Scripts\python.exe ml/yolo/promote_model.py `
-  --manifest public/models/yolo-proctor-tuklas-v1.json `
+  --manifest public/models/yolo-proctor-tuklas-v2.json `
   --report ml/yolo/runs/tuklas-openimages-yolo11n/tuklas-training-report.json `
   --dry-run
 
@@ -169,7 +166,7 @@ After metrics, contact sheets, webcam tests, and browser tests are accepted:
 
 ```powershell
 .\.venv\Scripts\python.exe ml/yolo/promote_model.py `
-  --manifest public/models/yolo-proctor-tuklas-v1.json `
+  --manifest public/models/yolo-proctor-tuklas-v2.json `
   --report ml/yolo/runs/tuklas-openimages-yolo11n/tuklas-training-report.json
 ```
 
@@ -178,13 +175,12 @@ atomically replacing `yolo-proctor-v1.json`. Hard-refresh active exam tabs after
 promotion so they load the new manifest and model.
 For Open Images models it also rejects undersized datasets and held-out test
 metrics below the configured per-class precision/recall floors. Mobile-phone
-promotion is held to the stricter floor of 0.80 precision and 0.85 recall. A webcam test
-with phone fronts, backs, edges, books, and the known shelf is still required
+promotion is held to the stricter floor of 0.80 precision and 0.85 recall.
+Mouse must also clear its negative-class precision/recall gate. A webcam test
+with phone fronts, backs, edges, several computer mice, and the known shelf is still required
 because public-image metrics cannot measure the deployment camera domain.
-If any restricted class fails its gate, leave the staged manifest in place and
-keep COCO active until targeted webcam data and another training run improve the
-failing class. Never promote only because one class, such as mobile phone,
-performs well.
+If phone or mouse fails its gate, leave the staged manifest in place and keep
+COCO active until targeted webcam data and another training run improve it.
 
 ## 8. Roll back to COCO
 

@@ -77,7 +77,7 @@ alter table if exists public.sessions add column if not exists camera_snapshots 
 alter table if exists public.sessions add column if not exists submit_reason text;
 alter table if exists public.sessions drop constraint if exists sessions_submit_reason_check;
 alter table if exists public.sessions add constraint sessions_submit_reason_check
-  check (submit_reason is null or submit_reason in ('manual', 'violations', 'timeout', 'force_submit', 'exam_closed'));
+  check (submit_reason is null or submit_reason in ('manual', 'violations', 'timeout', 'force_submit', 'exam_closed', 'refresh'));
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.exams add column if not exists exam_policies jsonb not null default '[]'::jsonb;

@@ -17,6 +17,7 @@ from PIL import Image
 from dataset_config import (
     DEFAULT_DATASET_DIR,
     DEFAULT_SAMPLES_PER_CLASS,
+    OFFICIAL_CLASS_IMAGE_LIMITS,
     OPEN_IMAGES_SPLITS,
     OPEN_IMAGES_TO_ID,
     TARGET_CLASSES,
@@ -26,7 +27,7 @@ from dataset_config import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare a balanced five-class Open Images V7 YOLO dataset."
+        description="Prepare a balanced phone/mouse Open Images V7 YOLO dataset."
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_DATASET_DIR)
     parser.add_argument("--train-per-class", type=int, default=DEFAULT_SAMPLES_PER_CLASS["train"])
@@ -182,7 +183,9 @@ def select_balanced_image_ids(
     detections_path: Path,
     per_class_limit: int,
     seed: int,
+    per_class_limits: dict[str, int] | None = None,
 ) -> tuple[list[str], Counter]:
+    per_class_limits = per_class_limits or {}
     target_names = {class_name for class_name, _ in TARGET_CLASSES}
     label_to_class = {}
     with classes_path.open("r", encoding="utf-8", newline="") as file_handle:
@@ -193,7 +196,8 @@ def select_balanced_image_ids(
     if missing_names:
         raise ValueError(f"Open Images metadata is missing classes: {sorted(missing_names)}")
 
-    reservoir_size = max(100, per_class_limit * 4)
+    largest_limit = max([per_class_limit, *per_class_limits.values()])
+    reservoir_size = max(100, largest_limit * 4)
     reservoirs = {class_name: [] for class_name in target_names}
     observed = Counter()
     last_image_id = {}
@@ -222,20 +226,21 @@ def select_balanced_image_ids(
     selected_ids = set()
     selected_class_counts = Counter()
     for class_name, _ in TARGET_CLASSES:
+        target_limit = min(per_class_limit, per_class_limits.get(class_name, per_class_limit))
         candidates = reservoirs[class_name]
         randomizers[class_name].shuffle(candidates)
         for image_id in candidates:
             # Multi-label images count toward every class they contain. Requiring
-            # a different image for each quota can make valid Open Images splits
-            # appear undersized when laptop/monitor or phone/person overlap.
+            # a different image for each quota would waste storage when both
+            # target classes appear in the same image.
             selected_ids.add(image_id)
             selected_class_counts[class_name] += 1
-            if selected_class_counts[class_name] >= per_class_limit:
+            if selected_class_counts[class_name] >= target_limit:
                 break
-        if selected_class_counts[class_name] < per_class_limit:
+        if selected_class_counts[class_name] < target_limit:
             raise ValueError(
                 f"Only selected {selected_class_counts[class_name]} unique {class_name} images; "
-                f"requested {per_class_limit}."
+                f"requested {target_limit}."
             )
     return sorted(selected_ids), selected_class_counts
 
@@ -278,11 +283,13 @@ def prepare_split(
         seed,
         workers,
     )
+    class_limits = OFFICIAL_CLASS_IMAGE_LIMITS.get(split, {})
     image_ids, selected_class_counts = select_balanced_image_ids(
         classes_path,
         detections_path,
         per_class_limit,
         seed,
+        class_limits,
     )
     print(f"[{split}] loading {len(image_ids)} class-balanced images...")
     dataset = load_selected_images(
@@ -315,7 +322,10 @@ def prepare_split(
         "images": len(records),
         "objects": dict(sorted(object_counts.items())),
         "selected_images_by_open_images_class": dict(sorted(selected_class_counts.items())),
-        "requested_images_per_class": per_class_limit,
+        "requested_images_per_class": {
+            class_name: min(per_class_limit, class_limits.get(class_name, per_class_limit))
+            for class_name, _ in TARGET_CLASSES
+        },
     }
     print(f"[{split}] prepared {summary['images']} unique images: {summary['objects']}")
     return summary

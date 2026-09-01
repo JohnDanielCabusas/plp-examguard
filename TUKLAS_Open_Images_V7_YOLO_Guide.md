@@ -4,13 +4,17 @@
 
 This guide explains how to download selected object classes from Open Images V7, convert their bounding-box annotations into YOLO format, train a YOLO model, and test it for the TUKLAS webcam-monitoring module.
 
-The initial object classes are:
+The detector intentionally learns only two object classes:
 
 - `mobile_phone`
-- `laptop`
-- `computer_monitor`
-- `book`
-- `person`
+- `mouse` (from Open Images' `Computer mouse` class)
+
+`mouse` is never a policy violation. It is trained alongside the restricted phone class purely so the detector can tell a computer mouse apart from a mobile phone at the same webcam angle, instead of relying on a generic COCO checkpoint's `mouse` class for that distinction. See `NEGATIVE_MAPPINGS` in `ml/yolo/dataset_config.py`.
+
+Open Images V7 has only 19 unique `Computer mouse` images in its official
+validation split. The repository pipeline uses all 19 while retaining 50 phone
+validation images; it never duplicates images or mixes train/validation/test
+splits to inflate the count.
 
 > Do not download the complete Open Images V7 dataset. It is extremely large. FiftyOne can download only the images and annotations needed for these classes.
 
@@ -75,10 +79,7 @@ from PIL import Image
 
 TARGET_CLASSES = [
     "Mobile phone",       # YOLO ID 0
-    "Laptop",            # YOLO ID 1
-    "Computer monitor",  # YOLO ID 2
-    "Book",              # YOLO ID 3
-    "Person",            # YOLO ID 4
+    "Computer mouse",    # YOLO ID 1 -- negative class, never a violation
 ]
 
 CLASS_TO_ID = {
@@ -214,10 +215,7 @@ test: images/test
 
 names:
   0: mobile_phone
-  1: laptop
-  2: computer_monitor
-  3: book
-  4: person
+  1: mouse
 """
 
     Path("tuklas_openimages.yaml").write_text(
@@ -305,10 +303,7 @@ from pathlib import Path
 
 CLASS_NAMES = {
     0: "mobile_phone",
-    1: "laptop",
-    2: "computer_monitor",
-    3: "book",
-    4: "person",
+    1: "mouse",
 }
 
 for split in ["train", "val", "test"]:
@@ -333,7 +328,7 @@ Run:
 python check_dataset.py
 ```
 
-Review the result because Open Images may contain many `person` objects but fewer laptops or monitors.
+Review the result to confirm both phone and mouse are represented in every split.
 
 ## Step 6: Train YOLO
 
@@ -382,12 +377,10 @@ yolo predict model=runs/detect/train/weights/best.pt source=0 show=True conf=0.4
 
 ## Important TUKLAS Considerations
 
-### Do not treat all detections as violations
+### Only phone detections can become violations
 
-- The student is expected to use a primary laptop.
-- A book may be allowed in an open-book examination.
-- `person` is supporting evidence for detecting another person, not proof of cheating.
-- The professor's exam policy should determine which detected classes are restricted.
+`mobile_phone` is the sole policy-mapped class. `mouse` is negative-only and
+must never generate a violation; it exists to suppress false phone detections.
 
 ### Avoid counting one object repeatedly
 
@@ -405,9 +398,7 @@ Open Images contains general photographs rather than actual TUKLAS examination s
 
 - Phones held beside or below the face
 - Partially hidden phones
-- Open and closed books
-- Secondary laptops and monitors
-- A second person entering the room
+- Computer mice at typical desk distance and angle from the webcam, including the specific phone/mouse confusions seen in production (elongated white or dark mice, mice near the keyboard, mice picked up off the desk)
 - Different rooms, lighting conditions, webcams, and object distances
 - Normal scenes without prohibited objects
 
@@ -427,5 +418,5 @@ Do not randomly place nearly identical frames from one video into training and t
 6. Correctly annotate the custom images.
 7. Fine-tune the model again.
 8. Evaluate it on unseen participants and environments.
-9. Integrate `best.pt` into the TUKLAS monitoring service.
+9. Export `best.pt` to ONNX and integrate the versioned manifest into the TUKLAS browser monitoring service.
 10. Treat detections as behavioral indicators requiring professor review.

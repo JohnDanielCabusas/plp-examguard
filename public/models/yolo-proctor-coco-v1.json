@@ -10,23 +10,22 @@
   "nmsThreshold": 0.45,
   "maxDetections": 20,
   "confidenceThresholds": {
-    "mobile_phone": 0.12,
-    "laptop_monitor": 0.6,
-    "book_textbook": 0.16
+    "mobile_phone": 0.12
   },
   "verificationThresholds": {
-    "mobile_phone": 0.24,
-    "laptop_monitor": 0.5,
-    "book_textbook": 0.26
+    "mobile_phone": 0.24
   },
   "verificationMargin": 0.03,
   "verificationPadding": 0.18,
   "policyMappings": {
     "cell phone": "mobile_phone",
-    "remote": "mobile_phone",
-    "laptop": "laptop_monitor",
-    "tv": "laptop_monitor",
-    "book": "book_textbook"
+    "remote": "mobile_phone"
+  },
+  "negativeConfidenceThresholds": {
+    "mouse": 0.15
+  },
+  "negativeMappings": {
+    "mouse": "mouse"
   },
   "classNames": [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",

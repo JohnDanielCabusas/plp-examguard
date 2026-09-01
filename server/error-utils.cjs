@@ -5,6 +5,8 @@ const CONNECTIVITY_PATTERNS = [
   /\beconnrefused\b/i,
   /\beconnreset\b/i,
   /\betimedout\b/i,
+  /\beauthtimeout\b/i,
+  /timeout while waiting for message/i,
   /\bfetch failed\b/i,
   /\bfailed to fetch\b/i,
   /\bnetwork\s?(error|request)\b/i,

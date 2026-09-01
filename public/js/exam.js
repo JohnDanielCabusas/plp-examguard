@@ -125,8 +125,8 @@ const ExamApp = {
   _yoloDetectedUntil: 0,
   _lastYoloResult: null,
   _yoloConfigSignature: '',
-  _yoloPreloadScheduled: false,
   _yoloPreloadPromise: null,
+  _yoloStarting: false,
   _yoloStartGeneration: 0,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _presenceConfirmSec: 0,
@@ -302,6 +302,7 @@ const ExamApp = {
       warnings: marker.warnings ?? baseSession.warnings ?? 0,
       submitted: true,
       autoSubmitted: true,
+      submitReason: 'refresh',
       endTime: new Date().toISOString(),
       score: score.earned,
       maxScore: score.max || baseSession.maxScore || 0,
@@ -323,7 +324,7 @@ const ExamApp = {
         sessionId: nextSession.id,
         studentId: nextSession.studentId,
         examId: exam.id,
-        type: 'auto_submit',
+        type: 'refresh_submit',
         details: 'Auto-submitted: exam page refresh or reload was confirmed',
       });
     }
@@ -4049,6 +4050,11 @@ const ExamApp = {
     container.style.display = '';
     this._cameraPrompting = true;
 
+    // Model/session initialization is the slow part of object detection. Start
+    // it while the browser is opening the webcam so the first frame can be
+    // scanned as soon as the video becomes readable.
+    this._startYoloObjectMonitoring(video);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
@@ -4061,12 +4067,13 @@ const ExamApp = {
       if (blockedMsg) blockedMsg.style.display = 'none';
       this._startCameraWatchdog();
 
-      // Wait for video to be ready then check for presence before starting
+      // Wait for video to be ready before starting presence checks. Object
+      // detection has already been warming in parallel with camera startup.
       let cameraReadyHandled = false;
       const handleCameraReady = () => {
         if (cameraReadyHandled) return;
         cameraReadyHandled = true;
-        this._startYoloObjectMonitoring(video);
+        if (!this._yoloMonitor) this._startYoloObjectMonitoring(video);
         if (statusText) statusText.textContent = 'Loading face detection...';
         // Basic motion monitoring starts immediately. Face detection upgrades
         // it in the background once TensorFlow and BlazeFace are available.
@@ -4123,15 +4130,11 @@ const ExamApp = {
         ...window.YoloProctor.normalizeConfig(raw),
         enabled: !!this.exam?.requireCamera,
         mode: 'enforce',
-        allowSecondaryComputer: false,
-        allowBooks: false,
       };
     }
     return {
       enabled: !!this.exam?.requireCamera,
       mode: 'enforce',
-      allowSecondaryComputer: false,
-      allowBooks: false,
     };
   },
 
@@ -4139,33 +4142,21 @@ const ExamApp = {
     if (
       !this.exam?.requireCamera
       || !window.YoloProctor?.preloadModel
-      || this._yoloPreloadScheduled
       || this._yoloPreloadPromise
     ) return;
 
-    this._yoloPreloadScheduled = true;
-    const preload = () => {
-      this._yoloPreloadScheduled = false;
-      if (!this.exam?.requireCamera || this._yoloPreloadPromise) return;
-      this._yoloPreloadPromise = window.YoloProctor.preloadModel('/models/yolo-proctor-v1.json')
-        .then(details => (
-          details?.modelProfile === 'coco'
-            ? window.YoloProctor.preloadModel('/models/yolo-phone-specialist-v1.json')
-            : details
-        ))
-        .catch(error => {
-          this._yoloPreloadPromise = null;
-          console.warn('[YOLO] Model preload deferred:', error?.message || error);
-        });
-    };
-
-    // The model is large. Let the dashboard/waiting-room requests and first
-    // paint finish before using bandwidth for this optional warm-up.
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(preload, { timeout: 4000 });
-    } else {
-      setTimeout(preload, 1500);
-    }
+    // Begin fetching as soon as the exam is known. Waiting for an idle callback
+    // added up to four seconds before the model download even started.
+    this._yoloPreloadPromise = window.YoloProctor.preloadModel('/models/yolo-proctor-v1.json')
+      .then(details => (
+        details?.modelProfile === 'coco'
+          ? window.YoloProctor.preloadModel('/models/yolo-phone-specialist-v1.json')
+          : details
+      ))
+      .catch(error => {
+        this._yoloPreloadPromise = null;
+        console.warn('[YOLO] Model preload failed; startup will retry:', error?.message || error);
+      });
   },
 
   _setYoloStatus(state, detail = {}) {
@@ -4195,9 +4186,11 @@ const ExamApp = {
   },
 
   async _startYoloObjectMonitoring(video) {
+    if (this._yoloStarting) return;
     this._stopYoloObjectMonitoring();
     if (!this.exam?.requireCamera || !video) return;
     const generation = this._yoloStartGeneration;
+    this._yoloStarting = true;
     this._setYoloStatus('loading');
 
     try {
@@ -4207,6 +4200,8 @@ const ExamApp = {
       this._setYoloStatus('error');
       console.warn('[YOLO] Object monitoring runtime is unavailable:', error?.message || error);
       return;
+    } finally {
+      if (generation === this._yoloStartGeneration) this._yoloStarting = false;
     }
     if (generation !== this._yoloStartGeneration) return;
 
@@ -4285,6 +4280,7 @@ const ExamApp = {
 
   _stopYoloObjectMonitoring() {
     this._yoloStartGeneration += 1;
+    this._yoloStarting = false;
     this._yoloMonitor?.stop();
     this._yoloPhoneMonitor?.stop();
     this._yoloMonitor = null;
@@ -4546,7 +4542,7 @@ const ExamApp = {
       this._cameraStream = stream;
       const video = document.getElementById('camera-feed');
       if (video) video.srcObject = stream;
-      if (video) this._startYoloObjectMonitoring(video);
+      if (video && !this._yoloMonitor) this._startYoloObjectMonitoring(video);
       this._startViolationReplayBuffer();
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';

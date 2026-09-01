@@ -110,25 +110,50 @@ function refreshAdminIdentity() {
   if (topbarAvatar) topbarAvatar.textContent = initial;
 }
 
+function getRecordedSubmissionReason(session) {
+  const explicitReason = String(session?.submitReason || '').trim().toLowerCase();
+  if (explicitReason) return explicitReason;
+
+  const activities = Array.isArray(session?.activities) ? session.activities : [];
+  const activityTypes = new Set(activities.map(activity => String(activity?.type || '').trim().toLowerCase()));
+  if (activityTypes.has('force_submit')) return 'force_submit';
+  if (activityTypes.has('timeout')) return 'timeout';
+  if (activityTypes.has('refresh_submit')) return 'refresh';
+  if (activityTypes.has('auto_submit')) return 'violations';
+
+  // Legacy sessions recorded the submission event in the separate logs table
+  // before submitReason was added to sessions. Use that evidence before
+  // falling back to the final warning count.
+  const logs = session?.id && typeof DB?.getLogsBySession === 'function'
+    ? DB.getLogsBySession(session.id)
+    : [];
+  const logTypes = new Set(logs.map(log => String(log?.type || '').trim().toLowerCase()));
+  if (logTypes.has('force_submit')) return 'force_submit';
+  if (logTypes.has('timeout')) return 'timeout';
+  if (logTypes.has('refresh_submit')) return 'refresh';
+  if (logTypes.has('auto_submit')) {
+    const refreshLog = logs.some(log => /refresh|reload/i.test(String(log?.details || '')));
+    return refreshLog ? 'refresh' : 'violations';
+  }
+
+  if (Number(session?.warnings || 0) >= 3) return 'violations';
+  return null;
+}
+
 function getSubmissionStatusText(session) {
   if (!session) return 'Pending';
   if (!session.submitted) return 'Pending';
   if (!session.autoSubmitted) return 'Submitted';
 
-  // Prefer the reason recorded at submit time. Sessions submitted before this
-  // field existed fall back to the force_submit activity marker (the one
-  // reason that was always reliably logged), then to a best-effort guess from
-  // the warning count.
-  const reason = session.submitReason
-    || (Array.isArray(session.activities) && session.activities.some(a => a?.type === 'force_submit') ? 'force_submit' : null)
-    || (session.warnings >= 3 ? 'violations' : 'timeout');
+  const reason = getRecordedSubmissionReason(session);
 
   switch (reason) {
     case 'force_submit': return 'Force-Submitted (Professor)';
     case 'exam_closed': return 'Auto-Submitted (Exam Closed)';
     case 'violations': return 'Auto-Submitted (Warnings)';
-    case 'timeout':
-    default: return 'Auto-Submitted (Time Limit)';
+    case 'refresh': return 'Auto-Submitted (Page Refresh)';
+    case 'timeout': return 'Auto-Submitted (Time Limit)';
+    default: return 'Auto-Submitted (Reason Unavailable)';
   }
 }
 
@@ -1339,9 +1364,40 @@ function updateMonitoringNavBadge(count) {
 // A running log of notifications, with an unread badge. Opening the dropdown
 // marks everything seen locally.
 let _bellNotifs = []; // { id, kind, who, body, at, studentId, examId, shareId, seen }
+const NOTIFICATION_DISMISSALS_KEY = 'acs_admin_notification_dismissals_v1';
+
+function getNotificationDismissalScope() {
+  return String(Auth?.getAdminSession?.()?.id || 'anonymous');
+}
+
+function readDismissedNotificationIds() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NOTIFICATION_DISMISSALS_KEY) || '{}');
+    const ids = stored && Array.isArray(stored[getNotificationDismissalScope()])
+      ? stored[getNotificationDismissalScope()]
+      : [];
+    return new Set(ids.map(String));
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function rememberDismissedNotificationIds(ids) {
+  const cleanIds = Array.from(new Set((ids || []).filter(Boolean).map(String)));
+  if (!cleanIds.length) return;
+  try {
+    const stored = JSON.parse(localStorage.getItem(NOTIFICATION_DISMISSALS_KEY) || '{}');
+    const safeStored = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    const scope = getNotificationDismissalScope();
+    const prior = Array.isArray(safeStored[scope]) ? safeStored[scope] : [];
+    safeStored[scope] = Array.from(new Set([...prior, ...cleanIds])).slice(-500);
+    localStorage.setItem(NOTIFICATION_DISMISSALS_KEY, JSON.stringify(safeStored));
+  } catch (_) {}
+}
 
 function addBellNotification(entry, seen = false) {
   if (!entry || !entry.id) return;
+  if (readDismissedNotificationIds().has(String(entry.id))) return;
   if (_bellNotifs.some(n => n.id === entry.id)) return;
   _bellNotifs.unshift({ ...entry, seen });
   if (_bellNotifs.length > 40) _bellNotifs.length = 40;
@@ -1396,7 +1452,17 @@ function toggleNotifDropdown(force) {
 }
 
 function clearNotifs() {
+  const allKnownNotificationIds = [
+    ..._bellNotifs.map(notification => notification.id),
+    ..._notifiedMsgIds,
+    ..._alertedViolationIds,
+    ...Array.from(_notifiedShareIds, id => `share-request:${id}`),
+    ...Array.from(_notifiedShareResponses, key => `share-response:${key}`),
+  ];
+  rememberDismissedNotificationIds(allKnownNotificationIds);
   _bellNotifs = [];
+  acknowledgeAllViolationAlerts();
+  document.getElementById('prof-msg-popups')?.replaceChildren();
   renderBell();
 }
 
@@ -4340,8 +4406,6 @@ function normalizeObjectMonitoringConfig(value = {}, cameraEnabled = null) {
   return {
     enabled: cameraEnabled === null ? !!source.enabled : !!cameraEnabled,
     mode: 'enforce',
-    allowSecondaryComputer: false,
-    allowBooks: false,
   };
 }
 
