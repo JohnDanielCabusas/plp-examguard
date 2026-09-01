@@ -278,6 +278,7 @@ function renderViolationReviewAction(session, activity, index) {
 }
 
 function buildStudentLogBody(session) {
+  ensureViolationReviewStyles();
   const activities = Array.isArray(session?.activities) ? session.activities : [];
   const studentName = session?.studentName || session?.studentId || 'Student';
   const studentMeta = getStudentMonitorMeta(session);
@@ -808,6 +809,31 @@ function acknowledgeAllViolationAlerts() {
 }
 window.acknowledgeAllViolationAlerts = acknowledgeAllViolationAlerts;
 
+// Wipes this session's violation-alert history so a fresh attempt (or a retake
+// granted after a force submit) starts clean instead of resurfacing - or piling
+// up behind - alerts from the attempt that just ended.
+function clearViolationAlertsForSession(sessionId) {
+  if (!sessionId) return;
+  const prefix = `violation:${sessionId}:`;
+
+  _violationAlertQueue = _violationAlertQueue.filter((entry) => {
+    if (entry?.sessionId !== sessionId) return true;
+    if (entry?.id) _queuedViolationAlertIds.delete(entry.id);
+    return false;
+  });
+  Array.from(_alertedViolationIds).forEach((id) => {
+    if (id.startsWith(prefix)) _alertedViolationIds.delete(id);
+  });
+  _seenViolationActivityBySession.delete(sessionId);
+  _recentViolationEventKeys.delete(sessionId);
+
+  if (_activeViolationAlert?.sessionId === sessionId) {
+    _activeViolationAlert = null;
+    showNextViolationAlert();
+  }
+  renderViolationAlertModal();
+}
+
 function queueViolationAlert(entry) {
   if (!entry?.id) return;
   // _queuedViolationAlertIds only tracks alerts that are currently queued/active and
@@ -819,8 +845,22 @@ function queueViolationAlert(entry) {
   if (_queuedViolationAlertIds.has(entry.id) || _activeViolationAlert?.id === entry.id) return;
 
   _alertedViolationIds.add(entry.id);
-  _queuedViolationAlertIds.add(entry.id);
-  _violationAlertQueue.push(entry);
+
+  // A student who trips several violations in a row should never pile up separate
+  // popups: if their alert is already on screen, refresh it in place with the newest
+  // incident; if one is already waiting in the queue, replace it. The professor should
+  // only ever see one alert per student at a time, and it should always be the latest.
+  if (_activeViolationAlert?.sessionId === entry.sessionId) {
+    _activeViolationAlert = entry;
+  } else {
+    const existingIndex = _violationAlertQueue.findIndex(item => item.sessionId === entry.sessionId);
+    if (existingIndex >= 0) {
+      _queuedViolationAlertIds.delete(_violationAlertQueue[existingIndex].id);
+      _violationAlertQueue.splice(existingIndex, 1);
+    }
+    _queuedViolationAlertIds.add(entry.id);
+    _violationAlertQueue.push(entry);
+  }
   addBellNotification({
     id: entry.id,
     kind: 'violation',
@@ -5538,6 +5578,7 @@ async function reopenExam(id) {
         activities: [],
         cameraSnapshots: [],
       });
+      clearViolationAlertsForSession(s.id);
     });
     DB.updateExam(id, {
       status: 'active',
@@ -8450,6 +8491,7 @@ async function forceSubmitStudent(sessionId) {
     ],
   });
   DB.addLog({ sessionId, studentId: session.studentId, examId: session.examId, type: 'force_submit', details: 'Force submitted by professor' });
+  clearViolationAlertsForSession(sessionId);
   showToast('Student force-submitted.', 'success');
   renderMonitoringTable(monitorExamId);
 }
@@ -9706,6 +9748,7 @@ async function allowStudentRetake(sessionId) {
     activities:    [],
     cameraSnapshots: [],
   });
+  clearViolationAlertsForSession(sessionId);
   showToast(`Retake granted for ${session.studentName}.`, 'success');
   if (currentSection === 'monitoring') renderMonitoringSectionLive();
   renderReportTable();

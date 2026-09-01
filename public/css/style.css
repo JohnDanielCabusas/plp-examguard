@@ -107,8 +107,7 @@
 [data-theme="dark"] .card-title,
 [data-theme="dark"] .card-body { color: var(--text) !important; }
 
-/* Stat cards — neumorphic dark */
-/* Flat dark stat cards (no neumorphic "light shadow") to match the palette */
+/* Flat dark stat cards, matching the palette */
 [data-theme="dark"] .stat-card { background: var(--surface) !important; border: 1px solid var(--border) !important; box-shadow: none !important; }
 [data-theme="dark"] .stat-card:hover { transform: translateY(-2px) !important; box-shadow: none !important; border-color: rgba(148,163,160,0.35) !important; }
 [data-theme="dark"] .stat-card .stat-value { color: var(--text) !important; }
@@ -119,11 +118,6 @@
 [data-theme="dark"] .stat-card .stat-icon.orange { background: rgba(245,158,11,0.14) !important; color: #f59e0b !important; }
 [data-theme="dark"] .stat-card .stat-icon.red    { background: rgba(239,68,68,0.14) !important;  color: #ef4444 !important; }
 [data-theme="dark"] .stat-card .stat-icon.purple { background: rgba(139,92,246,0.14) !important; color: #8b5cf6 !important; }
-/* Bright accent top-borders on the stat cards, per palette */
-[data-theme="dark"] .stat-card:has(.stat-icon.green)  { --nm-accent: #22c55e; }
-[data-theme="dark"] .stat-card:has(.stat-icon.orange) { --nm-accent: #f59e0b; }
-[data-theme="dark"] .stat-card:has(.stat-icon.red)    { --nm-accent: #ef4444; }
-[data-theme="dark"] .stat-card:has(.stat-icon.purple) { --nm-accent: #8b5cf6; }
 /* Flat cards (no neumorphic light/dark dual shadow) */
 [data-theme="dark"] .dashboard-panels-grid .card { background: var(--surface) !important; border: 1px solid var(--border) !important; box-shadow: none !important; }
 [data-theme="dark"] .dashboard-panels-grid .card:hover { transform: translateY(-2px); box-shadow: none !important; border-color: rgba(148,163,160,0.3) !important; }
@@ -2505,20 +2499,36 @@ textarea.form-control {
 }
 
 .stat-card {
+  position: relative;
+  overflow: hidden;
   background: var(--white);
-  border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 20px;
   padding: 24px;
   box-shadow: var(--shadow-sm);
-  border-left: 4px solid var(--primary);
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--stat-accent, var(--primary));
+}
+
+.stat-card:has(.stat-icon.blue)   { --stat-accent: #1e40af; }
+.stat-card:has(.stat-icon.green)  { --stat-accent: #0f2d1a; }
+.stat-card:has(.stat-icon.orange) { --stat-accent: #d97706; }
+.stat-card:has(.stat-icon.red)    { --stat-accent: #dc2626; }
+.stat-card:has(.stat-icon.purple) { --stat-accent: #7c3aed; }
+
 .stat-card .stat-icon {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
+  border-radius: 14px;
   background: rgba(2,83,10,0.1);
   color: var(--primary);
   display: flex;
@@ -2535,18 +2545,20 @@ textarea.form-control {
 .stat-card .stat-icon.purple { background: rgba(124,58,237,0.1); color: #7c3aed; }
 
 .stat-card .stat-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--primary);
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text, var(--primary));
   line-height: 1;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .stat-card .stat-label {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
 /* ============================================================
@@ -8682,60 +8694,6 @@ input[type="password"]::-ms-clear {
   line-height: 1.1 !important;
   margin-top: 8px !important;
   margin-bottom: 4px !important;
-}
-
-/* ── Stat cards — top-border style + bigger numbers ─────── */
-/* Neumorphic dashboard stat cards */
-.stat-card {
-  border: none !important;
-  border-radius: 28px !important;
-  padding: 28px 24px !important;
-  position: relative;
-  overflow: hidden;
-  background: #e8ecef !important;
-  box-shadow: 12px 12px 24px #c8cdd1, -12px -12px 24px #ffffff !important;
-  transition: box-shadow 0.3s ease, transform 0.2s ease !important;
-}
-.stat-card:hover {
-  transform: translateY(-3px) !important;
-  box-shadow: 16px 16px 32px #c0c5c9, -16px -16px 32px #ffffff !important;
-}
-.stat-card:has(.stat-icon.blue)   { --nm-accent: #3b82f6; }
-.stat-card:has(.stat-icon.green)  { --nm-accent: #1a4d2a; }
-.stat-card:has(.stat-icon.orange) { --nm-accent: #d97706; }
-.stat-card:has(.stat-icon.red)    { --nm-accent: #dc2626; }
-.stat-card:has(.stat-icon.purple) { --nm-accent: #7c3aed; }
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 4px;
-  background: var(--nm-accent, #1a4d2a);
-  border-radius: 28px 28px 0 0;
-}
-
-.stat-card .stat-value {
-  font-size: 38px !important;
-  font-weight: 800 !important;
-  letter-spacing: -1px !important;
-  line-height: 1 !important;
-  margin-bottom: 4px !important;
-  color: #1f2937 !important;
-}
-.stat-card .stat-label {
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.8px !important;
-  color: #9ca3af !important;
-}
-.stat-card .stat-icon {
-  border-radius: 14px !important;
-  width: 48px !important;
-  height: 48px !important;
-  /* Inset neumorphic icon badge */
-  box-shadow: inset 4px 4px 8px rgba(0,0,0,0.1), inset -3px -3px 6px rgba(255,255,255,0.7) !important;
-  background: #e8ecef !important;
 }
 
 /* ── Cards ─────────────────────────────────────────────── */
