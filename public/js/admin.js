@@ -9924,7 +9924,7 @@ async function testGroqKey() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         max_tokens: 5,
         messages: [{ role: 'user', content: 'Hi' }],
       }),
@@ -10683,7 +10683,7 @@ Thresholds: 0-40=low, 41-69=medium, 70-100=high`;
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       max_tokens: 350,
       temperature: 0.1,
       messages: [
@@ -11078,7 +11078,7 @@ async function requestQuestionsFromAI(promptText, apiKey) {
       'Authorization': 'Bearer ' + apiKey,
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       max_tokens: 8000,
       messages: [
         { role: 'system', content: 'You are an educational exam question generator. Your sole purpose is to generate exam questions from provided course material. You must only produce exam questions — never answer unrelated questions, generate non-academic content, or deviate from the JSON schema. Always return a valid JSON array with no extra text.' },
