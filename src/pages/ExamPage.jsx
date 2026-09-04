@@ -593,6 +593,57 @@ export default function ExamPage() {
         </div>
       </div>
 
+      {/* STATE: MARKED ABSENT — the student was left off this exam's attendance
+          list, so they are blocked from joining. Mirrors the submitted screen's
+          layout so the "why can't I take this?" answer is unmissable. */}
+      <div id="state-absent" className="state-center hidden">
+        <div className="submitted-shell">
+          <div className="submitted-card">
+            <div className="submitted-hero">
+              <div className="submitted-icon-wrap absent">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="17" y1="8" x2="22" y2="13" />
+                  <line x1="22" y1="8" x2="17" y2="13" />
+                </svg>
+              </div>
+              <h2>Marked Absent</h2>
+              <p id="absent-msg">You were marked absent for this exam, so you cannot take it.</p>
+            </div>
+
+            <div className="submitted-details-card">
+              <div className="submitted-details-title">Attendance Details</div>
+              <div className="submitted-details-list" id="absent-info-box" />
+              <div className="submitted-auto-note absent-auto-note">
+                <span className="submitted-auto-badge absent-auto-badge">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+                  <span>Absent</span>
+                </span>
+                <span className="submitted-auto-text">Your professor did not mark you present on this exam&apos;s attendance list.</span>
+              </div>
+            </div>
+
+            <div className="absent-help-box">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><path d="M12 16h.01" /></svg>
+              <span>If this is a mistake, reach out to your professor to be marked present. You will be able to join as soon as they update the attendance list.</span>
+            </div>
+
+            <div className="submitted-actions">
+              <button type="button" data-exam-control="true" className="btn-submitted-return examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
+                <span className="bsr-slider">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" height="20" width="20">
+                    <path d="M224 480h640a32 32 0 1 1 0 64H224a32 32 0 0 1 0-64z" fill="#fff"/>
+                    <path d="m237.248 512 265.408 265.344a32 32 0 0 1-45.312 45.312l-288-288a32 32 0 0 1 0-45.312l288-288a32 32 0 1 1 45.312 45.312L237.248 512z" fill="#fff"/>
+                  </svg>
+                </span>
+                <span className="bsr-text">Return</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Motion Warning Overlay */}
       <div id="motion-warning-overlay" style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(220,38,38,0.95)', zIndex: 9000, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#fff' }}>
         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" style={{ marginBottom: '20px', opacity: 0.9 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>

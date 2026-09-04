@@ -937,6 +937,7 @@ export default function AdminPage() {
                     </button>
                     <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
                       <span className="badge badge-info" id="report-submitted-count" />
+                      <span className="badge badge-danger hidden" id="report-absent-count" />
                       <span className="badge badge-success" id="report-avg-score" />
                     </div>
                   </div>

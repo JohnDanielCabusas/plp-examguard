@@ -700,6 +700,55 @@
   border-color: #4ade80 !important;
   box-shadow: 0 4px 14px rgba(74,222,128,0.22) !important;
 }
+/* Marked Absent screen (dark) */
+[data-theme="dark"] #state-absent .submitted-card,
+[data-theme="dark"] #state-absent .submitted-details-card {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+[data-theme="dark"] #state-absent.state-center {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245,158,11,0.07), transparent 24%),
+    radial-gradient(circle at 80% 18%, rgba(59,130,246,0.05), transparent 22%),
+    radial-gradient(circle at 50% 90%, rgba(245,158,11,0.05), transparent 26%),
+    var(--bg) !important;
+}
+[data-theme="dark"] #state-absent .submitted-card h2,
+[data-theme="dark"] #state-absent .submitted-details-title,
+[data-theme="dark"] #state-absent .submitted-detail-icon {
+  color: #fbbf24 !important;
+}
+[data-theme="dark"] #state-absent .submitted-card p {
+  color: var(--text-muted) !important;
+}
+[data-theme="dark"] #state-absent .submitted-detail-row {
+  border-bottom-color: var(--border) !important;
+}
+[data-theme="dark"] #state-absent .submitted-detail-label,
+[data-theme="dark"] #state-absent .submitted-detail-value {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .submitted-icon-wrap.absent {
+  background: radial-gradient(circle at 50% 40%, rgba(245,158,11,0.2) 0%, rgba(245,158,11,0.08) 100%) !important;
+  color: #fbbf24 !important;
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.25) !important;
+}
+[data-theme="dark"] .submitted-auto-note.absent-auto-note {
+  background: rgba(245,158,11,0.1) !important;
+}
+[data-theme="dark"] .submitted-auto-badge.absent-auto-badge {
+  background: rgba(245,158,11,0.18) !important;
+  color: #fbbf24 !important;
+}
+[data-theme="dark"] .absent-help-box {
+  background: rgba(59,130,246,0.1) !important;
+  border-color: rgba(59,130,246,0.3) !important;
+  color: #93c5fd !important;
+}
+[data-theme="dark"] .absent-help-box svg {
+  color: #60a5fa !important;
+}
 [data-theme="dark"] .settings-card-title {
   border-bottom-color: var(--border) !important;
 }
@@ -3038,6 +3087,81 @@ tr:hover td { background: #F8FDF8; }
   line-height: 1.3;
 }
 
+/* Absentee block in the Reports table — grouped under a divider and tinted so
+   it never reads as a zero-scoring submission. */
+.report-absent-divider td {
+  background: linear-gradient(180deg, #fdf6ee 0%, #fbf0e3 100%);
+  border-top: 1px solid rgba(180,83,9,0.22);
+  border-bottom: 1px solid rgba(180,83,9,0.16);
+  padding: 10px 14px !important;
+  white-space: normal;
+}
+
+.report-absent-divider-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fbe6ce;
+  color: #9a4a06;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 10px;
+}
+
+.report-absent-divider-note {
+  font-size: 12px;
+  color: #8a5a2b;
+}
+
+.report-row-absent td {
+  background: #fffaf4;
+  color: #7c4a13;
+}
+
+.report-rank-absent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #fbe6ce;
+  color: #9a4a06;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.report-absent-hint {
+  font-size: 11px;
+  color: #9a6a3a;
+  white-space: normal;
+}
+
+[data-theme="dark"] .report-absent-divider td {
+  background: rgba(245,158,11,0.1);
+  border-top-color: rgba(245,158,11,0.28);
+  border-bottom-color: rgba(245,158,11,0.2);
+}
+[data-theme="dark"] .report-absent-divider-badge {
+  background: rgba(245,158,11,0.2);
+  color: #fbbf24;
+}
+[data-theme="dark"] .report-absent-divider-note,
+[data-theme="dark"] .report-absent-hint {
+  color: #d1a15a;
+}
+[data-theme="dark"] .report-row-absent td {
+  background: rgba(245,158,11,0.05);
+  color: #e8c89a;
+}
+[data-theme="dark"] .report-rank-absent {
+  background: rgba(245,158,11,0.2);
+  color: #fbbf24;
+}
+
 .search-input {
   display: flex;
   align-items: center;
@@ -4943,6 +5067,89 @@ body.exam-page {
 }
 #state-submitted .course-exam-cta-primary {
   background: linear-gradient(135deg, #1b5e30 0%, #0f4f26 100%);
+}
+
+/* ============================================================
+   MARKED ABSENT SCREEN
+   Reuses the submitted-card shell, but re-tinted amber so the
+   student reads it as "blocked", not "done".
+   ============================================================ */
+#state-absent.state-center {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(180,83,9,0.07), transparent 24%),
+    radial-gradient(circle at 80% 18%, rgba(59,130,246,0.05), transparent 22%),
+    radial-gradient(circle at 50% 90%, rgba(180,83,9,0.05), transparent 26%),
+    linear-gradient(180deg, #fbf9f5 0%, #f4f1ec 100%);
+}
+#state-absent .submitted-hero::before,
+#state-absent .submitted-hero::after {
+  background: rgba(180,83,9,0.16);
+}
+#state-absent .submitted-hero::before {
+  box-shadow:
+    -56px -18px 0 -2px rgba(180,83,9,0.14),
+    -36px 16px 0 -3px rgba(180,83,9,0.2),
+    -74px 20px 0 -4px rgba(180,83,9,0.12),
+    -24px -30px 0 -4px rgba(180,83,9,0.12);
+}
+#state-absent .submitted-hero::after {
+  box-shadow:
+    56px -18px 0 -2px rgba(180,83,9,0.14),
+    36px 16px 0 -3px rgba(180,83,9,0.2),
+    74px 20px 0 -4px rgba(180,83,9,0.12),
+    24px -30px 0 -4px rgba(180,83,9,0.12);
+}
+.submitted-icon-wrap.absent {
+  background: radial-gradient(circle at 50% 40%, #fff6ec 0%, #fde8d3 100%);
+  color: #b45309;
+  box-shadow: inset 0 0 0 1px rgba(180,83,9,0.1);
+  animation: successPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+}
+#state-absent .submitted-card h2 {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: #9a4a06;
+  letter-spacing: -0.03em;
+}
+#state-absent .submitted-card p {
+  max-width: 460px;
+  margin: 0 auto 20px;
+  color: #5f6b7a;
+  font-size: 14px;
+  line-height: 1.6;
+}
+#state-absent .submitted-details-title {
+  color: #9a4a06;
+}
+#state-absent .submitted-detail-icon {
+  color: #b45309;
+}
+.submitted-auto-note.absent-auto-note {
+  background: linear-gradient(180deg, #fdf6ee 0%, #fbf0e3 100%);
+}
+.submitted-auto-badge.absent-auto-badge {
+  background: #fbe6ce;
+  color: #9a4a06;
+}
+.absent-help-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #1e40af;
+  text-align: left;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+.absent-help-box svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #3b82f6;
 }
 
 /* ============================================================
@@ -12429,7 +12636,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .examv2-stats-bar .examv2-stat { padding: 0 10px; }
   .submitted-shell { max-width: 100%; }
   .submitted-card { padding: 22px 16px 18px; border-radius: 20px; }
-  #state-submitted .submitted-card h2 { font-size: 22px; }
+  #state-submitted .submitted-card h2,
+  #state-absent .submitted-card h2 { font-size: 22px; }
   .submitted-detail-row { grid-template-columns: 1fr; gap: 6px; }
   .submitted-detail-value { text-align: left; }
   .submitted-auto-note { flex-direction: column; align-items: flex-start; }

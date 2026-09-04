@@ -1260,7 +1260,7 @@ const ExamApp = {
       return;
     }
     if (this._isStudentAbsentForExam(portalStudent, exam)) {
-      this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+      this._showMarkedAbsentState(exam);
       return;
     }
 
@@ -2157,15 +2157,19 @@ const ExamApp = {
       return;
     }
 
-    // Audience filter: returns true if the exam is visible to this student
-    const audienceMatch = (e) => {
-      // Already joined (in progress or submitted) — don't retroactively hide it if
-      // the exclusion list changes after the fact.
+    // True when this student was left off the exam's attendance list. A submitted
+    // attempt is grandfathered in — don't retroactively block it if the exclusion
+    // list changes after the fact.
+    const isAbsentFor = (e) => {
       const dbSession = DB.getStudentSession(e.id, sess.studentId);
-      if (dbSession?.submitted) return true;
-      if (this._isStudentAbsentForExam(student, e)) return false;
-      return true;
+      if (dbSession?.submitted) return false;
+      return this._isStudentAbsentForExam(student, e);
     };
+
+    // Audience filter for the featured "Active Now" banners: an absent student
+    // must never get a live "Take Exam" call to action. The exam still shows on
+    // the course card below, flagged Absent, so they know why.
+    const audienceMatch = (e) => !isAbsentFor(e);
 
     // Collect active exams across all enrolled subjects to show highlighted at top
     const activeExams = [];
@@ -2228,7 +2232,6 @@ const ExamApp = {
     enrolledSubjects.forEach(subj => {
       const subjectExams = allExams.filter(e => {
         if (e.subjectId !== subj.id) return false;
-        if (!audienceMatch(e)) return false;
         if (['active','ready','closed'].includes(e.status)) return true;
         // Also show draft exams if the student has a submitted session (they can view results)
         if (e.status === 'draft') {
@@ -2246,6 +2249,9 @@ const ExamApp = {
         if (dbSession && dbSession.submitted) {
           statusHtml = `<span class="badge badge-secondary" style="font-size:10px;">Submitted</span>`;
           actionHtml = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ExamApp._openExamDirectly('${e.id}')">View Result</button>`;
+        } else if (isAbsentFor(e)) {
+          statusHtml = `<span class="badge badge-danger" style="font-size:10px;" title="You were marked absent for this exam.">Absent</span>`;
+          actionHtml = `<button class="btn btn-secondary btn-sm" style="opacity:0.5;cursor:not-allowed;" disabled>Not Available</button>`;
         } else if (e.status === 'active') {
           statusHtml = `<span class="dash-exam-active-pill"><span class="dash-exam-active-dot"></span><span>ACTIVE</span></span>`;
           actionHtml = featuredActiveExamIds.has(e.id)
@@ -2524,7 +2530,7 @@ const ExamApp = {
   // STATE MACHINE
   // ============================================================
   showState(name) {
-    ['dashboard', 'entry', 'waiting', 'exam', 'submitted', 'review'].forEach(s => {
+    ['dashboard', 'entry', 'waiting', 'exam', 'submitted', 'review', 'absent'].forEach(s => {
       const el = document.getElementById('state-' + s);
       if (el) el.classList.add('hidden');
     });
@@ -2559,6 +2565,59 @@ const ExamApp = {
     // student is off the exam screen, e.g. after a mid-exam refresh routes
     // straight to 'submitted' or back to 'dashboard'.
     if (name !== 'exam') this.stopCamera();
+  },
+
+  // Full-screen "you can't take this exam" answer for a student left off the
+  // attendance list. This replaces the old toast-on-the-dashboard treatment,
+  // which vanished after a few seconds and left the student with no reason.
+  _showMarkedAbsentState(exam) {
+    const targetExam = exam || this.exam || null;
+    const studentSession = Auth.getStudentSession();
+    if (!studentSession) {
+      this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+      return;
+    }
+
+    this._disableRefreshProtection();
+    this._stopSessionSyncPolling();
+    this.stopPoll();
+    this.stopTimer();
+
+    // Drop the exam target so a refresh lands on the dashboard instead of
+    // bouncing straight back into this blocked screen.
+    const updated = { ...studentSession };
+    delete updated.examCode;
+    delete updated.examId;
+    sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
+
+    const student = this._getPortalStudent(studentSession.studentId) || DB.getStudent(studentSession.studentId);
+    const subject = targetExam ? DB.getSubject(targetExam.subjectId) : null;
+
+    this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+
+    const box = document.getElementById('absent-info-box');
+    if (box) {
+      const rows = [
+        ['student', 'Student', student?.name || studentSession.studentName || studentSession.studentId || ''],
+        ['exam', 'Exam', targetExam?.title || ''],
+        ['exam', 'Course', subject?.name || ''],
+      ].filter(([, , value]) => String(value || '').trim());
+      box.innerHTML = rows.map(([icon, label, value]) => `
+        <div class="submitted-detail-row">
+          <div class="submitted-detail-label"><span class="submitted-detail-icon">${this._submittedDetailIcon(icon)}</span><span>${_esc(label)}</span></div>
+          <div class="submitted-detail-value">${_esc(value)}</div>
+        </div>
+      `).join('');
+    }
+
+    const msgEl = document.getElementById('absent-msg');
+    if (msgEl) {
+      msgEl.textContent = targetExam?.title
+        ? `You were marked absent for "${targetExam.title}", so you cannot take it.`
+        : 'You were marked absent for this exam, so you cannot take it.';
+    }
+
+    this.showState('absent');
   },
 
   _showError(msg) {
@@ -2650,7 +2709,7 @@ const ExamApp = {
 
       if (this._isStudentAbsentForExam(portalStudent, latestExam) && !existingSession?.submitted) {
         this.stopPoll();
-        this._showError('You have been marked absent for this exam. Please contact your instructor if this is a mistake.');
+        this._showMarkedAbsentState(latestExam);
         return;
       }
 

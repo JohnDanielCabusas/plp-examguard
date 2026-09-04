@@ -9493,6 +9493,45 @@ function renderReportSessionTime(session) {
   return `<div class="report-session-time report-session-time-stacked">${rows.join('')}</div>`;
 }
 
+// Students the professor left off this exam's attendance list. A student with a
+// submitted attempt is excluded: they clearly sat the exam (they were marked
+// absent after the fact, or grandfathered in), so they belong in the ranked
+// results, not in the absentee block.
+function getExamAbsentStudents(exam) {
+  if (!exam?.subjectId) return [];
+  const excluded = new Set(exam.excludedStudentIds || []);
+  if (!excluded.size) return [];
+  const submittedStudentIds = new Set(
+    DB.getSessionsByExam(exam.id).filter(session => session.submitted).map(session => session.studentId)
+  );
+  return getExamAttendanceStudents(exam.subjectId)
+    .filter(student => excluded.has(student.id) && !submittedStudentIds.has(student.id))
+    .map(student => ({ ...student, studentName: student.name }))
+    .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
+}
+
+function renderReportAbsentRows(absentStudents) {
+  if (!absentStudents.length) return '';
+  const header = `<tr class="report-absent-divider">
+    <td colspan="9" data-label="">
+      <span class="report-absent-divider-badge">Marked Absent</span>
+      <span class="report-absent-divider-note">${absentStudents.length} student${absentStudents.length === 1 ? ' was' : 's were'} not marked present and could not take this exam</span>
+    </td>
+  </tr>`;
+  const rows = absentStudents.map(student => `<tr class="report-row-absent">
+    <td data-label="Rank"><span class="report-rank-absent">&mdash;</span></td>
+    <td data-label="Name"><strong>${escHtml(student.studentName || student.name)}</strong></td>
+    <td data-label="Student ID">${escHtml(student.studentId)}</td>
+    <td data-label="Year / Section">${escHtml(getStudentYearSectionSummary(student))}</td>
+    <td data-label="Score"><span class="text-muted">&mdash;</span></td>
+    <td data-label="Percentage"><span class="text-muted">&mdash;</span></td>
+    <td data-label="Time" class="report-session-cell"><span class="report-session-empty">-</span></td>
+    <td data-label="Submitted" class="report-status-cell"><span class="badge badge-danger">Absent</span></td>
+    <td data-label="Actions"><span class="report-absent-hint">Marked absent &mdash; exam not taken</span></td>
+  </tr>`).join('');
+  return header + rows;
+}
+
 function renderReportTable() {
   syncReportSortButton();
   const examId = document.getElementById('report-exam-select').value;
@@ -9504,6 +9543,7 @@ function renderReportTable() {
   if (!examId) {
     document.getElementById('report-exam-title').textContent = 'Choose an exam to load results and rankings';
     document.getElementById('report-summary').classList.add('hidden');
+    document.getElementById('report-absent-count')?.classList.add('hidden');
     document.getElementById('report-tbody').innerHTML = '';
     releaseBtn.textContent = 'Release Scores';
     releaseBtn.className = 'btn btn-success';
@@ -9529,16 +9569,28 @@ function renderReportTable() {
   const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
   const sorted = [...sessions].sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 
+  const absentStudents = getExamAbsentStudents(exam);
+  const absentRowsHtml = renderReportAbsentRows(absentStudents);
+
   const summaryEl = document.getElementById('report-summary');
   summaryEl.classList.remove('hidden');
   document.getElementById('report-submitted-count').textContent = `${sessions.length} submitted`;
+
+  const absentBadge = document.getElementById('report-absent-count');
+  if (absentBadge) {
+    absentBadge.classList.toggle('hidden', absentStudents.length === 0);
+    absentBadge.textContent = `${absentStudents.length} absent`;
+  }
 
   const avgScore = sessions.length ? (sessions.reduce((s, x) => s + (x.score || 0), 0) / sessions.length).toFixed(1) : 'N/A';
   const maxScore = sessions[0]?.maxScore || '?';
   document.getElementById('report-avg-score').textContent = `Avg: ${avgScore}/${maxScore}`;
 
   if (!sorted.length) {
-    document.getElementById('report-tbody').innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>No submissions yet.</p></div></td></tr>`;
+    // Still list the absentees — an exam with no submissions but a full absentee
+    // list is exactly the case a professor needs to see explained.
+    document.getElementById('report-tbody').innerHTML =
+      `<tr><td colspan="9"><div class="empty-state"><p>No submissions yet.</p></div></td></tr>${absentRowsHtml}`;
     return;
   }
 
@@ -9567,7 +9619,7 @@ function renderReportTable() {
         </div>
       </td>
     </tr>`;
-  }).join('');
+  }).join('') + absentRowsHtml;
 }
 
 function generatePDF() {
@@ -9892,6 +9944,7 @@ async function exportExamReportPdf() {
 
   const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
   const sorted = [...sessions].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const absentStudents = getExamAbsentStudents(exam);
   const settings = DB.getSettings();
   const adminSession = Auth.getAdminSession();
   const subject = DB.getSubject(exam.subjectId);
@@ -9936,11 +9989,12 @@ async function exportExamReportPdf() {
   detailY = drawPdfInfoBlock(doc, detailY + 4, [
     ['Submitted Records', `${sorted.length}`, 'Highest Mark', highestMark],
     ['Average Score', `${averagePercent}%`, 'Passing Students', `${passCount}`],
-    ['Needs Review', `${needsReviewCount}`, 'Status', sorted.length ? 'Submitted records available' : 'No submitted records'],
+    ['Needs Review', `${needsReviewCount}`, 'Absent Students', `${absentStudents.length}`],
+    ['Status', sorted.length ? 'Submitted records available' : 'No submitted records', 'Attendance', absentStudents.length ? `${absentStudents.length} marked absent` : 'All enrolled students marked present'],
   ]) + 8;
 
   const tableStartY = detailY;
-  if (sorted.length === 0) {
+  if (sorted.length === 0 && absentStudents.length === 0) {
     doc.setFontSize(10);
     doc.setTextColor(71, 85, 105);
     doc.text('No submissions have been recorded for this examination as of the report date.', 14, tableStartY);
@@ -9949,6 +10003,17 @@ async function exportExamReportPdf() {
     showToast('PDF exported.', 'success');
     return;
   }
+
+  const absentTableData = absentStudents.map(student => [
+    '—',
+    student.studentName || student.name,
+    student.studentId,
+    getStudentYearSectionSummary(student, ' / ') || 'N/A',
+    '—',
+    '—',
+    '—',
+    'Absent',
+  ]);
 
   const tableData = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
@@ -9968,7 +10033,7 @@ async function exportExamReportPdf() {
     startY: tableStartY,
     margin: { top: 52, right: 14, bottom: 20, left: 14 },
     head: [['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Time', 'Status']],
-    body: tableData,
+    body: [...tableData, ...absentTableData],
     styles: {
       font: 'times',
       fontSize: 8.5,
@@ -9992,6 +10057,13 @@ async function exportExamReportPdf() {
       minCellHeight: 8,
     },
     alternateRowStyles: { fillColor: [250, 250, 250] },
+    // Absentee rows trail the ranked rows; tint them so they never read as a
+    // zero-scoring submission.
+    didParseCell: (data) => {
+      if (data.section !== 'body' || data.row.index < tableData.length) return;
+      data.cell.styles.fillColor = [253, 242, 232];
+      data.cell.styles.textColor = [124, 45, 18];
+    },
     columnStyles: {
       0: { halign: 'center', cellWidth: 17 },
       1: { cellWidth: 40 },
