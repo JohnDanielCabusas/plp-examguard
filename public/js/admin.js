@@ -7961,13 +7961,53 @@ function renderMonitoringTable(examId) {
   }
 
   const exam = DB.getExam(examId);
-  const sessions = DB.getSessionsByExam(examId).slice().sort(compareMonitorSessionsByLastName);
+  const persistedSessions = DB.getSessionsByExam(examId);
+  const excludedStudentIds = new Set(exam?.excludedStudentIds || []);
+  const rosterEntries = exam?.subjectId
+    ? getExamAttendanceStudents(exam.subjectId).map(student => {
+        const session = DB.getStudentSession(examId, student.studentId);
+        if (session) {
+          return {
+            ...session,
+            monitorAbsent: !session.startTime && excludedStudentIds.has(student.id),
+          };
+        }
+        return {
+          id: '',
+          examId,
+          studentId: student.studentId,
+          studentName: student.name || student.studentId,
+          yearLevel: student.yearLevel || '',
+          section: student.section || '',
+          yearSection: student.yearSection || '',
+          department: student.department || '',
+          program: student.program || '',
+          startTime: null,
+          endTime: null,
+          answers: {},
+          warnings: 0,
+          activities: [],
+          cameraSnapshots: [],
+          submitted: false,
+          autoSubmitted: false,
+          monitorPlaceholder: true,
+          monitorAbsent: excludedStudentIds.has(student.id),
+        };
+      })
+    : [];
+  const rosterStudentIds = new Set(
+    rosterEntries.map(entry => String(entry.studentId || '').trim().toUpperCase())
+  );
+  const orphanSessions = persistedSessions.filter(
+    session => !rosterStudentIds.has(String(session.studentId || '').trim().toUpperCase())
+  );
+  const sessions = [...rosterEntries, ...orphanSessions].sort(compareMonitorSessionsByLastName);
   const totalQs = exam ? exam.questions.length : 1;
 
   countEl.textContent = sessions.length + ' student' + (sessions.length !== 1 ? 's' : '');
 
   // ── Stats strip ──────────────────────────────────────────
-  const inProgress = sessions.filter(s => !s.submitted).length;
+  const inProgress = sessions.filter(s => !s.submitted && !!s.startTime).length;
   const submitted  = sessions.filter(s => s.submitted).length;
   const flagged    = sessions.filter(s => getEffectiveSessionWarningCount(s) >= 2).length;
 
@@ -7997,7 +8037,7 @@ function renderMonitoringTable(examId) {
 
   if (!sessions.length) {
     document.getElementById('monitor-tbody').innerHTML =
-      `<tr><td colspan="6"><div class="empty-state"><p>No students have joined this exam yet.</p></div></td></tr>`;
+      `<tr><td colspan="6"><div class="empty-state"><p>No students are enrolled in this exam's course.</p></div></td></tr>`;
     return;
   }
 
@@ -8029,17 +8069,21 @@ function renderMonitoringTable(examId) {
     const thread = DB.getMessagesForExamStudent(examId, s.studentId);
     const unread = thread.filter(m => m.senderRole === 'student' && !m.readAt).length;
     const hasUnreadReport = thread.some(m => m.type === 'report' && m.senderRole === 'student' && !m.readAt);
-    const chatBtnHtml = `<button class="tbl-btn ms-chat-btn ${unread ? 'has-unread' : ''} ${hasUnreadReport ? 'has-report' : ''}"
+    const chatBtnHtml = s.id ? `<button class="tbl-btn ms-chat-btn ${unread ? 'has-unread' : ''} ${hasUnreadReport ? 'has-report' : ''}"
         onclick="openStudentChat('${escHtml(examId)}','${escHtml(s.studentId)}','${escHtml(s.id)}')" title="Open chat with this student">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         ${unread ? `<span class="ms-chat-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
-      </button>`;
+      </button>` : '';
 
     const statusBadgeHtml = s.submitted
       ? (s.autoSubmitted
           ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
           : '<span class="ms-badge ms-badge-green">Submitted</span>')
-      : '<span class="ms-badge ms-badge-blue">In Progress</span>';
+      : s.startTime
+        ? '<span class="ms-badge ms-badge-blue">In Progress</span>'
+        : s.monitorAbsent
+          ? '<span class="ms-badge ms-badge-muted">Absent</span>'
+          : '<span class="ms-badge ms-badge-muted">Not Started</span>';
 
     const warnHtml = rawWarnings > 0
       ? `<div class="ms-warn-wrap"><span class="ms-warn-pill" title="Recorded warnings: ${rawWarnings}. Adjusted warnings: ${effectiveWarnings}.">${effectiveWarnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div>`
@@ -8048,10 +8092,10 @@ function renderMonitoringTable(examId) {
     const activityCount = (s.activities || []).length;
     const eyeOpen   = `<svg class="ms-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
     const eyeClosed = `<svg class="ms-eye ms-eye-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
-    const logsHtml = `<button class="ms-log-btn" id="ms-log-btn-${s.id}" onclick="showStudentLog('${s.id}')">
+    const logsHtml = s.id ? `<button class="ms-log-btn" id="ms-log-btn-${s.id}" onclick="showStudentLog('${s.id}')">
       ${eyeClosed}
       ${activityCount > 0 ? `<span class="ms-log-count">${activityCount}</span>` : '<span style="color:#d1d5db;font-size:12px;">—</span>'}
-    </button>`;
+    </button>` : '<span style="color:var(--text-muted);font-size:13px;">—</span>';
 
     return `<tr class="${rowClassName}">
       <td>
@@ -8075,7 +8119,11 @@ function renderMonitoringTable(examId) {
       <td style="text-align:center;">
         <div class="table-actions ms-action-cell">
           <div class="ms-action-main">
-            ${!s.submitted ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>` : '<span class="ms-action-status">Submitted</span>'}
+            ${s.submitted
+              ? '<span class="ms-action-status">Submitted</span>'
+              : s.startTime && s.id
+                ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>`
+                : '<span class="ms-action-status">—</span>'}
           </div>
           ${chatBtnHtml}
         </div>
@@ -8666,7 +8714,11 @@ async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase)
     const activities = s.activities || [];
     const counts = Object.fromEntries(violationTypes.map(t => [t, 0]));
     activities.forEach(a => { if (a.type in counts) counts[a.type]++; });
-    const status = s.submitted ? (s.autoSubmitted ? 'Auto-Submitted' : 'Submitted') : 'In Progress';
+    const status = s.submitted
+      ? (s.autoSubmitted ? 'Auto-Submitted' : 'Submitted')
+      : s.startTime
+        ? 'In Progress'
+        : 'Not Started';
     const scoreVal = s.submitted && s.maxScore != null ? (s.score ?? 0) : null;
     styleDataRow(rowIdx, [
       s.studentName || s.studentId,
@@ -10543,10 +10595,12 @@ async function openViolationReview(sessionId, activityIndex) {
   setText('violation-review-recorded', String(rawWarnings));
   setText('violation-review-adjusted', String(adjustedWarnings));
   const metadata = activity.metadata || {};
-  const metadataDetail = metadata.source === 'yolo'
-    ? ` Model ${metadata.modelVersion || 'YOLO'} reported ${Math.round(Number(metadata.confidence || 0) * 100)}% confidence after ${Number(metadata.frameHits || 0)} confirmed frames in ${Number(metadata.confirmationMs || 0)} ms (${metadata.policyMode || 'alert'} mode).`
-    : '';
-  setText('violation-review-detail', `${activity.detail || 'Violation recorded.'}${metadataDetail}`);
+  setText(
+    'violation-review-detail',
+    formatCameraDetectionContext(activity.type, activity.timestamp, metadata)
+      || activity.detail
+      || 'Violation recorded.',
+  );
   setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay processing');
 
   const notesEl = document.getElementById('violation-review-notes');
@@ -10590,7 +10644,7 @@ async function openViolationReview(sessionId, activityIndex) {
       video.onerror = () => {
         video.style.display = 'none';
         empty.style.display = '';
-        empty.textContent = 'This stored replay could not be decoded. New webcam violations will be saved with a corrected video format.';
+        empty.textContent = 'This replay could not be played. Please try again.';
       };
       video.onloadedmetadata = () => {
         empty.style.display = 'none';
@@ -10605,7 +10659,7 @@ async function openViolationReview(sessionId, activityIndex) {
         video.load?.();
       }
       empty.style.display = '';
-      empty.textContent = 'Replay metadata exists, but the video file could not be opened. Check the Supabase Storage bucket and policies for violation evidence.';
+      empty.textContent = 'This replay is temporarily unavailable. Please try again.';
       if (actions) actions.style.display = evidence ? '' : 'none';
     }
   } else {
@@ -10734,6 +10788,20 @@ function formatDateTime(iso) {
   catch { return iso; }
 }
 
+function formatCameraDetectionContext(violationType, timestamp, metadata = {}) {
+  const parts = [];
+  if (violationType) parts.push(getBehaviorLabel(violationType));
+  if (timestamp) parts.push(formatDateTime(timestamp));
+
+  const rawConfidence = Number(metadata?.confidence);
+  if (Number.isFinite(rawConfidence) && rawConfidence > 0) {
+    const percentage = rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
+    parts.push(`${Math.round(Math.min(100, percentage))}% confidence`);
+  }
+
+  return parts.join(' · ');
+}
+
 // ============================================================
 // CAMERA SNAPSHOT VIEWER
 // ============================================================
@@ -10763,12 +10831,10 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
     const activityIndex = getBestReplayActivityIndex(session, selected?.violationType, selected?.timestamp);
     img.src = selected?.imageData || '';
     img.style.display = '';
-    const label = selected?.violationType ? `${getBehaviorLabel(selected.violationType)} • ` : '';
     const metadata = selected?.detectionMetadata || {};
-    const yoloMeta = metadata.source === 'yolo'
-      ? ` | ${Math.round(Number(metadata.confidence || 0) * 100)}% | ${metadata.modelVersion || 'YOLO'} | ${metadata.policyMode || 'alert'} mode`
+    timeEl.textContent = selected
+      ? formatCameraDetectionContext(selected.violationType, selected.timestamp, metadata)
       : '';
-    timeEl.textContent = selected ? `${label}Captured at ${formatDateTime(selected.timestamp)}${yoloMeta}` : '';
     emptyEl.style.display = 'none';
     if (actionsEl) {
       if (evidence) {

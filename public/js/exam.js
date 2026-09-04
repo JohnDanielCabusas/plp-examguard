@@ -459,13 +459,18 @@ const ExamApp = {
     this._stopViolationReplayBuffer();
     if (!this._cameraStream || typeof MediaRecorder === 'undefined') return;
 
-    const mimeCandidates = ['video/webm;codecs=vp8', 'video/webm'];
+    // Prefer broadly supported WebM, then fall back to MP4 for Safari and
+    // laptops whose browser does not expose a WebM MediaRecorder encoder.
+    const mimeCandidates = [
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4;codecs=avc1.42E01E',
+      'video/mp4',
+    ];
     let mimeType = '';
-    mimeCandidates.some((candidate) => {
-      if (typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(candidate)) return false;
-      mimeType = candidate;
-      return true;
-    });
+    if (typeof MediaRecorder.isTypeSupported === 'function') {
+      mimeType = mimeCandidates.find(candidate => MediaRecorder.isTypeSupported(candidate)) || '';
+    }
 
     this._violationClipMimeType = mimeType;
     this._violationClipRecorders = [];

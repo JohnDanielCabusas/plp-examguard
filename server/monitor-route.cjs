@@ -105,10 +105,18 @@ function isReplayableViolationType(type) {
   return REPLAYABLE_VIOLATION_TYPES.has(String(type || '').trim());
 }
 
-function normalizeEvidenceMimeType(rawMimeType) {
-  const mimeType = String(rawMimeType || '').trim().toLowerCase();
-  if (mimeType === 'video/mp4') return 'video/mp4';
-  return 'video/webm';
+function detectEvidenceMimeType(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 128) return '';
+  const isWebm = buffer[0] === 0x1a
+    && buffer[1] === 0x45
+    && buffer[2] === 0xdf
+    && buffer[3] === 0xa3;
+  if (isWebm) return 'video/webm';
+
+  const isMp4 = buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp';
+  if (isMp4) return 'video/mp4';
+
+  return '';
 }
 
 function extensionForMimeType(mimeType) {
@@ -143,12 +151,7 @@ function decodeBase64Payload(rawValue) {
 }
 
 function isSupportedEvidenceBuffer(buffer, mimeType) {
-  if (!Buffer.isBuffer(buffer) || buffer.length < 128) return false;
-  if (mimeType === 'video/mp4') return buffer.subarray(4, 8).toString('ascii') === 'ftyp';
-  return buffer[0] === 0x1a
-    && buffer[1] === 0x45
-    && buffer[2] === 0xdf
-    && buffer[3] === 0xa3;
+  return detectEvidenceMimeType(buffer) === mimeType;
 }
 
 function normalizeEvidenceRow(row) {
@@ -444,13 +447,15 @@ async function handleViolationEvidenceInsert(req, res, body) {
   const studentId = String(body?.studentId || '').trim().toUpperCase();
   const violationType = String(body?.violationType || '').trim();
   const evidenceType = String(body?.evidenceType || 'pre_violation_webcam_clip').trim() || 'pre_violation_webcam_clip';
-  const mimeType = normalizeEvidenceMimeType(body?.mimeType);
   const clipStartedAt = String(body?.clipStartedAt || '').trim();
   const clipEndedAt = String(body?.clipEndedAt || '').trim();
   const triggeredAt = String(body?.triggeredAt || '').trim();
   const durationMs = normalizeEvidenceDuration(body?.durationMs);
   const fileSizeBytes = Number.parseInt(String(body?.fileSizeBytes ?? 0), 10);
   const payloadBuffer = decodeBase64Payload(body?.clipBase64 || '');
+  // Detect the real container from its bytes instead of trusting the browser's
+  // MIME label. Safari may report an MP4 codec-qualified type (or no type).
+  const mimeType = detectEvidenceMimeType(payloadBuffer);
 
   if (!violationEventId) return badRequest(res, 'Violation event ID is required.');
   if (!sessionId) return badRequest(res, 'Session ID is required.');
@@ -459,7 +464,7 @@ async function handleViolationEvidenceInsert(req, res, body) {
   if (!violationType) return badRequest(res, 'Violation type is required.');
   if (!clipStartedAt || !clipEndedAt || !triggeredAt) return badRequest(res, 'Clip timestamps are required.');
   if (!payloadBuffer?.length) return badRequest(res, 'Replay clip payload is required.');
-  if (!isSupportedEvidenceBuffer(payloadBuffer, mimeType)) {
+  if (!mimeType || !isSupportedEvidenceBuffer(payloadBuffer, mimeType)) {
     return badRequest(res, 'Replay clip is not a valid WebM or MP4 video.');
   }
   if (student.studentId !== studentId) return forbid(res);
