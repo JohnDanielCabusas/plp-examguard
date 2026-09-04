@@ -1267,6 +1267,20 @@ const ExamApp = {
     }
 
     if (exam.status === 'active') {
+      const examStartedAt = exam.startedAt ? new Date(exam.startedAt).getTime() : NaN;
+      const examDurationMinutes = Number(exam.timeLimit);
+      const examDeadline = Number.isFinite(examStartedAt) && Number.isFinite(examDurationMinutes) && examDurationMinutes > 0
+        ? examStartedAt + examDurationMinutes * 60 * 1000
+        : NaN;
+      if (Number.isFinite(examDeadline) && Date.now() >= examDeadline) {
+        const closedAt = new Date(examDeadline).toISOString();
+        DB.updateExam(exam.id, { status: 'closed', closedAt });
+        this.exam = { ...exam, status: 'closed', closedAt };
+        if (this.session) this.submitExam('timeout');
+        else this._showError('This exam has ended and is no longer accepting submissions.');
+        return;
+      }
+
       const launchActiveExam = () => {
         if (!this.session) {
           this.session = DB.addSession({
@@ -2998,6 +3012,7 @@ const ExamApp = {
             };
         this._applyLiveExamLocally(normalized);
         this.exam = DB.getExam(this.exam.id) || normalized;
+        this._syncLiveExamStatus();
         this._syncYoloMonitoringForExam();
         this._syncCameraExemptionState();
       })
@@ -3488,6 +3503,9 @@ const ExamApp = {
       this._syncLiveSessionState();
       return;
     }
+    // Exam closure is authoritative even while the student is still reading
+    // rules or granting camera access, before the active exam screen appears.
+    if (table === 'exams') this._syncLiveExamStatus();
     // Keep the chat live on both the active-exam and post-submit screens.
     const chatVisible = !document.getElementById('state-exam')?.classList.contains('hidden')
       || !document.getElementById('state-submitted')?.classList.contains('hidden');
@@ -3501,6 +3519,22 @@ const ExamApp = {
     } else if (table === 'exams') {
       this._syncCameraExemptionState();
     }
+  },
+
+  _syncLiveExamStatus() {
+    if (!this.exam || !this.session) return;
+    const liveExam = DB.getExam(this.exam.id);
+    if (liveExam) this.exam = liveExam;
+    const liveSession = this._getLiveSession();
+    if (this.exam.status !== 'closed' || liveSession?.submitted) return;
+
+    const startedAt = this.exam.startedAt ? new Date(this.exam.startedAt).getTime() : NaN;
+    const durationMinutes = Number(this.exam.timeLimit);
+    const deadline = Number.isFinite(startedAt) && Number.isFinite(durationMinutes)
+      ? startedAt + durationMinutes * 60 * 1000
+      : NaN;
+    this._teardownActiveExamForRemoteSubmission(liveSession || this.session);
+    this.submitExam(Number.isFinite(deadline) && Date.now() >= deadline ? 'timeout' : 'exam_closed');
   },
 
   // Keeps live camera enforcement in sync with the professor's exemption toggle
@@ -5781,23 +5815,29 @@ const ExamApp = {
     this.stopTimer();
 
     const session = DB.getSession(this.session.id);
-    let startTime;
+    let sessionStartTime;
     if (session && session.startTime) {
-      startTime = new Date(session.startTime).getTime();
+      sessionStartTime = new Date(session.startTime).getTime();
     } else {
       // Fresh start (retake after reset) — record start time now
-      startTime = Date.now();
-      DB.updateSession(this.session.id, { startTime: new Date(startTime).toISOString() });
+      sessionStartTime = Date.now();
+      DB.updateSession(this.session.id, { startTime: new Date(sessionStartTime).toISOString() });
     }
     // Fall back to a sane default rather than letting a missing/invalid
     // timeLimit turn the whole countdown into NaN (which would silently
     // never reach the auto-submit check below, since NaN <= 0 is false).
     const timeLimitMinutes = Number(this.exam?.timeLimit) > 0 ? Number(this.exam.timeLimit) : 60;
-    const totalSeconds = timeLimitMinutes * 60;
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    this.timeRemaining = Math.max(0, totalSeconds - elapsed);
+    const examStartedAt = this.exam?.startedAt ? new Date(this.exam.startedAt).getTime() : NaN;
+    const countdownStart = Number.isFinite(examStartedAt) ? examStartedAt : sessionStartTime;
+    const deadline = countdownStart + timeLimitMinutes * 60 * 1000;
+    this.timeRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
 
     if (this.timeRemaining <= 0) {
+      if (this.exam?.status === 'active') {
+        const closedAt = new Date(deadline).toISOString();
+        DB.updateExam(this.exam.id, { status: 'closed', closedAt });
+        this.exam = { ...this.exam, status: 'closed', closedAt };
+      }
       this.submitExam('timeout');
       return;
     }
@@ -5807,8 +5847,17 @@ const ExamApp = {
     if (!timerEl || !display) return;
 
     const tick = () => {
+      // An absolute deadline prevents background tabs and sleeping devices
+      // from pausing or extending the exam countdown.
+      this.timeRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       if (this.timeRemaining <= 0) {
+        display.textContent = '00:00';
         this.stopTimer();
+        if (this.exam?.status === 'active') {
+          const closedAt = new Date(deadline).toISOString();
+          DB.updateExam(this.exam.id, { status: 'closed', closedAt });
+          this.exam = { ...this.exam, status: 'closed', closedAt };
+        }
         this.submitExam('timeout');
         return;
       }
@@ -5821,8 +5870,6 @@ const ExamApp = {
       } else {
         timerEl.classList.remove('timer-warning');
       }
-
-      this.timeRemaining--;
     };
 
     tick();
@@ -7002,11 +7049,14 @@ const ExamApp = {
     const score = this.calculateScore();
 
     if (this.session) {
-      const autoSubmitted = trigger === 'auto' || trigger === 'timeout';
+      const autoSubmitted = trigger === 'auto' || trigger === 'timeout' || trigger === 'exam_closed';
       // Records WHY the session ended up auto-submitted (violations vs. time
       // running out) so the professor's Reports tab can show the real reason
       // instead of guessing from the warning count after the fact.
-      const submitReason = trigger === 'timeout' ? 'timeout' : trigger === 'auto' ? 'violations' : 'manual';
+      const submitReason = trigger === 'timeout' ? 'timeout'
+        : trigger === 'exam_closed' ? 'exam_closed'
+        : trigger === 'auto' ? 'violations'
+        : 'manual';
       DB.updateSession(this.session.id, {
         submitted: true,
         autoSubmitted,
@@ -7019,6 +7069,8 @@ const ExamApp = {
 
       if (trigger === 'timeout') {
         DB.addLog({ sessionId: this.session.id, studentId: this.session.studentId, examId: this.exam.id, type: 'timeout', details: 'Auto-submitted: time expired' });
+      } else if (trigger === 'exam_closed') {
+        DB.addLog({ sessionId: this.session.id, studentId: this.session.studentId, examId: this.exam.id, type: 'exam_closed', details: 'Auto-submitted: exam was closed by professor' });
       } else if (trigger === 'auto') {
         DB.addLog({ sessionId: this.session.id, studentId: this.session.studentId, examId: this.exam.id, type: 'auto_submit', details: 'Auto-submitted: max warnings reached' });
       }

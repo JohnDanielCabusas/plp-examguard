@@ -798,6 +798,16 @@ export default function AdminPage() {
                       <option value="">Select an exam to monitor</option>
                     </select>
                   </div>
+                  <div id="monitor-exam-timer" className="monitor-exam-timer hidden" role="timer" aria-live="off">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    <span className="monitor-exam-timer-copy">
+                      <span>Time remaining</span>
+                      <strong id="monitor-exam-timer-value">--:--</strong>
+                    </span>
+                    <button type="button" id="monitor-exam-timer-popout" className="monitor-exam-timer-popout hidden" onClick={() => window.enableFloatingExamTimer?.()} title="Restore draggable timer on other tabs" aria-label="Restore draggable timer on other tabs" aria-pressed="false">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+                    </button>
+                  </div>
                   <div className="monitor-view-toggle">
                     <button id="monitor-view-table" className="monitor-view-btn active" onClick={() => window.setMonitorView('table')}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: 'middle', marginRight: '4px' }}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -1116,6 +1126,24 @@ export default function AdminPage() {
                 truly floats fixed to the viewport (an .admin-section ancestor's entrance
                 animation leaves a lingering `transform`, which would otherwise turn this
                 into an absolutely-positioned element scoped to that section instead). */}
+            <div
+              id="floating-exam-timer"
+              className="floating-exam-timer hidden"
+              role="timer"
+              aria-live="off"
+              onPointerDown={(e) => window.startFloatingExamTimerDrag?.(e)}
+            >
+              <div className="floating-exam-timer-grip" aria-hidden="true">
+                <span/><span/><span/><span/><span/><span/>
+              </div>
+              <svg className="floating-exam-timer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <div className="floating-exam-timer-copy">
+                <span id="floating-exam-timer-title">Open exam</span>
+                <strong id="floating-exam-timer-value">--:--</strong>
+              </div>
+              <button type="button" className="floating-exam-timer-close" onPointerDown={(e) => e.stopPropagation()} onClick={() => window.dismissFloatingExamTimer?.()} title="Hide timer" aria-label="Hide exam countdown">&#10005;</button>
+            </div>
+
             <div className="exam-editor-scroll-fab hidden" id="exam-editor-scroll-fab">
               <button type="button" className="exam-scroll-fab-btn" id="exam-scroll-fab-btn" title="Scroll to bottom" onClick={() => window.handleExamScrollFabClick()}>
                 <svg id="exam-scroll-fab-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>

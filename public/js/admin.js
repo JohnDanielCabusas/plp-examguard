@@ -15,6 +15,10 @@ let currentSection = 'dashboard';
 let monitorInterval = null;
 let monitorExamId = null;
 let monitorNameSort = 'asc';
+let examDeadlineInterval = null;
+let floatingTimerDismissedExamId = null;
+let floatingTimerDragState = null;
+const expiringExamIds = new Set();
 let reportNameSort = 'asc';
 let reportInterval = null;
 let sectionPollInterval = null;
@@ -70,6 +74,159 @@ const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
   ...YOLO_VIOLATION_TYPES,
 ]);
 const MONITOR_EVIDENCE_POLL_MS = 2500;
+
+function getExamDeadlineMs(exam) {
+  const startedAt = exam?.startedAt ? new Date(exam.startedAt).getTime() : NaN;
+  const durationMinutes = Number(exam?.timeLimit);
+  if (!Number.isFinite(startedAt) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  return startedAt + durationMinutes * 60 * 1000;
+}
+
+function formatExamCountdown(msRemaining) {
+  const totalSeconds = Math.max(0, Math.ceil(msRemaining / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function autoCloseExpiredExam(exam) {
+  // Read/write the persisted record directly when the inline editor has an
+  // unsaved draft overlay. Expiry must reach every client without discarding
+  // the professor's in-progress form edits.
+  const latest = exam?.id
+    ? (examEditorOriginalGetExam ? examEditorOriginalGetExam(exam.id) : DB.getExam(exam.id))
+    : null;
+  const deadline = getExamDeadlineMs(latest);
+  if (!latest || latest.status !== 'active' || deadline === null || Date.now() < deadline || expiringExamIds.has(latest.id)) return false;
+
+  expiringExamIds.add(latest.id);
+  const closedAt = new Date(deadline).toISOString();
+  DB.getSessionsByExam(latest.id).filter(session => !session.submitted).forEach(session => {
+    const score = calculateSessionScoreBreakdown(latest, session);
+    DB.updateSession(session.id, {
+      submitted: true,
+      autoSubmitted: true,
+      submitReason: 'timeout',
+      endTime: closedAt,
+      score: score.earned,
+      maxScore: score.max,
+      activities: [
+        ...(Array.isArray(session.activities) ? session.activities : []),
+        { type: 'timeout', timestamp: closedAt, details: 'Auto-submitted: the exam-wide time limit expired' },
+      ],
+    });
+    DB.addLog({ sessionId: session.id, studentId: session.studentId, examId: latest.id, type: 'timeout', details: 'Auto-submitted: the exam-wide time limit expired' });
+  });
+  const statusUpdate = { status: 'closed', closedAt };
+  if (examEditorOriginalUpdateExam) examEditorOriginalUpdateExam(latest.id, statusUpdate);
+  else DB.updateExam(latest.id, statusUpdate);
+  if (examEditorDraftExam?.id === latest.id) {
+    examEditorDraftExam = { ...examEditorDraftExam, ...statusUpdate };
+    updateExamEditorSaveButtonState();
+  }
+  expiringExamIds.delete(latest.id);
+
+  if (currentQBuilderExamId === latest.id) refreshExamEditorStatusUI(latest.id);
+  if (currentSection === 'exams') renderExams();
+  if (currentSection === 'monitoring') renderMonitoringSectionLive();
+  showToast(`Time is up. "${latest.title}" was closed automatically.`, 'success');
+  return true;
+}
+
+function updateExamDeadlineDisplays() {
+  const exam = monitorExamId ? DB.getExam(monitorExamId) : null;
+  const deadline = getExamDeadlineMs(exam);
+  const isRunning = exam?.status === 'active' && deadline !== null && deadline > Date.now();
+  const remaining = isRunning ? deadline - Date.now() : 0;
+  const value = formatExamCountdown(remaining);
+  const urgent = isRunning && remaining <= 5 * 60 * 1000;
+
+  const inlineTimer = document.getElementById('monitor-exam-timer');
+  const inlineValue = document.getElementById('monitor-exam-timer-value');
+  const popoutButton = document.getElementById('monitor-exam-timer-popout');
+  if (inlineTimer) {
+    inlineTimer.classList.toggle('hidden', !isRunning);
+    inlineTimer.classList.toggle('is-urgent', urgent);
+    inlineTimer.title = isRunning ? `${exam.title} ends at ${new Date(deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  }
+  if (inlineValue) inlineValue.textContent = value;
+  if (popoutButton) {
+    const needsRestore = isRunning && floatingTimerDismissedExamId === exam.id;
+    popoutButton.classList.toggle('hidden', !needsRestore);
+    popoutButton.setAttribute('aria-pressed', 'false');
+    popoutButton.title = 'Restore draggable timer on other tabs';
+  }
+
+  const floatingTimer = document.getElementById('floating-exam-timer');
+  const floatingValue = document.getElementById('floating-exam-timer-value');
+  const floatingTitle = document.getElementById('floating-exam-timer-title');
+  const showFloating = isRunning && currentSection !== 'monitoring' && floatingTimerDismissedExamId !== exam.id;
+  if (floatingTimer) {
+    floatingTimer.classList.toggle('hidden', !showFloating);
+    floatingTimer.classList.toggle('is-urgent', urgent);
+    floatingTimer.title = isRunning ? `Drag to move · Ends at ${new Date(deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  }
+  if (floatingValue) floatingValue.textContent = value;
+  if (floatingTitle) floatingTitle.textContent = exam?.title || 'Open exam';
+}
+
+function tickExamDeadlineClock() {
+  DB.getActiveExams().forEach(autoCloseExpiredExam);
+  updateExamDeadlineDisplays();
+}
+
+function startExamDeadlineClock() {
+  if (!monitorExamId) monitorExamId = DB.getActiveExams()[0]?.id || null;
+  if (examDeadlineInterval) clearInterval(examDeadlineInterval);
+  tickExamDeadlineClock();
+  examDeadlineInterval = setInterval(tickExamDeadlineClock, 1000);
+}
+
+function dismissFloatingExamTimer() {
+  floatingTimerDismissedExamId = monitorExamId;
+  updateExamDeadlineDisplays();
+}
+
+function enableFloatingExamTimer() {
+  floatingTimerDismissedExamId = null;
+  updateExamDeadlineDisplays();
+  showToast('The timer will pop out when you switch to another tab.', 'success');
+}
+
+function startFloatingExamTimerDrag(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  const timer = document.getElementById('floating-exam-timer');
+  if (!timer || event.target.closest('.floating-exam-timer-close')) return;
+  const rect = timer.getBoundingClientRect();
+  floatingTimerDragState = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+  timer.style.left = `${rect.left}px`;
+  timer.style.top = `${rect.top}px`;
+  timer.style.right = 'auto';
+  timer.style.bottom = 'auto';
+  timer.classList.add('is-dragging');
+  event.preventDefault();
+}
+
+window.addEventListener('pointermove', (event) => {
+  if (!floatingTimerDragState || event.pointerId !== floatingTimerDragState.pointerId) return;
+  const timer = document.getElementById('floating-exam-timer');
+  if (!timer) return;
+  const maxLeft = Math.max(8, window.innerWidth - timer.offsetWidth - 8);
+  const maxTop = Math.max(8, window.innerHeight - timer.offsetHeight - 8);
+  const left = Math.min(maxLeft, Math.max(8, event.clientX - floatingTimerDragState.offsetX));
+  const top = Math.min(maxTop, Math.max(8, event.clientY - floatingTimerDragState.offsetY));
+  timer.style.left = `${left}px`;
+  timer.style.top = `${top}px`;
+});
+
+window.addEventListener('pointerup', (event) => {
+  if (!floatingTimerDragState || event.pointerId !== floatingTimerDragState.pointerId) return;
+  document.getElementById('floating-exam-timer')?.classList.remove('is-dragging');
+  floatingTimerDragState = null;
+});
 
 function readAdminSectionFromUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -1100,6 +1257,7 @@ document.addEventListener('dbReady', function init() {
 
   requestAnimationFrame(() => {
     showSection(readAdminSectionFromUrl());
+    startExamDeadlineClock();
     refreshMessageNotifications();       // seed backlog + set the Monitoring badge
     startMessageNotificationPolling();   // catch new messages even if realtime misses
     refreshExamShareNotifications();
@@ -1264,6 +1422,7 @@ function renderMonitoringSectionLive() {
   loadMonitoringExams();
   renderMonitoringTable(monitorExamId);
   setMonitorView(monitorExamId ? _monitorView : 'table');
+  updateExamDeadlineDisplays();
 }
 
 function renderReportsSectionLive() {
@@ -1772,6 +1931,7 @@ async function showSection(name) {
 
   currentSection = name;
   writeAdminSectionToUrl(name);
+  updateExamDeadlineDisplays();
 
   switch (name) {
     case 'dashboard': renderDashboard(); break;
@@ -5609,10 +5769,14 @@ async function setExamStatus(id, status) {
     DB.updateExam(id, { status: 'ready', code: accessCode });
     showToast(isLockedByCode ? `Exam set to Ready. Access code: ${accessCode}` : 'Exam set to Ready. No access code required.', 'success');
   } else if (status === 'active') {
-    const ok = await showConfirm(`Activate exam "${exam.title}"? Students can now ${isLockedByCode ? `enter with access code ${accessCode}.` : 'open it directly from their course page.'}`);
+    const ok = await showConfirm(`Activate exam "${exam.title}"? The ${exam.timeLimit}-minute timer starts immediately for everyone. Students can ${isLockedByCode ? `enter with access code ${accessCode}.` : 'open it directly from their course page.'}`);
     if (!ok) return;
-    DB.updateExam(id, { status: 'active', startedAt: new Date().toISOString() });
-    showToast('Exam is now ACTIVE.', 'success');
+    const startedAt = new Date().toISOString();
+    DB.updateExam(id, { status: 'active', startedAt, closedAt: null });
+    monitorExamId = id;
+    floatingTimerDismissedExamId = null;
+    tickExamDeadlineClock();
+    showToast(`Exam is ACTIVE. The ${exam.timeLimit}-minute timer has started.`, 'success');
   } else if (status === 'closed') {
     const ok = await showConfirm(`Close exam "${exam.title}"? No new submissions will be accepted.`);
     if (!ok) return;
@@ -5633,6 +5797,7 @@ async function setExamStatus(id, status) {
       DB.addLog({ sessionId: s.id, studentId: s.studentId, examId: id, type: 'exam_closed', details: 'Auto-submitted: exam was closed by professor' });
     });
     DB.updateExam(id, { status: 'closed', closedAt: new Date().toISOString() });
+    updateExamDeadlineDisplays();
     showToast('Exam closed.', 'success');
   } else if (status === 'archived') {
     DB.updateExam(id, { status: 'archived' });
@@ -5667,9 +5832,12 @@ async function reopenExam(id) {
       });
       clearViolationAlertsForSession(s.id);
     });
+    const startedAt = new Date().toISOString();
     DB.updateExam(id, {
       status: 'active',
-      reopenedAt: new Date().toISOString(),
+      startedAt,
+      reopenedAt: startedAt,
+      closedAt: null,
       scoringReleased: false,
       // Webcam exemptions are temporary overrides for a specific attempt. When
       // everyone retakes, the next attempt should go back to the exam's base rules.
@@ -5678,9 +5846,13 @@ async function reopenExam(id) {
     showToast('Exam reopened. All students can retake the exam.', 'success');
   } else {
     // Just reopen for new/unsubmitted students; keep existing submissions
-    DB.updateExam(id, { status: 'active', reopenedAt: new Date().toISOString() });
+    const startedAt = new Date().toISOString();
+    DB.updateExam(id, { status: 'active', startedAt, reopenedAt: startedAt, closedAt: null });
     showToast('Exam reopened. Students who haven\'t submitted can now take the exam.', 'success');
   }
+  monitorExamId = id;
+  floatingTimerDismissedExamId = null;
+  tickExamDeadlineClock();
   renderExams();
 }
 
@@ -7238,7 +7410,11 @@ function loadMonitoringExams() {
 
   const requestedId = String(monitorExamId || sel.value || '').trim();
   const existingIds = new Set(exams.map(exam => exam.id));
-  const defaultExam = exams.find(exam => DB.getSessionsByExam(exam.id).length > 0) || exams[0] || null;
+  const defaultExam = exams.find(exam => exam.status === 'active' && DB.getSessionsByExam(exam.id).length > 0)
+    || exams.find(exam => exam.status === 'active')
+    || exams.find(exam => DB.getSessionsByExam(exam.id).length > 0)
+    || exams[0]
+    || null;
   const nextExamId = existingIds.has(requestedId)
     ? requestedId
     : (defaultExam?.id || '');
@@ -7248,6 +7424,7 @@ function loadMonitoringExams() {
 
   monitorExamId = nextExamId;
   sel.value = nextExamId;
+  updateExamDeadlineDisplays();
 }
 
 let _monitorView = 'table'; // 'table' | 'camera'
@@ -7463,12 +7640,14 @@ function renderCameraGrid(examId) {
 
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
+  floatingTimerDismissedExamId = null;
   _activeLogSessionId = null;
   document.getElementById('log-body').innerHTML = `<div class="activity-log-empty"><p>Select a student to view activity</p></div>`;
   document.getElementById('log-student-name').textContent = '';
   pollMonitorSessions({ immediate: true });
   refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true }).catch(() => {});
   renderMonitoringTable(monitorExamId);
+  updateExamDeadlineDisplays();
   // With no selected exam, keep the compact sessions layout visible.
   setMonitorView(monitorExamId ? _monitorView : 'table');
 }
