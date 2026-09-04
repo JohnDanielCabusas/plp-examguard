@@ -5242,9 +5242,16 @@ function renderExamOutline() {
     .filter(({ s }) => s.level === 0)
     .map(({ s, i }) => `<div class="exam-outline-tick" data-outline-idx="${i}" title="${escHtml(s.label)}" onclick="jumpToExamOutline(${i})"></div>`)
     .join('');
-  panelEl.innerHTML = _examOutlineSections.map((s, i) =>
-    `<button type="button" class="exam-outline-item${s.level ? ' exam-outline-item-sub' : ''}" data-outline-idx="${i}" onclick="jumpToExamOutline(${i})">${escHtml(s.label)}</button>`
-  ).join('');
+  panelEl.innerHTML = `
+    <div class="exam-outline-items">
+      ${_examOutlineSections.map((s, i) =>
+        `<button type="button" class="exam-outline-item${s.level ? ' exam-outline-item-sub' : ''}" data-outline-idx="${i}" onclick="jumpToExamOutline(${i})">${escHtml(s.label)}</button>`
+      ).join('')}
+    </div>
+    <button type="button" class="exam-outline-add-question" onclick="jumpToExamAddQuestion()">
+      <span aria-hidden="true">+</span>
+      Add Question
+    </button>`;
   updateExamOutlineActive();
 }
 
@@ -5252,6 +5259,17 @@ function jumpToExamOutline(i) {
   const target = _examOutlineSections[i];
   const el = target && document.getElementById(target.id);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function jumpToExamAddQuestion() {
+  const addBar = document.querySelector('#exam-editor-questions-card .exam-add-q-bar');
+  if (!addBar) return;
+  addBar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  addBar.classList.remove('exam-add-q-bar-highlight');
+  // Restart the animation when the shortcut is used repeatedly.
+  void addBar.offsetWidth;
+  addBar.classList.add('exam-add-q-bar-highlight');
+  setTimeout(() => addBar.classList.remove('exam-add-q-bar-highlight'), 1200);
 }
 
 function updateExamOutlineActive() {
