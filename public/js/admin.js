@@ -1735,6 +1735,11 @@ window.addEventListener('storage', (e) => {
 });
 
 async function showSection(name) {
+  // The AI generator belongs to the Exams editor, so it should never float over
+  // another main section. Close it before any leave-confirmation is shown as
+  // well, otherwise that confirmation can be obscured by the generator.
+  if (name !== currentSection) closeAIGen();
+
   const examEditorOpen = currentSection === 'exams' && !document.getElementById('exam-editor-view')?.classList.contains('hidden');
   if (examEditorOpen && name !== 'exams') {
     const shouldLeave = await confirmDiscardExamEditorChanges();
@@ -10857,7 +10862,10 @@ function closeAIGen() {
   const box = document.getElementById('ai-gen-modal-box');
   if (box) { box.style.maxWidth = ''; box.style.height = ''; box.style.borderRadius = ''; box.style.width = ''; box.dataset.fullscreen = '0'; }
   const backdrop = document.getElementById('modal-ai-gen');
-  if (backdrop) { backdrop.style.padding = ''; }
+  if (backdrop) {
+    backdrop.style.left = 'var(--sidebar-current-width, 260px)';
+    backdrop.style.padding = '12px';
+  }
   const icon = document.getElementById('ai-gen-expand-icon');
   if (icon) icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
   const modal = document.getElementById('modal-ai-gen');
