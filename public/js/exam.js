@@ -6767,13 +6767,7 @@ const ExamApp = {
     const titleEl = document.getElementById('review-exam-title');
     if (titleEl) titleEl.textContent = exam.title;
     const nameEl = document.getElementById('review-student-name');
-    if (nameEl) nameEl.textContent = sess.studentName + ' · ' + sess.studentId;
     const scoreEl = document.getElementById('review-score-chip');
-    if (scoreEl) {
-      const pct = sess.maxScore ? Math.round(sess.score / sess.maxScore * 100) : 0;
-      scoreEl.textContent = `${sess.score}/${sess.maxScore} — ${pct}%`;
-      scoreEl.style.background = pct >= 75 ? 'rgba(21,128,61,0.8)' : pct >= 60 ? 'rgba(217,119,6,0.8)' : 'rgba(220,38,38,0.8)';
-    }
 
     const container = document.getElementById('review-container');
     if (!container) return;
@@ -6787,37 +6781,87 @@ const ExamApp = {
         const pct = maxScore ? Math.round(totalScore / maxScore * 100) : 0;
         scoreEl.className = `review-score-chip ${pct >= 75 ? 'score-high' : pct >= 60 ? 'score-mid' : 'score-low'}`;
         scoreEl.innerHTML = `
-          <div class="review-score-chip-stats">
-            <span id="review-score-value">${totalScore}/${maxScore}</span>
-            <span class="review-score-chip-divider"></span>
-            <span id="review-score-pct">${pct}%</span>
+          <div class="review-score-copy review-score-released">
+            <div class="review-score-chip-label">Total Score</div>
+            <div class="review-score-chip-stats">
+              <strong id="review-score-value">${totalScore}</strong>
+              <span class="review-score-maximum">/ ${maxScore}</span>
+            </div>
           </div>
-          <div class="review-score-chip-label">Total Score</div>
         `;
       } else {
         scoreEl.className = 'review-score-chip review-score-chip-pending';
         scoreEl.innerHTML = `
+          <span class="review-score-status-icon" aria-hidden="true">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"/><path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c7 0 10 8 10 8a15.7 15.7 0 0 1-2.1 3.2"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3 8 10 8a10.8 10.8 0 0 0 4.1-.8"/></svg>
+          </span>
+          <div class="review-score-copy">
           <div class="review-score-chip-stats">
             <span>Score Hidden</span>
           </div>
           <div class="review-score-chip-label">Your professor will release scores when ready</div>
+          </div>
         `;
       }
     }
 
     const typeLabel = { mcq: 'MCQ', checkbox: 'Checkbox', tf: 'T/F', identification: 'ID', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay' };
+    const hasSubmittedAnswer = (question, answer) => {
+      if (question.type === 'checkbox') {
+        try { return (JSON.parse(answer || '[]') || []).length > 0; } catch (_) { return false; }
+      }
+      if (question.type === 'matching') {
+        try { return Object.values(JSON.parse(answer || '{}') || {}).some((value) => String(value || '').trim()); } catch (_) { return false; }
+      }
+      return !!answer && answer.toString().trim() !== '';
+    };
+    const questionCount = (exam.questions || []).length;
+    const answeredCount = (exam.questions || []).filter((question) =>
+      hasSubmittedAnswer(question, (sess.answers || {})[question.id])
+    ).length;
+    const answeredPct = questionCount ? Math.round((answeredCount / questionCount) * 100) : 0;
+    const answeredCountEl = document.getElementById('review-answered-count');
+    const answeredPctEl = document.getElementById('review-answered-pct');
+    const progressFillEl = document.getElementById('review-progress-fill');
+    if (answeredCountEl) answeredCountEl.textContent = `${answeredCount} of ${questionCount}`;
+    if (answeredPctEl) answeredPctEl.textContent = `${answeredPct}%`;
+    if (progressFillEl) progressFillEl.style.width = `${answeredPct}%`;
 
     container.innerHTML = exam.questions.map((q, idx) => {
       const ans = (sess.answers || {})[q.id];
       let resultHtml = '';
+      const hasAnswer = hasSubmittedAnswer(q, ans);
+      let questionResult = scoreReleased && !hasAnswer ? 'is-unanswered' : '';
+
+      if (scoreReleased && hasAnswer && q.type !== 'essay') {
+        let isCorrect = false;
+        if (q.type === 'enumeration') {
+          const expected = (q.answers || []).map((item) => item.toString().trim().toUpperCase());
+          const given = (ans || '').split('\n').map((item) => item.trim().toUpperCase()).filter(Boolean);
+          isCorrect = expected.length > 0 && expected.every((item) => given.includes(item));
+        } else if (q.type === 'matching') {
+          const pairs = q.pairs || [];
+          let given = {};
+          try { given = JSON.parse(ans || '{}') || {}; } catch (_) {}
+          isCorrect = pairs.length > 0 && pairs.every((pair, pairIndex) =>
+            (given[pairIndex] || '').toString().trim().toUpperCase() === (pair.match || '').toString().trim().toUpperCase()
+          );
+        } else if (q.type === 'checkbox') {
+          let given = [];
+          try { given = JSON.parse(ans || '[]') || []; } catch (_) {}
+          const expected = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
+          const selected = given.slice().sort((a, b) => a - b);
+          isCorrect = expected.length === selected.length && expected.every((value, answerIndex) => value === selected[answerIndex]);
+        } else {
+          isCorrect = !!ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
+        }
+        questionResult = isCorrect ? 'is-correct' : 'is-wrong';
+      }
 
       if (q.type === 'essay') {
         resultHtml = `
           <div class="review-answer-group">
-            <div class="review-answer-row review-answer-row-stack">
-              <div class="review-answer-label">Your answer</div>
-              <div class="review-answer-essay">${_esc(ans || '(no answer)')}</div>
-            </div>
+            <div class="review-answer-essay ${hasAnswer ? '' : 'is-empty'}">${_esc(ans || 'No answer')}</div>
             <div class="review-answer-note">Essay responses are reviewed manually by your instructor.</div>
           </div>`;
       } else if (q.type === 'enumeration') {
@@ -6828,10 +6872,6 @@ const ExamApp = {
         if (scoreReleased) {
           resultHtml = `
             <div class="review-answer-group">
-              <div class="review-answer-row">
-                <div class="review-answer-label">Your answer</div>
-                <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
-              </div>
               <div class="review-enum-list">
                 ${expected.map((e, i) => {
                   const got = studentItems.includes(e.toUpperCase());
@@ -6850,23 +6890,15 @@ const ExamApp = {
         } else {
           resultHtml = `
             <div class="review-answer-group">
-              <div class="review-answer-row">
-                <div class="review-answer-label">Your answer</div>
-                <div class="review-answer-value ${studentItemsRaw.length ? 'is-neutral' : 'is-empty'}">${studentItemsRaw.length ? `${studentItemsRaw.length} item(s) submitted` : '(no answer)'}</div>
-              </div>
               <div class="review-enum-list">
                 ${studentItemsRaw.length ? studentItemsRaw.map((item) => {
-                  const got = expected.some((e) => e.toUpperCase() === item.toUpperCase());
-                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
-                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                  return `<div class="review-enum-item">
                     <div class="review-enum-copy">
                       <div class="review-enum-expected">${_esc(item)}</div>
-                      <div class="review-enum-student">${got ? 'This submitted item is correct.' : 'This submitted item is incorrect.'}</div>
                     </div>
                   </div>`;
-                }).join('') : `<div class="review-answer-note">(no answer)</div>`}
+                }).join('') : `<div class="review-answer-value is-empty">No answer</div>`}
               </div>
-              <div class="review-answer-note">${matched.length} correct submitted item(s). Remaining answers stay hidden until your professor releases scores.</div>
             </div>`;
         }
       } else if (q.type === 'matching') {
@@ -6878,14 +6910,14 @@ const ExamApp = {
               ${pairs.map((p, pi) => {
                 const studentValue = studentAns[pi] || '';
                 const correct = studentValue.toUpperCase() === p.match.toUpperCase();
-                return `<div class="review-matching-item ${correct ? 'is-correct' : 'is-wrong'}">
+                return `<div class="review-matching-item ${scoreReleased ? (correct ? 'is-correct' : 'is-wrong') : ''}">
                   <div class="review-matching-term">${_esc(p.term)}</div>
                   <div class="review-matching-arrow">${this._portalIcon('arrowRight', { size: 14, stroke: '#8fa0b6' })}</div>
                   <div class="review-matching-answer">
                     <div class="review-matching-student">${_esc(studentValue || '(no answer)')}</div>
                     ${scoreReleased
                       ? (!correct ? `<div class="review-matching-correct">Correct: ${_esc(p.match)}</div>` : '')
-                      : `<div class="review-matching-note">${correct ? 'Matched correctly.' : studentValue ? 'Correct match hidden until scores are released.' : 'No answer submitted.'}</div>`}
+                      : ''}
                   </div>
                 </div>`;
               }).join('')}
@@ -6911,61 +6943,47 @@ const ExamApp = {
                       ${!got ? `<div class="review-enum-student">${wasGiven ? 'You selected this, but it\'s not correct' : 'You missed this correct option'}</div>` : ''}
                     </div>
                   </div>`;
-                }).join('') || `<div class="review-answer-note">(no answer)</div>`}
+                }).join('') || `<div class="review-answer-value is-empty">No answer</div>`}
               </div>
             </div>`;
         } else {
-          const missedCount = correctIndices.filter((oi) => !given.includes(oi)).length;
           resultHtml = `
             <div class="review-answer-group">
               <div class="review-enum-list">
                 ${given.length ? given.map((oi) => {
                   const opt = (q.options || [])[oi];
-                  const got = correctIndices.includes(oi);
-                  return `<div class="review-enum-item ${got ? 'is-correct' : 'is-wrong'}">
-                    <span class="review-enum-icon">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
+                  return `<div class="review-enum-item">
                     <div class="review-enum-copy">
                       <div class="review-enum-expected">${_esc(opt || 'Selected option')}</div>
-                      <div class="review-enum-student">${got ? 'This selected option is correct.' : 'This selected option is incorrect.'}</div>
                     </div>
                   </div>`;
-                }).join('') : `<div class="review-answer-note">(no answer)</div>`}
+                }).join('') : `<div class="review-answer-value is-empty">No answer</div>`}
               </div>
-              <div class="review-answer-note">${missedCount > 0 ? `${missedCount} correct option(s) remain hidden until your professor releases scores.` : 'Full answer details will appear once scores are released.'}</div>
             </div>`;
         }
       } else {
         const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
-        const answerClass = !ans ? 'is-empty' : correct ? 'is-correct' : 'is-wrong';
+        const answerClass = !ans ? 'is-empty' : scoreReleased ? (correct ? 'is-correct' : 'is-wrong') : 'is-neutral';
         resultHtml = `
           <div class="review-answer-group">
-            <div class="review-answer-row">
-              <div class="review-answer-label">Your answer</div>
-              <div class="review-answer-value ${answerClass}">
-                <span>${_esc(ans || '(no answer)')}</span>
-                ${ans ? `<span class="review-answer-status-icon">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</span>` : ''}
-              </div>
+            <div class="review-answer-value ${answerClass}">
+              <span>${_esc(ans || 'No answer')}</span>
             </div>
-            ${scoreReleased
-              ? `<div class="review-answer-row">
-                  <div class="review-answer-label">Correct answer</div>
-                  <div class="review-answer-value is-correct">${_esc(q.correctAnswer || '-')}</div>
-                </div>`
+            ${scoreReleased && !correct
+              ? `<div class="review-correct-answer"><span>Correct:</span> <strong>${_esc(q.correctAnswer || '-')}</strong></div>`
               : ''}
           </div>`;
       }
 
       return `<article class="review-question-card">
         <div class="review-question-header">
-          <div class="review-question-number">${idx + 1}</div>
+          <div class="review-question-number ${questionResult}">${idx + 1}</div>
           <div class="review-question-main">
-            <div class="review-question-topline">
-              <h3 class="review-question-title">${_esc(q.content)}</h3>
-              <span class="review-question-type">${_esc(typeLabel[q.type] || q.type)}</span>
-            </div>
+            <h3 class="review-question-title">${_esc(q.content)}</h3>
             ${q.imageUrl ? `<img src="${q.imageUrl}" alt="Question illustration" class="review-question-image" />` : ''}
             ${resultHtml}
           </div>
+          <span class="review-question-type">${_esc(typeLabel[q.type] || q.type)}</span>
         </div>
       </article>`;
     }).join('');

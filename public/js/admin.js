@@ -3572,8 +3572,10 @@ function buildMoreItems(e) {
   if (e.status === 'closed') {
     items += `<button class="action-dd-item" onclick="reopenExam('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> Reopen Exam</button>`;
   }
-  if (['active','closed'].includes(e.status)) {
+  if (['ready','active','closed'].includes(e.status)) {
     items += `<button class="action-dd-item" onclick="openExamResultsInReports('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Results</button>`;
+  }
+  if (['active','closed'].includes(e.status)) {
     if (e.scoringReleased) {
       items += `<button class="action-dd-item" onclick="hideScoreByExam('${e.id}');closeModal('modal-more-actions')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg> Hide Scores</button>`;
     } else {
@@ -9371,7 +9373,7 @@ function renderExamStats() {
 // REPORTS
 // ============================================================
 function loadReportExams() {
-  const exams = DB.getExams().filter(e => e.status === 'closed' || e.status === 'active');
+  const exams = DB.getExams().filter(e => ['ready', 'active', 'closed'].includes(e.status));
   const sel = document.getElementById('report-exam-select');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +
@@ -9554,9 +9556,14 @@ function renderReportTable() {
   const exam = DB.getExam(examId);
   if (!exam) return;
   document.getElementById('report-exam-title').textContent = exam.title;
+  releaseBtn.disabled = !['active', 'closed'].includes(exam.status);
 
   // Toggle release/hide button based on current state
-  if (exam.scoringReleased) {
+  if (exam.status === 'ready') {
+    releaseBtn.textContent = 'Scores available after activation';
+    releaseBtn.className = 'btn btn-success';
+    releaseBtn.onclick = null;
+  } else if (exam.scoringReleased) {
     releaseBtn.textContent = '✓ Scores Released — Hide from Students';
     releaseBtn.className = 'btn btn-warning';
     releaseBtn.onclick = hideScores;

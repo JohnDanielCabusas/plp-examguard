@@ -648,7 +648,7 @@ export default function AdminPage() {
                         ['exam-shuffle-a',     'Shuffle Answers', 'Randomizes answer choices for each student.', null],
                         ['exam-require-camera','Motion Detection', 'Monitors student movement and restricted objects through the camera.', {text:'CAMERA', bg:'#dbeafe', color:'#1e40af'}],
                         ['exam-ai-detect',     'AI Detection', 'Flags essay responses that look AI-generated.', {text:'ESSAYS', bg:'#fef9c3', color:'#92400e'}],
-                        ['exam-allow-review',  'Allow Review', 'After submission, students only see which item numbers were right or wrong.', {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
+                        ['exam-allow-review',  'Allow Review', 'Students can revisit their submitted answers. Right and wrong results appear only after scores are released.', {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
                       ].map(([id, label, tooltip, badge]) => (
                         <label key={id} className="exam-detail-toggle">
                           <div className="checkbox-wrapper-30">

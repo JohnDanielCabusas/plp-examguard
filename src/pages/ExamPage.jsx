@@ -382,21 +382,43 @@ export default function ExamPage() {
               </div>
             </div>
             <div id="review-score-chip" className="review-score-chip">
-              <div className="review-score-chip-stats">
-                <span id="review-score-value">0/0</span>
-                <span className="review-score-chip-divider" />
-                <span id="review-score-pct">0%</span>
+              <div className="review-score-copy review-score-released">
+                <div className="review-score-chip-label">Total Score</div>
+                <div className="review-score-chip-stats">
+                  <strong id="review-score-value">0</strong>
+                  <span className="review-score-maximum">/ 0</span>
+                </div>
               </div>
-              <div className="review-score-chip-label">Total Score</div>
             </div>
           </div>
         </div>
         <div className="review-body">
+          <div className="review-content-header">
+            <div className="review-content-heading">
+              <h1>Your Answers</h1>
+              <p>Review your submitted answers below.</p>
+            </div>
+            <div className="review-progress" aria-label="Answer completion">
+              <div className="review-progress-copy">
+                <span>Answered <strong id="review-answered-count">0 of 0</strong></span>
+              </div>
+              <div className="review-progress-meter">
+                <div className="review-progress-track" aria-hidden="true">
+                  <span id="review-progress-fill" />
+                </div>
+                <strong id="review-answered-pct">0%</strong>
+              </div>
+            </div>
+          </div>
           <div className="review-list" id="review-container" />
         </div>
         <div className="review-footer">
           <button type="button" className="review-back-btn examv2-interactive" onClick={() => window.ExamApp.returnToLogin()}>
-            <BackLabel text="Back" />
+            <svg className="review-back-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" />
+              <path d="m12 19-7-7 7-7" />
+            </svg>
+            <span>Back</span>
           </button>
         </div>
       </div>
