@@ -965,6 +965,14 @@ const SupabaseSync = {
     return next;
   },
 
+  // Lets workflows that update related records preserve their required order.
+  // For example, a retake must not become visible to the student until the
+  // student's temporary webcam exemption has finished syncing on the exam row.
+  waitForDocSync(table, id) {
+    if (!table || !id) return Promise.resolve();
+    return this._docSyncChains.get(this._docSyncKey(table, id)) || Promise.resolve();
+  },
+
   syncDoc(table, data) {
     if (!this._client || !data?.id) return;
     if (table === 'messages' && this._messagesSupported === false) return;

@@ -8145,6 +8145,7 @@ function renderMonitoringTable(examId) {
 // ============================================================
 let _profChatCtx = null; // { examId, studentId, sessionId, studentName }
 let _profChatPollTimer = null;
+const _profCameraTogglePending = new Set();
 
 function refreshProfChatFromSync() {
   const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
@@ -8157,6 +8158,17 @@ function refreshProfChatFromSync() {
       renderProfChatMessages();
       renderMonitoringTable(monitorExamId);
       refreshMessageNotifications();
+    })
+    .catch(() => {});
+}
+
+function refreshProfCameraFromSync() {
+  if (!_profChatCtx || !window.SupabaseSync?.refreshExams) return Promise.resolve();
+  const activeKey = `${_profChatCtx.examId}:${_profChatCtx.studentId}`;
+  return Promise.resolve(SupabaseSync.refreshExams())
+    .then(() => {
+      if (!_profChatCtx || `${_profChatCtx.examId}:${_profChatCtx.studentId}` !== activeKey) return;
+      renderProfCameraRow();
     })
     .catch(() => {});
 }
@@ -8239,6 +8251,9 @@ function openStudentChat(examId, studentId, sessionId) {
   // Freshness: pull the latest messages straight from Supabase in case a realtime
   // push was missed, then repaint the open thread once they land.
   refreshProfChatFromSync();
+  // Do the same for the per-student webcam override so the toggle never opens
+  // with a stale action after a missed realtime event.
+  refreshProfCameraFromSync();
 }
 
 function closeStudentChat() {
@@ -8254,6 +8269,8 @@ function renderProfCameraRow() {
   const row = document.getElementById('prof-chat-camera-row');
   if (!row || !_profChatCtx) return;
   const { examId, studentId } = _profChatCtx;
+  const toggleKey = `${examId}:${studentId}`;
+  const togglePending = _profCameraTogglePending.has(toggleKey);
   const exam = DB.getExam(examId);
   if (!exam || !exam.requireCamera) {
     row.innerHTML = `<div class="prof-chat-camera-note">Camera is not required for this exam.</div>`;
@@ -8267,18 +8284,31 @@ function renderProfCameraRow() {
       </span>
       <span>${exempt ? 'Webcam requirement is <b>OFF</b> for this student.' : 'Webcam is <b>required</b> for this student.'}</span>
     </div>
-    <button type="button" class="prof-chat-camera-toggle ${exempt ? 'is-exempt' : ''}" onclick="toggleCameraExemption()">
+    <button type="button" class="prof-chat-camera-toggle ${exempt ? 'is-exempt' : ''}" onclick="toggleCameraExemption()" ${togglePending ? 'disabled aria-busy="true"' : ''}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${exempt ? '<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>' : '<path d="M1 1l22 22"/><path d="M21 7l-7 5 2.5 1.79"/><path d="M15 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 1.17 1.82"/><path d="M9.5 19H15a2 2 0 0 0 2-2v-1.5"/>'}</svg>
-      ${exempt ? 'Re-enable webcam' : 'Turn off webcam for this student'}
+      ${togglePending ? 'Updating webcam…' : exempt ? 'Re-enable webcam' : 'Turn off webcam for this student'}
     </button>`;
 }
 
-function toggleCameraExemption() {
+async function toggleCameraExemption() {
   if (!_profChatCtx) return;
   const { examId, studentId, studentName } = _profChatCtx;
+  const toggleKey = `${examId}:${studentId}`;
+  if (_profCameraTogglePending.has(toggleKey)) return;
   const nowExempt = !DB.isStudentCameraExempt(examId, studentId);
-  DB.setStudentCameraExempt(examId, studentId, nowExempt);
+  _profCameraTogglePending.add(toggleKey);
   renderProfCameraRow();
+  try {
+    // Reconcile first, then apply the action the professor actually clicked.
+    // This avoids reversing a newer server state when realtime was missed.
+    await refreshProfCameraFromSync();
+    DB.setStudentCameraExempt(examId, studentId, nowExempt);
+    await (window.SupabaseSync?.waitForDocSync?.('exams', examId) || Promise.resolve());
+    await refreshProfCameraFromSync();
+  } finally {
+    _profCameraTogglePending.delete(toggleKey);
+    renderProfCameraRow();
+  }
   showToast(nowExempt
     ? `Webcam requirement turned off for ${studentName}.`
     : `Webcam requirement restored for ${studentName}.`);
@@ -10127,9 +10157,22 @@ async function allowStudentRetake(sessionId) {
     `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nTheir previous submission, answers, and score will be cleared.`
   );
   if (!ok) return;
-  if (exam?.id && session.studentId) {
+  let retakeExam = exam;
+  if (exam?.id && window.SupabaseSync?.refreshExams) {
+    // The exemption may have been changed from another professor tab. Refresh
+    // before removing it so the reset is based on the authoritative list.
+    await Promise.resolve(SupabaseSync.refreshExams()).catch(() => {});
+    retakeExam = DB.getExam(exam.id) || exam;
+  }
+  if (retakeExam?.id && session.studentId) {
     // A fresh retake should restore the original webcam requirement for this exam.
-    DB.setStudentCameraExempt(exam.id, session.studentId, false);
+    // Wait for that exam-row change before publishing the session reset, otherwise
+    // the student can see the retake first and relaunch with a stale exemption.
+    DB.setStudentCameraExempt(retakeExam.id, session.studentId, false);
+    await (window.SupabaseSync?.waitForDocSync?.('exams', retakeExam.id) || Promise.resolve());
+    if (_profChatCtx?.examId === retakeExam.id && _profChatCtx?.studentId === session.studentId) {
+      renderProfCameraRow();
+    }
   }
   DB.updateSession(sessionId, {
     submitted:     false,
@@ -10633,7 +10676,7 @@ function ensureViolationReviewModal() {
       </div>
       <div class="modal-footer" id="violation-review-actions">
         <button class="btn btn-secondary" onclick="closeViolationReview()">Close</button>
-        <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss False Positive</button>
+        <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss Violation</button>
         <button id="violation-review-confirm-btn" class="btn btn-primary" onclick="submitViolationReviewDecision('confirmed')">Confirm Violation</button>
       </div>
     </div>
@@ -10697,7 +10740,7 @@ async function openViolationReview(sessionId, activityIndex) {
   }
   const dismissBtn = document.getElementById('violation-review-dismiss-btn');
   const confirmBtn = document.getElementById('violation-review-confirm-btn');
-  if (dismissBtn) dismissBtn.textContent = evidence?.reviewStatus === 'dismissed' ? 'Keep Dismissed' : 'Dismiss False Positive';
+  if (dismissBtn) dismissBtn.textContent = 'Dismiss Violation';
   if (confirmBtn) confirmBtn.textContent = evidence?.reviewStatus === 'confirmed' ? 'Keep Confirmed' : 'Confirm Violation';
 
   const video = document.getElementById('violation-review-video');
@@ -10919,7 +10962,7 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
       if (evidence) {
         actionsEl.innerHTML = `
           ${activityIndex >= 0 ? `<button class="btn btn-primary" onclick="openViolationReview('${escAttr(sessionId)}', ${activityIndex})">Review Replay</button>` : ''}
-          <button class="btn btn-danger" onclick="dismissViolationEvidence('${escAttr(evidence.id)}', '${escAttr(sessionId)}', ${activityIndex})">Dismiss False Positive</button>
+          <button class="btn btn-danger" onclick="dismissViolationEvidence('${escAttr(evidence.id)}', '${escAttr(sessionId)}', ${activityIndex})">Dismiss Violation</button>
         `;
         actionsEl.style.display = 'flex';
       } else {
