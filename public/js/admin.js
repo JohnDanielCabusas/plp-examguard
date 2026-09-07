@@ -2648,37 +2648,71 @@ function copyEnrollCode(code, subjectName) {
   copyTextToClipboard(cleanCode, `Enrollment code copied: ${cleanCode}`);
 }
 
-function copyTextToClipboard(text, successMessage) {
-  const cleanText = String(text || '').trim();
-  if (!cleanText) return false;
+async function copyTextToClipboard(text, successMessage, options = {}) {
+  const rawText = String(text ?? '');
+  const cleanText = options.preserveWhitespace ? rawText : rawText.trim();
+  if (!cleanText.trim()) return false;
 
   const fallbackCopy = () => {
+    const previouslyFocused = document.activeElement;
     const tmp = document.createElement('textarea');
     tmp.value = cleanText;
     tmp.setAttribute('readonly', '');
     tmp.style.position = 'fixed';
+    tmp.style.left = '-9999px';
+    tmp.style.top = '0';
     tmp.style.opacity = '0';
     tmp.style.pointerEvents = 'none';
     document.body.appendChild(tmp);
     tmp.focus();
     tmp.select();
     tmp.setSelectionRange(0, cleanText.length);
-    document.execCommand('copy');
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch (_) {
+      copied = false;
+    }
     tmp.remove();
+    previouslyFocused?.focus?.();
+    return copied;
   };
 
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(cleanText)
-      .then(() => showToast(successMessage, 'success'))
-      .catch(() => {
-        fallbackCopy();
-        showToast(successMessage, 'success');
-      });
-  } else {
-    fallbackCopy();
+  // Run the synchronous path first while the click still carries user
+  // activation. If the browser does not support it, start the modern API in
+  // the same click task before awaiting anything.
+  const fallbackCopied = fallbackCopy();
+  if (fallbackCopied) {
     showToast(successMessage, 'success');
+    return true;
   }
-  return true;
+
+  let modernWrite = null;
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      modernWrite = navigator.clipboard.writeText(cleanText);
+    } catch (_) {
+      modernWrite = null;
+    }
+  }
+
+  let modernCopied = false;
+  if (modernWrite) {
+    try {
+      await modernWrite;
+      modernCopied = true;
+    } catch (_) {
+      modernCopied = false;
+    }
+  }
+
+  if (modernCopied) {
+    showToast(successMessage, 'success');
+    return true;
+  }
+
+  showToast('Unable to access the clipboard. Allow clipboard permission and try again.', 'error');
+  return false;
 }
 
 function copyExamCode(code) {
@@ -9564,12 +9598,73 @@ function renderReportAbsentRows(absentStudents) {
   return header + rows;
 }
 
+function getOrderedSubmittedReportSessions(examId) {
+  if (!examId) return [];
+  return DB.getSessionsByExam(examId)
+    .filter(session => session.submitted)
+    .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
+}
+
+let reportCopyFeedbackTimer = null;
+
+function showReportScoresCopiedFeedback() {
+  const button = document.getElementById('btn-copy-report-scores');
+  const label = document.getElementById('report-copy-scores-label');
+  if (!button || !label) return;
+  clearTimeout(reportCopyFeedbackTimer);
+  button.classList.add('is-copied');
+  button.setAttribute('aria-label', 'Scores copied');
+  label.hidden = false;
+  reportCopyFeedbackTimer = setTimeout(() => {
+    button.classList.remove('is-copied');
+    button.setAttribute('aria-label', 'Copy scores only in the current student order');
+    label.hidden = true;
+  }, 1800);
+}
+
+async function copyReportScores() {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  if (!examId) {
+    showToast('Select an exam before copying scores.', 'error');
+    return;
+  }
+
+  // Read the raw earned-score value attached to each currently rendered Score
+  // cell. This guarantees the clipboard follows the exact visible row order
+  // without copying names, totals, percentages, rank, or any other column.
+  const scoreCells = [...document.querySelectorAll('#report-tbody td[data-report-score]')];
+  if (!scoreCells.length) {
+    showToast('There are no submitted scores to copy yet.', 'info');
+    return;
+  }
+  const scores = scoreCells.map(cell => cell.dataset.reportScore ?? '');
+  if (!scores.some(score => score !== '')) {
+    showToast('The submitted scores have not been calculated yet.', 'info');
+    return;
+  }
+
+  // Newline-delimited plain text pastes into a single Excel column and remains
+  // a simple score-only list in Word. Keep blank values so row alignment is not
+  // shifted if a submitted session is still waiting for a calculated score.
+  const copied = await copyTextToClipboard(
+    scores.join('\r\n'),
+    `${scores.length} score${scores.length === 1 ? '' : 's'} copied in the current student order.`,
+    { preserveWhitespace: true },
+  );
+  if (copied) showReportScoresCopiedFeedback();
+}
+window.copyReportScores = copyReportScores;
+
 function renderReportTable() {
   syncReportSortButton();
   const examId = document.getElementById('report-exam-select').value;
   const pdfBtn = document.getElementById('btn-generate-pdf');
+  const copyScoresBtn = document.getElementById('btn-copy-report-scores');
   const releaseBtn = document.getElementById('btn-release-scores');
   pdfBtn.disabled = false;
+  // Keep this control clickable. The handler provides a specific message when
+  // no exam or score rows are available instead of silently swallowing clicks.
+  if (copyScoresBtn) copyScoresBtn.disabled = false;
   releaseBtn.disabled = !examId;
 
   if (!examId) {
@@ -9603,8 +9698,8 @@ function renderReportTable() {
     releaseBtn.onclick = releaseScores;
   }
 
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
-  const sorted = [...sessions].sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
+  const sorted = getOrderedSubmittedReportSessions(examId);
+  const sessions = sorted;
 
   const absentStudents = getExamAbsentStudents(exam);
   const absentRowsHtml = renderReportAbsentRows(absentStudents);
@@ -9640,7 +9735,7 @@ function renderReportTable() {
       <td data-label="Name"><strong>${escHtml(s.studentName)}</strong></td>
       <td data-label="Student ID">${escHtml(s.studentId)}</td>
       <td data-label="Year / Section">${escHtml(getStudentYearSectionSummary(s))}</td>
-      <td data-label="Score">
+      <td data-label="Score" data-report-score="${s.score !== null && s.score !== undefined ? escAttr(String(s.score)) : ''}">
         <div style="display:flex;align-items:center;gap:8px;">
           <span>${s.score !== null ? s.score : '—'}/${s.maxScore}</span>
           <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${pct}%;"></div></div>

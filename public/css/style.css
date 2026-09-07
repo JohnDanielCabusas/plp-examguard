@@ -3028,8 +3028,98 @@ tr:hover td { background: #F8FDF8; }
   justify-content: flex-end;
 }
 
+.report-card-controls,
+.report-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.report-card-controls {
+  justify-content: flex-end;
+}
+
+/* Keep the sort/filter control and every report count pill the same height. */
+#report-card .report-card-controls .monitor-sort-btn,
+#report-card .report-summary .badge {
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 #report-card table {
   min-width: 1180px;
+}
+
+.report-score-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.report-copy-scores-btn {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  gap: 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: none;
+  transition: color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+.report-copy-scores-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.report-copy-scores-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: transparent;
+  transform: translateY(-1px);
+}
+
+.report-copy-scores-btn.is-copied {
+  width: auto;
+  flex-basis: auto;
+  padding-right: 2px;
+  color: var(--text);
+}
+
+.report-copy-scores-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.report-copy-scores-btn:disabled {
+  color: var(--text-muted);
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 #report-card th:nth-child(7),

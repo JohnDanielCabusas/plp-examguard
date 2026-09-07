@@ -920,7 +920,7 @@ export default function AdminPage() {
               <div className="card" id="report-card">
                 <div className="card-header">
                   <span className="card-title" id="report-exam-title">Choose an exam to load results and rankings</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="report-card-controls">
                     <button
                       type="button"
                       id="report-sort-btn"
@@ -935,7 +935,7 @@ export default function AdminPage() {
                       </svg>
                       <span id="report-sort-btn-label">Last name A-Z</span>
                     </button>
-                    <div style={{ display: 'flex', gap: '8px' }} id="report-summary" className="hidden">
+                    <div id="report-summary" className="report-summary hidden">
                       <span className="badge badge-info" id="report-submitted-count" />
                       <span className="badge badge-danger hidden" id="report-absent-count" />
                       <span className="badge badge-success" id="report-avg-score" />
@@ -945,7 +945,37 @@ export default function AdminPage() {
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Year / Section</th><th>Score</th><th>Percentage</th><th>Time</th><th>Submitted</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Rank</th>
+                          <th>Name</th>
+                          <th>Student ID</th>
+                          <th>Year / Section</th>
+                          <th>
+                            <span className="report-score-heading">
+                              <span>Score</span>
+                              <button
+                                type="button"
+                                id="btn-copy-report-scores"
+                                className="report-copy-scores-btn"
+                                onClick={() => window.copyReportScores?.()}
+                                title="Copy scores only in the current student order"
+                                aria-label="Copy scores only in the current student order"
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                                <span id="report-copy-scores-label" hidden>Copied</span>
+                              </button>
+                            </span>
+                          </th>
+                          <th>Percentage</th>
+                          <th>Time</th>
+                          <th>Submitted</th>
+                          <th style={{ textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
                       <tbody id="report-tbody" />
                     </table>
                   </div>
