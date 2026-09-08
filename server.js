@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
 const { handleMonitorRoute } = require('./server/monitor-route.cjs');
+const { handleRandomForestRoute } = require('./server/random-forest-route.cjs');
 const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
 const { cleanupProfessorActivityLog } = require('./server/auth-service.cjs');
 
@@ -90,6 +91,14 @@ const server = http.createServer((req, res) => {
 
   if (pathname.startsWith('/api/monitor/')) {
     handleMonitorRoute(req, res);
+    return;
+  }
+
+  if (
+    pathname.startsWith('/api/exam-sessions/')
+    || pathname.startsWith('/api/statistics/random-forest')
+  ) {
+    handleRandomForestRoute(req, res);
     return;
   }
 

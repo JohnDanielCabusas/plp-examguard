@@ -47,3 +47,17 @@ the browser and is not a model trained by TUKLAS.
 The matching runtime WASM files are copied from the installed npm package to
 `public/vendor/mediapipe/wasm` by `npm run prepare:mediapipe`. Keep the model
 and runtime files local so an exam does not depend on a CDN.
+
+## MediaPipe Hand Landmarker
+
+`hand_landmarker.task` is the official MediaPipe Hand Landmarker float16 task
+bundle. A dedicated browser worker runs it locally at a lower sampling rate and
+merges only the latest count into the FaceMesh observation stream. Keeping the
+task in its own worker isolates the MediaPipe runtime used by Face Landmarker.
+Only the maximum summarized hand count reaches Random Forest; webcam frames and
+hand landmarks are not sent to the prediction service. The worker verifies the
+configured SHA-256 before initializing the task.
+
+- Source: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`
+- SHA-256: `FBC2A30080C3C557093B5DDFC334698132EB341044CCEE322CCF8BCF3607CDE1`
+- Runtime: `@mediapipe/tasks-vision`

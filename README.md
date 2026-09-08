@@ -129,6 +129,33 @@ npm run test
 npm run build
 ```
 
+## Random Forest prediction
+
+The professor Statistics page includes a server-side Random Forest summary for
+completed examination sessions. Train the private artifact and validate the
+integration with:
+
+```powershell
+npm run train:random-forest
+npm run test:random-forest
+npm run test:random-forest:browser
+npm run test:facemesh
+npm run test:facemesh:browser
+```
+
+Apply `supabase/random-forest-predictions-migration.sql` before opening the
+Statistics card. Detailed setup, feature units, environment variables, metrics,
+privacy behavior, and retraining limitations are documented in
+`ml/random_forest/README.md` and `docs/random-forest-implementation.md`.
+
+Random Forest output is review support only. It never confirms academic
+dishonesty or changes examination grades.
+
+The included inference runtime requires the persistent Node server started by
+`npm start` and its Python child process. A static-only Vercel deployment must
+host the validated predictor as a private backend service before enabling the
+Statistics card in production.
+
 Use these commands to validate the application before deployment.
 
 ## Notes

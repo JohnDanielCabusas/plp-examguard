@@ -62,6 +62,16 @@ const BASE_CONFIG = Object.freeze({
     overlapWindowMs: 4000,
     faceBoxExpansionRatio: 0.18,
   }),
+  randomForest: Object.freeze({
+    featureContractVersion: 'rf-session-summary-v1',
+    handModelUrl: '/models/hand_landmarker.task',
+    handModelSha256: 'fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1',
+    handInferenceIntervalMs: 200,
+    maximumHands: 3,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.5,
+    minHandTrackingConfidence: 0.5,
+  }),
   captureEvidence: false,
   enableIrisDirection: false,
 });
@@ -80,6 +90,7 @@ export function resolveFaceMonitoringConfig(value = {}) {
     geometry: mergeSection(BASE_CONFIG.geometry, raw.geometry),
     temporal: mergeSection(BASE_CONFIG.temporal, raw.temporal),
     correlation: mergeSection(BASE_CONFIG.correlation, raw.correlation),
+    randomForest: mergeSection(BASE_CONFIG.randomForest, raw.randomForest),
     inferenceFps: Math.min(15, Math.max(5, Number(raw.inferenceFps || BASE_CONFIG.inferenceFps))),
     maximumInferenceDimension: Math.min(
       960,

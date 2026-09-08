@@ -44,20 +44,39 @@ try {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
-  const result = await page.evaluate(async () => {
-    const module = await import('/src/lib/proctoring/facemesh/browserSmoke.js');
-    const direct = await module.smokeTestFaceLandmarker();
-    const worker = await module.smokeTestFaceLandmarkerWorker();
-    const failure = await module.smokeTestMissingFaceLandmarkerModel();
-    const cleanup = await module.smokeTestFaceLandmarkerCleanupDuringInitialization();
-    return { ...direct, ...worker, ...failure, ...cleanup };
-  });
+  const result = {};
+  const checks = [
+    'smokeTestMissingHandLandmarkerModel',
+    'smokeTestFaceLandmarker',
+    'smokeTestFaceLandmarkerWorker',
+    'smokeTestMissingFaceLandmarkerModel',
+    'smokeTestFaceLandmarkerCleanupDuringInitialization',
+  ];
+  for (const check of checks) {
+    const checkPage = await browser.newPage();
+    checkPage.on('pageerror', error => pageErrors.push(error.message));
+    try {
+      await checkPage.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+      const partial = await checkPage.evaluate(async checkName => {
+        const module = await import('/src/lib/proctoring/facemesh/browserSmoke.js');
+        return module[checkName]();
+      }, check);
+      Object.assign(result, partial);
+      console.log(`${check} passed.`);
+    } finally {
+      await checkPage.close();
+    }
+  }
   if (
     !result.initialized
     || !result.matrixOutputAvailable
     || !result.workerInitialized
+    || !result.handTrackingAvailable
+    || !Number.isFinite(result.handCount)
     || !result.missingModelRejected
     || !result.failedRuntimeStopped
+    || !result.missingHandReported
+    || !result.faceContinuedWithoutHand
     || !result.duplicateStartShared
     || !result.cancellationRejected
     || !result.cancelledRuntimeStopped

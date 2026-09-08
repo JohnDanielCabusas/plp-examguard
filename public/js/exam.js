@@ -143,6 +143,7 @@ const ExamApp = {
   _faceCorrelator: null,
   _faceMeshCalibrating: false,
   _faceMeshUnavailable: false,
+  _faceHandTrackingUnavailable: false,
   _faceMeshStarting: false,
   _faceMeshStatus: 'idle',
   _lastFaceMeshObservation: null,
@@ -2791,6 +2792,7 @@ const ExamApp = {
     this._cameraRequired = false;
     this._faceMeshBaseline = null;
     this._faceMeshUnavailable = false;
+    this._faceHandTrackingUnavailable = false;
     this._faceMeshCalibrating = false;
     if (this._shouldShowExamPolicies()) {
       this._requestExamPolicies();
@@ -2905,6 +2907,10 @@ const ExamApp = {
   _beginExamRuntime() {
     if (this._examRuntimeStarted) return;
     this._examRuntimeStarted = true;
+    this._recordActivity('browser_exam_start', 'Browser examination session started', {
+      source: 'BROWSER',
+      featureContractVersion: 'rf-session-summary-v1',
+    });
     this._remoteForceSubmitSessionId = null;
     this._rememberTrustedInteraction(2000);
     this._enableRefreshProtection();
@@ -4244,6 +4250,10 @@ const ExamApp = {
           if (status.state === 'ready') this._setFaceMeshStatus('ready', 'Face scan ready');
           else if (status.state === 'fallback') this._setFaceMeshStatus('loading', 'Starting face scan');
           else if (status.state === 'degraded') this._setFaceMeshStatus('warning', 'Adjusting face scan');
+          else if (status.state === 'hand-unavailable') {
+            this._faceHandTrackingUnavailable = true;
+            console.warn('[FaceMesh] Random Forest hand tracking unavailable:', status.message || 'unknown error');
+          }
           else if (status.state === 'error') this._setFaceMeshStatus('error');
         },
         onObservation: observation => this._handleFaceMeshObservation(observation),
@@ -4287,6 +4297,10 @@ const ExamApp = {
       ...classified,
       occluded: blazeFaceStillVisible,
       personPresent: classified.facePresent || blazeFaceStillVisible || yoloPersonStillVisible,
+      faceCount: this._latestFaceContext?.capturedAt
+        && Date.now() - this._latestFaceContext.capturedAt <= 1600
+        ? Math.min(2, Math.max(0, Number(this._latestFaceContext.faces?.length || 0)))
+        : (classified.facePresent ? 1 : 0),
     };
     this._lastFaceMeshObservation = enriched;
     this._faceAggregator?.observe?.(enriched);
@@ -4470,14 +4484,16 @@ const ExamApp = {
     if (!this.session?.id || !this._faceAggregator) return;
     const session = DB.getSession(this.session.id);
     if (!session) return;
+    const summary = this._faceAggregator.snapshot();
     DB.updateSession(this.session.id, {
       aiDetections: {
         ...(session.aiDetections || {}),
         faceMonitoring: {
-          ...this._faceAggregator.snapshot(),
+          ...summary,
           source: 'FACEMESH',
           updatedAt: new Date().toISOString(),
-          randomForestCompatible: false,
+          randomForestCompatible: summary.random_forest_compatible === true
+            && !this._faceHandTrackingUnavailable,
         },
       },
     });
@@ -7675,6 +7691,12 @@ const ExamApp = {
     const submitModal = document.getElementById('confirm-submit-modal');
     if (submitModal && !submitModal.classList.contains('hidden')) unlockBodyScroll();
     submitModal.classList.add('hidden');
+
+    this._recordActivity('browser_exam_end', 'Browser examination session ended', {
+      source: 'BROWSER',
+      featureContractVersion: 'rf-session-summary-v1',
+      trigger: String(trigger || 'manual'),
+    });
 
     this._disableRefreshProtection();
     this._stopSessionSyncPolling();

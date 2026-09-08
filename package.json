@@ -11,6 +11,10 @@
     "test:replay": "node scripts/check-replay-readiness.mjs",
     "test:yolo": "node scripts/test-yolo-policy.mjs && node scripts/test-yolo-worker-parsing.mjs && node scripts/smoke-test-yolo-model.mjs && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-coco-v1.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-tuklas-v2.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-phone-specialist-v1.json",
     "test:facemesh": "node scripts/test-facemesh.mjs",
+    "test:random-forest": "node scripts/test-random-forest.cjs && node scripts/test-random-forest-route.cjs && node scripts/test-random-forest-worker.cjs && node scripts/test-random-forest-ui.cjs && .\\.venv\\Scripts\\python.exe -m unittest discover -s ml/random_forest/tests -v",
+    "test:random-forest:database": "node scripts/test-random-forest-database.cjs",
+    "test:random-forest:browser": "node scripts/smoke-test-random-forest-ui.mjs",
+    "train:random-forest": ".\\.venv\\Scripts\\python.exe ml/random_forest/train_random_forest.py",
     "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"

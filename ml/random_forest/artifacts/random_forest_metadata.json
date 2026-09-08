@@ -1,0 +1,105 @@
+{
+  "model_name": "tuklas_random_forest",
+  "model_version": "1.0.0",
+  "feature_contract_version": "rf-session-summary-v1",
+  "target": "suspicion_label",
+  "positive_class": "suspicious",
+  "positive_class_encoded": 1,
+  "feature_columns": [
+    "browser_start_count",
+    "browser_end_count",
+    "browser_tab_switched_count",
+    "browser_screenshot_count",
+    "browser_exam_duration_minutes",
+    "webcam_face_present",
+    "webcam_no_of_face",
+    "webcam_face_conf",
+    "webcam_hand_count",
+    "webcam_head_pitch",
+    "webcam_head_yaw",
+    "webcam_head_roll"
+  ],
+  "class_names": [
+    "non_suspicious",
+    "suspicious"
+  ],
+  "model_classes": [
+    0,
+    1
+  ],
+  "thresholds": {
+    "monitoring": 0.5,
+    "suspicious": 0.8
+  },
+  "random_seed": 42,
+  "model_parameters": {
+    "n_estimators": 500,
+    "random_state": 42,
+    "class_weight": "balanced",
+    "min_samples_leaf": 2,
+    "n_jobs": -1
+  },
+  "trained_at": "2026-09-08T07:34:32.913308Z",
+  "python_version": "3.11.9",
+  "numpy_version": "2.4.6",
+  "pandas_version": "3.0.5",
+  "joblib_version": "1.5.3",
+  "scikit_learn_version": "1.9.0",
+  "dataset_sha256": "f541b64d8e23b2a2bfab981e85d93215a4a6dd42cbcb4ac7d4121f3594bdaf59",
+  "model_sha256": "2513f3499e57cf19a12aa535396dbad9abbe312493a1e233d8ebf212dfc930ba",
+  "feature_ranges": {
+    "browser_start_count": {
+      "min": 0.0,
+      "max": 2.0
+    },
+    "browser_end_count": {
+      "min": 0.0,
+      "max": 2.0
+    },
+    "browser_tab_switched_count": {
+      "min": 0.0,
+      "max": 5.0
+    },
+    "browser_screenshot_count": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "browser_exam_duration_minutes": {
+      "min": 0.0,
+      "max": 44.13
+    },
+    "webcam_face_present": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "webcam_no_of_face": {
+      "min": 0.0,
+      "max": 2.0
+    },
+    "webcam_face_conf": {
+      "min": 0.0,
+      "max": 98.5072
+    },
+    "webcam_hand_count": {
+      "min": 0.0,
+      "max": 3.0
+    },
+    "webcam_head_pitch": {
+      "min": -0.056531,
+      "max": 0.30996
+    },
+    "webcam_head_yaw": {
+      "min": -0.098344,
+      "max": 0.74048
+    },
+    "webcam_head_roll": {
+      "min": -0.00612,
+      "max": 0.001977
+    }
+  },
+  "limitations": [
+    "The source dataset has no anonymized student or session grouping identifier.",
+    "This baseline uses a stratified row-level split and requires grouped validation on consent-based TUKLAS pilot data.",
+    "Predictions are review support and do not establish academic dishonesty."
+  ]
+}

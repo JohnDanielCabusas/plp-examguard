@@ -4,9 +4,11 @@ import { loadEnv } from 'vite';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const { forwardEnvironment } = require('./server/environment.cjs');
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
 const { handleMonitorRoute } = require('./server/monitor-route.cjs');
+const { handleRandomForestRoute } = require('./server/random-forest-route.cjs');
 const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
 
 function resolveHost(env) {
@@ -32,29 +34,36 @@ function ignoreNonFrontendWatchPath(filePath) {
     || /(?:^|\/)__pycache__(?:\/|$)/.test(normalized);
 }
 
+const SERVER_ENV_NAMES = [
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_SECURE',
+  'SMTP_USER',
+  'SMTP_PASS',
+  'SMTP_FROM_EMAIL',
+  'SMTP_FALLBACK_MODE',
+  'SUPABASE_DB_HOST',
+  'SUPABASE_DB_PORT',
+  'SUPABASE_DB_NAME',
+  'SUPABASE_DB_USER',
+  'SUPABASE_DB_PASSWORD',
+  'SUPABASE_DB_SSL',
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_PUBLISHABLE_KEY',
+  'AUTH_DEFAULT_SYSADMIN_PASSWORD',
+  'AUTH_DEFAULT_PROFESSOR_PASSWORD',
+  'AUTH_DEFAULT_PROFESSOR_USERNAME',
+  'AUTH_DEFAULT_PROFESSOR_EMAIL',
+  'RF_PYTHON_PATH',
+  'RF_MODEL_PATH',
+  'RF_METADATA_PATH',
+];
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const host = resolveHost(env);
   const port = resolvePort(env.VITE_PORT, env.PORT, process.env.VITE_PORT, process.env.PORT);
-  process.env.SMTP_HOST = env.SMTP_HOST || process.env.SMTP_HOST;
-  process.env.SMTP_PORT = env.SMTP_PORT || process.env.SMTP_PORT;
-  process.env.SMTP_SECURE = env.SMTP_SECURE || process.env.SMTP_SECURE;
-  process.env.SMTP_USER = env.SMTP_USER || process.env.SMTP_USER;
-  process.env.SMTP_PASS = env.SMTP_PASS || process.env.SMTP_PASS;
-  process.env.SMTP_FROM_EMAIL = env.SMTP_FROM_EMAIL || process.env.SMTP_FROM_EMAIL;
-  process.env.SMTP_FALLBACK_MODE = env.SMTP_FALLBACK_MODE || process.env.SMTP_FALLBACK_MODE;
-  process.env.SUPABASE_DB_HOST = env.SUPABASE_DB_HOST || process.env.SUPABASE_DB_HOST;
-  process.env.SUPABASE_DB_PORT = env.SUPABASE_DB_PORT || process.env.SUPABASE_DB_PORT;
-  process.env.SUPABASE_DB_NAME = env.SUPABASE_DB_NAME || process.env.SUPABASE_DB_NAME;
-  process.env.SUPABASE_DB_USER = env.SUPABASE_DB_USER || process.env.SUPABASE_DB_USER;
-  process.env.SUPABASE_DB_PASSWORD = env.SUPABASE_DB_PASSWORD || process.env.SUPABASE_DB_PASSWORD;
-  process.env.SUPABASE_DB_SSL = env.SUPABASE_DB_SSL || process.env.SUPABASE_DB_SSL;
-  process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD = env.AUTH_DEFAULT_SYSADMIN_PASSWORD || process.env.AUTH_DEFAULT_SYSADMIN_PASSWORD;
-  process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD = env.AUTH_DEFAULT_PROFESSOR_PASSWORD || process.env.AUTH_DEFAULT_PROFESSOR_PASSWORD;
-  process.env.AUTH_DEFAULT_PROFESSOR_USERNAME = env.AUTH_DEFAULT_PROFESSOR_USERNAME || process.env.AUTH_DEFAULT_PROFESSOR_USERNAME;
-  process.env.AUTH_DEFAULT_PROFESSOR_EMAIL = env.AUTH_DEFAULT_PROFESSOR_EMAIL || process.env.AUTH_DEFAULT_PROFESSOR_EMAIL;
+  forwardEnvironment(env, SERVER_ENV_NAMES);
 
   return {
     plugins: [
@@ -75,6 +84,13 @@ export default defineConfig(({ mode }) => {
             }
             if (pathname.startsWith('/api/monitor/')) {
               handleMonitorRoute(req, res);
+              return;
+            }
+            if (
+              pathname.startsWith('/api/exam-sessions/')
+              || pathname.startsWith('/api/statistics/random-forest')
+            ) {
+              handleRandomForestRoute(req, res);
               return;
             }
             if (pathname === '/api/email/send-verification') {

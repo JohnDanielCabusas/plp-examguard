@@ -282,6 +282,73 @@ exception
     null;
 end $$;
 
++-- Versioned, professor-scoped Random Forest predictions for completed exam sessions.
+create table if not exists public.random_forest_predictions (
+  id text primary key,
+  owner_admin_id text not null,
+  exam_session_id text not null,
+  student_id text not null,
+  exam_id text not null,
+  course_id text,
+  status text not null default 'pending',
+  suspicious_probability numeric(9, 8),
+  risk_level text,
+  requires_professor_review boolean not null default false,
+  model_version text not null,
+  feature_snapshot_json jsonb not null default '{}'::jsonb,
+  unavailable_reason text,
+  predicted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint random_forest_predictions_status_check
+    check (status in ('pending', 'completed', 'unavailable', 'failed')),
+  constraint random_forest_predictions_probability_check
+    check (suspicious_probability is null or (suspicious_probability >= 0 and suspicious_probability <= 1)),
+  constraint random_forest_predictions_risk_level_check
+    check (risk_level is null or risk_level in ('normal', 'needs_monitoring', 'suspicious')),
+  constraint random_forest_predictions_completed_values_check
+    check (
+      (status = 'completed' and suspicious_probability is not null and risk_level is not null)
+      or
+      (status <> 'completed' and suspicious_probability is null and risk_level is null)
+    ),
+  constraint random_forest_predictions_session_model_unique
+    unique (exam_session_id, model_version)
+);
+
+create index if not exists random_forest_predictions_owner_exam_model_idx
+  on public.random_forest_predictions (owner_admin_id, exam_id, model_version);
+create index if not exists random_forest_predictions_status_idx
+  on public.random_forest_predictions (status, updated_at desc);
+
+alter table public.random_forest_predictions enable row level security;
+drop policy if exists random_forest_predictions_no_direct_client_access
+  on public.random_forest_predictions;
+create policy random_forest_predictions_no_direct_client_access
+  on public.random_forest_predictions
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
+
+create or replace function public.set_random_forest_prediction_updated_at()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists random_forest_predictions_set_updated_at
+  on public.random_forest_predictions;
+create trigger random_forest_predictions_set_updated_at
+before update on public.random_forest_predictions
+for each row
+execute function public.set_random_forest_prediction_updated_at();
+
 -- ── Per-student camera exemption ──
 -- Lets a professor waive the webcam requirement for a single student on a
 -- single exam (e.g. their webcam is broken), without turning it off for the

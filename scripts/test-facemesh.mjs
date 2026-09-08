@@ -258,12 +258,36 @@ assert.equal(correlation.eventType, 'PHONE_NEAR_OR_COVERING_FACE');
 assert.equal(correlator.handleYoloEvent({ objectClass: 'mobile_phone' }, 6100), null);
 
 const aggregator = new FaceSessionAggregator();
-aggregator.observe({ trackingQuality: 0.8, relativePose: { yaw: -31, pitch: 6 } });
+aggregator.observe({
+  facePresent: true,
+  faceCount: 2,
+  handCount: 2,
+  handTrackingAvailable: true,
+  trackingQuality: 0.8,
+  relativePose: { yaw: -31, pitch: 6, roll: 1 },
+});
 aggregator.consume({ kind: 'incident', phase: 'end', incidentId: 'a', eventType: 'SUSTAINED_HEAD_TURN', durationMs: 5000 });
 aggregator.consume({ kind: 'incident', phase: 'end', incidentId: 'a', eventType: 'SUSTAINED_HEAD_TURN', durationMs: 5000 });
 assert.equal(aggregator.snapshot().head_turn_count, 1);
 assert.equal(aggregator.snapshot().head_turn_total_seconds, 5);
 assert.equal(aggregator.snapshot().maximum_absolute_yaw, 31);
+assert.equal(aggregator.snapshot().maximum_face_count, 2);
+assert.equal(aggregator.snapshot().maximum_hand_count, 2);
+assert.equal(aggregator.snapshot().random_forest_compatible, true);
+
+const incompleteAggregator = new FaceSessionAggregator();
+incompleteAggregator.observe({
+  facePresent: true,
+  faceCount: 1,
+  handCount: null,
+  handTrackingAvailable: true,
+  trackingQuality: null,
+  relativePose: { yaw: 2, pitch: null, roll: 0 },
+});
+assert.equal(incompleteAggregator.snapshot().tracking_sample_count, 0);
+assert.equal(incompleteAggregator.snapshot().pose_sample_count, 0);
+assert.equal(incompleteAggregator.snapshot().hand_sample_count, 0);
+assert.equal(incompleteAggregator.snapshot().random_forest_compatible, false);
 
 const permissionError = new DOMException('Permission blocked', 'NotAllowedError');
 await assert.rejects(

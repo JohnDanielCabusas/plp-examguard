@@ -10,6 +10,8 @@ dist/
 ml/yolo/data/
 ml/yolo/runs/
 ml/yolo/artifacts/
+ml/random_forest/data/
+ml/random_forest/artifacts/*.tmp
 *.pt
 ml/yolo/*.onnx
 weights/

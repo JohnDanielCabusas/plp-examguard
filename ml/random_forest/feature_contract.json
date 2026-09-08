@@ -1,0 +1,30 @@
+{
+  "schema_version": "rf-session-summary-v1",
+  "model_version": "1.0.0",
+  "description": "Versioned mapping between a completed TUKLAS examination session and the Random Forest training schema.",
+  "features": [
+    { "name": "browser_start_count", "unit": "count", "source": "activities.browser_exam_start", "aggregation": "count" },
+    { "name": "browser_end_count", "unit": "count", "source": "activities.browser_exam_end", "aggregation": "count" },
+    { "name": "browser_tab_switched_count", "unit": "count", "source": "activities.tab_switch", "aggregation": "count" },
+    { "name": "browser_screenshot_count", "unit": "count", "source": "activities.screenshot", "aggregation": "count" },
+    { "name": "browser_exam_duration_minutes", "unit": "minutes", "source": "sessions.start_time/end_time", "aggregation": "elapsed time" },
+    { "name": "webcam_face_present", "unit": "binary", "source": "ai_detections.faceMonitoring.final_face_present", "aggregation": "final observation" },
+    { "name": "webcam_no_of_face", "unit": "count", "source": "ai_detections.faceMonitoring.maximum_face_count", "aggregation": "maximum observed" },
+    { "name": "webcam_face_conf", "unit": "percent", "source": "ai_detections.faceMonitoring.average_tracking_confidence", "aggregation": "mean multiplied by 100" },
+    { "name": "webcam_hand_count", "unit": "count", "source": "ai_detections.faceMonitoring.maximum_hand_count", "aggregation": "maximum observed" },
+    { "name": "webcam_head_pitch", "unit": "radians", "source": "ai_detections.faceMonitoring.average_head_pitch_degrees", "aggregation": "mean converted from degrees" },
+    { "name": "webcam_head_yaw", "unit": "radians", "source": "ai_detections.faceMonitoring.average_head_yaw_degrees", "aggregation": "mean converted from degrees" },
+    { "name": "webcam_head_roll", "unit": "radians", "source": "ai_detections.faceMonitoring.average_head_roll_degrees", "aggregation": "mean converted from degrees" }
+  ],
+  "excluded_inputs": [
+    "student identifiers",
+    "names and email addresses",
+    "course and exam identifiers",
+    "timestamps",
+    "scores and grades",
+    "fullscreen exits",
+    "copy and paste events",
+    "YOLO object detections"
+  ]
+}
+
