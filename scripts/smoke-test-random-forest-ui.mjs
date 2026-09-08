@@ -169,8 +169,28 @@ try {
   ) {
     throw new Error(`Violation review footer states failed: ${JSON.stringify(violationReviewStates)}`);
   }
+
+  const monitoringExamOptions = await page.evaluate(() => {
+    const exams = [
+      { id: 'closed-exam', title: 'Closed Exam', status: 'closed' },
+      { id: 'ready-exam', title: 'Ready Exam', status: 'ready' },
+      { id: 'active-exam', title: 'Active Exam', status: 'active' },
+      { id: 'draft-exam', title: 'Draft Exam', status: 'draft' },
+    ];
+    const monitorable = getMonitorableExams(exams);
+    return {
+      values: monitorable.map(exam => exam.id),
+      statuses: monitorable.map(exam => exam.status),
+    };
+  });
+  if (
+    monitoringExamOptions.values.join(',') !== 'ready-exam,active-exam'
+    || monitoringExamOptions.statuses.join(',') !== 'ready,active'
+  ) {
+    throw new Error(`Monitoring exam selector filtering failed: ${JSON.stringify(monitoringExamOptions)}`);
+  }
   if (errors.length) throw new Error(`Browser page errors: ${errors.join('; ')}`);
-  console.log(`Random Forest states and violation review footer states passed using ${executablePath}.`);
+  console.log(`Random Forest, violation review, and monitoring selector states passed using ${executablePath}.`);
 } finally {
   await browser?.close();
   await server.close();

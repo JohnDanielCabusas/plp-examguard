@@ -7561,16 +7561,26 @@ function viewQuestionBreakdown(examId) {
 // ============================================================
 // MONITORING
 // ============================================================
+function getMonitorableExams(exams) {
+  return (Array.isArray(exams) ? exams : []).filter(exam => (
+    ['ready', 'active'].includes(String(exam?.status || '').toLowerCase())
+  ));
+}
+window.getMonitorableExams = getMonitorableExams;
+
 function loadMonitoringExams() {
-  const exams = DB.getExams().filter(e => e.status === 'active' || e.status === 'closed');
+  // Monitoring is for exams that students can enter or are taking now.
+  // Completed exams remain available from Reports, not the live selector.
+  const getStatus = exam => String(exam?.status || '').toLowerCase();
+  const exams = getMonitorableExams(DB.getExams());
   const sel = document.getElementById('monitor-exam-select');
   if (!sel) return;
 
   const requestedId = String(monitorExamId || sel.value || '').trim();
   const existingIds = new Set(exams.map(exam => exam.id));
-  const defaultExam = exams.find(exam => exam.status === 'active' && DB.getSessionsByExam(exam.id).length > 0)
-    || exams.find(exam => exam.status === 'active')
-    || exams.find(exam => DB.getSessionsByExam(exam.id).length > 0)
+  const defaultExam = exams.find(exam => getStatus(exam) === 'active' && DB.getSessionsByExam(exam.id).length > 0)
+    || exams.find(exam => getStatus(exam) === 'active')
+    || exams.find(exam => getStatus(exam) === 'ready' && DB.getSessionsByExam(exam.id).length > 0)
     || exams[0]
     || null;
   const nextExamId = existingIds.has(requestedId)

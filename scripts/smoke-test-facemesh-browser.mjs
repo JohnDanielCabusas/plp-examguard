@@ -110,10 +110,10 @@ try {
     const duplicateBoxes = app._classifyFacePredictions([primary, overlapGhost], 640, 480);
 
     app._resetMultiplePeopleTracking();
-    const timeline = [0, 1000, 2000, 3000, 4000]
+    const timeline = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000]
       .map(now => app._updateMultiplePeopleTracking('blazeface', true, { now, holdMs: 1000 }));
-    const recoveryStart = app._updateMultiplePeopleTracking('blazeface', false, { now: 5001, holdMs: 1000 });
-    const recoveryEnd = app._updateMultiplePeopleTracking('blazeface', false, { now: 6001, holdMs: 1000 });
+    const recoveryStart = app._updateMultiplePeopleTracking('blazeface', false, { now: 12001, holdMs: 1000 });
+    const recoveryEnd = app._updateMultiplePeopleTracking('blazeface', false, { now: 13002, holdMs: 1000 });
 
     app._resetMultiplePeopleTracking();
     app._updateMultiplePeopleTracking('yolo', true, { now: 0, holdMs: 1000 });
@@ -135,7 +135,7 @@ try {
     !cameraBehavior.primarySelected
     || cameraBehavior.extraFaceCount !== 1
     || !cameraBehavior.overlapGhostIgnored
-    || cameraBehavior.countdown.join(',') !== '3,2,1,0,0'
+    || cameraBehavior.countdown.join(',') !== '10,9,8,7,6,5,4,3,2,1,0,0'
     || !cameraBehavior.oneContinuousWarning
     || !cameraBehavior.recoveryStarted
     || !cameraBehavior.recoveryEnded
