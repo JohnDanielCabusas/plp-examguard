@@ -12,7 +12,7 @@ import { resolve } from 'node:path';
 // it is imported in Node.
 globalThis.self ??= { addEventListener: () => {}, postMessage: () => {}, navigator: {} };
 
-const { parseOutput, __setManifestForTesting } = await import(
+const { buildResultDetections, parseOutput, __setManifestForTesting } = await import(
   '../src/lib/proctoring/yolo/yoloWorker.js'
 );
 
@@ -24,9 +24,10 @@ __setManifestForTesting(manifest);
 const classNames = manifest.classNames;
 const mouseIndex = classNames.indexOf('mouse');
 const cellPhoneIndex = classNames.indexOf('cell phone');
-assert.ok(mouseIndex >= 0 && cellPhoneIndex >= 0, 'Fixture manifest must include mouse and cell phone.');
+const personIndex = classNames.indexOf('person');
+assert.ok(mouseIndex >= 0 && cellPhoneIndex >= 0 && personIndex >= 0, 'Fixture manifest must include person, mouse, and cell phone.');
 
-const anchors = 4;
+const anchors = 5;
 const channels = classNames.length + 4;
 const data = new Float32Array(channels * anchors);
 
@@ -65,6 +66,12 @@ setClassScore(2, mouseIndex, 0.05);
 setBox(3, sharedBox);
 setClassScore(3, mouseIndex, 0.6);
 
+// Anchor 4: a person is context, not a prohibited object. It must survive the
+// worker result so the exam camera can detect additional people or recognize
+// that a turned/obscured body is still present.
+setBox(4, { centerX: 180, centerY: 300, width: 170, height: 420 });
+setClassScore(4, personIndex, 0.8);
+
 const output = { dims: [1, channels, anchors], data };
 const transform = {
   regionX: 0,
@@ -102,4 +109,8 @@ assert.ok(
   'A phone call sharing a box with a confident mouse call must be suppressed, not just deduplicated by NMS.',
 );
 
-console.log('YOLO worker parsing tests passed.');
+const resultDetections = buildResultDetections(detections, phoneDetections);
+assert.equal(resultDetections.filter(detection => detection.contextClass === 'person').length, 1);
+assert.equal(resultDetections.filter(detection => detection.objectClass === 'mobile_phone').length, 1);
+
+console.log('YOLO worker parsing and person-context tests passed.');

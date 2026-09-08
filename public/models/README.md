@@ -33,3 +33,17 @@ issue a warning or notify the professor.
 
 Ultralytics models are AGPL-3.0 by default. Confirm that deployment complies
 with those terms or uses an appropriate Ultralytics commercial license.
+
+## MediaPipe Face Landmarker
+
+`face_landmarker.task` is the official MediaPipe Face Landmarker float16 task
+bundle downloaded from Google's MediaPipe model storage. It runs locally in
+the browser and is not a model trained by TUKLAS.
+
+- Source: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task`
+- SHA-256: `64184E229B263107BC2B804C6625DB1341FF2BB731874B0BCC2FE6544E0BC9FF`
+- Runtime: `@mediapipe/tasks-vision`
+
+The matching runtime WASM files are copied from the installed npm package to
+`public/vendor/mediapipe/wasm` by `npm run prepare:mediapipe`. Keep the model
+and runtime files local so an exam does not depend on a CDN.

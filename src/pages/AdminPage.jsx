@@ -1829,7 +1829,7 @@ export default function AdminPage() {
                   <path d="M12 17h.01" />
                 </svg>
               </div>
-              <span className="modal-title violation-alert-title">Live violation alert</span>
+              <span className="modal-title violation-alert-title" id="violation-alert-title">Live violation alert</span>
             </div>
             <span className="violation-alert-severity" id="violation-alert-severity">Warning</span>
           </div>
@@ -1846,7 +1846,7 @@ export default function AdminPage() {
             <div className="violation-alert-flag">
               <div className="violation-alert-flag-icon" id="violation-alert-icon" aria-hidden="true" />
               <div className="violation-alert-flag-copy">
-                <span className="violation-alert-flag-label">Violation Detected</span>
+                <span className="violation-alert-flag-label" id="violation-alert-flag-label">Violation Detected</span>
                 <span className="violation-alert-flag-value" id="violation-alert-type">-</span>
               </div>
             </div>
@@ -1857,7 +1857,7 @@ export default function AdminPage() {
                 <span className="violation-alert-item-value" id="violation-alert-exam-name">-</span>
               </div>
               <div className="violation-alert-item">
-                <span className="violation-alert-item-label">Warnings</span>
+                <span className="violation-alert-item-label" id="violation-alert-warning-label">Warnings</span>
                 <span className="violation-alert-warning-badge" id="violation-alert-warning-count">0</span>
               </div>
             </div>

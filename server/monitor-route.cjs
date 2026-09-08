@@ -32,6 +32,45 @@ const REPLAYABLE_VIOLATION_TYPES = new Set([
   'secondary_computer',
   'restricted_book',
 ]);
+const FACEMESH_INCIDENT_TYPES = new Set([
+  'FACE_ABSENT',
+  'FACE_PARTIALLY_VISIBLE',
+  'FACE_TOO_CLOSE',
+  'FACE_TOO_FAR',
+  'FACE_NEAR_FRAME_EDGE',
+  'SUSTAINED_HEAD_TURN',
+  'SUSTAINED_LOOKING_DOWN',
+  'REPEATED_LOOKING_AWAY',
+  'FACE_OCCLUDED',
+  'FACE_TRACKING_UNSTABLE',
+  'PHONE_NEAR_OR_COVERING_FACE',
+]);
+const FACEMESH_EVENT_SEVERITY = Object.freeze({
+  FACE_ABSENT: 'MODERATE',
+  FACE_PARTIALLY_VISIBLE: 'INFO',
+  FACE_TOO_CLOSE: 'INFO',
+  FACE_TOO_FAR: 'INFO',
+  FACE_NEAR_FRAME_EDGE: 'INFO',
+  SUSTAINED_HEAD_TURN: 'LOW',
+  SUSTAINED_LOOKING_DOWN: 'LOW',
+  REPEATED_LOOKING_AWAY: 'MODERATE',
+  FACE_OCCLUDED: 'LOW',
+  FACE_TRACKING_UNSTABLE: 'INFO',
+  PHONE_NEAR_OR_COVERING_FACE: 'HIGH',
+});
+const FACEMESH_EVENT_DETAILS = Object.freeze({
+  FACE_ABSENT: 'No person detected in the camera frame',
+  FACE_PARTIALLY_VISIBLE: 'Face partially outside camera',
+  FACE_TOO_CLOSE: 'Face is too close to the camera',
+  FACE_TOO_FAR: 'Face is too far from the camera',
+  FACE_NEAR_FRAME_EDGE: 'Face is near the camera frame edge',
+  SUSTAINED_HEAD_TURN: 'Sustained head turn detected',
+  SUSTAINED_LOOKING_DOWN: 'Sustained downward head direction detected',
+  REPEATED_LOOKING_AWAY: 'Repeated looking-away pattern detected',
+  FACE_OCCLUDED: 'Face appears obstructed',
+  FACE_TRACKING_UNSTABLE: 'Face tracking is unstable',
+  PHONE_NEAR_OR_COVERING_FACE: 'Phone detected near or covering the face',
+});
 
 function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -83,6 +122,27 @@ function normalizeDetectionMetadata(value) {
     : null;
   return {
     source: String(value.source || '').slice(0, 40),
+    clientIncidentId: String(value.clientIncidentId || '').slice(0, 128),
+    phase: ['start', 'update', 'end'].includes(String(value.phase || '').toLowerCase())
+      ? String(value.phase).toLowerCase()
+      : '',
+    severity: ['INFO', 'LOW', 'MODERATE', 'HIGH'].includes(String(value.severity || '').toUpperCase())
+      ? String(value.severity).toUpperCase()
+      : 'INFO',
+    direction: ['LEFT', 'RIGHT', 'UP', 'DOWN', 'CENTER'].includes(String(value.direction || '').toUpperCase())
+      ? String(value.direction).toUpperCase()
+      : '',
+    startedAt: String(value.startedAt || '').slice(0, 40),
+    endedAt: String(value.endedAt || '').slice(0, 40),
+    durationMs: Math.max(0, Math.min(86400000, Number(value.durationMs || 0))),
+    maxYaw: Math.max(0, Math.min(180, Math.abs(Number(value.maxYaw || 0)))),
+    maxPitch: Math.max(0, Math.min(180, Math.abs(Number(value.maxPitch || 0)))),
+    trackingConfidence: Math.max(0, Math.min(1, Number(value.trackingConfidence || 0))),
+    phoneConfidence: Math.max(0, Math.min(1, Number(value.phoneConfidence || 0))),
+    requiresProfessorReview: value.requiresProfessorReview !== false,
+    relatedIncidentIds: Array.isArray(value.relatedIncidentIds)
+      ? value.relatedIncidentIds.slice(0, 20).map(item => String(item || '').slice(0, 128)).filter(Boolean)
+      : [],
     objectClass: String(value.objectClass || '').slice(0, 80),
     objectLabel: String(value.objectLabel || '').slice(0, 120),
     rawClass: String(value.rawClass || '').slice(0, 80),
@@ -397,6 +457,100 @@ async function handleViolationInsert(req, res, body) {
     success: true,
     violation: normalizeMonitorViolation(insertResult.rows[0] || violation),
   });
+}
+
+async function handleFaceIncidentUpsert(req, res, body) {
+  const student = await getCurrentStudentSession(req);
+  if (!student) return forbid(res);
+
+  const sessionId = String(body?.sessionId || '').trim();
+  const examId = String(body?.examId || '').trim();
+  const studentId = String(body?.studentId || '').trim().toUpperCase();
+  const studentName = String(body?.studentName || '').trim();
+  const eventType = String(body?.eventType || '').trim().toUpperCase();
+  const clientIncidentId = String(body?.clientIncidentId || '').trim();
+  const phase = String(body?.phase || '').trim().toLowerCase();
+  const source = String(body?.source || 'FACEMESH').trim().toUpperCase();
+
+  if (!sessionId || !examId || !studentId) return badRequest(res, 'Exam session identifiers are required.');
+  if (!FACEMESH_INCIDENT_TYPES.has(eventType)) return badRequest(res, 'Unsupported FaceMesh incident type.');
+  if (!/^[a-zA-Z0-9-]{8,128}$/.test(clientIncidentId)) return badRequest(res, 'Invalid incident ID.');
+  if (!['start', 'update', 'end'].includes(phase)) return badRequest(res, 'Invalid incident phase.');
+  if (!['FACEMESH', 'FACEMESH_YOLO'].includes(source)) return badRequest(res, 'Invalid incident source.');
+  if ((eventType === 'PHONE_NEAR_OR_COVERING_FACE') !== (source === 'FACEMESH_YOLO')) {
+    return badRequest(res, 'Incident source does not match its event type.');
+  }
+  if (student.studentId !== studentId) return forbid(res);
+
+  const { rows } = await query(
+    `select s.id,
+            s.exam_id,
+            s.student_id,
+            s.student_name,
+            coalesce(s.warnings, 0) as warnings,
+            coalesce(s.owner_admin_id, e.owner_admin_id) as owner_admin_id
+       from public.sessions s
+       left join public.exams e on e.id = s.exam_id
+      where s.id = $1
+      limit 1`,
+    [sessionId],
+  );
+  const session = rows[0] || null;
+  if (!session) return jsonResponse(res, 404, { success: false, message: 'Exam session not found.' });
+  if (String(session.student_id || '').trim().toUpperCase() !== studentId) return forbid(res);
+  if (String(session.exam_id || '').trim() !== examId) return badRequest(res, 'Exam session does not match the current exam.');
+  const ownerAdminId = String(session.owner_admin_id || '').trim();
+  if (!ownerAdminId) return jsonResponse(res, 409, { success: false, message: 'Exam professor owner is missing.' });
+
+  const startedDate = new Date(body?.startedAt || Date.now());
+  const createdAt = Number.isFinite(startedDate.getTime()) ? startedDate.toISOString() : new Date().toISOString();
+  const detectionMetadata = normalizeDetectionMetadata({
+    ...body,
+    clientIncidentId,
+    phase,
+    source,
+  });
+  detectionMetadata.severity = FACEMESH_EVENT_SEVERITY[eventType];
+  detectionMetadata.requiresProfessorReview = true;
+  const detail = FACEMESH_EVENT_DETAILS[eventType];
+  // FaceMesh is review-only. Preserve the authoritative session warning count
+  // and never accept a client-provided increment through the incident route.
+  const effectiveWarningCount = Math.max(0, Number(session.warnings || 0));
+  const effectiveStudentName = studentName || String(session.student_name || '').trim() || student.name || studentId;
+  const insertResult = await query(
+    `insert into public.violation_events as existing (
+       id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at
+     ) values (
+       $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::timestamptz
+     )
+     on conflict (id) do update
+       set detail = excluded.detail,
+           detection_metadata = excluded.detection_metadata,
+           warning_count = excluded.warning_count
+       where existing.owner_admin_id = excluded.owner_admin_id
+         and existing.session_id = excluded.session_id
+         and existing.student_id = excluded.student_id
+     returning id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at`,
+    [
+      clientIncidentId,
+      ownerAdminId,
+      examId,
+      sessionId,
+      studentId,
+      effectiveStudentName,
+      eventType,
+      detail,
+      JSON.stringify(detectionMetadata),
+      effectiveWarningCount,
+      createdAt,
+    ],
+  );
+  if (!insertResult.rows.length) return jsonResponse(res, 409, { success: false, message: 'Incident ID is already in use.' });
+
+  const incident = normalizeMonitorViolation(insertResult.rows[0]);
+  broadcastViolationEvent(ownerAdminId, incident);
+  broadcastViolation(ownerAdminId, incident);
+  return jsonResponse(res, 200, { success: true, incident });
 }
 
 async function handleViolationList(req, res, url) {
@@ -843,6 +997,17 @@ async function handleMonitorRoute(req, res) {
   const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
 
   try {
+    if (pathname === '/api/monitor/incident') {
+      if (req.method !== 'POST') return methodNotAllowed(res);
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return badRequest(res, 'Invalid JSON body.');
+      }
+      return await handleFaceIncidentUpsert(req, res, body);
+    }
+
     if (pathname === '/api/monitor/violation') {
       if (req.method !== 'POST') return methodNotAllowed(res);
       let body;

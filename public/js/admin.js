@@ -65,6 +65,19 @@ const YOLO_VIOLATION_TYPES = [
   'secondary_computer',
   'restricted_book',
 ];
+const FACEMESH_INCIDENT_TYPES = [
+  'FACE_ABSENT',
+  'FACE_PARTIALLY_VISIBLE',
+  'FACE_TOO_CLOSE',
+  'FACE_TOO_FAR',
+  'FACE_NEAR_FRAME_EDGE',
+  'SUSTAINED_HEAD_TURN',
+  'SUSTAINED_LOOKING_DOWN',
+  'REPEATED_LOOKING_AWAY',
+  'FACE_OCCLUDED',
+  'FACE_TRACKING_UNSTABLE',
+  'PHONE_NEAR_OR_COVERING_FACE',
+];
 const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
   'no_person',
   'multiple_people',
@@ -323,8 +336,21 @@ function getSubmissionStatusBadge(session) {
 }
 
 const BEHAVIOR_LABELS = {
+  FACE_ABSENT: 'No Person Detected',
+  FACE_PARTIALLY_VISIBLE: 'Face Partially Outside Camera',
+  FACE_TOO_CLOSE: 'Face Too Close to Camera',
+  FACE_TOO_FAR: 'Face Too Far from Camera',
+  FACE_NEAR_FRAME_EDGE: 'Face Near Frame Edge',
+  SUSTAINED_HEAD_TURN: 'Looking Away',
+  SUSTAINED_LOOKING_DOWN: 'Looking Down',
+  REPEATED_LOOKING_AWAY: 'Repeated Looking-Away Pattern',
+  FACE_OCCLUDED: 'Face Appears Obstructed',
+  FACE_TRACKING_UNSTABLE: 'Face Tracking Unstable',
+  PHONE_NEAR_OR_COVERING_FACE: 'Phone Near or Covering Face',
+  face_calibration_completed: 'Face Calibration Completed',
+  face_tracking_unavailable: 'Face Tracking Unavailable',
   no_person: 'No Person Detected',
-  multiple_people: 'Multiple Faces Detected',
+  multiple_people: 'Multiple Faces or People Detected',
   look_down: 'Looking Down Detected',
   low_brightness: 'Low Screen Brightness',
   low_brightness_prompt: 'Brightness Prompt Shown',
@@ -393,6 +419,7 @@ const VIOLATION_ALERTABLE_TYPES = new Set([
   'brightness_check_failed',
   'brightness_check_skipped',
   ...YOLO_VIOLATION_TYPES,
+  ...FACEMESH_INCIDENT_TYPES,
 ]);
 const CRITICAL_VIOLATION_TYPES = new Set([
   'multiple_people',
@@ -441,6 +468,30 @@ function getSessionSnapshotByTimestamp(session, timestamp) {
 }
 
 function renderViolationReviewAction(session, activity, index) {
+  const source = String(activity?.metadata?.source || '').toUpperCase();
+  if (source.startsWith('FACEMESH') && FACEMESH_INCIDENT_TYPES.includes(activity?.type)) {
+    const status = String(activity?.metadata?.reviewStatus || 'pending').toLowerCase();
+    const label = status === 'confirmed' ? 'Confirmed for review' : status === 'dismissed' ? 'Dismissed' : 'Pending review';
+    const metadata = activity?.metadata || {};
+    const durationSeconds = Math.max(0, Number(metadata.durationMs || 0)) / 1000;
+    const trackingPercent = Math.max(0, Math.min(100, Number(metadata.trackingConfidence || 0) * 100));
+    const metrics = [
+      source === 'FACEMESH_YOLO' ? 'Source: FaceMesh + YOLO' : 'Source: FaceMesh',
+      `Duration: ${durationSeconds.toFixed(1)}s`,
+      metadata.direction ? `Direction: ${String(metadata.direction).toLowerCase()}` : '',
+      `Tracking quality: ${trackingPercent.toFixed(0)}%`,
+    ].filter(Boolean);
+    return `
+      <div class="activity-log-indicator-metrics">
+        ${metrics.map(item => `<span>${escHtml(item)}</span>`).join('')}
+      </div>
+      <div class="activity-log-review-row">
+        <span class="activity-log-review-badge tone-${status}">${escHtml(label)}</span>
+        <button type="button" class="activity-log-review-btn" onclick="reviewFaceMeshIndicator('${escAttr(session?.id || '')}', ${index}, 'confirmed')">Confirm for review</button>
+        <button type="button" class="activity-log-review-btn" onclick="reviewFaceMeshIndicator('${escAttr(session?.id || '')}', ${index}, 'dismissed')">Dismiss indicator</button>
+      </div>
+    `;
+  }
   if (!isReplayableMonitorViolationType(activity?.type)) return '';
   const evidence = getBestEvidenceForActivity(session?.id || '', activity);
   const reviewBadge = evidence
@@ -482,7 +533,7 @@ function buildStudentLogBody(session) {
   if (!activities.length) {
     return `
       ${studentCardHtml}
-      <div class="activity-log-empty"><p>No suspicious activity recorded.</p></div>
+      <div class="activity-log-empty"><p>No monitoring activity recorded.</p></div>
     `;
   }
 
@@ -502,7 +553,7 @@ function buildStudentLogBody(session) {
         <span class="activity-log-warning-value">${adjustment}</span>
       </div>
     </div>
-    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
+    <div class="activity-log-section-title">Monitoring Activity Counter</div>
     ${renderBehaviorSummary(activities)}
     <div class="activity-log-section-title">Activity Timeline</div>
     <div class="activity-log-timeline">
@@ -526,6 +577,7 @@ function buildStudentLogBody(session) {
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
+    if (activity?.metadata?.supersededBy) return;
     const type = activity?.type || 'unknown';
     counts.set(type, (counts.get(type) || 0) + 1);
   });
@@ -570,6 +622,7 @@ function getStudentYearSectionSummary(student, separator = ' ') {
 
 function getActivityTone(type) {
   if (['brightness_check_passed', 'camera_restored', 'connection_restored'].includes(type)) return 'success';
+  if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
   if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
   return 'neutral';
@@ -928,7 +981,10 @@ function renderViolationAlertModal() {
   const queueIndicator = document.getElementById('violation-alert-queue-indicator');
   const severityEl = document.getElementById('violation-alert-severity');
   const iconEl = document.getElementById('violation-alert-icon');
-  const isCritical = Number(_activeViolationAlert.warningCount || 0) >= 2 || isCriticalViolationType(_activeViolationAlert.type);
+  const source = String(_activeViolationAlert.detectionMetadata?.source || '').toUpperCase();
+  const isFaceIndicator = source.startsWith('FACEMESH');
+  const isCritical = !isFaceIndicator
+    && (Number(_activeViolationAlert.warningCount || 0) >= 2 || isCriticalViolationType(_activeViolationAlert.type));
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -942,9 +998,16 @@ function renderViolationAlertModal() {
   setText('violation-alert-type', getBehaviorLabel(_activeViolationAlert.type));
   setText('violation-alert-time', formatDateTime(_activeViolationAlert.at));
   setText('violation-alert-warning-count', String(_activeViolationAlert.warningCount || 0));
+  setText('violation-alert-title', isFaceIndicator ? 'Live monitoring indicator' : 'Live violation alert');
+  setText('violation-alert-flag-label', isFaceIndicator ? 'Behavioral Indicator' : 'Violation Detected');
+  setText('violation-alert-warning-label', isFaceIndicator ? 'Warning impact' : 'Warnings');
+  if (isFaceIndicator) setText('violation-alert-warning-count', 'None');
   if (iconEl) iconEl.innerHTML = getViolationTypeIconSvg(_activeViolationAlert.type);
   modal.dataset.severity = isCritical ? 'critical' : 'warning';
-  if (severityEl) severityEl.textContent = isCritical ? 'Critical' : 'Warning';
+  if (severityEl) {
+    const faceSeverity = String(_activeViolationAlert.detectionMetadata?.severity || 'INFO').toUpperCase();
+    severityEl.textContent = isFaceIndicator ? `${faceSeverity} review` : (isCritical ? 'Critical' : 'Warning');
+  }
 
   const remaining = _violationAlertQueue.length;
   if (queueIndicator) {
@@ -1105,19 +1168,33 @@ function applyViolationEventToLocalSession(event) {
 
   const session = current[index];
   const activities = Array.isArray(session.activities) ? [...session.activities] : [];
-  const alreadyExists = activities.some((activity) => (
+  const incidentId = String(event?.detectionMetadata?.clientIncidentId || '');
+  const incidentIndex = incidentId
+    ? activities.findIndex(activity => activity?.metadata?.incidentId === incidentId)
+    : -1;
+  const alreadyExists = incidentIndex >= 0 || activities.some((activity) => (
     activity?.type === event.violationType
     && String(activity?.detail || '') === String(event.detail || '')
     && String(activity?.timestamp || '') === String(event.createdAt || '')
   ));
 
-  if (!alreadyExists) {
-    activities.push({
+  const nextActivity = {
       type: event.violationType || 'unknown',
-      detail: event.detail || 'Violation recorded',
+      detail: event.detail || (incidentId ? 'Monitoring indicator recorded' : 'Violation recorded'),
       timestamp: event.createdAt || new Date().toISOString(),
-      metadata: event.detectionMetadata || {},
-    });
+      metadata: incidentId
+        ? {
+            ...(incidentIndex >= 0 ? activities[incidentIndex]?.metadata : {}),
+            ...(event.detectionMetadata || {}),
+            incidentId,
+          }
+        : (event.detectionMetadata || {}),
+    };
+  if (incidentIndex >= 0) {
+    nextActivity.timestamp = activities[incidentIndex].timestamp || nextActivity.timestamp;
+    activities[incidentIndex] = nextActivity;
+  } else if (!alreadyExists) {
+    activities.push(nextActivity);
   }
 
   current[index] = {
@@ -1133,6 +1210,26 @@ function processIncomingViolationEvent(event) {
   if (event?.createdAt) _violationPollCursor = event.createdAt;
   setViolationTransportMode('server');
   applyViolationEventToLocalSession(event);
+  const source = String(event?.detectionMetadata?.source || '').toUpperCase();
+  const phase = String(event?.detectionMetadata?.phase || '').toLowerCase();
+  // An occlusion is kept in the activity timeline, but its transient live
+  // alert is deferred because a concurrent YOLO phone event can supersede it
+  // with one correlated incident. This prevents two professor popups for the
+  // same underlying behavior.
+  const deferOcclusionAlert = source === 'FACEMESH' && event.violationType === 'FACE_OCCLUDED';
+  if (
+    deferOcclusionAlert
+    || (
+      source.startsWith('FACEMESH')
+      && phase
+      && phase !== 'start'
+      && event.violationType !== 'PHONE_NEAR_OR_COVERING_FACE'
+    )
+  ) {
+    if (_activeLogSessionId === event.sessionId) refreshOpenStudentLog();
+    if (currentSection === 'monitoring' && monitorExamId === event.examId) pollMonitorSessions({ immediate: true });
+    return;
+  }
   const entry = buildViolationAlertEntryFromEvent(event);
   rememberRecentViolationEvent(entry);
   queueViolationAlert(entry);
@@ -2714,6 +2811,29 @@ async function copyTextToClipboard(text, successMessage, options = {}) {
   showToast('Unable to access the clipboard. Allow clipboard permission and try again.', 'error');
   return false;
 }
+
+function reviewFaceMeshIndicator(sessionId, activityIndex, reviewStatus) {
+  if (!['confirmed', 'dismissed'].includes(reviewStatus)) return;
+  const session = DB.getSession(sessionId);
+  const activities = Array.isArray(session?.activities) ? [...session.activities] : [];
+  const index = Number(activityIndex);
+  if (!session || !activities[index]) return;
+  const admin = Auth.getAdminSession?.();
+  activities[index] = {
+    ...activities[index],
+    metadata: {
+      ...(activities[index].metadata || {}),
+      reviewStatus,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: admin?.id || '',
+    },
+  };
+  DB.updateSession(sessionId, { activities });
+  refreshOpenStudentLog();
+  renderMonitoringSectionLive();
+  showToast(reviewStatus === 'confirmed' ? 'Indicator confirmed for professor review.' : 'Indicator dismissed.', 'success');
+}
+window.reviewFaceMeshIndicator = reviewFaceMeshIndicator;
 
 function copyExamCode(code) {
   const cleanCode = String(code || '').trim().toUpperCase();
@@ -6999,7 +7119,7 @@ function viewStudentAnswersLegacy(sessionId) {
 
   // Activity log
   if (session.activities && session.activities.length) {
-    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>`;
+    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Monitoring Activity Counter</div>`;
     html += renderBehaviorSummary(session.activities);
     html += `<div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Anti-Cheat Activity Timeline</div>`;
     session.activities.forEach(a => {
@@ -7283,7 +7403,7 @@ function viewStudentAnswers(sessionId, source = currentSection) {
   });
 
   if (session.activities && session.activities.length) {
-    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Suspicious Behavior Counter</div>`;
+    html += `<hr class="divider" /><div style="font-weight:600;margin-bottom:8px;font-size:13px;">Monitoring Activity Counter</div>`;
     html += renderBehaviorSummary(session.activities);
     html += `<div style="font-weight:600;margin:14px 0 8px;font-size:13px;">Anti-Cheat Activity Timeline</div>`;
     session.activities.forEach(a => {
@@ -8585,7 +8705,7 @@ function showStudentLog(sessionId) {
   }
   document.getElementById('log-body').innerHTML = `
     ${studentCardHtml}
-    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
+    <div class="activity-log-section-title">Monitoring Activity Counter</div>
     ${renderBehaviorSummary(activities)}
     <div class="activity-log-section-title">Activity Timeline</div>
     <div class="activity-log-timeline">
@@ -8641,7 +8761,7 @@ function refreshOpenStudentLog() {
 
   document.getElementById('log-body').innerHTML = `
     ${studentCardHtml}
-    <div class="activity-log-section-title">Suspicious Behavior Counter</div>
+    <div class="activity-log-section-title">Monitoring Activity Counter</div>
     ${renderBehaviorSummary(activities)}
     <div class="activity-log-section-title">Activity Timeline</div>
     <div class="activity-log-timeline">
@@ -8697,7 +8817,7 @@ async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase)
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, 'copy_attempt', 'screenshot'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'screenshot'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
@@ -10717,6 +10837,8 @@ function ensureViolationReviewStyles() {
     .activity-log-warning-label { font-size:11px; font-weight:800; color:var(--text-muted, #6b7280); text-transform:uppercase; letter-spacing:0.04em; }
     .activity-log-warning-value { font-size:20px; font-weight:800; color:var(--text, #111827); }
     .activity-log-review-row { margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .activity-log-indicator-metrics { margin-top:10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .activity-log-indicator-metrics span { border-radius:999px; padding:4px 8px; background:var(--surface-2, #f1f5f9); color:var(--text-muted, #475569); font-size:10px; font-weight:750; }
     .activity-log-review-btn { border:1px solid var(--border, #d1d5db); background:var(--surface-2, #f9fafb); color:var(--text, #111827); border-radius:10px; padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer; }
     .activity-log-review-btn:disabled { cursor:not-allowed; opacity:0.6; }
     .activity-log-review-badge, .violation-review-status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-size:11px; font-weight:800; }

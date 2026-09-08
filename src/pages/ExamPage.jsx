@@ -780,6 +780,7 @@ export default function ExamPage() {
           <canvas id="camera-canvas" style={{ display: 'none' }} />
           <span className="camera-live-label">REC</span>
           <span id="yolo-camera-status" className="yolo-camera-status" data-state="idle">Object scan off</span>
+          <span id="facemesh-camera-status" className="facemesh-camera-status" data-state="idle">Face scan off</span>
           <div id="camera-blocked-msg" className="camera-blocked-msg" style={{ display: 'none', position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
             <span>Camera<br />blocked</span>
           </div>
@@ -946,11 +947,38 @@ export default function ExamPage() {
             </div>
             <div className="confirm-title">Webcam Monitoring Required</div>
             <div className="confirm-message">
-              This exam requires webcam monitoring to ensure academic integrity. Your professor will see your live feed and periodic snapshots during the exam. By clicking &ldquo;Allow&rdquo;, you consent to video monitoring during this examination.
+              This exam uses webcam monitoring. Your professor may view your live camera and permitted evidence snapshots. Face tracking runs on your device and sends only positioning and head-direction alerts, not facial landmarks. Select &ldquo;Allow&rdquo; to continue.
             </div>
             <div className="confirm-actions">
               <button type="button" data-exam-control="true" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.declineWebcamConsent()}>Decline</button>
               <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.acceptWebcamConsent()}>Allow</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="face-positioning-warning" className="face-positioning-warning" style={{ display: 'none' }} role="status" />
+
+      {/* Face calibration is session-only. No facial landmarks are uploaded or persisted. */}
+      <div id="face-calibration-modal" className="modal-backdrop hidden" data-no-backdrop-close="true">
+        <div className="modal-dialog face-calibration-dialog">
+          <div className="modal-body confirm-dialog">
+            <div className="confirm-title">Position Your Face</div>
+            <div className="confirm-message">
+              Center your face and look at the screen for five seconds. This setup applies only to this exam.
+            </div>
+            <div className="face-calibration-preview">
+              <video id="face-calibration-feed" autoPlay muted playsInline />
+              <div className="face-calibration-guide" aria-hidden="true" />
+            </div>
+            <div id="face-calibration-status" className="face-calibration-status" role="status">Starting camera&hellip;</div>
+            <div className="face-calibration-progress" aria-hidden="true">
+              <span id="face-calibration-progress-bar" />
+            </div>
+            <div className="confirm-actions">
+              <button id="face-calibration-exit" type="button" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelFaceCalibration()}>Exit Exam</button>
+              <button id="face-calibration-retry" type="button" className="btn btn-secondary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.retryFaceCalibration()}>Retry</button>
+              <button id="face-calibration-fallback" type="button" className="btn btn-secondary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.continueWithoutFaceMesh()}>Use Standard Camera Monitoring</button>
+              <button id="face-calibration-continue" type="button" className="btn btn-primary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.finishFaceCalibrationLaunch()}>Continue to Exam</button>
             </div>
           </div>
         </div>
@@ -1036,12 +1064,12 @@ export default function ExamPage() {
       <div id="violations-info-modal" className="modal-backdrop hidden">
         <div className="modal-dialog modal-lg">
           <div className="modal-header">
-            <span className="modal-title">What Counts as a Violation?</span>
+            <span className="modal-title">What Is Monitored?</span>
             <button type="button" data-exam-control="true" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
           </div>
           <div className="modal-body">
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px', lineHeight: 1.6 }}>
-              This exam is monitored for academic integrity. Your camera, focus, clipboard activity, and refresh attempts are tracked, and repeated or confirmed violations may automatically submit your exam. Avoid the following:
+              This exam monitors camera presence, face direction, focus, clipboard activity, and refresh attempts. Face-direction events are indicators for professor review and do not automatically add a warning; applicable browser or camera-rule violations can still follow the exam&apos;s warning policy.
             </p>
             <div className="violations-info-list">
               {[
@@ -1052,9 +1080,10 @@ export default function ExamPage() {
                 'Copying or cutting exam content',
                 'Pasting content into an answer',
                 'Taking a screenshot',
-                'Having no face visible in the camera',
-                'Having another visible face/person beside you or facing the camera/screen',
-                'Looking down away from the screen/camera for an extended time',
+                'No person detected through the 10-second camera countdown',
+                'Multiple visible faces or people through the 3-second camera countdown',
+                'Looking down continuously through the 10-second camera countdown',
+                'Looking away left, right, or up continuously through the 10-second camera countdown',
                 'Poor camera lighting — your face too dark to see clearly',
                 'Turning off or blocking your webcam',
               ].map((text) => (

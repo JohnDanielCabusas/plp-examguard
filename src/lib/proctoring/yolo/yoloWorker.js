@@ -540,6 +540,11 @@ async function verifyDetections(detections, transform) {
   return verified;
 }
 
+function buildResultDetections(parsedDetections, verifiedObjects) {
+  const personContext = parsedDetections.filter(detection => detection.contextClass === 'person');
+  return [...verifiedObjects, ...personContext];
+}
+
 async function initialize(payload) {
   manifest = payload.manifest;
   const modelSource = payload.modelBuffer || manifest.modelUrl;
@@ -594,7 +599,12 @@ async function infer(payload) {
   const inputName = session.inputNames[0];
   const result = await session.run({ [inputName]: transform.tensor });
   const output = result[session.outputNames[0]];
-  const detections = await verifyDetections(parseOutput(output, transform), transform);
+  const parsedDetections = parseOutput(output, transform);
+  const verifiedObjects = await verifyDetections(parsedDetections, transform);
+  // Person boxes are context-only: they are never prohibited objects and do
+  // not enter the object policy. Return them so the camera layer can reinforce
+  // multi-person and presence checks when a face is turned or obscured.
+  const detections = buildResultDetections(parsedDetections, verifiedObjects);
   self.postMessage({
     type: 'result',
     requestId: payload.requestId,
@@ -629,4 +639,4 @@ export function __setManifestForTesting(nextManifest) {
   manifest = nextManifest;
   negativeClassIndexCacheManifest = null;
 }
-export { parseOutput, suppressNegativeMatches };
+export { buildResultDetections, parseOutput, suppressNegativeMatches };

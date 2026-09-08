@@ -4,14 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "prepare:mediapipe": "node scripts/copy-mediapipe-assets.mjs",
+    "build": "npm run prepare:mediapipe && vite build",
     "preview": "vite preview",
     "start": "node server.js",
     "test:replay": "node scripts/check-replay-readiness.mjs",
     "test:yolo": "node scripts/test-yolo-policy.mjs && node scripts/test-yolo-worker-parsing.mjs && node scripts/smoke-test-yolo-model.mjs && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-coco-v1.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-tuklas-v2.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-phone-specialist-v1.json",
+    "test:facemesh": "node scripts/test-facemesh.mjs",
+    "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
+    "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@supabase/supabase-js": "^2.108.2",
     "@vitejs/plugin-react": "^6.0.3",
     "dotenv": "^17.4.2",
@@ -21,5 +26,8 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "vite": "^8.1.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

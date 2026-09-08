@@ -27,6 +27,12 @@ function setEnrollStatus(el, text, variant, options = {}) {
 }
 
 const EXAM_EXTERNAL_ASSETS = new Map();
+const FACEMESH_REPORTED_INCIDENT_TYPES = new Set([
+  'FACE_ABSENT',
+  'SUSTAINED_HEAD_TURN',
+  'SUSTAINED_LOOKING_DOWN',
+  'PHONE_NEAR_OR_COVERING_FACE',
+]);
 
 function loadExamScript(src) {
   if (EXAM_EXTERNAL_ASSETS.has(src)) return EXAM_EXTERNAL_ASSETS.get(src);
@@ -128,12 +134,34 @@ const ExamApp = {
   _yoloPreloadPromise: null,
   _yoloStarting: false,
   _yoloStartGeneration: 0,
+  _faceMeshRuntime: null,
+  _faceMeshConfig: null,
+  _faceMeshBaseline: null,
+  _faceCalibration: null,
+  _faceRuleEngine: null,
+  _faceAggregator: null,
+  _faceCorrelator: null,
+  _faceMeshCalibrating: false,
+  _faceMeshUnavailable: false,
+  _faceMeshStarting: false,
+  _faceMeshStatus: 'idle',
+  _lastFaceMeshObservation: null,
+  _faceIncidentRequests: new Map(),
+  _facePositioningWarnings: new Map(),
+  _faceConditionCountdowns: new Map(),
+  _cameraCalibrationOnly: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _presenceConfirmSec: 0,
   _lastPresenceSeenAt: 0,
   _multipleFaceSeconds: 0,
   _multipleFaceWarningIssued: false,
   _secondaryFaceTrack: null,
+  _multiplePeopleSources: new Map(),
+  _multiplePeopleCandidateSince: null,
+  _multiplePeopleRecoverySince: null,
+  _multiplePeopleActive: false,
+  _multiplePeopleStatus: null,
+  _yoloPersonSeenUntil: 0,
   _lookDownSeconds: 0,
   _lookDownConfirmSeconds: 0,
   _lookDownWarningIssued: false,
@@ -2761,6 +2789,9 @@ const ExamApp = {
     this._prepareExamShell();
     this._webcamConsentAccepted = false;
     this._cameraRequired = false;
+    this._faceMeshBaseline = null;
+    this._faceMeshUnavailable = false;
+    this._faceMeshCalibrating = false;
     if (this._shouldShowExamPolicies()) {
       this._requestExamPolicies();
       return;
@@ -2864,6 +2895,10 @@ const ExamApp = {
       this._requestWebcamConsent();
       return;
     }
+    if (this._cameraRequired && !this._faceMeshBaseline && !this._faceMeshUnavailable) {
+      this._prepareFaceCalibration();
+      return;
+    }
     this._beginExamRuntime();
   },
 
@@ -2873,17 +2908,21 @@ const ExamApp = {
     this._remoteForceSubmitSessionId = null;
     this._rememberTrustedInteraction(2000);
     this._enableRefreshProtection();
+    this.requestFullscreen();
+    this.initAntiCheat({ preserveCamera: !!this._cameraStream });
+    // initAntiCheat first tears down stale listeners and connection polling.
+    // Start the current exam's pollers afterwards so they are not immediately
+    // cancelled by that cleanup pass.
     this._initConnectionMonitor();
     this._startSessionSyncPolling();
-    this.requestFullscreen();
-    this.initAntiCheat();
     this.startTimer();
     this.renderQuestions();
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
 
     if (this._cameraRequired && this._webcamConsentAccepted) {
-      this.initCamera();
+      if (this._cameraStream) this._activateCameraMonitoring(document.getElementById('camera-feed'));
+      else this.initCamera();
     }
     // Verify display brightness with a perceptual check at the start of every
     // exam — the camera's ambient-light monitor only catches a dim screen
@@ -3775,8 +3814,8 @@ const ExamApp = {
   // ============================================================
   // ANTI-CHEAT
   // ============================================================
-  initAntiCheat() {
-    this.destroyAntiCheat();
+  initAntiCheat(options = {}) {
+    this.destroyAntiCheat({ preserveCamera: options.preserveCamera === true });
 
     // ── Window blur (focus lost to another app) ──────────────────
     // Use 250ms delay so that pressing Alt/Win/Ctrl alone (which causes a
@@ -3968,7 +4007,7 @@ const ExamApp = {
     if (!modal) {
       this._webcamConsentAccepted = true;
       if (this._examRuntimeStarted) this._ensureCameraMonitoringActive();
-      else this._beginExamRuntime();
+      else this._continueExamLaunch();
       return;
     } // fallback if markup is missing
     modal.classList.remove('hidden');
@@ -3982,7 +4021,7 @@ const ExamApp = {
     this._webcamConsentAccepted = true;
     this._recordActivity('camera_consent_given', 'Student consented to webcam monitoring');
     if (this._examRuntimeStarted) this._ensureCameraMonitoringActive();
-    else this._beginExamRuntime();
+    else this._continueExamLaunch();
   },
 
   declineWebcamConsent() {
@@ -4138,32 +4177,448 @@ const ExamApp = {
     if (this._webcamWaitPoll) { clearInterval(this._webcamWaitPoll); this._webcamWaitPoll = null; }
   },
 
-  async initCamera() {
+  _showFaceCalibrationModal() {
+    const modal = document.getElementById('face-calibration-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    lockBodyScroll();
+  },
+
+  _hideFaceCalibrationModal() {
+    const modal = document.getElementById('face-calibration-modal');
+    if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
+    modal?.classList.add('hidden');
+  },
+
+  _setFaceCalibrationStatus(message, progress = 0, options = {}) {
+    const status = document.getElementById('face-calibration-status');
+    const bar = document.getElementById('face-calibration-progress-bar');
+    const retry = document.getElementById('face-calibration-retry');
+    const fallback = document.getElementById('face-calibration-fallback');
+    const continueButton = document.getElementById('face-calibration-continue');
+    if (status) status.textContent = message;
+    if (bar) bar.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
+    if (retry) retry.style.display = options.retry ? '' : 'none';
+    if (fallback) fallback.style.display = options.fallback ? '' : 'none';
+    if (continueButton) continueButton.style.display = options.continue ? '' : 'none';
+  },
+
+  _setFaceMeshStatus(state, message = '') {
+    this._faceMeshStatus = state;
+    const indicator = document.getElementById('facemesh-camera-status');
+    if (!indicator) return;
+    indicator.dataset.state = state;
+    indicator.textContent = message || (
+      state === 'ready' ? 'Face scan active'
+        : state === 'error' ? 'Face scan unavailable'
+          : state === 'loading' ? 'Starting face scan'
+            : 'Face scan off'
+    );
+  },
+
+  _prepareFaceCalibration() {
+    if (this._faceMeshCalibrating || this._examRuntimeStarted) return;
+    this._faceMeshCalibrating = true;
+    this._showFaceCalibrationModal();
+    this._setFaceCalibrationStatus('Starting camera…', 0);
+    this.initCamera({ calibrationOnly: true });
+  },
+
+  async _startFaceCalibrationRuntime(video) {
+    if (!this._faceMeshCalibrating || this._faceMeshStarting) return;
+    this._faceMeshStarting = true;
+    this._setFaceCalibrationStatus('Starting the on-device face scan…', 0);
+    this._setFaceMeshStatus('loading');
+    try {
+      await window.FaceMeshProctor?.load?.();
+      if (!window.FaceMeshProctor?.createRuntime || !window.FaceMeshProctor?.createCalibration) {
+        throw new Error('FaceMesh runtime is unavailable.');
+      }
+      this._faceMeshConfig = window.FaceMeshProctor.normalizeConfig({});
+      this._faceCalibration = window.FaceMeshProctor.createCalibration(this._faceMeshConfig);
+      this._faceMeshRuntime?.stop?.();
+      this._faceMeshRuntime = window.FaceMeshProctor.createRuntime({
+        video,
+        config: this._faceMeshConfig,
+        onStatus: status => {
+          if (status.state === 'ready') this._setFaceMeshStatus('ready', 'Face scan ready');
+          else if (status.state === 'fallback') this._setFaceMeshStatus('loading', 'Starting face scan');
+          else if (status.state === 'degraded') this._setFaceMeshStatus('warning', 'Adjusting face scan');
+          else if (status.state === 'error') this._setFaceMeshStatus('error');
+        },
+        onObservation: observation => this._handleFaceMeshObservation(observation),
+      });
+      await this._faceMeshRuntime.start();
+      this._setFaceCalibrationStatus('Center your face and keep looking normally at the screen.', 0);
+    } catch (error) {
+      this._faceMeshRuntime?.stop?.();
+      this._faceMeshRuntime = null;
+      this._setFaceMeshStatus('error');
+      this._setFaceCalibrationStatus(
+        `Face scan could not start: ${error?.message || 'unknown error'}`,
+        0,
+        { retry: true, fallback: !!this._cameraStream },
+      );
+    } finally {
+      this._faceMeshStarting = false;
+    }
+  },
+
+  _handleFaceMeshObservation(observation) {
+    this._lastFaceMeshObservation = observation;
+    if (this._faceMeshCalibrating && this._faceCalibration) {
+      const result = this._faceCalibration.addObservation(observation);
+      this._setFaceCalibrationStatus(result.reason || 'Keep your head centered.', result.progress || 0);
+      if (result.complete && result.baseline) this._completeFaceCalibration(result.baseline);
+      return;
+    }
+    if (!this._faceRuleEngine || !this._faceMeshBaseline || !this._faceMeshConfig) return;
+
+    const classified = window.FaceMeshProctor.classifyObservation(
+      observation,
+      this._faceMeshBaseline,
+      this._faceMeshConfig,
+    );
+    const blazeFaceStillVisible = !classified.facePresent
+      && this._latestFaceContext?.capturedAt
+      && Date.now() - this._latestFaceContext.capturedAt <= 1600;
+    const yoloPersonStillVisible = Date.now() <= Number(this._yoloPersonSeenUntil || 0);
+    const enriched = {
+      ...classified,
+      occluded: blazeFaceStillVisible,
+      personPresent: classified.facePresent || blazeFaceStillVisible || yoloPersonStillVisible,
+    };
+    this._lastFaceMeshObservation = enriched;
+    this._faceAggregator?.observe?.(enriched);
+    this._faceRuleEngine.update(enriched);
+    this._renderFaceConditionCountdown();
+    this._setFaceMeshStatus(
+      enriched.trackingUnstable ? 'warning' : 'ready',
+      enriched.trackingUnstable ? 'Adjusting face scan' : 'Face scan active',
+    );
+  },
+
+  _completeFaceCalibration(baseline) {
+    if (!this._faceMeshCalibrating) return;
+    this._faceMeshBaseline = baseline;
+    this._faceMeshCalibrating = false;
+    this._setFaceCalibrationStatus('Calibration complete. Face direction will be compared with this centered position.', 1, { continue: true });
+    this._recordActivity('face_calibration_completed', 'Face positioning calibration completed for this exam session', {
+      source: 'FACEMESH',
+      trackingConfidence: Number(baseline.landmarkTrackingStability || 0),
+      sampleCount: Number(baseline.sampleCount || 0),
+    });
+  },
+
+  finishFaceCalibrationLaunch() {
+    if (!this._faceMeshBaseline || this._examRuntimeStarted) return;
+    this._hideFaceCalibrationModal();
+    this._beginExamRuntime();
+  },
+
+  retryFaceCalibration() {
+    this._faceMeshRuntime?.stop?.();
+    this._faceMeshRuntime = null;
+    this._faceCalibration = null;
+    this._faceMeshStarting = false;
+    this._faceMeshCalibrating = true;
+    this._setFaceCalibrationStatus('Restarting face calibration…', 0);
+    const video = document.getElementById('camera-feed');
+    if (this._cameraStream && video?.readyState >= 2) this._startFaceCalibrationRuntime(video);
+    else this.initCamera({ calibrationOnly: true });
+  },
+
+  cancelFaceCalibration() {
+    if (this._examRuntimeStarted) return;
+    this.stopCamera();
+    this._faceMeshBaseline = null;
+    this._faceMeshUnavailable = false;
+    this.returnToLogin();
+  },
+
+  continueWithoutFaceMesh() {
+    if (!this._cameraStream) return;
+    this._faceMeshRuntime?.stop?.();
+    this._faceMeshRuntime = null;
+    this._faceMeshUnavailable = true;
+    this._faceMeshCalibrating = false;
+    this._hideFaceCalibrationModal();
+    this._setFaceMeshStatus('error', 'Standard face detection active');
+    this._recordActivity('face_tracking_unavailable', 'FaceMesh unavailable; standard camera monitoring continued', {
+      source: 'FACEMESH',
+    });
+    this._beginExamRuntime();
+  },
+
+  _activateFaceMeshMonitoring() {
+    if (!this._faceMeshRuntime || !this._faceMeshBaseline || this._faceRuleEngine) return;
+    this._faceAggregator = window.FaceMeshProctor.createAggregator();
+    this._faceCorrelator = window.FaceMeshProctor.createCorrelator(this._faceMeshConfig);
+    this._faceRuleEngine = window.FaceMeshProctor.createRuleEngine(
+      this._faceMeshConfig,
+      event => this._handleFaceMeshRuleEvent(event),
+    );
+  },
+
+  _upsertFaceActivity(event) {
+    if (!this.session?.id) return;
+    const session = DB.getSession(this.session.id);
+    if (!session) return;
+    const activities = Array.isArray(session.activities) ? [...session.activities] : [];
+    const index = activities.findIndex(activity => activity?.metadata?.incidentId === event.incidentId);
+    const prior = index >= 0 ? activities[index] : null;
+    const metadata = {
+      ...(prior?.metadata || {}),
+      incidentId: event.incidentId,
+      source: event.source || 'FACEMESH',
+      phase: event.phase,
+      severity: event.severity || 'INFO',
+      direction: event.direction || null,
+      startedAt: event.startedAt || prior?.metadata?.startedAt || null,
+      endedAt: event.endedAt || null,
+      durationMs: Number(event.durationMs || 0),
+      maxYaw: Number(event.maxYaw || 0),
+      maxPitch: Number(event.maxPitch || 0),
+      trackingConfidence: Number(event.trackingConfidence || 0),
+      phoneConfidence: Number(event.phoneConfidence || 0),
+      requiresProfessorReview: event.requiresProfessorReview !== false,
+      relatedIncidentIds: Array.isArray(event.relatedIncidentIds) ? event.relatedIncidentIds : [],
+      reviewStatus: prior?.metadata?.reviewStatus || 'pending',
+    };
+    const activity = {
+      type: event.eventType,
+      detail: event.description,
+      timestamp: event.startedAt || prior?.timestamp || new Date().toISOString(),
+      metadata,
+    };
+    if (index >= 0) activities[index] = activity;
+    else activities.push(activity);
+    DB.updateSession(this.session.id, { activities });
+
+    if (event.phase === 'end' && this.exam?.id && prior?.metadata?.phase !== 'end') {
+      DB.addLog({
+        sessionId: this.session.id,
+        studentId: this.session.studentId,
+        examId: this.exam.id,
+        type: event.eventType,
+        details: event.description,
+      });
+    }
+  },
+
+  _supersedeFaceIncident(incidentId, correlatedIncidentId) {
+    if (!this.session?.id || !incidentId) return;
+    const session = DB.getSession(this.session.id);
+    if (!session) return;
+    const activities = (session.activities || []).map(activity => (
+      activity?.metadata?.incidentId === incidentId
+        ? { ...activity, metadata: { ...activity.metadata, supersededBy: correlatedIncidentId } }
+        : activity
+    ));
+    DB.updateSession(this.session.id, { activities });
+  },
+
+  _syncFaceIncident(event) {
+    if (!this.session?.id || !this.exam?.id || !event?.incidentId) return;
+    const prior = this._faceIncidentRequests.get(event.incidentId) || Promise.resolve();
+    const request = prior.catch(() => null).then(() => fetch('/api/monitor/incident', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientIncidentId: event.incidentId,
+        phase: event.phase,
+        sessionId: this.session.id,
+        examId: this.exam.id,
+        studentId: this.session.studentId || '',
+        studentName: this.session.studentName || '',
+        eventType: event.eventType,
+        detail: event.description,
+        source: event.source || 'FACEMESH',
+        severity: event.severity || 'INFO',
+        direction: event.direction || null,
+        startedAt: event.startedAt || null,
+        endedAt: event.endedAt || null,
+        durationMs: Number(event.durationMs || 0),
+        maxYaw: Number(event.maxYaw || 0),
+        maxPitch: Number(event.maxPitch || 0),
+        trackingConfidence: Number(event.trackingConfidence || 0),
+        phoneConfidence: Number(event.phoneConfidence || 0),
+        relatedIncidentIds: Array.isArray(event.relatedIncidentIds) ? event.relatedIncidentIds : [],
+        requiresProfessorReview: event.requiresProfessorReview !== false,
+        warningCount: Number(this.warnings || 0),
+      }),
+      keepalive: event.phase === 'end',
+    })).then(async response => {
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Incident sync failed (${response.status}).`);
+      }
+      return response.json();
+    }).catch(error => {
+      console.warn('[FaceMesh] Unable to sync monitoring incident:', error?.message || error);
+      return null;
+    }).finally(() => {
+      if (this._faceIncidentRequests.get(event.incidentId) === request) {
+        this._faceIncidentRequests.delete(event.incidentId);
+      }
+    });
+    this._faceIncidentRequests.set(event.incidentId, request);
+  },
+
+  _persistFaceMonitoringSummary() {
+    if (!this.session?.id || !this._faceAggregator) return;
+    const session = DB.getSession(this.session.id);
+    if (!session) return;
+    DB.updateSession(this.session.id, {
+      aiDetections: {
+        ...(session.aiDetections || {}),
+        faceMonitoring: {
+          ...this._faceAggregator.snapshot(),
+          source: 'FACEMESH',
+          updatedAt: new Date().toISOString(),
+          randomForestCompatible: false,
+        },
+      },
+    });
+  },
+
+  _handleFaceMeshRuleEvent(event) {
+    if (event?.kind === 'condition-progress') {
+      this._faceConditionCountdowns.set(event.eventType, event);
+      return;
+    }
+    if (event?.kind === 'condition-progress-clear') {
+      this._faceConditionCountdowns.delete(event.eventType);
+      return;
+    }
+    if (event?.kind === 'positioning-warning') {
+      this._facePositioningWarnings.set(event.eventType, event.description);
+      const warning = document.getElementById('face-positioning-warning');
+      if (warning) {
+        warning.textContent = event.description;
+        warning.style.display = '';
+      }
+      this._setFaceMeshStatus('warning', event.description);
+      return;
+    }
+    if (event?.kind === 'positioning-warning-clear') {
+      this._facePositioningWarnings.delete(event.eventType);
+      const warning = document.getElementById('face-positioning-warning');
+      const remaining = [...this._facePositioningWarnings.values()].at(-1);
+      if (warning) {
+        warning.textContent = remaining || '';
+        warning.style.display = remaining ? '' : 'none';
+      }
+      return;
+    }
+    if (event?.kind !== 'incident') return;
+
+    const geometry = this._lastFaceMeshObservation?.geometry;
+    const faceBox = geometry ? {
+      x: geometry.x * Number(this._lastFaceMeshObservation.frameWidth || 1),
+      y: geometry.y * Number(this._lastFaceMeshObservation.frameHeight || 1),
+      width: geometry.width * Number(this._lastFaceMeshObservation.frameWidth || 1),
+      height: geometry.height * Number(this._lastFaceMeshObservation.frameHeight || 1),
+    } : null;
+    const correlated = this._faceCorrelator?.handleFaceEvent?.(event, faceBox, Date.now());
+    if (correlated) {
+      (correlated.relatedIncidentIds || []).forEach(id => this._supersedeFaceIncident(id, correlated.incidentId));
+      this._handleFaceMeshRuleEvent(correlated);
+    }
+    // Position/quality states remain useful for calibration and neutral local
+    // prompts, but the professor-facing camera behavior list is deliberately
+    // limited to absence, down, and left/right/up looking-away incidents.
+    // Occlusion is only reported when it correlates with a YOLO phone event.
+    if (!FACEMESH_REPORTED_INCIDENT_TYPES.has(event.eventType)) return;
+
+    this._faceAggregator?.consume?.(event);
+    this._upsertFaceActivity(event);
+    this._syncFaceIncident(event);
+    if (event.phase === 'end') this._persistFaceMonitoringSummary();
+  },
+
+  _renderFaceConditionCountdown() {
+    const statusText = document.getElementById('camera-status-text');
+    if (!statusText) return;
+    const multiplePeople = this._multiplePeopleStatus;
+    if (multiplePeople?.detected) {
+      statusText.dataset.faceCountdown = 'true';
+      statusText.textContent = multiplePeople.remainingSeconds > 0
+        ? `Multiple faces or people (${multiplePeople.remainingSeconds}s)`
+        : 'Multiple faces or people detected';
+      return;
+    }
+    const priorities = ['FACE_ABSENT', 'SUSTAINED_LOOKING_DOWN', 'SUSTAINED_HEAD_TURN'];
+    const countdown = priorities.map(type => this._faceConditionCountdowns.get(type)).find(Boolean);
+    if (!countdown) {
+      if (statusText.dataset.faceCountdown === 'true') {
+        statusText.textContent = 'Camera scan active';
+        delete statusText.dataset.faceCountdown;
+      }
+      return;
+    }
+
+    const direction = String(countdown.direction || '').toLowerCase();
+    const label = countdown.eventType === 'FACE_ABSENT'
+      ? 'No person detected'
+      : countdown.eventType === 'SUSTAINED_LOOKING_DOWN'
+        ? 'Looking down'
+        : `Looking away${direction ? ` ${direction}` : ''}`;
+    statusText.dataset.faceCountdown = 'true';
+    statusText.textContent = countdown.remainingSeconds > 0
+      ? `${label} (${countdown.remainingSeconds}s)`
+      : `${label} detected`;
+  },
+
+  _activateCameraMonitoring(video) {
+    if (!video || !this._cameraStream) return;
+    this._cameraCalibrationOnly = false;
+    this._startViolationReplayBuffer();
+    this._startCameraWatchdog();
+    this._startYoloObjectMonitoring(video);
+    this._activateFaceMeshMonitoring();
+    const statusText = document.getElementById('camera-status-text');
+    if (statusText) statusText.textContent = 'Starting camera scan…';
+    setTimeout(() => this._checkInitialPresence(video), 500);
+    this._loadFaceDetectionModel().then(() => {
+      if (statusText) statusText.textContent = 'Camera scan active';
+    }).catch(error => {
+      this._faceModelReady = false;
+      if (statusText) statusText.textContent = 'Camera scan active';
+      console.warn('[Camera] Face detection fallback active:', error?.message || error);
+    });
+  },
+
+  async initCamera(options = {}) {
     const container = document.getElementById('camera-container');
     const video = document.getElementById('camera-feed');
+    const calibrationVideo = document.getElementById('face-calibration-feed');
     const statusText = document.getElementById('camera-status-text');
     const blockedMsg = document.getElementById('camera-blocked-msg');
     if (!container || !video) return;
 
+    const calibrationOnly = options.calibrationOnly === true;
+    this._cameraCalibrationOnly = calibrationOnly;
+
     container.style.display = '';
     this._cameraPrompting = true;
 
-    // Model/session initialization is the slow part of object detection. Start
-    // it while the browser is opening the webcam so the first frame can be
-    // scanned as soon as the video becomes readable.
-    this._startYoloObjectMonitoring(video);
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
-        audio: false,
-      });
+      const existingLive = this._cameraStream?.getVideoTracks?.().some(track => track.readyState === 'live');
+      const cameraConstraints = {
+          video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: false,
+        };
+      const stream = existingLive
+        ? this._cameraStream
+        : await (window.FaceMeshProctor?.requestCameraStream
+          ? window.FaceMeshProctor.requestCameraStream(navigator.mediaDevices, cameraConstraints)
+          : navigator.mediaDevices.getUserMedia(cameraConstraints));
       this._cameraPrompting = false;
       this._cameraStream = stream;
-      this._startViolationReplayBuffer();
-      if (statusText) statusText.textContent = 'Monitoring';
+      if (statusText) statusText.textContent = calibrationOnly ? 'Calibrating' : 'Monitoring';
       if (blockedMsg) blockedMsg.style.display = 'none';
-      this._startCameraWatchdog();
 
       // Wait for video to be ready before starting presence checks. Object
       // detection has already been warming in parallel with camera startup.
@@ -4171,21 +4626,15 @@ const ExamApp = {
       const handleCameraReady = () => {
         if (cameraReadyHandled) return;
         cameraReadyHandled = true;
-        if (!this._yoloMonitor) this._startYoloObjectMonitoring(video);
-        if (statusText) statusText.textContent = 'Loading face detection...';
-        // Basic motion monitoring starts immediately. Face detection upgrades
-        // it in the background once TensorFlow and BlazeFace are available.
-        setTimeout(() => this._checkInitialPresence(video), 500);
-        this._loadFaceDetectionModel().then(() => {
-          if (statusText) statusText.textContent = 'Face detection ready';
-        }).catch(error => {
-          this._faceModelReady = false;
-          if (statusText) statusText.textContent = 'Monitoring';
-          console.warn('[Camera] Face detection fallback active:', error?.message || error);
-        });
+        if (calibrationOnly) this._startFaceCalibrationRuntime(video);
+        else this._activateCameraMonitoring(video);
       };
       video.onloadeddata = handleCameraReady;
       video.srcObject = stream;
+      if (calibrationVideo) {
+        calibrationVideo.srcObject = stream;
+        calibrationVideo.play().catch(() => {});
+      }
       video.play().catch(() => {});
       if (video.readyState >= 2) handleCameraReady();
     } catch (err) {
@@ -4195,7 +4644,11 @@ const ExamApp = {
       this._recordActivity('camera_denied', 'Camera permission denied: ' + err.message);
       // Keep watching — the overlay blocks the exam and retries the camera
       // until the student re-enables it.
-      this._startCameraWatchdog();
+      if (calibrationOnly) {
+        this._setFaceCalibrationStatus('Camera permission is required. Allow camera access, then retry.', 0, { retry: true });
+      } else {
+        this._startCameraWatchdog();
+      }
     }
   },
 
@@ -4388,6 +4841,8 @@ const ExamApp = {
     this._yoloPolicy = null;
     this._lastYoloResult = null;
     this._yoloConfigSignature = '';
+    this._yoloPersonSeenUntil = 0;
+    this._multiplePeopleSources.delete('yolo');
     this._setYoloStatus('idle');
   },
 
@@ -4416,6 +4871,11 @@ const ExamApp = {
       ...detection,
       detectorRole: result.detectorRole || 'primary',
     }));
+    if ((result.detectorRole || 'primary') === 'primary') {
+      const people = detections.filter(detection => detection.contextClass === 'person');
+      if (people.length) this._yoloPersonSeenUntil = Date.now() + 1500;
+      this._updateMultiplePeopleTracking('yolo', people.length >= 2, { holdMs: 1000 });
+    }
     const events = this._yoloPolicy.evaluate(detections, {
       now: Date.now(),
       modelVersion: result.modelVersion || '',
@@ -4506,6 +4966,13 @@ const ExamApp = {
   _handleYoloPolicyEvent(event) {
     const mode = event.policyMode || this._getObjectMonitoringConfig().mode;
     const detail = `A ${event.objectLabel.toLowerCase()} was detected in the student's camera.`;
+    const correlatedFaceEvent = this._faceCorrelator?.handleYoloEvent?.(event, Date.now());
+    if (correlatedFaceEvent) {
+      (correlatedFaceEvent.relatedIncidentIds || []).forEach(id => {
+        this._supersedeFaceIncident(id, correlatedFaceEvent.incidentId);
+      });
+      this._handleFaceMeshRuleEvent(correlatedFaceEvent);
+    }
     const metadata = {
       source: 'yolo',
       objectClass: event.objectClass,
@@ -4710,6 +5177,7 @@ const ExamApp = {
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
     this._secondaryFaceTrack = null;
+    this._resetMultiplePeopleTracking();
     this._lookDownSeconds = 0;
     this._lookDownConfirmSeconds = 0;
     this._lookDownWarningIssued = false;
@@ -4788,6 +5256,10 @@ const ExamApp = {
 
     // Ambient brightness check (runs every frame)
     this._checkAmbientBrightness(frame, pixelCount);
+
+    // FaceMesh owns primary-face presence and direction when available. Keep
+    // this lightweight loop for brightness and as the explicit fallback.
+    if (this._faceRuleEngine) return;
 
     // Person detected if EITHER clear movement OR subtle change vs 10s-ago frame
     const avgDiff = Math.max(fastAvg, slowAvg);
@@ -5054,6 +5526,74 @@ const ExamApp = {
     return seconds;
   },
 
+  _updateMultiplePeopleTracking(source, detected, options = {}) {
+    const now = Number(options.now ?? this._getDetectionNow());
+    const holdMs = Math.max(250, Number(options.holdMs || 1000));
+    if (detected) this._multiplePeopleSources.set(source, now + holdMs);
+    for (const [key, expiresAt] of this._multiplePeopleSources) {
+      if (expiresAt < now) this._multiplePeopleSources.delete(key);
+    }
+
+    const multipleDetected = [...this._multiplePeopleSources.values()].some(expiresAt => expiresAt >= now);
+    let justStarted = false;
+    let justEnded = false;
+    if (multipleDetected) {
+      this._multiplePeopleRecoverySince = null;
+      if (this._multiplePeopleCandidateSince === null) this._multiplePeopleCandidateSince = now;
+      if (!this._multiplePeopleActive && now - this._multiplePeopleCandidateSince >= this._MULTIPLE_FACE_WARN_SEC * 1000) {
+        this._multiplePeopleActive = true;
+        justStarted = true;
+      }
+    } else {
+      this._multiplePeopleCandidateSince = null;
+      if (this._multiplePeopleActive) {
+        if (this._multiplePeopleRecoverySince === null) this._multiplePeopleRecoverySince = now;
+        if (now - this._multiplePeopleRecoverySince >= 1000) {
+          this._multiplePeopleActive = false;
+          this._multiplePeopleRecoverySince = null;
+          justEnded = true;
+        }
+      } else {
+        this._multiplePeopleRecoverySince = null;
+      }
+    }
+
+    const elapsedMs = multipleDetected && this._multiplePeopleCandidateSince !== null
+      ? Math.max(0, now - this._multiplePeopleCandidateSince)
+      : 0;
+    const status = {
+      detected: multipleDetected,
+      active: this._multiplePeopleActive,
+      justStarted,
+      justEnded,
+      elapsedMs,
+      remainingSeconds: Math.max(0, Math.ceil(((this._MULTIPLE_FACE_WARN_SEC * 1000) - elapsedMs) / 1000)),
+    };
+    this._multiplePeopleStatus = status;
+    this._multipleFaceSeconds = elapsedMs / 1000;
+    this._multipleFaceWarningIssued = this._multiplePeopleActive;
+
+    if (justStarted) {
+      this.issueWarning(
+        'multiple_people',
+        'Another visible face or person was detected in the camera frame'
+      );
+    }
+    this._renderFaceConditionCountdown();
+    return status;
+  },
+
+  _resetMultiplePeopleTracking() {
+    this._multiplePeopleSources.clear();
+    this._multiplePeopleCandidateSince = null;
+    this._multiplePeopleRecoverySince = null;
+    this._multiplePeopleActive = false;
+    this._multiplePeopleStatus = null;
+    this._multipleFaceSeconds = 0;
+    this._multipleFaceWarningIssued = false;
+    this._yoloPersonSeenUntil = 0;
+  },
+
   _consumeCameraDetectDelta(fallbackMs = 600) {
     const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
       ? performance.now()
@@ -5115,8 +5655,16 @@ const ExamApp = {
       } : null;
       const secondaryFaceSeconds = extraFaces.length ? this._trackSecondaryFace(extraFaces[0], deltaSec) : 0;
       const multipleFacesConfirmed = secondaryFaceSeconds >= this._MULTIPLE_FACE_CONFIRM_SEC;
-      const lookDownEvaluation = primaryFace && !extraFaces.length ? this._evaluateLookingDown(primaryFace) : { isLookingDown: false, metrics: null };
-      const primaryLookingDown = !!primaryFace && !extraFaces.length && lookDownEvaluation.isLookingDown;
+      const multiplePeopleState = this._updateMultiplePeopleTracking(
+        'blazeface',
+        extraFaces.length > 0 && multipleFacesConfirmed,
+        { holdMs: 1000 },
+      );
+      const useLegacyPrimaryRules = !this._faceRuleEngine;
+      const lookDownEvaluation = useLegacyPrimaryRules && primaryFace && !extraFaces.length
+        ? this._evaluateLookingDown(primaryFace)
+        : { isLookingDown: false, metrics: null };
+      const primaryLookingDown = useLegacyPrimaryRules && !!primaryFace && !extraFaces.length && lookDownEvaluation.isLookingDown;
       const presenceStable = primaryFace ? this._confirmPresence(deltaSec) : false;
       if (primaryFace && !extraFaces.length && !primaryLookingDown) {
         this._updateFacePoseBaseline(lookDownEvaluation.metrics);
@@ -5149,8 +5697,7 @@ const ExamApp = {
         });
       }
 
-      if (extraFaces.length && multipleFacesConfirmed) {
-        this._multipleFaceSeconds += deltaSec;
+      if (multiplePeopleState.detected) {
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
@@ -5158,24 +5705,15 @@ const ExamApp = {
           this._noMotionSec = 0;
           this._motionBlocked = false;
         }
-        const remaining = Math.max(0, this._MULTIPLE_FACE_WARN_SEC - this._multipleFaceSeconds);
+        const remaining = multiplePeopleState.remainingSeconds;
         if (statusText) {
-          statusText.textContent = this._multipleFaceWarningIssued
-            ? 'Multiple faces detected'
-            : `Multiple faces detected (${Math.ceil(remaining)}s)`;
+          statusText.textContent = multiplePeopleState.active
+            ? 'Multiple faces or people detected'
+            : `Multiple faces or people (${remaining}s)`;
         }
         if (presenceStable) this._clearMotionWarning();
-        if (this._multipleFaceSeconds >= this._MULTIPLE_FACE_WARN_SEC && !this._multipleFaceWarningIssued) {
-          this._multipleFaceWarningIssued = true;
-          this.issueWarning(
-            'multiple_people',
-            'Another visible face/person was detected beside the student or facing the camera/screen'
-          );
-        }
       } else if (primaryFace && primaryLookingDown) {
-        this._multipleFaceSeconds = 0;
         this._secondaryFaceTrack = null;
-        this._multipleFaceWarningIssued = false;
         this._lookDownConfirmSeconds = Math.min(this._LOOK_DOWN_CONFIRM_SEC, this._lookDownConfirmSeconds + deltaSec);
         const lookDownConfirmed = this._lookDownConfirmSeconds >= this._LOOK_DOWN_CONFIRM_SEC;
         this._lookDownSeconds = lookDownConfirmed ? (this._lookDownSeconds + deltaSec) : 0;
@@ -5200,9 +5738,7 @@ const ExamApp = {
           );
         }
       } else if (primaryFace) {
-        this._multipleFaceSeconds = 0;
         this._secondaryFaceTrack = null;
-        this._multipleFaceWarningIssued = false;
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
@@ -5210,26 +5746,28 @@ const ExamApp = {
           this._noMotionSec = 0;
           this._motionBlocked = false;
         }
-        if (statusText) statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+        if (statusText && !this._faceRuleEngine) {
+          statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+        }
         if (presenceStable) this._clearMotionWarning();
       } else {
         const now = this._getDetectionNow();
-        this._multipleFaceSeconds = 0;
         this._secondaryFaceTrack = null;
-        this._multipleFaceWarningIssued = false;
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
         this._resetPresenceTracking();
         if (this._isPresenceGraceActive(now)) {
-          if (statusText) statusText.textContent = 'Checking camera...';
+          if (statusText && useLegacyPrimaryRules) statusText.textContent = 'Checking camera...';
           return;
         }
-        this._noMotionSec += deltaSec;
-        const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
-        if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
-        if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
-          this._handleNoMotion();
+        if (useLegacyPrimaryRules) {
+          this._noMotionSec += deltaSec;
+          const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
+          if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
+          if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
+            this._handleNoMotion();
+          }
         }
       }
     } catch(e) {
@@ -5532,6 +6070,31 @@ const ExamApp = {
   },
 
   stopCamera() {
+    if (this._faceRuleEngine) {
+      this._faceRuleEngine.stop({
+        ...(this._lastFaceMeshObservation || {}),
+        timestampMs: performance.now(),
+        wallClockMs: Date.now(),
+      });
+    }
+    this._persistFaceMonitoringSummary();
+    this._faceMeshRuntime?.stop?.();
+    this._faceMeshRuntime = null;
+    this._faceRuleEngine = null;
+    this._faceCalibration = null;
+    this._faceAggregator = null;
+    this._faceCorrelator?.reset?.();
+    this._faceCorrelator = null;
+    this._faceMeshCalibrating = false;
+    this._faceMeshStarting = false;
+    this._lastFaceMeshObservation = null;
+    this._facePositioningWarnings.clear();
+    this._faceConditionCountdowns.clear();
+    const faceWarning = document.getElementById('face-positioning-warning');
+    if (faceWarning) faceWarning.style.display = 'none';
+    this._cameraCalibrationOnly = false;
+    this._hideFaceCalibrationModal();
+    this._setFaceMeshStatus('idle');
     this._stopYoloObjectMonitoring();
     this._cameraPrompting = false;
     this._cameraRecoveryGraceUntil = 0;
@@ -5548,6 +6111,7 @@ const ExamApp = {
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
     this._secondaryFaceTrack = null;
+    this._resetMultiplePeopleTracking();
     this._lookDownSeconds = 0;
     this._lookDownConfirmSeconds = 0;
     this._lookDownWarningIssued = false;
@@ -5564,11 +6128,13 @@ const ExamApp = {
       this._cameraStream.getTracks().forEach(t => t.stop());
       this._cameraStream = null;
     }
+    const calibrationVideo = document.getElementById('face-calibration-feed');
+    if (calibrationVideo) calibrationVideo.srcObject = null;
     const container = document.getElementById('camera-container');
     if (container) container.style.display = 'none';
   },
 
-  destroyAntiCheat() {
+  destroyAntiCheat(options = {}) {
     if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
     if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
     if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
@@ -5583,7 +6149,7 @@ const ExamApp = {
       target.removeEventListener(event, handler);
     });
     this.anticheatListeners = [];
-    this.stopCamera();
+    if (options.preserveCamera !== true) this.stopCamera();
     this._stopConnectionMonitor();
     this._stopWebcamWaitPoll();
   },
