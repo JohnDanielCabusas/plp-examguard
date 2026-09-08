@@ -9312,8 +9312,11 @@ input[type="password"]::-ms-clear {
 [data-theme="dark"] .monitor-exam-timer-popout { color: #94a3b8; border-color: #334155; background: transparent; }
 [data-theme="dark"] .monitor-exam-timer-popout:hover { color: #86efac; border-color: rgba(74,222,128,0.34); background: rgba(74,222,128,0.06); }
 .monitor-count-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
   background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
-  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
+  padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
 }
 
 /* Sessions / Camera Grid view toggle */
@@ -9572,6 +9575,7 @@ input[type="password"]::-ms-clear {
   flex-direction: column;
   justify-content: center;
 }
+[data-theme="dark"] .behavior-summary-card { background: var(--surface-2) !important; border-color: var(--border) !important; }
 
 .behavior-summary-count {
   font-size: 24px;
@@ -9580,6 +9584,7 @@ input[type="password"]::-ms-clear {
   color: #0f2d1a;
   margin-bottom: 6px;
 }
+[data-theme="dark"] .behavior-summary-count { color: var(--text) !important; }
 
 .behavior-summary-label {
   font-size: 11px;
@@ -9589,6 +9594,7 @@ input[type="password"]::-ms-clear {
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
+[data-theme="dark"] .behavior-summary-label { color: var(--text-muted) !important; }
 
 /* Progress bar */
 .monitor-progress-bar { height: 6px; background: #f0f0f0; border-radius: 99px; overflow: hidden; margin-bottom: 4px; }
