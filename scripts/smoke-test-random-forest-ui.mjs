@@ -116,10 +116,62 @@ try {
   if (!alternateStates.empty?.includes('No completed sessions yet') || !alternateStates.error?.includes('Retry')) {
     throw new Error(`Random Forest card states failed: ${JSON.stringify(alternateStates)}`);
   }
+
+  const violationReviewStates = await page.evaluate(() => {
+    ensureViolationReviewModal();
+    const readState = () => {
+      const footerStatus = document.getElementById('violation-review-reviewed');
+      const dismiss = document.getElementById('violation-review-dismiss-btn');
+      const confirm = document.getElementById('violation-review-confirm-btn');
+      return {
+        status: footerStatus?.textContent || '',
+        statusHidden: footerStatus?.classList.contains('hidden'),
+        statusInFooter: footerStatus?.parentElement?.id === 'violation-review-actions',
+        dismissText: dismiss?.textContent || '',
+        dismissDisabled: !!dismiss?.disabled,
+        confirmText: confirm?.textContent || '',
+        confirmDisabled: !!confirm?.disabled,
+      };
+    };
+
+    renderViolationReviewDecisionState(null);
+    const pending = readState();
+    renderViolationReviewDecisionState({
+      reviewStatus: 'confirmed',
+      reviewedAt: '2026-09-08T02:00:00.000Z',
+    });
+    const confirmed = readState();
+    renderViolationReviewDecisionState({
+      reviewStatus: 'dismissed',
+      reviewedAt: '2026-09-08T02:00:00.000Z',
+    });
+    const dismissed = readState();
+    renderViolationReviewDecisionState({ reviewStatus: 'pending' }, { savingStatus: 'confirmed' });
+    const saving = readState();
+    return { pending, confirmed, dismissed, saving };
+  });
+  if (
+    !violationReviewStates.pending.statusHidden
+    || !violationReviewStates.pending.statusInFooter
+    || violationReviewStates.pending.dismissDisabled
+    || violationReviewStates.pending.confirmDisabled
+    || !violationReviewStates.confirmed.status.includes('Violation confirmed')
+    || !violationReviewStates.confirmed.confirmDisabled
+    || violationReviewStates.confirmed.confirmText !== '✓ Violation Confirmed'
+    || violationReviewStates.confirmed.dismissText !== 'Change to Dismissed'
+    || !violationReviewStates.dismissed.status.includes('dismissed as a false positive')
+    || !violationReviewStates.dismissed.dismissDisabled
+    || violationReviewStates.dismissed.dismissText !== '✓ Violation Dismissed'
+    || violationReviewStates.dismissed.confirmText !== 'Change to Confirmed'
+    || !violationReviewStates.saving.status.includes('Saving decision')
+    || !violationReviewStates.saving.dismissDisabled
+    || !violationReviewStates.saving.confirmDisabled
+  ) {
+    throw new Error(`Violation review footer states failed: ${JSON.stringify(violationReviewStates)}`);
+  }
   if (errors.length) throw new Error(`Browser page errors: ${errors.join('; ')}`);
-  console.log(`Random Forest loading, empty, error, partial, populated, accessible, and mobile states passed using ${executablePath}.`);
+  console.log(`Random Forest states and violation review footer states passed using ${executablePath}.`);
 } finally {
   await browser?.close();
   await server.close();
 }
-

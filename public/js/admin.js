@@ -57,6 +57,7 @@ let _monitorEvidenceRecords = [];
 let _monitorEvidencePollInFlight = false;
 let _lastMonitorEvidencePollAt = 0;
 let _activeViolationReview = null;
+let _violationReviewSaving = false;
 let _activeViolationReplayObjectUrl = '';
 let _recentViolationEventKeys = new Map();
 let _randomForestStatsRequestToken = 0;
@@ -10941,9 +10942,22 @@ function ensureViolationReviewStyles() {
     .violation-review-empty { padding:18px; border:1px dashed var(--border, #d1d5db); border-radius:12px; color:var(--text-muted, #6b7280); font-size:13px; line-height:1.55; }
     .violation-review-notes { width:100%; min-height:90px; resize:vertical; margin-top:12px; }
     .violation-review-detail { margin:14px 0; font-size:13px; line-height:1.6; color:var(--text, #111827); }
-    .violation-review-reviewed { display:flex; align-items:center; gap:8px; margin:-2px 0 14px; padding:10px 12px; border:1px solid var(--border,#d1d5db); border-radius:10px; background:var(--surface-2,#f8fafc); color:var(--text-muted,#64748b); font-size:12px; font-weight:700; line-height:1.45; }
+    .violation-review-footer { flex-direction:column; align-items:stretch; gap:12px; }
+    .violation-review-footer-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; width:100%; }
+    .violation-review-reviewed { display:flex; align-items:center; gap:8px; width:100%; margin:0; padding:10px 12px; border:1px solid var(--border,#d1d5db); border-radius:10px; background:var(--surface-2,#f8fafc); color:var(--text-muted,#64748b); font-size:12px; font-weight:750; line-height:1.45; }
     .violation-review-reviewed.hidden { display:none; }
-    @media (max-width: 720px) { .violation-review-meta-grid { grid-template-columns:1fr; } }
+    .violation-review-reviewed.tone-confirmed { border-color:#86efac; background:#f0fdf4; color:#166534; }
+    .violation-review-reviewed.tone-dismissed { border-color:#fdba74; background:#fff7ed; color:#9a3412; }
+    .violation-review-reviewed.tone-saving { border-color:#93c5fd; background:#eff6ff; color:#1d4ed8; }
+    .violation-review-action-selected:disabled { opacity:1; cursor:default; box-shadow:none; transform:none; }
+    [data-theme="dark"] .violation-review-reviewed.tone-confirmed { border-color:#166534; background:#052e16; color:#bbf7d0; }
+    [data-theme="dark"] .violation-review-reviewed.tone-dismissed { border-color:#9a3412; background:#431407; color:#fed7aa; }
+    [data-theme="dark"] .violation-review-reviewed.tone-saving { border-color:#1d4ed8; background:#172554; color:#bfdbfe; }
+    @media (max-width: 720px) {
+      .violation-review-meta-grid { grid-template-columns:1fr; }
+      .violation-review-footer-actions { flex-wrap:wrap; }
+    }
+    @media (max-width: 480px) { .violation-review-footer-actions { flex-direction:column; } }
   `;
   document.head.appendChild(style);
 }
@@ -10970,17 +10984,19 @@ function ensureViolationReviewModal() {
           <div class="violation-review-meta-card"><div class="violation-review-meta-label">Recorded warnings</div><div class="violation-review-meta-value" id="violation-review-recorded">0</div></div>
           <div class="violation-review-meta-card"><div class="violation-review-meta-label">Adjusted warnings</div><div class="violation-review-meta-value" id="violation-review-adjusted">0</div></div>
         </div>
-        <div id="violation-review-reviewed" class="violation-review-reviewed hidden">Replay reviewed. This decision can still be edited.</div>
         <div style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Last 10 seconds before detection</div>
         <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
         <div id="violation-review-empty" class="violation-review-empty">Replay is processing.</div>
         <div id="violation-review-detail" class="violation-review-detail">Violation details appear here.</div>
         <textarea id="violation-review-notes" class="form-control violation-review-notes" placeholder="Optional review notes for this violation"></textarea>
       </div>
-      <div class="modal-footer" id="violation-review-actions">
-        <button class="btn btn-secondary" onclick="closeViolationReview()">Close</button>
-        <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss Violation</button>
-        <button id="violation-review-confirm-btn" class="btn btn-primary" onclick="submitViolationReviewDecision('confirmed')">Confirm Violation</button>
+      <div class="modal-footer violation-review-footer" id="violation-review-actions">
+        <div id="violation-review-reviewed" class="violation-review-reviewed hidden" role="status" aria-live="polite">Replay reviewed. This decision can still be edited.</div>
+        <div class="violation-review-footer-actions">
+          <button class="btn btn-secondary" onclick="closeViolationReview()">Close</button>
+          <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss Violation</button>
+          <button id="violation-review-confirm-btn" class="btn btn-primary" onclick="submitViolationReviewDecision('confirmed')">Confirm Violation</button>
+        </div>
       </div>
     </div>
   `;
@@ -10989,6 +11005,67 @@ function ensureViolationReviewModal() {
     if (event.target === modal) closeViolationReview();
   });
 }
+
+function renderViolationReviewDecisionState(evidence, options = {}) {
+  const reviewStatus = String(evidence?.reviewStatus || 'pending').toLowerCase();
+  const savingStatus = String(options.savingStatus || '').toLowerCase();
+  const isSaving = ['confirmed', 'dismissed'].includes(savingStatus);
+  const isConfirmed = !isSaving && reviewStatus === 'confirmed';
+  const isDismissed = !isSaving && reviewStatus === 'dismissed';
+  const isReviewed = isConfirmed || isDismissed;
+
+  const statusBadge = document.getElementById('violation-review-status');
+  if (statusBadge) {
+    statusBadge.textContent = isSaving
+      ? 'Saving review...'
+      : evidence
+        ? formatEvidenceReviewStatus(reviewStatus)
+        : 'Replay processing';
+    statusBadge.className = `violation-review-status tone-${isSaving ? 'pending' : evidence ? getEvidenceReviewTone(reviewStatus) : 'missing'}`;
+  }
+
+  const reviewedEl = document.getElementById('violation-review-reviewed');
+  if (reviewedEl) {
+    reviewedEl.className = `violation-review-reviewed${isSaving ? ' tone-saving' : isReviewed ? ` tone-${reviewStatus}` : ' hidden'}`;
+    if (isSaving) {
+      reviewedEl.textContent = `Saving decision: ${savingStatus === 'confirmed' ? 'confirm violation' : 'dismiss violation'}...`;
+    } else if (isConfirmed) {
+      reviewedEl.textContent = `✓ Review complete — Violation confirmed${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}.`;
+    } else if (isDismissed) {
+      reviewedEl.textContent = `✓ Review complete — Violation dismissed as a false positive${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}.`;
+    }
+  }
+
+  const dismissBtn = document.getElementById('violation-review-dismiss-btn');
+  const confirmBtn = document.getElementById('violation-review-confirm-btn');
+  if (dismissBtn) {
+    dismissBtn.disabled = isSaving || isDismissed;
+    dismissBtn.className = isDismissed
+      ? 'btn btn-secondary violation-review-action-selected'
+      : 'btn btn-danger';
+    dismissBtn.textContent = isSaving && savingStatus === 'dismissed'
+      ? 'Saving...'
+      : isDismissed
+        ? '✓ Violation Dismissed'
+        : isConfirmed
+          ? 'Change to Dismissed'
+          : 'Dismiss Violation';
+  }
+  if (confirmBtn) {
+    confirmBtn.disabled = isSaving || isConfirmed;
+    confirmBtn.className = isConfirmed
+      ? 'btn btn-success violation-review-action-selected'
+      : 'btn btn-primary';
+    confirmBtn.textContent = isSaving && savingStatus === 'confirmed'
+      ? 'Saving...'
+      : isConfirmed
+        ? '✓ Violation Confirmed'
+        : isDismissed
+          ? 'Change to Confirmed'
+          : 'Confirm Violation';
+  }
+}
+window.renderViolationReviewDecisionState = renderViolationReviewDecisionState;
 
 async function openViolationReview(sessionId, activityIndex) {
   ensureViolationReviewModal();
@@ -11026,25 +11103,9 @@ async function openViolationReview(sessionId, activityIndex) {
       || activity.detail
       || 'Violation recorded.',
   );
-  setText('violation-review-status', evidence ? formatEvidenceReviewStatus(evidence.reviewStatus) : 'Replay processing');
-
   const notesEl = document.getElementById('violation-review-notes');
   if (notesEl) notesEl.value = evidence?.reviewNotes || '';
-
-  const statusBadge = document.getElementById('violation-review-status');
-  if (statusBadge) statusBadge.className = `violation-review-status tone-${evidence ? getEvidenceReviewTone(evidence.reviewStatus) : 'missing'}`;
-  const reviewedEl = document.getElementById('violation-review-reviewed');
-  const isReviewed = evidence && ['confirmed', 'dismissed'].includes(evidence.reviewStatus);
-  if (reviewedEl) {
-    reviewedEl.classList.toggle('hidden', !isReviewed);
-    reviewedEl.textContent = evidence?.reviewStatus === 'confirmed'
-      ? `Replay reviewed and confirmed${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}. You can still change this decision.`
-      : `Replay reviewed and dismissed as a false positive${evidence?.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}. You can still change this decision.`;
-  }
-  const dismissBtn = document.getElementById('violation-review-dismiss-btn');
-  const confirmBtn = document.getElementById('violation-review-confirm-btn');
-  if (dismissBtn) dismissBtn.textContent = 'Dismiss Violation';
-  if (confirmBtn) confirmBtn.textContent = evidence?.reviewStatus === 'confirmed' ? 'Keep Confirmed' : 'Confirm Violation';
+  renderViolationReviewDecisionState(evidence);
 
   const video = document.getElementById('violation-review-video');
   const empty = document.getElementById('violation-review-empty');
@@ -11162,18 +11223,30 @@ function openCameraGridViolationReview(sessionId, snapshotTimestamp = '') {
 window.openCameraGridViolationReview = openCameraGridViolationReview;
 
 async function submitViolationReviewDecision(reviewStatus) {
-  if (!_activeViolationReview?.evidenceId) return;
+  if (!_activeViolationReview?.evidenceId || _violationReviewSaving) return;
+  if (!['confirmed', 'dismissed'].includes(reviewStatus)) return;
+  const priorEvidence = _monitorEvidenceRecords.find(record => record.id === _activeViolationReview.evidenceId) || null;
   const notesEl = document.getElementById('violation-review-notes');
-  const result = await monitorApiRequest(`/api/monitor/violation-evidence/${encodeURIComponent(_activeViolationReview.evidenceId)}/review`, {
-    method: 'PATCH',
-    body: {
-      reviewStatus,
-      reviewNotes: String(notesEl?.value || '').trim(),
-      warningAdjustment: reviewStatus === 'dismissed' && _activeViolationReview.policyMode !== 'alert' ? -1 : 0,
-    },
-  });
+  _violationReviewSaving = true;
+  renderViolationReviewDecisionState(priorEvidence, { savingStatus: reviewStatus });
+
+  let result;
+  try {
+    result = await monitorApiRequest(`/api/monitor/violation-evidence/${encodeURIComponent(_activeViolationReview.evidenceId)}/review`, {
+      method: 'PATCH',
+      body: {
+        reviewStatus,
+        reviewNotes: String(notesEl?.value || '').trim(),
+        warningAdjustment: reviewStatus === 'dismissed' && _activeViolationReview.policyMode !== 'alert' ? -1 : 0,
+      },
+    });
+  } catch (error) {
+    result = { success: false, message: error?.message || '' };
+  }
+  _violationReviewSaving = false;
 
   if (!result.success) {
+    renderViolationReviewDecisionState(priorEvidence);
     showToast(result.message || 'Unable to save violation review right now.', 'error');
     return;
   }
@@ -11184,12 +11257,22 @@ async function submitViolationReviewDecision(reviewStatus) {
     if (existingIndex >= 0) _monitorEvidenceRecords[existingIndex] = nextRecord;
     else _monitorEvidenceRecords.unshift(nextRecord);
   }
+  const savedEvidence = nextRecord || {
+    ...(priorEvidence || {}),
+    reviewStatus,
+    reviewedAt: new Date().toISOString(),
+  };
+  renderViolationReviewDecisionState(savedEvidence);
 
   if (result.session?.id && result.session?.exam_id) {
     applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
   }
 
-  await refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true });
+  try {
+    await refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true });
+  } catch (error) {
+    console.warn('[Monitor] Violation review saved, but the evidence list could not be refreshed:', error?.message || error);
+  }
   renderMonitoringSectionLive();
   refreshOpenStudentLog();
   if (_activeViolationReview?.sessionId) openViolationReview(_activeViolationReview.sessionId, _activeViolationReview.activityIndex);
