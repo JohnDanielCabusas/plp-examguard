@@ -6,7 +6,7 @@
   "modelUrl": "/models/tuklas-yolo11n-phone-mouse-v2.onnx",
   "sha256": "69975d7d1b2b64139759ca019f4cd0d1fcf9dcae957b0a204669043b1f967f8f",
   "inputSize": 640,
-  "frameIntervalMs": 450,
+  "frameIntervalMs": 600,
   "defaultConfidence": 0.55,
   "nmsThreshold": 0.45,
   "maxDetections": 10,

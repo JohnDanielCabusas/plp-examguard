@@ -5,7 +5,7 @@
   "modelUrl": "/models/yolo11n.onnx?version=yolo11n-coco-v1",
   "sha256": "634279b40c07c6391472c51ad45b81ebc48706a9a1fe72dd3396322acd0c053b",
   "inputSize": 640,
-  "frameIntervalMs": 250,
+  "frameIntervalMs": 400,
   "defaultConfidence": 0.55,
   "nmsThreshold": 0.45,
   "maxDetections": 20,

@@ -1,10 +1,10 @@
 const BASE_CONFIG = Object.freeze({
   modelUrl: '/models/face_landmarker.task',
   wasmRoot: '/vendor/mediapipe/wasm',
-  // Fifteen frames per second is the runtime cap. The in-flight guard still
-  // prevents slower devices from queueing overlapping inference work.
-  inferenceFps: 15,
-  maximumInferenceDimension: 640,
+  // Ten frames per second is sufficient for the multi-second violation rules
+  // while leaving CPU/GPU time available for typing, rendering, and YOLO.
+  inferenceFps: 10,
+  maximumInferenceDimension: 480,
   initTimeoutMs: 30000,
   minFaceDetectionConfidence: 0.5,
   minFacePresenceConfidence: 0.45,
@@ -66,7 +66,7 @@ const BASE_CONFIG = Object.freeze({
     featureContractVersion: 'rf-session-summary-v1',
     handModelUrl: '/models/hand_landmarker.task',
     handModelSha256: 'fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1',
-    handInferenceIntervalMs: 200,
+    handInferenceIntervalMs: 300,
     maximumHands: 3,
     minHandDetectionConfidence: 0.5,
     minHandPresenceConfidence: 0.5,

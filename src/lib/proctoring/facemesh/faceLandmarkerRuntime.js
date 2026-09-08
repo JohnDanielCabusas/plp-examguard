@@ -100,7 +100,7 @@ export class FaceLandmarkerRuntime {
         this.timer = setInterval(() => this._captureFrame(), intervalMs);
         this._captureFrame();
         if (this.handReady) {
-          const handIntervalMs = Number(this.config.randomForest?.handInferenceIntervalMs || 200);
+          const handIntervalMs = Number(this.config.randomForest?.handInferenceIntervalMs || 300);
           this.handTimer = setInterval(() => this._captureHandFrame(), handIntervalMs);
           this._captureHandFrame();
         }

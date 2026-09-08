@@ -33,8 +33,8 @@ export async function smokeTestFaceLandmarker() {
 
 export async function smokeTestFaceLandmarkerWorker() {
   const canvas = document.createElement('canvas');
-  // Exercise the runtime's downscaled inference path used by the 960x720
-  // student camera request.
+  // Exercise the runtime's downscaled inference path used when a camera frame
+  // exceeds the configured inference cap.
   canvas.width = 800;
   canvas.height = 600;
   const context = canvas.getContext('2d');

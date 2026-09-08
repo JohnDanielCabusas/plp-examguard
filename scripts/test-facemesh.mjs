@@ -51,8 +51,9 @@ const config = resolveFaceMonitoringConfig();
 assert.equal(config.temporal.faceAbsentIncidentMs, 10000);
 assert.equal(config.temporal.headTurnIncidentMs, 10000);
 assert.equal(config.temporal.lookingDownIncidentMs, 10000);
-assert.equal(config.inferenceFps, 15);
-assert.equal(config.maximumInferenceDimension, 640);
+assert.equal(config.inferenceFps, 10);
+assert.equal(config.maximumInferenceDimension, 480);
+assert.equal(config.randomForest.handInferenceIntervalMs, 300);
 assert.equal(config.minFacePresenceConfidence, 0.45);
 assert.equal(config.pose.pitchDirectionMultiplier, -1);
 const relative = relativePose(

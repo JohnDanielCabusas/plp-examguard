@@ -76,6 +76,11 @@ const ExamApp = {
   pollInterval: null,
   anticheatListeners: [],
   answers: {},              // { questionId: value }
+  _autoSaveTimer: null,
+  _autoSaveDirty: false,
+  _autoSaveDirtySince: 0,
+  _AUTO_SAVE_DELAY_MS: 450,
+  _AUTO_SAVE_MAX_WAIT_MS: 3000,
   questionOrder: [],        // shuffled question list
   currentQuestionIndex: 0, // index of currently displayed question
   markedForReview: new Set(), // set of question indices marked for review
@@ -96,6 +101,8 @@ const ExamApp = {
   _warningCountdownMode: null, // 'focus' | 'read' | 'info'
   _cameraStream: null,      // MediaStream from camera
   _snapInterval: null,      // periodic snapshot interval
+  _liveSnapshotInFlight: false,
+  _liveSnapshotCanvas: null,
   _violationClipRecorders: [],
   _violationClipSpawnTimer: null,
   _violationClipMimeType: '',
@@ -400,7 +407,7 @@ const ExamApp = {
     return this._applyRefreshAutoSubmitMarker(marker);
   },
 
-  _recordActivity(type, detail, metadata = null) {
+  _recordActivity(type, detail, metadata = null, sessionUpdates = null) {
     if (!this.session) return null;
     const session = DB.getSession(this.session.id);
     if (!session) return null;
@@ -412,7 +419,10 @@ const ExamApp = {
     };
     if (metadata && typeof metadata === 'object') activity.metadata = metadata;
     const activities = [...(session.activities || []), activity];
-    DB.updateSession(this.session.id, { activities });
+    DB.updateSession(this.session.id, {
+      activities,
+      ...(sessionUpdates && typeof sessionUpdates === 'object' ? sessionUpdates : {}),
+    });
 
     if (this.exam?.id) {
       DB.addLog({
@@ -425,6 +435,28 @@ const ExamApp = {
     }
 
     return activity;
+  },
+
+  _runAfterNextPaint(callback) {
+    if (typeof callback !== 'function') return;
+    let queued = false;
+    const run = () => {
+      if (queued) return;
+      queued = true;
+      setTimeout(callback, 0);
+    };
+    // requestAnimationFrame is suspended in a hidden tab. In that case there
+    // is nothing to paint, so persist the event on the next task immediately.
+    if (document.hidden || typeof requestAnimationFrame !== 'function') run();
+    else {
+      // A blurred/minimized browser can throttle animation frames even before
+      // visibilityState updates. Never postpone violation persistence forever.
+      const fallbackTimer = setTimeout(run, 100);
+      requestAnimationFrame(() => {
+        clearTimeout(fallbackTimer);
+        run();
+      });
+    }
   },
 
   _notifyProfessorViolation(type, detail, warningCount, detectionMetadata = null) {
@@ -4597,13 +4629,20 @@ const ExamApp = {
     const statusText = document.getElementById('camera-status-text');
     if (statusText) statusText.textContent = 'Starting camera scan…';
     setTimeout(() => this._checkInitialPresence(video), 500);
-    this._loadFaceDetectionModel().then(() => {
+    // FaceMesh already performs primary-face inference in a worker. Loading
+    // TensorFlow.js + BlazeFace here duplicated that work on the UI thread and
+    // caused intermittent stalls. Keep BlazeFace only as the explicit fallback.
+    if (this._faceRuleEngine) {
       if (statusText) statusText.textContent = 'Camera scan active';
-    }).catch(error => {
-      this._faceModelReady = false;
-      if (statusText) statusText.textContent = 'Camera scan active';
-      console.warn('[Camera] Face detection fallback active:', error?.message || error);
-    });
+    } else {
+      this._loadFaceDetectionModel().then(() => {
+        if (statusText) statusText.textContent = 'Camera scan active';
+      }).catch(error => {
+        this._faceModelReady = false;
+        if (statusText) statusText.textContent = 'Camera scan active';
+        console.warn('[Camera] Face detection fallback active:', error?.message || error);
+      });
+    }
   },
 
   async initCamera(options = {}) {
@@ -4623,7 +4662,7 @@ const ExamApp = {
     try {
       const existingLive = this._cameraStream?.getVideoTracks?.().some(track => track.readyState === 'live');
       const cameraConstraints = {
-          video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
           audio: false,
         };
       const stream = existingLive
@@ -5116,7 +5155,7 @@ const ExamApp = {
     this._cameraPrompting = true; // suppress focus-loss warnings if a permission dialog opens
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: 'user' },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       });
       if (this._cameraStream) this._cameraStream.getTracks().forEach(t => t.stop());
@@ -5212,18 +5251,19 @@ const ExamApp = {
     this._cameraObstructed = false;
     this._cameraObstructedSeconds = 0;
     this._motionInterval = setInterval(() => {
-      if (this._faceModelReady && this._faceModel) {
+      if (!this._faceRuleEngine && this._faceModelReady && this._faceModel) {
         this._detectFace(video);
       } else {
         this._detectMotion(video);
       }
     }, 600);
 
-    // Start periodic snapshot for admin live monitoring (every 8 seconds)
+    // Encode live thumbnails asynchronously so JPEG compression cannot block
+    // typing, navigation, or violation feedback on the examination page.
     if (this._snapInterval) clearInterval(this._snapInterval);
-    this._snapInterval = setInterval(() => this.captureSnapshot(), 8000);
+    this._snapInterval = setInterval(() => this._captureLiveSnapshotAsync(), 10000);
     // Capture one immediately so the grid shows something right away
-    setTimeout(() => this.captureSnapshot(), 1500);
+    setTimeout(() => this._captureLiveSnapshotAsync(), 1500);
   },
 
   _detectMotion(video) {
@@ -6036,6 +6076,56 @@ const ExamApp = {
     } catch(e) {}
   },
 
+  _captureLiveSnapshotAsync() {
+    if (this._liveSnapshotInFlight || !this.session || !this._cameraStream) return;
+    const video = document.getElementById('camera-feed');
+    if (!video || video.readyState < 2) return;
+
+    const sessionId = this.session.id;
+    const canvas = this._liveSnapshotCanvas || document.createElement('canvas');
+    this._liveSnapshotCanvas = canvas;
+    canvas.width = 320;
+    canvas.height = 240;
+
+    try {
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, -320, 0, 320, 240);
+      ctx.restore();
+    } catch (_) {
+      return;
+    }
+
+    // toBlob performs JPEG encoding asynchronously. The synchronous toDataURL
+    // path is retained only for unusually old browser engines.
+    if (typeof canvas.toBlob !== 'function') {
+      this.captureSnapshot();
+      return;
+    }
+
+    this._liveSnapshotInFlight = true;
+    canvas.toBlob(async (blob) => {
+      try {
+        if (!blob || !this.session || this.session.id !== sessionId || !this._cameraStream) return;
+        const imageData = await this._blobToDataUrl(blob);
+        if (!this.session || this.session.id !== sessionId || !this._cameraStream) return;
+        const snapshot = {
+          timestamp: new Date().toISOString(),
+          imageData,
+          kind: 'live',
+        };
+        DB.updateSession(sessionId, {
+          cameraSnapshots: this._buildCameraSnapshots(snapshot),
+        });
+      } catch (_) {
+        // A missed live thumbnail must never interrupt the student's exam.
+      } finally {
+        this._liveSnapshotInFlight = false;
+      }
+    }, 'image/jpeg', 0.55);
+  },
+
   captureSnapshot(options = {}) {
     if (!this.session) return null;
     const {
@@ -6117,6 +6207,8 @@ const ExamApp = {
     if (this._cameraWatchdog)  { clearInterval(this._cameraWatchdog);  this._cameraWatchdog = null; }
     if (this._motionInterval) { clearInterval(this._motionInterval); this._motionInterval = null; }
     if (this._snapInterval)   { clearInterval(this._snapInterval);   this._snapInterval = null; }
+    this._liveSnapshotInFlight = false;
+    this._liveSnapshotCanvas = null;
     this._stopViolationReplayBuffer();
     this._faceDetectInFlight = false;
     this._prevFrameData = null;
@@ -6313,33 +6405,39 @@ const ExamApp = {
     this._cancelReadCountdown();
 
     this.warnings++;
-    const replayClipPromise = this._capturePreViolationReplayClip(type).catch((error) => {
-      console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
-      return null;
-    });
-    const violationPromise = this._notifyProfessorViolation(type, detail, this.warnings, detectionMetadata);
-    Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
-      if (!violation || !replayClip) return null;
-      return this._uploadViolationReplayEvidence(violation, replayClip);
-    }).catch((error) => {
-      console.warn('[Monitor] Replay evidence pipeline failed:', error?.message || error);
-    });
-
-    this._recordActivity(type, detail, detectionMetadata);
-    DB.updateSession(this.session.id, { warnings: this.warnings });
-    this._captureCameraViolationSnapshot(type, detail, this.warnings, detectionMetadata);
+    const warningCount = this.warnings;
 
     // Update warning badge in header
     const warningNumEl = document.getElementById('warning-num');
-    if (warningNumEl) warningNumEl.textContent = this.warnings;
+    if (warningNumEl) warningNumEl.textContent = warningCount;
     const warningCountDisplay = document.getElementById('warning-count-display');
     if (warningCountDisplay) {
-      warningCountDisplay.className = 'warning-count warning-level-' + this.warnings;
+      warningCountDisplay.className = 'warning-count warning-level-' + warningCount;
     }
 
     this.showWarningOverlay(type, detail);
 
-    if (this.warnings >= 3) {
+    // Give the browser a chance to paint the warning before starting evidence
+    // capture, network notifications, and local/session persistence.
+    this._runAfterNextPaint(() => {
+      if (!this.session) return;
+      const replayClipPromise = this._capturePreViolationReplayClip(type).catch((error) => {
+        console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
+        return null;
+      });
+      const violationPromise = this._notifyProfessorViolation(type, detail, warningCount, detectionMetadata);
+      Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
+        if (!violation || !replayClip) return null;
+        return this._uploadViolationReplayEvidence(violation, replayClip);
+      }).catch((error) => {
+        console.warn('[Monitor] Replay evidence pipeline failed:', error?.message || error);
+      });
+
+      this._recordActivity(type, detail, detectionMetadata, { warnings: warningCount });
+      this._captureCameraViolationSnapshot(type, detail, warningCount, detectionMetadata);
+    });
+
+    if (warningCount >= 3) {
       // 3 strikes — auto-submit after overlay reads
       setTimeout(() => this.submitExam('auto'), 3000);
       return;
@@ -6980,7 +7078,33 @@ const ExamApp = {
 
   autoSave() {
     if (!this.session) return;
-    DB.updateSession(this.session.id, { answers: this.answers });
+    this._autoSaveDirty = true;
+    if (!this._autoSaveDirtySince) this._autoSaveDirtySince = Date.now();
+    if (this._autoSaveTimer) clearTimeout(this._autoSaveTimer);
+    const maxWaitRemaining = Math.max(
+      0,
+      this._AUTO_SAVE_MAX_WAIT_MS - (Date.now() - this._autoSaveDirtySince),
+    );
+    const delayMs = Math.min(this._AUTO_SAVE_DELAY_MS, maxWaitRemaining);
+    this._autoSaveTimer = setTimeout(() => this._flushAutoSave(), delayMs);
+  },
+
+  _flushAutoSave() {
+    if (this._autoSaveTimer) {
+      clearTimeout(this._autoSaveTimer);
+      this._autoSaveTimer = null;
+    }
+    if (!this.session || !this._autoSaveDirty) return;
+    this._autoSaveDirty = false;
+    this._autoSaveDirtySince = 0;
+    DB.updateSession(this.session.id, { answers: { ...this.answers } });
+  },
+
+  _discardPendingAutoSave() {
+    if (this._autoSaveTimer) clearTimeout(this._autoSaveTimer);
+    this._autoSaveTimer = null;
+    this._autoSaveDirty = false;
+    this._autoSaveDirtySince = 0;
   },
 
   // ============================================================
@@ -7690,7 +7814,9 @@ const ExamApp = {
     }
     const submitModal = document.getElementById('confirm-submit-modal');
     if (submitModal && !submitModal.classList.contains('hidden')) unlockBodyScroll();
-    submitModal.classList.add('hidden');
+    if (submitModal) submitModal.classList.add('hidden');
+    // The final submission below writes the current answers in one operation.
+    this._discardPendingAutoSave();
 
     this._recordActivity('browser_exam_end', 'Browser examination session ended', {
       source: 'BROWSER',
