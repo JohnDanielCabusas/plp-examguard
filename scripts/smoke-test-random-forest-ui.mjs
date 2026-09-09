@@ -53,16 +53,22 @@ try {
     renderRandomForestPredictionState('exam-a', {
       success: true,
       summary: {
-        totalSessions: 12,
-        analyzedSessions: 10,
+        totalSessions: 5,
+        analyzedSessions: 3,
         pendingSessions: 1,
         unavailableSessions: 1,
         failedSessions: 0,
-        normalCount: 6,
-        needsMonitoringCount: 3,
+        normalCount: 1,
+        needsMonitoringCount: 1,
         suspiciousCount: 1,
-        averageSuspiciousProbability: 0.384,
       },
+      predictions: [
+        { examSessionId: 's-normal', studentId: '24-0001', studentName: 'Normal Student', status: 'completed', riskLevel: 'normal', suspiciousProbability: 0.18, submittedAt: '2026-09-08T01:30:00.000Z' },
+        { examSessionId: 's-pending', studentId: '24-0004', studentName: 'Pending Student', status: 'pending', suspiciousProbability: null, submittedAt: '2026-09-08T01:33:00.000Z' },
+        { examSessionId: 's-risk', studentId: '24-0003', studentName: 'Risk Student', status: 'completed', riskLevel: 'suspicious', suspiciousProbability: 0.912, submittedAt: '2026-09-08T01:32:00.000Z' },
+        { examSessionId: 's-review', studentId: '24-0002', studentName: 'Review Student', status: 'completed', riskLevel: 'needs_monitoring', suspiciousProbability: 0.62, submittedAt: '2026-09-08T01:31:00.000Z' },
+        { examSessionId: 's-old', studentId: '24-0005', studentName: 'Legacy Student', status: 'unavailable', suspiciousProbability: null, unavailableReason: 'This session predates the required monitoring summary.', submittedAt: '2026-09-08T01:34:00.000Z' },
+      ],
       modelVersion: '1.0.0',
       generatedAt: '2026-09-08T02:00:00.000Z',
     });
@@ -70,20 +76,23 @@ try {
       loading,
       title: document.getElementById('rf-prediction-title')?.textContent,
       populated: document.querySelector('.rf-summary-grid')?.textContent,
-      distributionLabel: document.querySelector('.rf-distribution')?.getAttribute('aria-label'),
       partial: document.querySelector('.rf-partial-note')?.textContent,
       disclaimer: document.querySelector('.rf-review-note')?.textContent,
-      containsStudentResults: root.textContent.includes('Student Results'),
+      studentTableLabel: document.querySelector('.rf-student-list')?.getAttribute('aria-label'),
+      studentRows: [...document.querySelectorAll('.rf-student-row:not(.rf-student-header)')].map(row => row.textContent.replace(/\s+/g, ' ').trim()),
     };
   });
   if (
     !states.loading
-    || states.title !== 'Random Forest Prediction'
-    || !states.populated?.includes('38.4%')
-    || !states.distributionLabel?.includes('6 normal')
-    || !states.partial?.includes('2 of 12')
-    || !states.disclaimer?.includes('does not confirm academic dishonesty')
-    || states.containsStudentResults
+    || states.title !== 'Random Forest Risk Analysis'
+    || !states.populated?.includes('3/5')
+    || !states.partial?.includes('1 pending · 1 unavailable')
+    || !states.disclaimer?.includes('do not prove misconduct')
+    || !states.studentTableLabel?.includes('by student')
+    || !states.studentRows?.[0]?.includes('Risk Student')
+    || !states.studentRows?.[0]?.includes('91.2%')
+    || !states.studentRows?.some(row => row.includes('Review Student') && row.includes('Needs monitoring'))
+    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Unavailable'))
   ) {
     throw new Error(`Unexpected populated Random Forest card: ${JSON.stringify(states)}`);
   }
@@ -113,7 +122,7 @@ try {
     const error = document.querySelector('[role="alert"]')?.textContent;
     return { empty, error };
   });
-  if (!alternateStates.empty?.includes('No completed sessions yet') || !alternateStates.error?.includes('Retry')) {
+  if (!alternateStates.empty?.includes('No completed sessions') || !alternateStates.error?.includes('Retry')) {
     throw new Error(`Random Forest card states failed: ${JSON.stringify(alternateStates)}`);
   }
 

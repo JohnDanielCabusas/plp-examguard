@@ -87,6 +87,7 @@ const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
   'low_brightness',
   'camera_off',
   ...YOLO_VIOLATION_TYPES,
+  ...FACEMESH_INCIDENT_TYPES,
 ]);
 const MONITOR_EVIDENCE_POLL_MS = 2500;
 
@@ -449,6 +450,7 @@ const CAMERA_GRID_VIOLATION_TYPES = new Set([
   'low_brightness',
   'camera_off',
   ...YOLO_VIOLATION_TYPES,
+  ...FACEMESH_INCIDENT_TYPES,
 ]);
 
 function getSessionCameraGridSnapshots(session) {
@@ -984,7 +986,8 @@ function renderViolationAlertModal() {
   const severityEl = document.getElementById('violation-alert-severity');
   const iconEl = document.getElementById('violation-alert-icon');
   const source = String(_activeViolationAlert.detectionMetadata?.source || '').toUpperCase();
-  const isFaceIndicator = source.startsWith('FACEMESH');
+  const isFaceIndicator = source.startsWith('FACEMESH')
+    && _activeViolationAlert.detectionMetadata?.countsAsWarning !== true;
   const isCritical = !isFaceIndicator
     && (Number(_activeViolationAlert.warningCount || 0) >= 2 || isCriticalViolationType(_activeViolationAlert.type));
 
@@ -9282,8 +9285,8 @@ function randomForestCardShell() {
     <section class="rf-prediction-card" id="random-forest-prediction-card" aria-labelledby="rf-prediction-title">
       <div class="rf-prediction-heading">
         <div>
-          <h3 id="rf-prediction-title">Random Forest Prediction</h3>
-          <p>Statistical summary of suspicious-behavior predictions for professor review.</p>
+          <h3 id="rf-prediction-title">Random Forest Risk Analysis</h3>
+          <p>Per-student predictions from recorded exam behavior.</p>
         </div>
       </div>
       <div id="rf-prediction-content" aria-live="polite">
@@ -9294,13 +9297,76 @@ function randomForestCardShell() {
     </section>`;
 }
 
+function getRandomForestResultMeta(prediction) {
+  const status = String(prediction?.status || 'pending').toLowerCase();
+  const riskLevel = String(prediction?.riskLevel || '').toLowerCase();
+  if (status === 'completed' && riskLevel === 'suspicious') return { label: 'Suspicious', tone: 'suspicious', rank: 0 };
+  if (status === 'completed' && riskLevel === 'needs_monitoring') return { label: 'Needs monitoring', tone: 'monitoring', rank: 1 };
+  if (status === 'completed' && riskLevel === 'normal') return { label: 'Normal', tone: 'normal', rank: 2 };
+  if (status === 'unavailable') return { label: 'Unavailable', tone: 'unavailable', rank: 4 };
+  if (status === 'failed') return { label: 'Analysis failed', tone: 'failed', rank: 5 };
+  return { label: 'Pending', tone: 'pending', rank: 3 };
+}
+
+function formatRandomForestStudentTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderRandomForestStudentRows(predictions) {
+  const rows = (Array.isArray(predictions) ? predictions : [])
+    .slice()
+    .sort((a, b) => {
+      const metaA = getRandomForestResultMeta(a);
+      const metaB = getRandomForestResultMeta(b);
+      if (metaA.rank !== metaB.rank) return metaA.rank - metaB.rank;
+      const probabilityDelta = Number(b?.suspiciousProbability ?? -1) - Number(a?.suspiciousProbability ?? -1);
+      if (probabilityDelta) return probabilityDelta;
+      return String(a?.studentName || a?.studentId || '').localeCompare(String(b?.studentName || b?.studentId || ''), undefined, { sensitivity: 'base' });
+    });
+
+  if (!rows.length) return '<div class="rf-student-empty">No student predictions are available.</div>';
+
+  return rows.map(prediction => {
+    const meta = getRandomForestResultMeta(prediction);
+    const probability = prediction.suspiciousProbability === null || prediction.suspiciousProbability === undefined
+      ? Number.NaN
+      : Math.max(0, Math.min(1, Number(prediction.suspiciousProbability)));
+    const probabilityText = Number.isFinite(probability) ? `${(probability * 100).toFixed(1)}%` : '—';
+    const submittedAt = formatRandomForestStudentTime(prediction.submittedAt);
+    const studentMeta = [prediction.studentId, submittedAt].filter(Boolean).join(' · ');
+    const statusDetail = meta.tone === 'pending'
+      ? 'Waiting for analysis.'
+      : ['unavailable', 'failed'].includes(meta.tone)
+        ? String(prediction.unavailableReason || 'This session could not be analyzed.')
+        : '';
+    return `
+      <div class="rf-student-row" role="row">
+        <div class="rf-student-person" role="cell">
+          <strong>${escHtml(prediction.studentName || prediction.studentId || 'Student')}</strong>
+          ${studentMeta ? `<span>${escHtml(studentMeta)}</span>` : ''}
+        </div>
+        <div class="rf-student-result" role="cell">
+          <span class="rf-risk-badge tone-${meta.tone}"><i aria-hidden="true"></i>${escHtml(meta.label)}</span>
+          ${statusDetail ? `<small>${escHtml(statusDetail)}</small>` : ''}
+        </div>
+        <div class="rf-student-probability" role="cell">
+          <strong>${probabilityText}</strong>
+          ${Number.isFinite(probability) ? `<span class="rf-probability-track" aria-hidden="true"><i class="tone-${meta.tone}" style="width:${probability * 100}%"></i></span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
 function renderRandomForestPredictionState(examId, payload) {
   const host = document.getElementById('rf-prediction-content');
   if (!host) return;
   if (!payload?.success) {
     host.innerHTML = `
       <div class="rf-state-message rf-state-error" role="alert">
-        <strong>Prediction summary unavailable</strong>
+        <strong>Predictions unavailable</strong>
         <span>${escHtml(payload?.message || 'Unable to load Random Forest predictions.')}</span>
         <button class="btn btn-secondary btn-sm" type="button" data-exam-id="${escAttr(examId)}" onclick="loadRandomForestPrediction(this.dataset.examId, true)">Retry</button>
       </div>`;
@@ -9313,57 +9379,56 @@ function renderRandomForestPredictionState(examId, payload) {
   const pending = Number(summary.pendingSessions || 0);
   const unavailable = Number(summary.unavailableSessions || 0);
   const failed = Number(summary.failedSessions || 0);
-  if (!analyzed) {
-    const title = total ? 'No compatible sessions analyzed' : 'No completed sessions yet';
-    const detail = total
-      ? `${unavailable + failed} session${unavailable + failed === 1 ? '' : 's'} could not be analyzed because required browser, FaceMesh, pose, or hand summaries were incomplete.`
-      : 'Predictions will appear after students complete this examination with compatible monitoring enabled.';
+  if (!total) {
     host.innerHTML = `
       <div class="rf-state-message">
-        <strong>${title}</strong>
-        <span>${detail}</span>
-        ${total ? `<button class="btn btn-secondary btn-sm" type="button" data-exam-id="${escAttr(examId)}" onclick="loadRandomForestPrediction(this.dataset.examId, true)">Retry analysis</button>` : ''}
+        <strong>No completed sessions</strong>
+        <span>Predictions appear after students submit this exam.</span>
       </div>
-      <div class="rf-card-footer">Model ${escHtml(payload.modelVersion || 'unavailable')} · Predictions require professor review.</div>`;
+      <div class="rf-card-footer">Model ${escHtml(payload.modelVersion || 'unavailable')}</div>`;
     return;
   }
 
   const normal = Number(summary.normalCount || 0);
   const monitoring = Number(summary.needsMonitoringCount || 0);
   const suspicious = Number(summary.suspiciousCount || 0);
-  const average = summary.averageSuspiciousProbability === null
-    || summary.averageSuspiciousProbability === undefined
-    ? Number.NaN
-    : Number(summary.averageSuspiciousProbability);
-  const pct = value => analyzed ? Math.max(0, Math.min(100, (value / analyzed) * 100)) : 0;
   const updated = payload.lastUpdated
     ? new Date(payload.lastUpdated).toLocaleString()
     : new Date(payload.generatedAt || Date.now()).toLocaleString();
   const partialCount = pending + unavailable + failed;
+  const incompleteParts = [
+    pending ? `${pending} pending` : '',
+    unavailable ? `${unavailable} unavailable` : '',
+    failed ? `${failed} failed` : '',
+  ].filter(Boolean).join(' · ');
+  const predictions = Array.isArray(payload.predictions) ? payload.predictions : [];
 
   host.innerHTML = `
     <div class="rf-summary-grid">
-      <div class="rf-summary-primary"><span>${analyzed}</span><small>Analyzed Sessions</small></div>
+      <div class="rf-summary-primary"><span>${analyzed}/${total}</span><small>Sessions analyzed</small></div>
       <div class="rf-summary-stat rf-normal"><span>${normal}</span><small>Normal</small></div>
       <div class="rf-summary-stat rf-monitoring"><span>${monitoring}</span><small>Needs Monitoring</small></div>
       <div class="rf-summary-stat rf-suspicious"><span>${suspicious}</span><small>Suspicious</small></div>
-      <div class="rf-summary-stat"><span>${Number.isFinite(average) ? `${(average * 100).toFixed(1)}%` : '—'}</span><small>Average Probability</small></div>
     </div>
-    <div class="rf-distribution" role="img" aria-label="Risk distribution: ${normal} normal, ${monitoring} needs monitoring, ${suspicious} suspicious">
-      <div class="rf-distribution-bar">
-        <span class="rf-segment rf-normal" style="width:${pct(normal)}%"></span>
-        <span class="rf-segment rf-monitoring" style="width:${pct(monitoring)}%"></span>
-        <span class="rf-segment rf-suspicious" style="width:${pct(suspicious)}%"></span>
+    ${partialCount ? `<div class="rf-partial-note"><strong>Not analyzed:</strong> ${escHtml(incompleteParts)}.</div>` : ''}
+    <div class="rf-students">
+      <div class="rf-students-heading">
+        <div>
+          <h4>Students</h4>
+          <span>Highest risk first</span>
+        </div>
       </div>
-      <div class="rf-distribution-labels">
-        <span><i class="rf-dot rf-normal"></i>Normal ${normal}</span>
-        <span><i class="rf-dot rf-monitoring"></i>Needs Monitoring ${monitoring}</span>
-        <span><i class="rf-dot rf-suspicious"></i>Suspicious ${suspicious}</span>
+      <div class="rf-student-list" role="table" aria-label="Random Forest predictions by student">
+        <div class="rf-student-row rf-student-header" role="row">
+          <span role="columnheader">Student</span>
+          <span role="columnheader">Prediction</span>
+          <span role="columnheader">Suspicious probability</span>
+        </div>
+        ${renderRandomForestStudentRows(predictions)}
       </div>
     </div>
-    ${partialCount ? `<div class="rf-partial-note"><strong>Partial summary:</strong> ${partialCount} of ${total} completed session${total === 1 ? '' : 's'} ${partialCount === 1 ? 'is' : 'are'} pending, unavailable, or awaiting retry.</div>` : ''}
-    <p class="rf-review-note">This prediction highlights examination sessions that may require review. It does not confirm academic dishonesty.</p>
-    <div class="rf-card-footer">Model ${escHtml(payload.modelVersion || 'unknown')} · Updated ${escHtml(updated)}</div>`;
+    <p class="rf-review-note">Review aid only; predictions do not prove misconduct.</p>
+    <div class="rf-card-footer">Model ${escHtml(payload.modelVersion || 'unknown')} · ${escHtml(updated)}</div>`;
 }
 
 async function loadRandomForestPrediction(examId, forceRefresh = false) {

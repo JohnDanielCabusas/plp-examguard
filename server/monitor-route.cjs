@@ -22,16 +22,6 @@ const DEFAULT_VIOLATION_LIMIT = 50;
 const MAX_VIOLATION_LIMIT = 200;
 const STREAM_HEARTBEAT_MS = 15000;
 const monitorStreamClients = new Map();
-const REPLAYABLE_VIOLATION_TYPES = new Set([
-  'no_person',
-  'multiple_people',
-  'look_down',
-  'low_brightness',
-  'camera_off',
-  'restricted_phone',
-  'secondary_computer',
-  'restricted_book',
-]);
 const FACEMESH_INCIDENT_TYPES = new Set([
   'FACE_ABSENT',
   'FACE_PARTIALLY_VISIBLE',
@@ -44,6 +34,17 @@ const FACEMESH_INCIDENT_TYPES = new Set([
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+]);
+const REPLAYABLE_VIOLATION_TYPES = new Set([
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+  'restricted_phone',
+  'secondary_computer',
+  'restricted_book',
+  ...FACEMESH_INCIDENT_TYPES,
 ]);
 const FACEMESH_EVENT_SEVERITY = Object.freeze({
   FACE_ABSENT: 'MODERATE',
@@ -140,6 +141,7 @@ function normalizeDetectionMetadata(value) {
     trackingConfidence: Math.max(0, Math.min(1, Number(value.trackingConfidence || 0))),
     phoneConfidence: Math.max(0, Math.min(1, Number(value.phoneConfidence || 0))),
     requiresProfessorReview: value.requiresProfessorReview !== false,
+    countsAsWarning: value.countsAsWarning === true,
     relatedIncidentIds: Array.isArray(value.relatedIncidentIds)
       ? value.relatedIncidentIds.slice(0, 20).map(item => String(item || '').slice(0, 128)).filter(Boolean)
       : [],
@@ -513,9 +515,14 @@ async function handleFaceIncidentUpsert(req, res, body) {
   detectionMetadata.severity = FACEMESH_EVENT_SEVERITY[eventType];
   detectionMetadata.requiresProfessorReview = true;
   const detail = FACEMESH_EVENT_DETAILS[eventType];
-  // FaceMesh is review-only. Preserve the authoritative session warning count
-  // and never accept a client-provided increment through the incident route.
-  const effectiveWarningCount = Math.max(0, Number(session.warnings || 0));
+  const sessionWarningCount = Math.max(0, Math.min(3, Number(session.warnings || 0)));
+  const requestedWarningCount = Math.max(0, Math.min(3, Number(body?.warningCount || 0)));
+  // A completed FaceMesh rule now counts as a formal warning. The browser may
+  // sync the incident before the session UPSERT reaches Supabase, so reflect
+  // its bounded warning count in the live event without lowering server state.
+  const effectiveWarningCount = detectionMetadata.countsAsWarning
+    ? Math.max(sessionWarningCount, requestedWarningCount)
+    : sessionWarningCount;
   const effectiveStudentName = studentName || String(session.student_name || '').trim() || student.name || studentId;
   const insertResult = await query(
     `insert into public.violation_events as existing (

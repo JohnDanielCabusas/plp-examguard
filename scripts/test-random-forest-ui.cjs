@@ -10,17 +10,21 @@ const reportsStart = admin.indexOf('// REPORTS', statsStart);
 const statisticsBlock = admin.slice(statsStart, reportsStart);
 
 assert.ok(statsStart >= 0 && reportsStart > statsStart, 'Statistics renderer must be present.');
-assert.doesNotMatch(statisticsBlock, />Student Results</, 'The Statistics Student Results card must be removed.');
-assert.match(statisticsBlock, /Random Forest Prediction/);
-assert.match(statisticsBlock, /Analyzed Sessions/);
+assert.match(statisticsBlock, /Random Forest Risk Analysis/);
+assert.match(statisticsBlock, />Students</);
+assert.match(statisticsBlock, /Suspicious probability/);
+assert.match(statisticsBlock, /Sessions analyzed/);
 assert.match(statisticsBlock, /Needs Monitoring/);
 assert.match(statisticsBlock, /Suspicious/);
 assert.match(statisticsBlock, /aria-live="polite"/);
 assert.match(statisticsBlock, /role="alert"/);
-assert.match(statisticsBlock, /Partial summary/);
-assert.match(statisticsBlock, /does not confirm academic dishonesty/);
+assert.match(statisticsBlock, /Not analyzed/);
+assert.match(statisticsBlock, /do not prove misconduct/);
+assert.doesNotMatch(statisticsBlock, /Average Probability/);
+assert.doesNotMatch(statisticsBlock, /rf-distribution/);
 assert.match(css, /\.rf-prediction-card/);
+assert.match(css, /\.rf-student-row/);
+assert.match(css, /\.rf-risk-badge/);
 assert.match(css, /@media \(max-width: 520px\)/);
 
-console.log('Random Forest Statistics-card contract tests passed.');
-
+console.log('Random Forest per-student Statistics-card contract tests passed.');

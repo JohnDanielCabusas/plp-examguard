@@ -144,6 +144,93 @@ try {
     throw new Error(`Unexpected camera behavior result: ${JSON.stringify(cameraBehavior)}`);
   }
 
+  const faceViolationBehavior = await page.evaluate(() => {
+    const app = window.ExamApp;
+    const issued = [];
+    const synced = [];
+    const enforceableTypes = [
+      'FACE_ABSENT',
+      'FACE_PARTIALLY_VISIBLE',
+      'FACE_TOO_CLOSE',
+      'FACE_TOO_FAR',
+      'FACE_NEAR_FRAME_EDGE',
+      'SUSTAINED_HEAD_TURN',
+      'SUSTAINED_LOOKING_DOWN',
+      'REPEATED_LOOKING_AWAY',
+      'FACE_OCCLUDED',
+      'FACE_TRACKING_UNSTABLE',
+    ];
+
+    app.session = { id: 'face-warning-session', studentId: 'student-1' };
+    app.exam = { id: 'face-warning-exam', requireCamera: true };
+    app._faceCorrelator = null;
+    app._faceAggregator = { consume: () => {} };
+    app._faceViolationIncidentIds.clear();
+    app._upsertFaceActivity = () => {};
+    app._syncFaceIncident = event => {
+      synced.push(event);
+      return Promise.resolve({ incident: { id: event.incidentId } });
+    };
+    app._captureFaceMeshViolationReplay = () => {};
+    app._persistFaceMonitoringSummary = () => {};
+    app.issueWarning = (type, detail, metadata, options) => {
+      issued.push({ type, detail, metadata, options });
+      return true;
+    };
+
+    enforceableTypes.forEach((eventType, index) => {
+      app._handleFaceMeshRuleEvent({
+        kind: 'incident',
+        phase: 'start',
+        incidentId: `face-test-${index}`,
+        eventType,
+        source: 'FACEMESH',
+        severity: 'LOW',
+        description: `${eventType} test`,
+        startedAt: new Date().toISOString(),
+      });
+    });
+    app._handleFaceMeshRuleEvent({
+      kind: 'incident',
+      phase: 'update',
+      incidentId: 'face-test-0',
+      eventType: 'FACE_ABSENT',
+      source: 'FACEMESH',
+      description: 'update test',
+    });
+    app._handleFaceMeshRuleEvent({
+      kind: 'incident',
+      phase: 'start',
+      incidentId: 'face-phone-test',
+      eventType: 'PHONE_NEAR_OR_COVERING_FACE',
+      source: 'FACEMESH_YOLO',
+      description: 'phone test',
+    });
+
+    return {
+      enforceableCount: issued.length,
+      allTypesIssued: enforceableTypes.every(type => issued.some(entry => entry.type === type)),
+      noDuplicateActivity: issued.every(entry => entry.options?.recordActivity === false),
+      noDuplicateNotification: issued.every(entry => entry.options?.notifyProfessor === false),
+      incidentsMarkedAsWarnings: synced
+        .filter(event => enforceableTypes.includes(event.eventType) && event.phase === 'start')
+        .every(event => event.countsAsWarning === true),
+      phoneLeftToYolo: !issued.some(entry => entry.type === 'PHONE_NEAR_OR_COVERING_FACE'),
+      updateDidNotIssueAgain: issued.filter(entry => entry.type === 'FACE_ABSENT').length === 1,
+    };
+  });
+  if (
+    faceViolationBehavior.enforceableCount !== 10
+    || !faceViolationBehavior.allTypesIssued
+    || !faceViolationBehavior.noDuplicateActivity
+    || !faceViolationBehavior.noDuplicateNotification
+    || !faceViolationBehavior.incidentsMarkedAsWarnings
+    || !faceViolationBehavior.phoneLeftToYolo
+    || !faceViolationBehavior.updateDidNotIssueAgain
+  ) {
+    throw new Error(`Unexpected FaceMesh violation behavior: ${JSON.stringify(faceViolationBehavior)}`);
+  }
+
   const performancePage = await browser.newPage();
   performancePage.on('pageerror', error => pageErrors.push(error.message));
   try {

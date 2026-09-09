@@ -40,6 +40,24 @@ function normalizePredictionRow(row) {
   };
 }
 
+function normalizeStatisticsPredictionRow(row) {
+  const hasPrediction = !!row.prediction_id;
+  return {
+    examSessionId: row.exam_session_id,
+    studentId: row.student_id || '',
+    studentName: row.student_name || row.student_id || 'Student',
+    submittedAt: row.submitted_at || null,
+    status: hasPrediction ? (row.prediction_status || 'pending') : 'pending',
+    suspiciousProbability: row.suspicious_probability === null || row.suspicious_probability === undefined
+      ? null
+      : Number(row.suspicious_probability),
+    riskLevel: row.risk_level || null,
+    requiresProfessorReview: row.requires_professor_review === true,
+    unavailableReason: row.unavailable_reason || null,
+    predictedAt: row.predicted_at || null,
+  };
+}
+
 async function loadOwnedSession(professorId, sessionId) {
   const { rows } = await query(
     `select s.*,
@@ -165,6 +183,32 @@ async function buildStatisticsSummary(professorId, exam) {
     [professorId, exam.id, metadata.model_version],
   );
   const row = rows[0] || {};
+  const predictionResult = await query(
+    `select s.id as exam_session_id,
+            s.student_id,
+            s.student_name,
+            s.end_time as submitted_at,
+            p.id as prediction_id,
+            p.status as prediction_status,
+            p.suspicious_probability,
+            p.risk_level,
+            p.requires_professor_review,
+            p.unavailable_reason,
+            p.predicted_at
+       from public.sessions s
+       join public.exams e on e.id = s.exam_id
+       left join public.random_forest_predictions p
+         on p.exam_session_id = s.id
+        and p.model_version = $3
+        and p.owner_admin_id = $1
+      where s.exam_id = $2
+        and s.submitted = true
+        and coalesce(s.owner_admin_id, e.owner_admin_id) = $1
+      order by lower(coalesce(nullif(s.student_name, ''), s.student_id)),
+               s.end_time desc nulls last,
+               s.id`,
+    [professorId, exam.id, metadata.model_version],
+  );
   const normalCount = Number(row.normal_count || 0);
   const needsMonitoringCount = Number(row.needs_monitoring_count || 0);
   const suspiciousCount = Number(row.suspicious_count || 0);
@@ -186,6 +230,7 @@ async function buildStatisticsSummary(professorId, exam) {
       { riskLevel: 'needs_monitoring', count: needsMonitoringCount },
       { riskLevel: 'suspicious', count: suspiciousCount },
     ],
+    predictions: predictionResult.rows.map(normalizeStatisticsPredictionRow),
     modelVersion: metadata.model_version,
     lastUpdated: row.last_updated || null,
     generatedAt: new Date().toISOString(),

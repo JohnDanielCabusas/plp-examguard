@@ -29,8 +29,15 @@ function setEnrollStatus(el, text, variant, options = {}) {
 const EXAM_EXTERNAL_ASSETS = new Map();
 const FACEMESH_REPORTED_INCIDENT_TYPES = new Set([
   'FACE_ABSENT',
+  'FACE_PARTIALLY_VISIBLE',
+  'FACE_TOO_CLOSE',
+  'FACE_TOO_FAR',
+  'FACE_NEAR_FRAME_EDGE',
   'SUSTAINED_HEAD_TURN',
   'SUSTAINED_LOOKING_DOWN',
+  'REPEATED_LOOKING_AWAY',
+  'FACE_OCCLUDED',
+  'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
 ]);
 
@@ -155,6 +162,7 @@ const ExamApp = {
   _faceMeshStatus: 'idle',
   _lastFaceMeshObservation: null,
   _faceIncidentRequests: new Map(),
+  _faceViolationIncidentIds: new Set(),
   _facePositioningWarnings: new Map(),
   _faceConditionCountdowns: new Map(),
   _cameraCalibrationOnly: false,
@@ -500,7 +508,8 @@ const ExamApp = {
   },
 
   _isCameraViolationType(type) {
-    return [
+    const normalizedType = String(type || '').trim();
+    return FACEMESH_REPORTED_INCIDENT_TYPES.has(normalizedType) || [
       'no_person',
       'multiple_people',
       'look_down',
@@ -509,7 +518,7 @@ const ExamApp = {
       'restricted_phone',
       'secondary_computer',
       'restricted_book',
-    ].includes(type);
+    ].includes(normalizedType);
   },
 
   _isReplayableCameraViolationType(type) {
@@ -4429,6 +4438,7 @@ const ExamApp = {
       phoneConfidence: Number(event.phoneConfidence || 0),
       requiresProfessorReview: event.requiresProfessorReview !== false,
       relatedIncidentIds: Array.isArray(event.relatedIncidentIds) ? event.relatedIncidentIds : [],
+      countsAsWarning: event.countsAsWarning === true || prior?.metadata?.countsAsWarning === true,
       reviewStatus: prior?.metadata?.reviewStatus || 'pending',
     };
     const activity = {
@@ -4492,6 +4502,7 @@ const ExamApp = {
         phoneConfidence: Number(event.phoneConfidence || 0),
         relatedIncidentIds: Array.isArray(event.relatedIncidentIds) ? event.relatedIncidentIds : [],
         requiresProfessorReview: event.requiresProfessorReview !== false,
+        countsAsWarning: event.countsAsWarning === true,
         warningCount: Number(this.warnings || 0),
       }),
       keepalive: event.phase === 'end',
@@ -4510,6 +4521,55 @@ const ExamApp = {
       }
     });
     this._faceIncidentRequests.set(event.incidentId, request);
+    return request;
+  },
+
+  _issueFaceMeshViolation(event) {
+    if (event?.phase !== 'start' || !FACEMESH_REPORTED_INCIDENT_TYPES.has(event.eventType)) return false;
+    // This correlated FaceMesh + YOLO event is already enforced by the YOLO
+    // restricted-phone rule. Counting both would give two strikes for one phone.
+    if (event.eventType === 'PHONE_NEAR_OR_COVERING_FACE') return false;
+
+    return this.issueWarning(event.eventType, event.description || 'Face monitoring rule violated', {
+      source: event.source || 'FACEMESH',
+      clientIncidentId: event.incidentId || '',
+      phase: event.phase,
+      severity: event.severity || 'INFO',
+      direction: event.direction || null,
+      startedAt: event.startedAt || null,
+      durationMs: Number(event.durationMs || 0),
+      maxYaw: Number(event.maxYaw || 0),
+      maxPitch: Number(event.maxPitch || 0),
+      trackingConfidence: Number(event.trackingConfidence || 0),
+      requiresProfessorReview: event.requiresProfessorReview !== false,
+      countsAsWarning: true,
+    }, {
+      // The FaceMesh incident record already owns the timeline entry and live
+      // professor notification. Avoid creating a duplicate activity/event.
+      recordActivity: false,
+      notifyProfessor: false,
+      captureReplay: false,
+    }) === true;
+  },
+
+  _captureFaceMeshViolationReplay(event, incidentRequest) {
+    if (!event?.incidentId || !incidentRequest) return;
+    this._runAfterNextPaint(() => {
+      if (!this.session) return;
+      const replayClipPromise = this._capturePreViolationReplayClip(event.eventType).catch((error) => {
+        console.warn('[FaceMesh] Unable to capture replay clip:', error?.message || error);
+        return null;
+      });
+      Promise.all([
+        Promise.resolve(incidentRequest).then(result => result?.incident || null),
+        replayClipPromise,
+      ]).then(([incident, replayClip]) => {
+        if (!incident || !replayClip) return null;
+        return this._uploadViolationReplayEvidence(incident, replayClip);
+      }).catch((error) => {
+        console.warn('[FaceMesh] Replay evidence pipeline failed:', error?.message || error);
+      });
+    });
   },
 
   _persistFaceMonitoringSummary() {
@@ -4574,16 +4634,21 @@ const ExamApp = {
       (correlated.relatedIncidentIds || []).forEach(id => this._supersedeFaceIncident(id, correlated.incidentId));
       this._handleFaceMeshRuleEvent(correlated);
     }
-    // Position/quality states remain useful for calibration and neutral local
-    // prompts, but the professor-facing camera behavior list is deliberately
-    // limited to absence, down, and left/right/up looking-away incidents.
-    // Occlusion is only reported when it correlates with a YOLO phone event.
     if (!FACEMESH_REPORTED_INCIDENT_TYPES.has(event.eventType)) return;
 
-    this._faceAggregator?.consume?.(event);
-    this._upsertFaceActivity(event);
-    this._syncFaceIncident(event);
+    const warningIssued = this._issueFaceMeshViolation(event);
+    if (warningIssued && event.incidentId) this._faceViolationIncidentIds.add(event.incidentId);
+    const trackedEvent = {
+      ...event,
+      countsAsWarning: this._faceViolationIncidentIds.has(event.incidentId),
+    };
+
+    this._faceAggregator?.consume?.(trackedEvent);
+    this._upsertFaceActivity(trackedEvent);
+    const incidentRequest = this._syncFaceIncident(trackedEvent);
+    if (warningIssued) this._captureFaceMeshViolationReplay(trackedEvent, incidentRequest);
     if (event.phase === 'end') this._persistFaceMonitoringSummary();
+    if (event.phase === 'end' && event.incidentId) this._faceViolationIncidentIds.delete(event.incidentId);
   },
 
   _renderFaceConditionCountdown() {
@@ -6194,6 +6259,7 @@ const ExamApp = {
     this._faceMeshCalibrating = false;
     this._faceMeshStarting = false;
     this._lastFaceMeshObservation = null;
+    this._faceViolationIncidentIds.clear();
     this._facePositioningWarnings.clear();
     this._faceConditionCountdowns.clear();
     const faceWarning = document.getElementById('face-positioning-warning');
@@ -6380,24 +6446,24 @@ const ExamApp = {
     });
   },
 
-  issueWarning(type, detail, detectionMetadata = null) {
-    if (!this.session) return;
-    if (this.warnings >= 3) return;
+  issueWarning(type, detail, detectionMetadata = null, options = {}) {
+    if (!this.session) return false;
+    if (this.warnings >= 3) return false;
     if (type === 'fullscreen_exit') {
       if (this._intentionalFullscreenExit) {
         this._intentionalFullscreenExit = false;
-        return;
+        return false;
       }
       if (this._hasRecentTrustedInteraction()) {
         this._attemptGracefulFullscreenRecovery();
-        return;
+        return false;
       }
     }
-    if (this._cameraPrompting) return; // camera permission dialog open — not a violation
+    if (this._cameraPrompting) return false; // camera permission dialog open — not a violation
 
     // Debounce: prevent double-firing within 1500ms (blur + visibilitychange fire together)
     const now = Date.now();
-    if (this._lastWarningTime && (now - this._lastWarningTime) < 1500) return;
+    if (this._lastWarningTime && (now - this._lastWarningTime) < 1500) return false;
     this._lastWarningTime = now;
 
     this._stopWarningCountdown({ hideWrap: true });
@@ -6421,11 +6487,15 @@ const ExamApp = {
     // capture, network notifications, and local/session persistence.
     this._runAfterNextPaint(() => {
       if (!this.session) return;
-      const replayClipPromise = this._capturePreViolationReplayClip(type).catch((error) => {
-        console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
-        return null;
-      });
-      const violationPromise = this._notifyProfessorViolation(type, detail, warningCount, detectionMetadata);
+      const replayClipPromise = options.captureReplay === false
+        ? Promise.resolve(null)
+        : this._capturePreViolationReplayClip(type).catch((error) => {
+            console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
+            return null;
+          });
+      const violationPromise = options.notifyProfessor === false
+        ? Promise.resolve(null)
+        : this._notifyProfessorViolation(type, detail, warningCount, detectionMetadata);
       Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
         if (!violation || !replayClip) return null;
         return this._uploadViolationReplayEvidence(violation, replayClip);
@@ -6433,14 +6503,18 @@ const ExamApp = {
         console.warn('[Monitor] Replay evidence pipeline failed:', error?.message || error);
       });
 
-      this._recordActivity(type, detail, detectionMetadata, { warnings: warningCount });
+      if (options.recordActivity === false) {
+        DB.updateSession(this.session.id, { warnings: warningCount });
+      } else {
+        this._recordActivity(type, detail, detectionMetadata, { warnings: warningCount });
+      }
       this._captureCameraViolationSnapshot(type, detail, warningCount, detectionMetadata);
     });
 
     if (warningCount >= 3) {
       // 3 strikes — auto-submit after overlay reads
       setTimeout(() => this.submitExam('auto'), 3000);
-      return;
+      return true;
     }
 
     // Focus-loss violations start a 10-second return window
@@ -6448,6 +6522,7 @@ const ExamApp = {
     if (focusLoss.includes(type)) {
       this.startCountdown(10);
     }
+    return true;
   },
 
   showWarningOverlay(type, detail) {
@@ -6472,6 +6547,17 @@ const ExamApp = {
       restricted_phone: 'A mobile phone was detected in the camera frame.',
       secondary_computer: 'A secondary computer or display was detected in the camera frame.',
       restricted_book: 'A book or textbook was detected during this closed-book exam.',
+      FACE_ABSENT: 'No person detected in the camera frame.',
+      FACE_PARTIALLY_VISIBLE: 'Your face remained partially outside the camera frame.',
+      FACE_TOO_CLOSE: 'Your face is too close to the camera.',
+      FACE_TOO_FAR: 'Your face is too far from the camera.',
+      FACE_NEAR_FRAME_EDGE: 'Your face remained near the camera frame edge.',
+      SUSTAINED_HEAD_TURN: 'You looked away from the screen for too long.',
+      SUSTAINED_LOOKING_DOWN: 'You looked down away from the screen for too long.',
+      REPEATED_LOOKING_AWAY: 'Repeated looking away was detected.',
+      FACE_OCCLUDED: 'Your face remained obstructed.',
+      FACE_TRACKING_UNSTABLE: 'Your face could not be tracked reliably.',
+      PHONE_NEAR_OR_COVERING_FACE: 'A phone was detected near or covering your face.',
     };
 
     msgEl.textContent  = messages[type] || detail;

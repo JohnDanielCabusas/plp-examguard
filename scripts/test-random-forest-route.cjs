@@ -70,6 +70,47 @@ require.cache[dbPath] = {
           }],
         };
       }
+      if (/p\.id as prediction_id/i.test(sql)) {
+        return {
+          rows: [
+            {
+              exam_session_id: 'session-a',
+              student_id: 'STUDENT-1',
+              student_name: 'Ada Student',
+              submitted_at: '2026-09-08T01:20:00.000Z',
+              prediction_id: 'prediction-a',
+              prediction_status: 'completed',
+              suspicious_probability: '0.73000000',
+              risk_level: 'needs_monitoring',
+              requires_professor_review: true,
+              predicted_at: '2026-09-08T02:00:00.000Z',
+            },
+            {
+              exam_session_id: 'session-b',
+              student_id: 'STUDENT-2',
+              student_name: 'Ben Student',
+              submitted_at: '2026-09-08T01:22:00.000Z',
+              prediction_id: 'prediction-b',
+              prediction_status: 'unavailable',
+              suspicious_probability: null,
+              risk_level: null,
+              requires_professor_review: false,
+              unavailable_reason: 'Face, pose, or hand monitoring was incomplete for this session.',
+            },
+            {
+              exam_session_id: 'session-c',
+              student_id: 'STUDENT-3',
+              student_name: '',
+              submitted_at: '2026-09-08T01:24:00.000Z',
+              prediction_id: null,
+              prediction_status: null,
+              suspicious_probability: null,
+              risk_level: null,
+              requires_professor_review: false,
+            },
+          ],
+        };
+      }
       if (/insert into public\.random_forest_predictions/i.test(sql)) {
         return {
           rows: [{
@@ -165,6 +206,14 @@ async function run() {
   assert.equal(summary.body.summary.unavailableSessions, 1);
   assert.deepEqual(summary.body.distribution.map(item => item.count), [2, 1, 1]);
   assert.equal(summary.body.summary.averageSuspiciousProbability, 0.45);
+  assert.equal(summary.body.predictions.length, 3);
+  assert.equal(summary.body.predictions[0].studentName, 'Ada Student');
+  assert.equal(summary.body.predictions[0].riskLevel, 'needs_monitoring');
+  assert.equal(summary.body.predictions[0].suspiciousProbability, 0.73);
+  assert.equal(summary.body.predictions[1].status, 'unavailable');
+  assert.match(summary.body.predictions[1].unavailableReason, /incomplete/i);
+  assert.equal(summary.body.predictions[2].studentName, 'STUDENT-3');
+  assert.equal(summary.body.predictions[2].status, 'pending');
 
   forcedDatabaseError = new Error("ENOENT: no such file or directory, open 'C:\\private\\artifact.json'");
   const internalFailure = responseCapture();
