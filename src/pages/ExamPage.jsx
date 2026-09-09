@@ -162,7 +162,7 @@ export default function ExamPage() {
               </svg>
               <span className="cd-num" id="cd-num">10</span>
             </div>
-            <div className="warning-countdown-msg">Return to this window or your exam will be auto-submitted</div>
+            <div className="warning-countdown-msg">Return to this window to continue your exam</div>
           </div>
         </div>
       </div>

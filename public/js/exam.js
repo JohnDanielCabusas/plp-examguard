@@ -105,7 +105,7 @@ const ExamApp = {
   _warningCountdownToken: 0,
   _warningCountdownDeadline: 0,
   _warningCountdownTotalSeconds: 0,
-  _warningCountdownMode: null, // 'focus' | 'read' | 'info'
+  _warningCountdownMode: null, // 'focus' | 'focus_expired' | 'read' | 'info'
   _cameraStream: null,      // MediaStream from camera
   _snapInterval: null,      // periodic snapshot interval
   _liveSnapshotInFlight: false,
@@ -954,7 +954,7 @@ const ExamApp = {
 
     if (resetMessage) {
       const msgEl = document.getElementById('warning-countdown-msg');
-      if (msgEl) msgEl.textContent = 'Return to this window or your exam will be auto-submitted';
+      if (msgEl) msgEl.textContent = 'Return to this window to continue your exam';
     }
   },
 
@@ -1342,12 +1342,8 @@ const ExamApp = {
     }
 
     if (exam.status === 'active') {
-      const examStartedAt = exam.startedAt ? new Date(exam.startedAt).getTime() : NaN;
-      const examDurationMinutes = Number(exam.timeLimit);
-      const examDeadline = Number.isFinite(examStartedAt) && Number.isFinite(examDurationMinutes) && examDurationMinutes > 0
-        ? examStartedAt + examDurationMinutes * 60 * 1000
-        : NaN;
-      if (Number.isFinite(examDeadline) && Date.now() >= examDeadline) {
+      const examDeadline = this._getExamDeadlineMs(exam, this.session);
+      if (examDeadline !== null && Date.now() >= examDeadline) {
         const closedAt = new Date(examDeadline).toISOString();
         DB.updateExam(exam.id, { status: 'closed', closedAt });
         this.exam = { ...exam, status: 'closed', closedAt };
@@ -3678,13 +3674,9 @@ const ExamApp = {
     const liveSession = this._getLiveSession();
     if (this.exam.status !== 'closed' || liveSession?.submitted) return;
 
-    const startedAt = this.exam.startedAt ? new Date(this.exam.startedAt).getTime() : NaN;
-    const durationMinutes = Number(this.exam.timeLimit);
-    const deadline = Number.isFinite(startedAt) && Number.isFinite(durationMinutes)
-      ? startedAt + durationMinutes * 60 * 1000
-      : NaN;
+    const deadline = this._getExamDeadlineMs(this.exam, liveSession || this.session);
     this._teardownActiveExamForRemoteSubmission(liveSession || this.session);
-    this.submitExam(Number.isFinite(deadline) && Date.now() >= deadline ? 'timeout' : 'exam_closed');
+    this.submitExam(deadline !== null && Date.now() >= deadline ? 'timeout' : 'exam_closed');
   },
 
   // Keeps live camera enforcement in sync with the professor's exemption toggle
@@ -3806,7 +3798,7 @@ const ExamApp = {
             </div>
           </div>
           <p style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:20px;">
-            Exam will be <strong style="color:#ef4444;">auto-submitted</strong> if you don't return to fullscreen
+            Return to fullscreen to continue. This violation has been recorded.
           </p>
           <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 36px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,0.3);">
             Return to Fullscreen
@@ -3841,7 +3833,11 @@ const ExamApp = {
           }
         },
         onExpire: () => {
-          if (!this._isFullscreenActive()) this.submitExam('auto');
+          // The fullscreen grace display is not the exam clock. A single
+          // fullscreen incident cannot end an attempt before the configured
+          // deadline; only the three-warning policy can do that.
+          const num = document.getElementById('fs-cd-num');
+          if (num) num.textContent = '0';
         },
       });
     }
@@ -3874,7 +3870,7 @@ const ExamApp = {
         this._blurTimer = null;
         if (!document.hasFocus()) {
           if (this._inReadCountdown) {
-            // Left during read countdown — cancel read, restart 10s auto-submit
+            // Left during read countdown — cancel it and restart the return reminder.
             this._cancelReadCountdown();
             this.startCountdown(10);
           } else {
@@ -6329,7 +6325,7 @@ const ExamApp = {
   },
 
   // ============================================================
-  // COUNTDOWN (10-second auto-submit window)
+  // COUNTDOWN (10-second return reminder)
   // ============================================================
   startCountdown(totalSeconds) {
     // If this 10-second return window is already running, keep its original
@@ -6361,15 +6357,16 @@ const ExamApp = {
         }
       },
       onExpire: () => {
-        this._warningCountdownMode = null;
+        // This is only the focus-return reminder, not the exam timer. Letting it
+        // reach zero must never submit an attempt that still has exam time left.
+        this._warningCountdownMode = 'focus_expired';
         const msgEl = document.getElementById('warning-overlay-msg');
         const subEl = document.getElementById('warning-overlay-sub');
         const wrapEl = document.getElementById('warning-countdown-wrap');
-        if (msgEl) msgEl.textContent = 'Time expired. Submitting your exam now...';
-        if (subEl) subEl.textContent = '';
+        if (msgEl) msgEl.textContent = 'This focus violation has been recorded.';
+        if (subEl) subEl.textContent = 'Return to the exam to continue. Your exam will only end when its timer expires or the warning limit is reached.';
         if (wrapEl) wrapEl.style.display = 'none';
         this._countdownInterval = null;
-        setTimeout(() => this.submitExam('auto'), 1500);
       },
     });
     this._countdownInterval = this._warningCountdownTimer;
@@ -6385,12 +6382,12 @@ const ExamApp = {
       return;
     }
 
-    const hadCountdown = this._warningCountdownMode === 'focus'
-      && this._warningCountdownDeadline > Date.now();
+    const hadFocusReminder = this._warningCountdownMode === 'focus'
+      || this._warningCountdownMode === 'focus_expired';
     this._stopWarningCountdown({ hideWrap: true });
     this._countdownInterval = null;
 
-    if (hideOverlay && hadCountdown && this.warnings < 3) {
+    if (hideOverlay && hadFocusReminder && this.warnings < 3) {
       // Student returned — keep overlay for 3s so they can read the warning
       this._startReadCountdown(3);
     }
@@ -6441,7 +6438,7 @@ const ExamApp = {
         this._warningCountdownMode = null;
         wrapEl.style.display = 'none';
         overlay.style.display = 'none';
-        if (msgEl) msgEl.textContent = 'Return to this window or your exam will be auto-submitted';
+        if (msgEl) msgEl.textContent = 'Return to this window to continue your exam';
       },
     });
   },
@@ -6603,7 +6600,7 @@ const ExamApp = {
 
       if (cdWrap) {
         if (cdMsg) cdMsg.textContent = isFocusLoss
-          ? 'Return to this window or your exam will be auto-submitted'
+          ? 'Return to this window to continue your exam'
           : 'This violation has been recorded. Returning to your exam…';
         cdWrap.style.display = '';
         if (cdNum) cdNum.textContent = secs;
@@ -6641,34 +6638,55 @@ const ExamApp = {
   // ============================================================
   // TIMER
   // ============================================================
+  _getExamDeadlineMs(exam = this.exam, session = null) {
+    const durationMinutes = Number(exam?.timeLimit);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+
+    const examStartedAt = exam?.startedAt ? new Date(exam.startedAt).getTime() : NaN;
+    if (Number.isFinite(examStartedAt)) return examStartedAt + durationMinutes * 60 * 1000;
+
+    // Legacy/local attempts may not have an exam-wide start timestamp. Keep
+    // their established per-session deadline instead of inventing a new one.
+    const sessionStartedAt = session?.startTime ? new Date(session.startTime).getTime() : NaN;
+    if (Number.isFinite(sessionStartedAt)) return sessionStartedAt + durationMinutes * 60 * 1000;
+    return null;
+  },
+
   startTimer() {
     this.stopTimer();
 
-    const session = DB.getSession(this.session.id);
-    let sessionStartTime;
-    if (session && session.startTime) {
-      sessionStartTime = new Date(session.startTime).getTime();
-    } else {
+    let session = DB.getSession(this.session.id) || this.session;
+    let sessionStartTime = session?.startTime ? new Date(session.startTime).getTime() : NaN;
+    if (!Number.isFinite(sessionStartTime)) {
       // Fresh start (retake after reset) — record start time now
       sessionStartTime = Date.now();
-      DB.updateSession(this.session.id, { startTime: new Date(sessionStartTime).toISOString() });
+      const startTime = new Date(sessionStartTime).toISOString();
+      DB.updateSession(this.session.id, { startTime });
+      session = { ...(session || this.session), startTime };
     }
-    // Fall back to a sane default rather than letting a missing/invalid
-    // timeLimit turn the whole countdown into NaN (which would silently
-    // never reach the auto-submit check below, since NaN <= 0 is false).
-    const timeLimitMinutes = Number(this.exam?.timeLimit) > 0 ? Number(this.exam.timeLimit) : 60;
-    const examStartedAt = this.exam?.startedAt ? new Date(this.exam.startedAt).getTime() : NaN;
-    const countdownStart = Number.isFinite(examStartedAt) ? examStartedAt : sessionStartTime;
-    const deadline = countdownStart + timeLimitMinutes * 60 * 1000;
+    const liveExam = this.exam?.id ? (DB.getExam(this.exam.id) || this.exam) : this.exam;
+    if (liveExam) this.exam = liveExam;
+    let deadline = this._getExamDeadlineMs(liveExam, session);
+
+    // Invalid timing data must fail safely. It is better to keep the attempt
+    // open for professor review than to guess a deadline and submit early.
+    if (deadline === null) {
+      this.timeRemaining = 0;
+      const display = document.getElementById('timer-display');
+      if (display) display.textContent = '--:--';
+      console.error('[Exam Timer] Cannot start countdown: invalid exam time limit or start time.');
+      return;
+    }
+
     this.timeRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
 
     if (this.timeRemaining <= 0) {
-      if (this.exam?.status === 'active') {
+      const submitted = this.submitExam('timeout');
+      if (submitted && this.exam?.status === 'active') {
         const closedAt = new Date(deadline).toISOString();
         DB.updateExam(this.exam.id, { status: 'closed', closedAt });
         this.exam = { ...this.exam, status: 'closed', closedAt };
       }
-      this.submitExam('timeout');
       return;
     }
 
@@ -6677,18 +6695,32 @@ const ExamApp = {
     if (!timerEl || !display) return;
 
     const tick = () => {
+      // Re-read the configured deadline so a professor's live duration change
+      // is reflected by both the display and the expiry decision.
+      const latestExam = this.exam?.id ? (DB.getExam(this.exam.id) || this.exam) : this.exam;
+      const latestSession = this.session?.id ? (DB.getSession(this.session.id) || session) : session;
+      const latestDeadline = this._getExamDeadlineMs(latestExam, latestSession);
+      if (latestDeadline === null) {
+        display.textContent = '--:--';
+        this.stopTimer();
+        console.error('[Exam Timer] Countdown stopped: invalid exam timing data.');
+        return;
+      }
+      if (latestExam) this.exam = latestExam;
+      deadline = latestDeadline;
+
       // An absolute deadline prevents background tabs and sleeping devices
       // from pausing or extending the exam countdown.
       this.timeRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       if (this.timeRemaining <= 0) {
         display.textContent = '00:00';
         this.stopTimer();
-        if (this.exam?.status === 'active') {
+        const submitted = this.submitExam('timeout');
+        if (submitted && this.exam?.status === 'active') {
           const closedAt = new Date(deadline).toISOString();
           DB.updateExam(this.exam.id, { status: 'closed', closedAt });
           this.exam = { ...this.exam, status: 'closed', closedAt };
         }
-        this.submitExam('timeout');
         return;
       }
 
@@ -7889,6 +7921,34 @@ const ExamApp = {
   },
 
   submitExam(trigger) {
+    // The configured deadline and three-warning threshold are authoritative.
+    // This final guard catches stale callbacks and live duration/warning updates
+    // before any answers or submission state can be changed.
+    if (trigger === 'timeout') {
+      const liveExam = this.exam?.id ? (DB.getExam(this.exam.id) || this.exam) : this.exam;
+      const liveSession = this._getLiveSession() || this.session;
+      const deadline = this._getExamDeadlineMs(liveExam, liveSession);
+      if (deadline === null || Date.now() < deadline) {
+        if (liveExam) this.exam = liveExam;
+        if (liveSession) this.session = liveSession;
+        if (deadline !== null) {
+          this.timeRemaining = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
+          if (!this.timerInterval) this.startTimer();
+        }
+        console.warn('[Exam Timer] Ignored premature timeout submission because exam time remains.');
+        return false;
+      }
+    }
+
+    if (trigger === 'auto') {
+      const liveSession = this._getLiveSession() || this.session;
+      const warningCount = Number(liveSession?.warnings ?? this.warnings ?? 0);
+      if (!Number.isFinite(warningCount) || warningCount < 3) {
+        console.warn('[Exam] Ignored premature violation submission before three warnings.');
+        return false;
+      }
+    }
+
     // Auto-submit (violations/timeout) still proceeds locally so it can't be dodged by
     // pulling the connection; the reconnect resync will push it once back online. A
     // manual submit, however, must wait — otherwise the student sees "Submitted!" while
@@ -7960,6 +8020,7 @@ const ExamApp = {
     }
 
     this._showSubmitted(true);
+    return true;
   },
 
   _showSubmitted(freshSubmit) {

@@ -16,6 +16,7 @@
     "test:random-forest:browser": "node scripts/smoke-test-random-forest-ui.mjs",
     "train:random-forest": ".\\.venv\\Scripts\\python.exe ml/random_forest/train_random_forest.py",
     "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
+    "test:exam-timer": "node scripts/test-exam-timer.cjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"
   },
