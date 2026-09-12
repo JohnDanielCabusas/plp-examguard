@@ -65,6 +65,12 @@ sandbox.DB = {
 vm.runInNewContext(source, sandbox, { filename: 'public/js/exam.js' });
 const app = sandbox.window.ExamApp;
 
+const professorOverrideQuestion = { id: 'manual-review', type: 'mcq', points: 4 };
+assert.equal(sandbox.getProfessorScoreOverride({ essayGrades: { 'manual-review': 4 } }, professorOverrideQuestion), 4);
+assert.equal(sandbox.getProfessorScoreOverride({ essayGrades: { 'manual-review': 99 } }, professorOverrideQuestion), 4);
+assert.equal(sandbox.getProfessorScoreOverride({ essayGrades: { 'manual-review': 'invalid' } }, professorOverrideQuestion), null);
+assert.equal(sandbox.getProfessorScoreOverride({}, professorOverrideQuestion), null);
+
 // Identification grading accepts any configured variant while preserving
 // compatibility with older questions that only have `correctAnswer`.
 const identificationExam = {
@@ -369,4 +375,4 @@ assert.equal(
   2,
   'Only the two three-warning enforcement paths may request violation auto-submit.',
 );
-console.log('Exam timer expiry guard tests passed.');
+console.log('Exam timer and submitted-review tests passed.');

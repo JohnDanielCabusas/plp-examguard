@@ -7246,12 +7246,23 @@ function getSessionEssayGrades(session) {
   return grades && typeof grades === 'object' && !Array.isArray(grades) ? grades : {};
 }
 
-function calculateEarnedPointsForQuestion(question, rawAnswer, essayGrades = {}) {
+// The existing essay_grades JSON column now stores optional professor score
+// overrides for every question type. Keeping the persisted field name avoids a
+// database migration and remains fully compatible with previously graded essays.
+function getSessionQuestionGrades(session) {
+  return getSessionEssayGrades(session);
+}
+
+function calculateEarnedPointsForQuestion(question, rawAnswer, questionGrades = {}) {
   if (!question) return 0;
   const maxPoints = Number(question.points) || 0;
 
+  if (Object.prototype.hasOwnProperty.call(questionGrades, question.id)) {
+    return normalizeEssayGradeValue(questionGrades[question.id], maxPoints) ?? 0;
+  }
+
   if (question.type === 'essay') {
-    return normalizeEssayGradeValue(essayGrades[question.id], maxPoints) ?? 0;
+    return 0;
   }
   if (rawAnswer === null || typeof rawAnswer === 'undefined') return 0;
 
@@ -7293,14 +7304,14 @@ function calculateEarnedPointsForQuestion(question, rawAnswer, essayGrades = {})
 function calculateSessionScoreBreakdown(exam, session) {
   const questions = Array.isArray(exam?.questions) ? exam.questions : [];
   const answers = session?.answers || {};
-  const essayGrades = getSessionEssayGrades(session);
+  const questionGrades = getSessionQuestionGrades(session);
   const byQuestion = {};
   let earned = 0;
   let max = 0;
 
   questions.forEach(question => {
     const questionMax = Number(question?.points) || 0;
-    const questionEarned = calculateEarnedPointsForQuestion(question, answers[question.id], essayGrades);
+    const questionEarned = calculateEarnedPointsForQuestion(question, answers[question.id], questionGrades);
     max += questionMax;
     earned += questionEarned;
     byQuestion[question.id] = questionEarned;
@@ -7313,17 +7324,76 @@ function calculateSessionScoreBreakdown(exam, session) {
   };
 }
 
-function renderStudentAnswersFooter(mode, sessionId, hasEssayQuestions) {
+function buildQuestionReviewControlHtml(question, session, mode) {
+  const grades = getSessionQuestionGrades(session);
+  const hasOverride = Object.prototype.hasOwnProperty.call(grades, question.id)
+    && normalizeEssayGradeValue(grades[question.id], question.points) !== null;
+  const overridePoints = hasOverride
+    ? normalizeEssayGradeValue(grades[question.id], question.points)
+    : null;
+  const automaticPoints = calculateEarnedPointsForQuestion(question, (session.answers || {})[question.id], {});
+  const maxPoints = Number(question.points) || 0;
+  const isMarkedCorrect = hasOverride && maxPoints > 0 && overridePoints >= maxPoints;
+  const statusText = isMarkedCorrect
+    ? `Marked correct · ${formatPointsValue(maxPoints)}/${formatPointsValue(maxPoints)} pts`
+    : hasOverride
+      ? `Professor score · ${formatPointsValue(overridePoints)}/${formatPointsValue(maxPoints)} pts`
+      : `Automatic · ${formatPointsValue(automaticPoints)}/${formatPointsValue(maxPoints)} pts`;
+
+  if (mode !== 'reports') {
+    return hasOverride ? `
+      <div class="prof-review-strip is-overridden is-readonly">
+        <span class="prof-review-label">Professor review</span>
+        <span class="prof-review-status">${statusText}</span>
+      </div>` : '';
+  }
+
+  return `
+    <div class="prof-review-strip${hasOverride ? ' is-overridden' : ''}" id="question-review-${session.id}-${question.id}">
+      <div class="prof-review-copy">
+        <span class="prof-review-label">Professor review</span>
+        <span class="prof-review-status" id="question-grade-status-${session.id}-${question.id}">${statusText}</span>
+      </div>
+      <div class="prof-review-actions">
+        <input type="hidden" id="question-grade-input-${session.id}-${question.id}" value="${hasOverride ? escHtml(formatPointsValue(overridePoints)) : ''}" data-automatic-points="${automaticPoints}" data-max-points="${maxPoints}" />
+        <button type="button" class="prof-review-btn prof-review-mark" id="question-grade-mark-${session.id}-${question.id}" onclick="setQuestionCorrectOverride('${session.id}','${question.id}',true)"${isMarkedCorrect ? ' style="display:none;"' : ''}>Mark as correct</button>
+        <button type="button" class="prof-review-btn prof-review-undo" id="question-grade-undo-${session.id}-${question.id}" onclick="setQuestionCorrectOverride('${session.id}','${question.id}',false)"${hasOverride ? '' : ' style="display:none;"'}>Undo</button>
+      </div>
+    </div>`;
+}
+
+function setQuestionCorrectOverride(sessionId, questionId, shouldMarkCorrect) {
+  const input = document.getElementById(`question-grade-input-${sessionId}-${questionId}`);
+  if (!input) return;
+  const panel = document.getElementById(`question-review-${sessionId}-${questionId}`);
+  const status = document.getElementById(`question-grade-status-${sessionId}-${questionId}`);
+  const markButton = document.getElementById(`question-grade-mark-${sessionId}-${questionId}`);
+  const undoButton = document.getElementById(`question-grade-undo-${sessionId}-${questionId}`);
+  const maxPoints = Number(input.dataset.maxPoints) || 0;
+  const automaticPoints = Number(input.dataset.automaticPoints) || 0;
+
+  input.value = shouldMarkCorrect ? String(maxPoints) : '';
+  panel?.classList.toggle('is-overridden', shouldMarkCorrect);
+  if (status) {
+    status.textContent = shouldMarkCorrect
+      ? `Marked correct · ${formatPointsValue(maxPoints)}/${formatPointsValue(maxPoints)} pts (unsaved)`
+      : `Automatic · ${formatPointsValue(automaticPoints)}/${formatPointsValue(maxPoints)} pts (unsaved)`;
+  }
+  if (markButton) markButton.style.display = shouldMarkCorrect ? 'none' : '';
+  if (undoButton) undoButton.style.display = shouldMarkCorrect ? '' : 'none';
+}
+
+function renderStudentAnswersFooter(mode, sessionId) {
   const footer = document.querySelector('#modal-student-answers .modal-footer');
   if (!footer) return;
 
-  if (mode === 'reports' && hasEssayQuestions) {
+  if (mode === 'reports') {
     footer.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;width:100%;">
-        <span style="font-size:12px;color:var(--text-muted);">Essay grades saved here will appear read-only in Statistics.</span>
+        <span style="font-size:12px;color:var(--text-muted);">Overrides update the student's recorded total and appear in Statistics.</span>
         <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
           <button class="btn btn-secondary" onclick="closeModal('modal-student-answers')">Close</button>
-          <button class="btn btn-primary" onclick="saveEssayGrades('${sessionId}')">Save Essay Grades</button>
+          <button class="btn btn-primary" onclick="saveQuestionReviewGrades('${sessionId}')">Save Review Changes</button>
         </div>
       </div>`;
     return;
@@ -7350,8 +7420,7 @@ function viewStudentAnswers(sessionId, source = currentSection) {
   const aiScanJobs = [];
   const scoreBreakdown = calculateSessionScoreBreakdown(exam, session);
   const scorePct = scoreBreakdown.max ? Math.round(scoreBreakdown.earned / scoreBreakdown.max * 100) : 0;
-  const essayGrades = getSessionEssayGrades(session);
-  const hasEssayQuestions = (exam.questions || []).some(question => question.type === 'essay');
+  const questionGrades = getSessionQuestionGrades(session);
 
   let html = `
     <div class="student-info-box" style="margin-bottom:16px;">
@@ -7367,13 +7436,15 @@ function viewStudentAnswers(sessionId, source = currentSection) {
   exam.questions.forEach((q, idx) => {
     const rawAnswer = (session.answers || {})[q.id];
     const studentAns = rawAnswer || '';
+    const earnedQuestionPoints = scoreBreakdown.byQuestion[q.id] || 0;
+    const hasGradeOverride = Object.prototype.hasOwnProperty.call(questionGrades, q.id)
+      && normalizeEssayGradeValue(questionGrades[q.id], q.points) !== null;
+    const effectiveFullCredit = Number(q.points) > 0 && earnedQuestionPoints >= Number(q.points);
+    const reviewControlHtml = buildQuestionReviewControlHtml(q, session, mode);
 
     if (q.type === 'essay') {
       const aiId = `ai-badge-${session.id}-${q.id}`;
       const wordCount = studentAns ? studentAns.split(/\s+/).filter(Boolean).length : 0;
-      const earnedEssayPoints = scoreBreakdown.byQuestion[q.id] || 0;
-      const hasSavedEssayGrade = Object.prototype.hasOwnProperty.call(essayGrades, q.id)
-        && normalizeEssayGradeValue(essayGrades[q.id], q.points) !== null;
       const cachedAIDetection = requireAI && studentAns
         ? getCachedEssayAIDetection(session.id, q.id, studentAns)
         : null;
@@ -7399,19 +7470,30 @@ function viewStudentAnswers(sessionId, source = currentSection) {
                 </span>
               </div>` : requireAI ? '<span style="font-size:12px;color:var(--text-muted);">No answer to scan</span>' : ''}
           </div>
-          <div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <strong style="font-size:12px;">Essay Score</strong>
-              <span style="font-size:12px;color:var(--text-muted);">${mode === 'reports' ? 'Only Reports can edit this score.' : 'Read-only here. Grade changes are made in Reports.'}</span>
-            </div>
-            ${mode === 'reports'
-              ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                  <input type="number" id="essay-grade-input-${session.id}-${q.id}" min="0" max="${Number(q.points) || 0}" step="0.5" class="form-control" value="${hasSavedEssayGrade ? escHtml(formatPointsValue(earnedEssayPoints)) : ''}" placeholder="0-${formatPointsValue(q.points)}" style="width:120px;" />
-                  <span style="font-size:12px;font-weight:700;color:var(--primary);">${hasSavedEssayGrade ? `${formatPointsValue(earnedEssayPoints)}/${formatPointsValue(q.points)} pts` : 'Pending grade'}</span>
-                </div>`
-              : `<span style="font-size:12px;font-weight:700;color:var(--primary);">${hasSavedEssayGrade ? `${formatPointsValue(earnedEssayPoints)}/${formatPointsValue(q.points)} pts` : 'Pending grade'}</span>`
-            }
+          ${reviewControlHtml}
+        </div>`;
+      return;
+    }
+
+    if (q.type === 'enumeration') {
+      const expected = (q.answers || []).map(answer => String(answer));
+      const given = String(studentAns).split('\n').map(answer => answer.trim()).filter(Boolean);
+      const normalizedGiven = given.map(answer => answer.toUpperCase());
+      const correctCount = expected.filter(answer => normalizedGiven.includes(answer.trim().toUpperCase())).length;
+      const automaticFullCredit = expected.length > 0 && correctCount === expected.length;
+      const rowClass = hasGradeOverride
+        ? (effectiveFullCredit ? 'correct' : 'wrong')
+        : given.length ? (automaticFullCredit ? 'correct' : 'wrong') : '';
+      html += `
+        <div class="answer-row ${rowClass}">
+          <div style="font-weight:600;margin-bottom:6px;">Q${idx+1}: ${escHtml(q.content)}</div>
+          <div class="answer-comparison-row">
+            <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(given.join(', ') || '(no answer)')}</span></span>
+            <span class="answer-comparison-item">Expected: <span class="correct-ans">${escHtml(expected.join(', '))}</span></span>
+            <span>${formatPointsValue(earnedQuestionPoints)}/${formatPointsValue(q.points)} pts${hasGradeOverride ? ' (professor adjusted)' : ''}</span>
           </div>
+          <div class="review-answer-note">${correctCount}/${expected.length} expected item(s) matched automatically.</div>
+          ${reviewControlHtml}
         </div>`;
       return;
     }
@@ -7422,7 +7504,9 @@ function viewStudentAnswers(sessionId, source = currentSection) {
       const correctIndices = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
       const sortedGiven = given.slice().sort((a, b) => a - b);
       const isCorrect = correctIndices.length === sortedGiven.length && correctIndices.every((v, i) => v === sortedGiven[i]);
-      const rowClass = given.length ? (isCorrect ? 'correct' : 'wrong') : '';
+      const rowClass = hasGradeOverride
+        ? (effectiveFullCredit ? 'correct' : 'wrong')
+        : given.length ? (isCorrect ? 'correct' : 'wrong') : '';
       const studentLabels = given.map(i => (q.options || [])[i]).filter(v => v !== undefined);
       const correctLabels = correctIndices.map(i => (q.options || [])[i]).filter(v => v !== undefined);
       html += `
@@ -7431,8 +7515,9 @@ function viewStudentAnswers(sessionId, source = currentSection) {
           <div class="answer-comparison-row">
             <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
             <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
-            <span>${isCorrect ? 'âœ“ +' + q.points : (given.length ? 'âœ— 0' : 'â€” 0')} pts</span>
+            <span>${formatPointsValue(earnedQuestionPoints)}/${formatPointsValue(q.points)} pts${hasGradeOverride ? ' (professor adjusted)' : ''}</span>
           </div>
+          ${reviewControlHtml}
         </div>`;
       return;
     }
@@ -7451,13 +7536,15 @@ function viewStudentAnswers(sessionId, source = currentSection) {
       }, 0);
       const pairPoints = normalizedPairs.length ? (q.points / normalizedPairs.length) : 0;
       const earnedPoints = Math.round(correctCount * pairPoints * 100) / 100;
-      const rowClass = normalizedPairs.length && correctCount === normalizedPairs.length
-        ? 'correct'
-        : Object.keys(given).length ? 'wrong' : '';
+      const rowClass = hasGradeOverride
+        ? (effectiveFullCredit ? 'correct' : 'wrong')
+        : normalizedPairs.length && correctCount === normalizedPairs.length
+          ? 'correct'
+          : Object.keys(given).length ? 'wrong' : '';
       html += `
         <div class="answer-row ${rowClass}">
           <div style="font-weight:600;margin-bottom:6px;">Q${idx+1}: ${escHtml(q.content)}</div>
-          <div class="review-answer-note" style="margin-top:0;margin-bottom:8px;">${correctCount}/${normalizedPairs.length || 0} correct Â· ${earnedPoints}/${q.points} pts</div>
+          <div class="review-answer-note" style="margin-top:0;margin-bottom:8px;">${correctCount}/${normalizedPairs.length || 0} matched automatically · ${formatPointsValue(earnedQuestionPoints)}/${formatPointsValue(q.points)} pts${hasGradeOverride ? ' (professor adjusted)' : ''}</div>
           <div class="review-matching-list">
             ${normalizedPairs.map((pair, pairIdx) => {
               const studentValue = String(given?.[pairIdx] || '').trim();
@@ -7477,6 +7564,7 @@ function viewStudentAnswers(sessionId, source = currentSection) {
               `;
             }).join('')}
           </div>
+          ${reviewControlHtml}
         </div>`;
       return;
     }
@@ -7485,15 +7573,18 @@ function viewStudentAnswers(sessionId, source = currentSection) {
     const isCorrect = q.type === 'identification'
       ? isIdentificationAnswerCorrect(q, studentAns)
       : studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
-    const rowClass = studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
+    const rowClass = hasGradeOverride
+      ? (effectiveFullCredit ? 'correct' : 'wrong')
+      : studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
     html += `
       <div class="answer-row ${rowClass}">
         <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
         <div class="answer-comparison-row">
           <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
           <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
-          <span>${isCorrect ? 'âœ“ +' + q.points : (studentAns ? 'âœ— 0' : 'â€” 0')} pts</span>
+          <span>${formatPointsValue(earnedQuestionPoints)}/${formatPointsValue(q.points)} pts${hasGradeOverride ? ' (professor adjusted)' : ''}</span>
         </div>
+        ${reviewControlHtml}
       </div>`;
   });
 
@@ -7508,50 +7599,45 @@ function viewStudentAnswers(sessionId, source = currentSection) {
 
   document.getElementById('modal-answers-title').textContent = `Answers - ${session.studentName}`;
   document.getElementById('modal-answers-body').innerHTML = sanitizeStudentAnswersHtml(html);
-  renderStudentAnswersFooter(mode, sessionId, hasEssayQuestions);
+  renderStudentAnswersFooter(mode, sessionId);
   openModal('modal-student-answers');
   aiScanJobs.forEach(job => {
     detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
   });
 }
 
-function saveEssayGrades(sessionId) {
+function saveQuestionReviewGrades(sessionId) {
   const session = DB.getSession(sessionId);
   if (!session) return;
   const exam = DB.getExam(session.examId);
   if (!exam) return;
 
-  const essayQuestions = (exam.questions || []).filter(question => question.type === 'essay');
-  if (!essayQuestions.length) {
-    showToast('This submission has no essay questions to grade.', 'info');
-    return;
-  }
-
-  const nextEssayGrades = { ...getSessionEssayGrades(session) };
-  for (const [index, question] of essayQuestions.entries()) {
-    const input = document.getElementById(`essay-grade-input-${sessionId}-${question.id}`);
+  const questions = exam.questions || [];
+  const nextQuestionGrades = { ...getSessionQuestionGrades(session) };
+  for (const [index, question] of questions.entries()) {
+    const input = document.getElementById(`question-grade-input-${sessionId}-${question.id}`);
     if (!input) continue;
 
     const rawValue = String(input.value || '').trim();
     if (!rawValue) {
-      delete nextEssayGrades[question.id];
+      delete nextQuestionGrades[question.id];
       continue;
     }
 
     const normalized = normalizeEssayGradeValue(rawValue, question.points);
     if (normalized === null) {
-      showToast(`Enter a valid essay score for Q${index + 1}.`, 'error');
+      showToast(`Enter a valid score for Q${index + 1}.`, 'error');
       input.focus();
       return;
     }
 
-    nextEssayGrades[question.id] = normalized;
+    nextQuestionGrades[question.id] = normalized;
   }
 
-  const nextSession = { ...session, essayGrades: nextEssayGrades };
+  const nextSession = { ...session, essayGrades: nextQuestionGrades };
   const scoreBreakdown = calculateSessionScoreBreakdown(exam, nextSession);
   DB.updateSession(sessionId, {
-    essayGrades: nextEssayGrades,
+    essayGrades: nextQuestionGrades,
     score: scoreBreakdown.earned,
     maxScore: scoreBreakdown.max,
   });
@@ -7559,8 +7645,13 @@ function saveEssayGrades(sessionId) {
   if (currentSection === 'reports') renderReportTable();
   if (currentSection === 'statistics') renderExamStats();
 
-  showToast('Essay grades saved. Statistics now reflects the updated review score.', 'success');
+  showToast('Review changes saved. The student record and statistics now reflect the updated score.', 'success');
   viewStudentAnswers(sessionId, 'reports');
+}
+
+// Backward-compatible name for any older inline actions still in cached pages.
+function saveEssayGrades(sessionId) {
+  saveQuestionReviewGrades(sessionId);
 }
 
 // Full per-question, per-choice answer breakdown for the "Question Difficulty"
@@ -9145,10 +9236,14 @@ function pctToDifficulty(pct) {
 
 // Points a student earned on ONE question — mirrors ExamApp._calculateScoreFor
 // (exam.js) exactly so the difficulty p-value matches how the exam is graded.
-function scoreQuestionEarned(q, ans) {
-  if (!q || q.type === 'essay' || q.type === 'coding') return 0;
-  if (ans === undefined || ans === null || ans.toString().trim() === '') return 0;
+function scoreQuestionEarned(q, ans, questionGrades = {}) {
+  if (!q) return 0;
   const points = Number(q.points) || 0;
+  if (Object.prototype.hasOwnProperty.call(questionGrades, q.id)) {
+    return normalizeEssayGradeValue(questionGrades[q.id], points) ?? 0;
+  }
+  if (q.type === 'essay' || q.type === 'coding') return 0;
+  if (ans === undefined || ans === null || ans.toString().trim() === '') return 0;
 
   if (q.type === 'enumeration') {
     const expected = (q.answers || []).map(a => (a || '').toUpperCase());
@@ -9187,7 +9282,7 @@ function computeQuestionPValue(q, sessions) {
   const graded = (sessions || []).filter(s => s && s.submitted);
   if (!graded.length || points <= 0) return { pct: 0, sampleSize: graded.length };
   let sum = 0;
-  graded.forEach(s => { sum += scoreQuestionEarned(q, (s.answers || {})[q.id]) / points; });
+  graded.forEach(s => { sum += scoreQuestionEarned(q, (s.answers || {})[q.id], getSessionQuestionGrades(s)) / points; });
   return { pct: Math.round((sum / graded.length) * 100), sampleSize: graded.length };
 }
 
@@ -9285,7 +9380,7 @@ function computeDiscrimination(q, rankedSessions) {
   const upper = rankedSessions.slice(0, groupSize);
   const lower = rankedSessions.slice(n - groupSize);
   const meanProp = group => group.reduce((sum, s) =>
-    sum + scoreQuestionEarned(q, (s.answers || {})[q.id]) / points, 0) / group.length;
+    sum + scoreQuestionEarned(q, (s.answers || {})[q.id], getSessionQuestionGrades(s)) / points, 0) / group.length;
   return { d: Math.round((meanProp(upper) - meanProp(lower)) * 100) / 100, groupSize };
 }
 
@@ -9357,7 +9452,7 @@ function computeMasteryByBloom(exam, sessions) {
     let sum = 0, n = 0;
     graded.forEach(s => {
       qs.forEach(q => {
-        sum += scoreQuestionEarned(q, (s.answers || {})[q.id]) / (Number(q.points) || 1);
+        sum += scoreQuestionEarned(q, (s.answers || {})[q.id], getSessionQuestionGrades(s)) / (Number(q.points) || 1);
         n++;
       });
     });

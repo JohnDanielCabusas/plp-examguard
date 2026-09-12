@@ -25,6 +25,16 @@ function formatIdentificationAcceptedAnswers(question) {
   return getIdentificationAcceptedAnswers(question).join(' / ');
 }
 
+function getProfessorScoreOverride(session, question) {
+  const grades = session?.essayGrades;
+  if (!grades || typeof grades !== 'object' || Array.isArray(grades)
+      || !Object.prototype.hasOwnProperty.call(grades, question?.id)) return null;
+  const value = Number(grades[question.id]);
+  if (!Number.isFinite(value)) return null;
+  const maxPoints = Math.max(Number(question.points) || 0, 0);
+  return Math.round(Math.min(Math.max(value, 0), maxPoints) * 100) / 100;
+}
+
 function setEnrollStatus(el, text, variant, options = {}) {
   if (!el) return;
   if (el._statusTimer) {
@@ -8020,9 +8030,11 @@ const ExamApp = {
       const ans = (sess.answers || {})[q.id];
       let resultHtml = '';
       const hasAnswer = hasSubmittedAnswer(q, ans);
-      let questionResult = scoreReleased && !hasAnswer ? 'is-unanswered' : '';
+      const professorScore = getProfessorScoreOverride(sess, q);
+      const hasProfessorScore = professorScore !== null;
+      let questionResult = scoreReleased && !hasAnswer && !hasProfessorScore ? 'is-unanswered' : '';
 
-      if (scoreReleased && hasAnswer && q.type !== 'essay') {
+      if (scoreReleased && (hasAnswer || hasProfessorScore) && q.type !== 'essay') {
         let isCorrect = false;
         if (q.type === 'enumeration') {
           const expected = (q.answers || []).map((item) => item.toString().trim().toUpperCase());
@@ -8046,7 +8058,11 @@ const ExamApp = {
         } else {
           isCorrect = !!ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
         }
+        if (hasProfessorScore) isCorrect = Number(q.points) > 0 && professorScore >= Number(q.points);
         questionResult = isCorrect ? 'is-correct' : 'is-wrong';
+      }
+      if (scoreReleased && q.type === 'essay' && hasProfessorScore) {
+        questionResult = Number(q.points) > 0 && professorScore >= Number(q.points) ? 'is-correct' : 'is-wrong';
       }
 
       if (q.type === 'essay') {
@@ -8168,6 +8184,13 @@ const ExamApp = {
             ${scoreReleased && !correct
               ? `<div class="review-correct-answer"><span>${q.type === 'identification' ? 'Accepted' : 'Correct'}:</span> <strong>${_esc(correctAnswerDisplay)}</strong></div>`
               : ''}
+          </div>`;
+      }
+
+      if (scoreReleased && hasProfessorScore) {
+        resultHtml += `
+          <div class="review-answer-note" style="margin-top:10px;padding:9px 11px;border:1px solid #86efac;border-radius:9px;background:#f0fdf4;color:#166534;">
+            <strong>Professor-adjusted score:</strong> ${professorScore}/${Number(q.points) || 0} pts
           </div>`;
       }
 
