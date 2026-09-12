@@ -272,7 +272,11 @@ let focusCountdownSeconds = null;
 const realShowWarningOverlay = app.showWarningOverlay;
 const realStartCountdown = app.startCountdown;
 const realRunAfterNextPaint = app._runAfterNextPaint;
+const realNotifyProfessorViolation = app._notifyProfessorViolation;
+let deferredWarningWork = null;
+let immediateProfessorNotifications = 0;
 app.session = { id: 'fullscreen-test', studentId: 'student-test' };
+app.exam = { id: 'fullscreen-exam' };
 app.warnings = 0;
 app._lastWarningTime = 0;
 app._cameraPrompting = false;
@@ -280,11 +284,17 @@ app._intentionalFullscreenExit = false;
 app._hasRecentTrustedInteraction = () => true;
 app.showWarningOverlay = type => { shownWarningType = type; };
 app.startCountdown = seconds => { focusCountdownSeconds = seconds; };
-app._runAfterNextPaint = () => {};
+app._notifyProfessorViolation = () => {
+  immediateProfessorNotifications += 1;
+  return Promise.resolve(null);
+};
+app._runAfterNextPaint = callback => { deferredWarningWork = callback; };
 assert.equal(app.issueWarning('fullscreen_exit', 'Fullscreen mode exited'), true);
 assert.equal(app.warnings, 1);
 assert.equal(shownWarningType, 'fullscreen_exit');
 assert.equal(focusCountdownSeconds, 10);
+assert.equal(immediateProfessorNotifications, 1, 'Professor notification must start before deferred warning work.');
+assert.equal(typeof deferredWarningWork, 'function');
 
 // Focus events must not dismiss that strike while fullscreen is still absent.
 let fullscreenActive = false;
@@ -304,6 +314,7 @@ assert.equal(fullscreenReadSeconds, 3);
 app.showWarningOverlay = realShowWarningOverlay;
 app.startCountdown = realStartCountdown;
 app._runAfterNextPaint = realRunAfterNextPaint;
+app._notifyProfessorViolation = realNotifyProfessorViolation;
 
 // The final strike uses the same visible deadline as its submission callback.
 let finalWarningOptions = null;

@@ -290,12 +290,16 @@ try {
       app._runAfterNextPaint = callback => { deferred = callback; };
       app._recordActivity = () => warningOrder.push('persist');
       app._capturePreViolationReplayClip = () => Promise.resolve(null);
-      app._notifyProfessorViolation = () => Promise.resolve(null);
+      app._notifyProfessorViolation = () => {
+        warningOrder.push('notify');
+        return Promise.resolve(null);
+      };
       app._captureCameraViolationSnapshot = () => null;
       app.issueWarning('copy_attempt', 'test warning');
-      const warningPaintedFirst = warningOrder.join(',') === 'overlay' && typeof deferred === 'function';
+      const warningPaintedFirst = warningOrder[0] === 'overlay' && typeof deferred === 'function';
+      const notificationStartedImmediately = warningOrder.join(',') === 'overlay,notify';
       deferred?.();
-      const persistenceDeferred = warningOrder.join(',') === 'overlay,persist';
+      const persistenceDeferred = warningOrder.join(',') === 'overlay,notify,persist';
 
       app._discardPendingAutoSave();
       return {
@@ -303,6 +307,7 @@ try {
         retainedLegacyFallback,
         batchedAutoSave,
         warningPaintedFirst,
+        notificationStartedImmediately,
         persistenceDeferred,
       };
     });
@@ -311,6 +316,7 @@ try {
       || !performanceBehavior.retainedLegacyFallback
       || !performanceBehavior.batchedAutoSave
       || !performanceBehavior.warningPaintedFirst
+      || !performanceBehavior.notificationStartedImmediately
       || !performanceBehavior.persistenceDeferred
     ) {
       throw new Error(`Unexpected examination performance result: ${JSON.stringify(performanceBehavior)}`);

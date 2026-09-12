@@ -6678,8 +6678,24 @@ const ExamApp = {
 
     this.showWarningOverlay(type, detail);
 
-    // Give the browser a chance to paint the warning before starting evidence
-    // capture, network notifications, and local/session persistence.
+    // Start the professor alert in this same event task. Browser-behavior
+    // violations often happen while the student page is hidden or blurred,
+    // where animation frames and timers may be throttled. Waiting for the
+    // warning overlay to paint made an otherwise-live WebSocket alert feel
+    // delayed on the professor's screen.
+    let violationPromise = Promise.resolve(null);
+    if (options.notifyProfessor !== false) {
+      try {
+        violationPromise = Promise.resolve(
+          this._notifyProfessorViolation(type, detail, warningCount, detectionMetadata),
+        );
+      } catch (error) {
+        console.warn('[Monitor] Unable to start professor violation notification:', error?.message || error);
+      }
+    }
+
+    // Evidence capture and local/session persistence can wait for the student
+    // warning to paint; neither is allowed to hold up the live professor alert.
     this._runAfterNextPaint(() => {
       if (!this.session) return;
       const replayClipPromise = options.captureReplay === false
@@ -6688,9 +6704,6 @@ const ExamApp = {
             console.warn('[Monitor] Unable to capture replay clip:', error?.message || error);
             return null;
           });
-      const violationPromise = options.notifyProfessor === false
-        ? Promise.resolve(null)
-        : this._notifyProfessorViolation(type, detail, warningCount, detectionMetadata);
       Promise.all([violationPromise, replayClipPromise]).then(([violation, replayClip]) => {
         if (!violation || !replayClip) return null;
         return this._uploadViolationReplayEvidence(violation, replayClip);

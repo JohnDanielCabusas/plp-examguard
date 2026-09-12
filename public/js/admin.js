@@ -1111,6 +1111,14 @@ function queueViolationAlert(entry) {
     _queuedViolationAlertIds.add(entry.id);
     _violationAlertQueue.push(entry);
   }
+
+  // Put the popup on screen before local notification bookkeeping or a large
+  // monitoring-table repaint. Session caches can contain webcam snapshots, so
+  // those synchronous operations must never sit in front of the live alert.
+  if (_activeViolationAlert) renderViolationAlertModal();
+  else showNextViolationAlert();
+  playViolationSound().catch(() => {});
+
   addBellNotification({
     id: entry.id,
     kind: 'violation',
@@ -1121,13 +1129,10 @@ function queueViolationAlert(entry) {
     examId: entry.examId,
     sessionId: entry.sessionId,
   }, false);
-  playViolationSound().catch(() => {});
   markMonitorRowViolation(entry.sessionId);
   if (currentSection === 'monitoring' && (!monitorExamId || monitorExamId === entry.examId)) {
     renderMonitoringTable(monitorExamId || entry.examId);
   }
-  if (_activeViolationAlert) renderViolationAlertModal();
-  showNextViolationAlert();
 }
 
 function getRecentViolationEventKey(activityOrEvent) {
@@ -1214,7 +1219,6 @@ function processIncomingViolationEvent(event) {
   if (!event?.sessionId) return;
   if (event?.createdAt) _violationPollCursor = event.createdAt;
   setViolationTransportMode('server');
-  applyViolationEventToLocalSession(event);
   const source = String(event?.detectionMetadata?.source || '').toUpperCase();
   const phase = String(event?.detectionMetadata?.phase || '').toLowerCase();
   // An occlusion is kept in the activity timeline, but its transient live
@@ -1231,13 +1235,17 @@ function processIncomingViolationEvent(event) {
       && event.violationType !== 'PHONE_NEAR_OR_COVERING_FACE'
     )
   ) {
+    applyViolationEventToLocalSession(event);
     if (_activeLogSessionId === event.sessionId) refreshOpenStudentLog();
     if (currentSection === 'monitoring' && monitorExamId === event.examId) pollMonitorSessions({ immediate: true });
     return;
   }
   const entry = buildViolationAlertEntryFromEvent(event);
   rememberRecentViolationEvent(entry);
+  // Display from the lightweight server event first. Updating the potentially
+  // large local session snapshot is secondary and must not delay the popup.
   queueViolationAlert(entry);
+  applyViolationEventToLocalSession(event);
   if (_activeLogSessionId === entry.sessionId) refreshOpenStudentLog();
   if (currentSection === 'monitoring' && monitorExamId && monitorExamId === entry.examId) {
     pollMonitorSessions({ immediate: true });
