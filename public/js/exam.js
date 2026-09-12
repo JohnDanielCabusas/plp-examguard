@@ -3760,26 +3760,10 @@ const ExamApp = {
     return Date.now() <= (this._fullscreenInteractionGraceUntil || 0);
   },
 
-  _attemptGracefulFullscreenRecovery() {
-    this._showFullscreenLock();
-    this._reenterFullscreen();
-
-    if (this._pendingFullscreenRecovery) clearTimeout(this._pendingFullscreenRecovery);
-    this._pendingFullscreenRecovery = setTimeout(() => {
-      this._pendingFullscreenRecovery = null;
-      if (!this._isFullscreenActive() && !this._intentionalFullscreenExit) {
-        this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
-        this._showFullscreenLock();
-      }
-    }, 700);
-  },
-
   _showFullscreenLock() {
     let overlay = document.getElementById('fs-lock-overlay');
-    const COUNTDOWN_SECS = 7;
 
     const doReturn = () => {
-      this._stopFullscreenLockCountdown();
       this.requestFullscreen().then((ok) => {
         if (ok && this._isFullscreenActive()) {
           if (overlay) overlay.style.display = 'none';
@@ -3790,72 +3774,27 @@ const ExamApp = {
     if (!overlay) {
       overlay = document.createElement('div');
       overlay.id = 'fs-lock-overlay';
+      overlay.className = 'fullscreen-lock-overlay';
       overlay.innerHTML = `
-        <div style="text-align:center;padding:40px 32px;max-width:420px;">
-          <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div class="fullscreen-lock-card" role="dialog" aria-modal="true" aria-labelledby="fs-lock-title">
+          <div class="fullscreen-lock-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
           </div>
-          <h2 style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px;">Fullscreen Required</h2>
-          <p style="font-size:14px;color:rgba(255,255,255,0.7);margin-bottom:8px;line-height:1.6;">
-            This exam must be taken in fullscreen mode.<br>
-            Exiting fullscreen has been recorded as a violation.
+          <div class="fullscreen-lock-label">Secure exam</div>
+          <h2 id="fs-lock-title">Fullscreen Required</h2>
+          <p>
+            This exam must remain in fullscreen. Select the button below to continue.
           </p>
-          <div id="fs-countdown-wrap" style="margin:18px auto 22px;width:90px;height:90px;position:relative;">
-            <svg viewBox="0 0 90 90" style="width:90px;height:90px;transform:rotate(-90deg);">
-              <circle cx="45" cy="45" r="38" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6"/>
-              <circle id="fs-cd-ring" cx="45" cy="45" r="38" fill="none" stroke="#ef4444" stroke-width="6"
-                stroke-dasharray="238.76" stroke-dashoffset="0"
-                style="transition:stroke-dashoffset 1s linear,stroke 0.3s;"/>
-            </svg>
-            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
-              <span id="fs-cd-num" style="font-size:28px;font-weight:900;color:#fff;line-height:1;">${COUNTDOWN_SECS}</span>
-              <span style="font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:1px;margin-top:2px;">SEC</span>
-            </div>
-          </div>
-          <p style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:20px;">
-            Return to fullscreen to continue. This violation has been recorded.
-          </p>
-          <button id="fs-return-btn" style="background:#fff;color:#0f2d1a;border:none;padding:12px 36px;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,0.3);">
+          <button id="fs-return-btn" class="fullscreen-lock-return" data-exam-control="true">
             Return to Fullscreen
           </button>
         </div>`;
-      overlay.style.cssText = 'position:fixed;inset:0;background:#060e08;z-index:999999;display:flex;align-items:center;justify-content:center;';
       document.body.appendChild(overlay);
     } else {
       overlay.style.display = 'flex';
     }
 
     document.getElementById('fs-return-btn').onclick = doReturn;
-
-    // Keep one deadline-based countdown alive even if the browser fires
-    // repeated fullscreen/visibility events while already out of fullscreen.
-    if (this.warnings < 3) {
-      this._startDeadlineCountdown({
-        timerKey: '_fullscreenLockTimer',
-        tokenKey: '_fullscreenLockToken',
-        deadlineKey: '_fullscreenLockDeadline',
-        totalKey: '_fullscreenLockTotalSeconds',
-        totalSeconds: COUNTDOWN_SECS,
-        preserveExisting: true,
-        onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
-          const ring = document.getElementById('fs-cd-ring');
-          const num = document.getElementById('fs-cd-num');
-          if (num) num.textContent = remaining;
-          if (ring) {
-            const offset = 238.76 * ((totalMs - msRemaining) / totalMs);
-            ring.style.strokeDashoffset = String(offset);
-            ring.style.stroke = remaining <= 3 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e';
-          }
-        },
-        onExpire: () => {
-          // The fullscreen grace display is not the exam clock. A single
-          // fullscreen incident cannot end an attempt before the configured
-          // deadline; only the three-warning policy can do that.
-          const num = document.getElementById('fs-cd-num');
-          if (num) num.textContent = '0';
-        },
-      });
-    }
   },
 
   _hideFullscreenLock() {
@@ -3974,8 +3913,10 @@ const ExamApp = {
         this._fsLossTimer = setTimeout(() => {
           this._fsLossTimer = null;
           if (this._isFullscreenActive()) return; // recovered on its own — ignore
+          // The strike overlay is also the recovery screen. Do not place the
+          // generic fullscreen lock above it or the warning becomes invisible.
+          this._hideFullscreenLock();
           this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
-          this._showFullscreenLock();
         }, 500);
       } else {
         if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
@@ -6447,8 +6388,13 @@ const ExamApp = {
         const msgEl = document.getElementById('warning-overlay-msg');
         const subEl = document.getElementById('warning-overlay-sub');
         const wrapEl = document.getElementById('warning-countdown-wrap');
-        if (msgEl) msgEl.textContent = 'This focus violation has been recorded.';
-        if (subEl) subEl.textContent = 'Return to the exam to continue. Your exam will only end when its timer expires or the warning limit is reached.';
+        const waitingForFullscreen = this._activeWarningType === 'fullscreen_exit';
+        if (msgEl) msgEl.textContent = waitingForFullscreen
+          ? 'Fullscreen exit recorded.'
+          : 'This focus violation has been recorded.';
+        if (subEl) subEl.textContent = waitingForFullscreen
+          ? 'Select Return to Fullscreen to continue your exam.'
+          : 'Return to the exam to continue. Your exam will only end when its timer expires or the warning limit is reached.';
         if (wrapEl) wrapEl.style.display = 'none';
         this._countdownInterval = null;
       },
@@ -6457,6 +6403,17 @@ const ExamApp = {
   },
 
   cancelCountdown(hideOverlay = true) {
+    // Regaining ordinary window focus does not resolve a fullscreen violation.
+    // Keep its warning and original deadline alive until fullscreen itself is
+    // restored; focus and visibility events often fire during this transition.
+    if (
+      hideOverlay
+      && this._activeWarningType === 'fullscreen_exit'
+      && !this._isFullscreenActive()
+    ) {
+      return;
+    }
+
     // If the 3-second read countdown is already running (started by an earlier
     // cancelCountdown call from the same return event pair), don't interrupt it —
     // just stop the 10s interval if it somehow still exists and bail out.
@@ -6481,6 +6438,9 @@ const ExamApp = {
     const remainingMs = Math.max(0, this._warningCountdownDeadline - Date.now());
     this._stopWarningCountdown({ hideWrap: true });
     this._countdownInterval = null;
+    if (this._activeWarningType === 'fullscreen_exit') {
+      this._setFullscreenWarningAction(false);
+    }
 
     if (hideOverlay && hadFocusReminder && this.warnings < 3) {
       // Let the student read the notice without extending the warning beyond
@@ -6494,6 +6454,7 @@ const ExamApp = {
       } else {
         const overlay = document.getElementById('warning-overlay');
         if (overlay) overlay.style.display = 'none';
+        this._activeWarningType = null;
       }
     }
   },
@@ -6541,6 +6502,7 @@ const ExamApp = {
         this._inReadCountdown = false;
         this._warningReadTimer = null;
         this._warningCountdownMode = null;
+        this._activeWarningType = null;
         wrapEl.style.display = 'none';
         overlay.style.display = 'none';
         if (msgEl) msgEl.textContent = 'Return to this window to continue your exam';
@@ -6554,10 +6516,6 @@ const ExamApp = {
     if (type === 'fullscreen_exit') {
       if (this._intentionalFullscreenExit) {
         this._intentionalFullscreenExit = false;
-        return false;
-      }
-      if (this._hasRecentTrustedInteraction()) {
-        this._attemptGracefulFullscreenRecovery();
         return false;
       }
     }
@@ -6631,6 +6589,8 @@ const ExamApp = {
     const subEl    = document.getElementById('warning-overlay-sub');
     const titleEl  = document.getElementById('warning-overlay-title');
     if (!overlay) return;
+    this._activeWarningType = type;
+    this._setFullscreenWarningAction(type === 'fullscreen_exit' && this.warnings < 3);
 
     const messages = {
       tab_switch:      'You switched to another tab or window.',
@@ -6708,6 +6668,8 @@ const ExamApp = {
       if (cdWrap) {
         if (cdMsg) cdMsg.textContent = isFinalWarning
           ? 'Submitting your exam when the countdown ends'
+          : type === 'fullscreen_exit'
+            ? 'Return to fullscreen before this warning closes'
           : isFocusLoss
             ? 'Return to this window to continue your exam'
             : 'This violation has been recorded. Returning to your exam…';
@@ -6742,6 +6704,8 @@ const ExamApp = {
             } else {
               if (cdWrap) cdWrap.style.display = 'none';
               overlay.style.display = 'none';
+              this._activeWarningType = null;
+              this._setFullscreenWarningAction(false);
             }
           },
         });
@@ -6764,6 +6728,31 @@ const ExamApp = {
     const sessionStartedAt = session?.startTime ? new Date(session.startTime).getTime() : NaN;
     if (Number.isFinite(sessionStartedAt)) return sessionStartedAt + durationMinutes * 60 * 1000;
     return null;
+  },
+
+  _setFullscreenWarningAction(visible) {
+    const button = document.getElementById('warning-fullscreen-return');
+    if (!button) return;
+    button.style.display = visible ? 'inline-flex' : 'none';
+    button.disabled = false;
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>Return to Fullscreen';
+  },
+
+  returnToFullscreenFromWarning() {
+    const button = document.getElementById('warning-fullscreen-return');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Restoring Fullscreen...';
+    }
+    this.requestFullscreen().then((ok) => {
+      if (ok && this._isFullscreenActive()) return;
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Try Fullscreen Again';
+      }
+      const subEl = document.getElementById('warning-overlay-sub');
+      if (subEl) subEl.textContent = 'Fullscreen could not start. Select the button again and allow fullscreen access in your browser.';
+    });
   },
 
   startTimer() {

@@ -87,6 +87,46 @@ app.cancelCountdown();
 assert.equal(stopWarningCalls, 0, 'Focus recovery must not cancel an info-warning countdown.');
 app._stopWarningCountdown = realStopWarningCountdown;
 
+// A fullscreen strike must be issued immediately even after a recent click.
+// Previously the trusted-interaction grace path swallowed the visible warning.
+let shownWarningType = null;
+let focusCountdownSeconds = null;
+const realShowWarningOverlay = app.showWarningOverlay;
+const realStartCountdown = app.startCountdown;
+const realRunAfterNextPaint = app._runAfterNextPaint;
+app.session = { id: 'fullscreen-test', studentId: 'student-test' };
+app.warnings = 0;
+app._lastWarningTime = 0;
+app._cameraPrompting = false;
+app._intentionalFullscreenExit = false;
+app._hasRecentTrustedInteraction = () => true;
+app.showWarningOverlay = type => { shownWarningType = type; };
+app.startCountdown = seconds => { focusCountdownSeconds = seconds; };
+app._runAfterNextPaint = () => {};
+assert.equal(app.issueWarning('fullscreen_exit', 'Fullscreen mode exited'), true);
+assert.equal(app.warnings, 1);
+assert.equal(shownWarningType, 'fullscreen_exit');
+assert.equal(focusCountdownSeconds, 10);
+
+// Focus events must not dismiss that strike while fullscreen is still absent.
+let fullscreenActive = false;
+let fullscreenReadSeconds = null;
+app._activeWarningType = 'fullscreen_exit';
+app._warningCountdownMode = 'focus';
+app._warningCountdownDeadline = Date.now() + 8000;
+app._isFullscreenActive = () => fullscreenActive;
+app._startReadCountdown = seconds => { fullscreenReadSeconds = seconds; };
+app.cancelCountdown();
+assert.equal(fullscreenReadSeconds, null);
+assert.equal(app._warningCountdownMode, 'focus');
+
+fullscreenActive = true;
+app.cancelCountdown();
+assert.equal(fullscreenReadSeconds, 3);
+app.showWarningOverlay = realShowWarningOverlay;
+app.startCountdown = realStartCountdown;
+app._runAfterNextPaint = realRunAfterNextPaint;
+
 // The final strike uses the same visible deadline as its submission callback.
 let finalWarningOptions = null;
 app._startDeadlineCountdown = options => { finalWarningOptions = options; };
@@ -116,6 +156,7 @@ assert.equal(app.submitExam('auto'), false);
 assert.equal(updatedSessions, 0, 'Two warnings must never auto-submit an exam.');
 
 assert.doesNotMatch(source, /Time expired\. Submitting your exam now/);
+assert.doesNotMatch(source, /const COUNTDOWN_SECS = 7/);
 assert.equal(
   (source.match(/submitExam\('auto'\)/g) || []).length,
   2,

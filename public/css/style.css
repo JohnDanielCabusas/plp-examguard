@@ -14536,6 +14536,69 @@ body.exam-page {
   font-weight: 750;
 }
 .exam-page .warning-overlay-sub { color: #66726a; opacity: 1; }
+.exam-page .warning-fullscreen-return,
+.fullscreen-lock-return {
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  margin-top: 18px;
+  padding: 11px 20px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #1f6b3a;
+  box-shadow: 0 8px 20px rgba(31,107,58,0.22);
+  font: 750 14px/1.2 inherit;
+  cursor: pointer;
+}
+.exam-page .warning-fullscreen-return svg,
+.fullscreen-lock-return svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+.exam-page .warning-fullscreen-return:hover,
+.fullscreen-lock-return:hover { background: #18582f; transform: translateY(-1px); }
+.exam-page .warning-fullscreen-return:disabled { cursor: wait; opacity: 0.7; transform: none; }
+
+.fullscreen-lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9980;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8,20,13,0.76);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.fullscreen-lock-card {
+  width: min(430px, 100%);
+  padding: 30px 32px 28px;
+  border: 1px solid rgba(255,255,255,0.78);
+  border-top: 4px solid #1f6b3a;
+  border-radius: 24px;
+  color: #172019;
+  background: #fff;
+  box-shadow: var(--exam-popup-shadow);
+  text-align: center;
+}
+.fullscreen-lock-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 14px;
+  border: 1px solid #cce2d3;
+  border-radius: 18px;
+  color: #1f6b3a;
+  background: #eef8f1;
+  place-items: center;
+}
+.fullscreen-lock-icon svg { width: 30px; height: 30px; }
+.fullscreen-lock-label { color: #1f6b3a; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.fullscreen-lock-card h2 { margin: 5px 0 10px; font-size: 24px; }
+.fullscreen-lock-card p { margin: 0; color: #66726a; font-size: 14px; line-height: 1.55; }
+.fullscreen-lock-return { margin-top: 22px; }
+[data-theme="dark"] .fullscreen-lock-card { border-color: #3b4940; color: #eef5f0; background: #151d18; }
+[data-theme="dark"] .fullscreen-lock-card p { color: #a7b2aa; }
 .exam-page .warning-countdown-wrap {
   width: 100%;
   margin-top: 20px;
