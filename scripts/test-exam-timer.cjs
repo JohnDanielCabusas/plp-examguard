@@ -118,6 +118,23 @@ app.questionOrder = [];
 app.answers = {};
 app.markedForReview = new Set();
 
+// A stale session poll must not erase an answer while autosave is in flight.
+app._pendingLocalAnswers = new Map([['race-answer', 'Newest choice']]);
+app.answers = { 'race-answer': 'Newest choice' };
+assert.equal(
+  JSON.stringify(app._reconcileLiveAnswers({})),
+  JSON.stringify({ 'race-answer': 'Newest choice' }),
+);
+assert.equal(app._pendingLocalAnswers.has('race-answer'), true);
+
+// Once the server echoes the exact edit, the temporary local protection ends.
+assert.equal(
+  JSON.stringify(app._reconcileLiveAnswers({ 'race-answer': 'Newest choice' })),
+  JSON.stringify({ 'race-answer': 'Newest choice' }),
+);
+assert.equal(app._pendingLocalAnswers.has('race-answer'), false);
+app.answers = {};
+
 const now = Date.now();
 const startedAt = new Date(now - 10 * 60 * 1000).toISOString();
 const deadline = app._getExamDeadlineMs({ timeLimit: 60, startedAt });

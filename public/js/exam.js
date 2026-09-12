@@ -97,6 +97,7 @@ const ExamApp = {
   _autoSaveTimer: null,
   _autoSaveDirty: false,
   _autoSaveDirtySince: 0,
+  _pendingLocalAnswers: new Map(),
   _AUTO_SAVE_DELAY_MS: 450,
   _AUTO_SAVE_MAX_WAIT_MS: 3000,
   questionOrder: [],        // shuffled question list
@@ -2839,6 +2840,9 @@ const ExamApp = {
   // ACTIVE EXAM
   // ============================================================
   startExam() {
+    // This map only protects edits made during the current runtime from stale
+    // polling responses; never carry those guards into another attempt.
+    this._pendingLocalAnswers = new Map();
     this._prepareExamShell();
     this._webcamConsentAccepted = false;
     this._cameraRequired = false;
@@ -3189,7 +3193,8 @@ const ExamApp = {
 
     this.session = liveSession;
     if (liveSession.answers && typeof liveSession.answers === 'object') {
-      this.answers = liveSession.answers;
+      this.answers = this._reconcileLiveAnswers(liveSession.answers);
+      this._updateAnsweredStatus();
     }
     if (typeof liveSession.warnings === 'number') {
       this.warnings = liveSession.warnings;
@@ -3795,6 +3800,29 @@ const ExamApp = {
     }
 
     document.getElementById('fs-return-btn').onclick = doReturn;
+  },
+
+  _reconcileLiveAnswers(liveAnswers) {
+    const remoteAnswers = liveAnswers && typeof liveAnswers === 'object' ? liveAnswers : {};
+    const mergedAnswers = { ...remoteAnswers };
+    if (!this._pendingLocalAnswers || typeof this._pendingLocalAnswers.forEach !== 'function') {
+      this._pendingLocalAnswers = new Map();
+    }
+
+    this._pendingLocalAnswers.forEach((localValue, questionId) => {
+      const remoteValue = remoteAnswers[questionId];
+      if (JSON.stringify(remoteValue) === JSON.stringify(localValue)) {
+        // The server has acknowledged this exact edit, so future remote changes
+        // may safely become authoritative again.
+        this._pendingLocalAnswers.delete(questionId);
+      } else {
+        // A poll that began before autosave can arrive with stale answers. Keep
+        // the student's newest local edit until the server echoes it back.
+        mergedAnswers[questionId] = localValue;
+      }
+    });
+
+    return mergedAnswers;
   },
 
   _hideFullscreenLock() {
@@ -7321,6 +7349,10 @@ const ExamApp = {
 
   selectAnswer(questionId, value) {
     this.answers[questionId] = value;
+    if (!this._pendingLocalAnswers || typeof this._pendingLocalAnswers.set !== 'function') {
+      this._pendingLocalAnswers = new Map();
+    }
+    this._pendingLocalAnswers.set(String(questionId), value);
     const question = this.questionOrder.find(q => String(q.id) === String(questionId));
     const isAnswered = this._isQuestionAnswered(question, value);
     const card = document.getElementById(`qcard-${questionId}`);
