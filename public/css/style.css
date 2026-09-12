@@ -4315,6 +4315,32 @@ tr:hover td { background: #F8FDF8; }
 [data-theme="dark"] .answer-row.correct { border-color: var(--primary); background: var(--surface) !important; }
 [data-theme="dark"] .answer-row.wrong { border-color: #fca5a5; background: rgba(220,38,38,0.12) !important; }
 
+.answer-comparison-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 20px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.answer-comparison-item {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.student-ans,
+.correct-ans {
+  display: inline;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .student-ans { font-weight: 600; color: var(--text); }
 .correct-ans { font-weight: 600; color: var(--success); }
 

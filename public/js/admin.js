@@ -7059,9 +7059,9 @@ function viewStudentAnswersLegacy(sessionId) {
       html += `
         <div class="answer-row ${rowClass}">
           <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
-            <span>Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
-            <span>Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
+          <div class="answer-comparison-row">
+            <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
+            <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
             <span>${isCorrect ? '✓ +' + q.points : (given.length ? '✗ 0' : '— 0')} pts</span>
           </div>
         </div>`;
@@ -7113,9 +7113,9 @@ function viewStudentAnswersLegacy(sessionId) {
       html += `
         <div class="answer-row ${rowClass}">
           <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
-            <span>Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
-            <span>Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
+          <div class="answer-comparison-row">
+            <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
+            <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
             <span>${isCorrect ? '✓ +' + q.points : (studentAns ? '✗ 0' : '— 0')} pts</span>
           </div>
         </div>`;
@@ -7340,9 +7340,9 @@ function viewStudentAnswers(sessionId, source = currentSection) {
       html += `
         <div class="answer-row ${rowClass}">
           <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
-          <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
-            <span>Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
-            <span>Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
+          <div class="answer-comparison-row">
+            <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentLabels.join(', ') || '(no answer)')}</span></span>
+            <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctLabels.join(', '))}</span></span>
             <span>${isCorrect ? 'âœ“ +' + q.points : (given.length ? 'âœ— 0' : 'â€” 0')} pts</span>
           </div>
         </div>`;
@@ -7399,9 +7399,9 @@ function viewStudentAnswers(sessionId, source = currentSection) {
     html += `
       <div class="answer-row ${rowClass}">
         <div style="font-weight:600;margin-bottom:4px;">Q${idx+1}: ${escHtml(q.content)}</div>
-        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
-          <span>Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
-          <span>Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
+        <div class="answer-comparison-row">
+          <span class="answer-comparison-item">Student: <span class="student-ans">${escHtml(studentAns || '(no answer)')}</span></span>
+          <span class="answer-comparison-item">Correct: <span class="correct-ans">${escHtml(correctAnswer)}</span></span>
           <span>${isCorrect ? 'âœ“ +' + q.points : (studentAns ? 'âœ— 0' : 'â€” 0')} pts</span>
         </div>
       </div>`;
