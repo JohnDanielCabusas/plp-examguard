@@ -45,6 +45,35 @@ sandbox.DB = {
 vm.runInNewContext(source, sandbox, { filename: 'public/js/exam.js' });
 const app = sandbox.window.ExamApp;
 
+// Every supported answer shape must use the same immediate completion rule.
+assert.equal(app._isQuestionAnswered({ type: 'mcq' }, 'Option A'), true);
+assert.equal(app._isQuestionAnswered({ type: 'identification' }, '   '), false);
+assert.equal(app._isQuestionAnswered({ type: 'essay' }, 'First word'), true);
+assert.equal(app._isQuestionAnswered({ type: 'coding' }, 'const answer = 1;'), true);
+assert.equal(app._isQuestionAnswered({ type: 'checkbox' }, '[1]'), true);
+assert.equal(app._isQuestionAnswered({ type: 'checkbox' }, '[]'), false);
+assert.equal(app._isQuestionAnswered({ type: 'enumeration' }, '\nSecond item\n'), true);
+assert.equal(app._isQuestionAnswered({ type: 'enumeration' }, '\n\n'), false);
+assert.equal(app._isQuestionAnswered({ type: 'matching' }, '{"0":"Match"}'), true);
+assert.equal(app._isQuestionAnswered({ type: 'matching' }, '{"0":"","1":""}'), false);
+
+// selectAnswer must refresh the navigator in the same input event, before the
+// delayed persistence write runs.
+let immediateAnswerRefreshes = 0;
+const realAutoSave = app.autoSave;
+const realUpdateAnsweredStatus = app._updateAnsweredStatus;
+app.questionOrder = [{ id: 'live-answer', type: 'essay' }];
+app.answers = {};
+app.autoSave = () => {};
+app._updateAnsweredStatus = () => { immediateAnswerRefreshes += 1; };
+app.selectAnswer('live-answer', 'Typed now');
+assert.equal(immediateAnswerRefreshes, 1);
+assert.equal(app.answers['live-answer'], 'Typed now');
+app.autoSave = realAutoSave;
+app._updateAnsweredStatus = realUpdateAnsweredStatus;
+app.questionOrder = [];
+app.answers = {};
+
 const now = Date.now();
 const startedAt = new Date(now - 10 * 60 * 1000).toISOString();
 const deadline = app._getExamDeadlineMs({ timeLimit: 60, startedAt });

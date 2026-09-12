@@ -7286,15 +7286,50 @@ const ExamApp = {
     this.selectAnswer(questionId, val);
   },
 
+  _isQuestionAnswered(question, value) {
+    if (value === null || value === undefined) return false;
+
+    if (question?.type === 'checkbox') {
+      try {
+        const selected = Array.isArray(value) ? value : JSON.parse(value);
+        return Array.isArray(selected) && selected.length > 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (question?.type === 'matching') {
+      try {
+        const matches = typeof value === 'string' ? JSON.parse(value) : value;
+        return !!matches && Object.values(matches).some(item => String(item || '').trim() !== '');
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (question?.type === 'enumeration') {
+      const items = Array.isArray(value) ? value : String(value).split('\n');
+      return items.some(item => String(item || '').trim() !== '');
+    }
+
+    if (Array.isArray(value)) {
+      return value.some(item => String(item || '').trim() !== '');
+    }
+
+    return String(value).trim() !== '';
+  },
+
   selectAnswer(questionId, value) {
     this.answers[questionId] = value;
+    const question = this.questionOrder.find(q => String(q.id) === String(questionId));
+    const isAnswered = this._isQuestionAnswered(question, value);
     const card = document.getElementById(`qcard-${questionId}`);
     if (card) {
-      card.classList.toggle('answered', !!value);
-      if (value) card.classList.remove('q-required-missing');
+      card.classList.toggle('answered', isAnswered);
+      if (isAnswered) card.classList.remove('q-required-missing');
     }
-    this.autoSave();
     this._updateAnsweredStatus();
+    this.autoSave();
   },
 
   autoSave() {
@@ -7519,6 +7554,10 @@ const ExamApp = {
     });
 
     this._updateNavGrid();
+    const activeNavButton = document.getElementById(`nav-q-${idx}`);
+    if (activeNavButton?.scrollIntoView) {
+      activeNavButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
   },
 
   _updateNavGrid() {
@@ -7526,7 +7565,7 @@ const ExamApp = {
       const btn = document.getElementById(`nav-q-${idx}`);
       if (!btn) return;
       btn.className = 'nav-q-btn';
-      const isAnswered = this.answers[q.id] !== undefined && this.answers[q.id] !== '' && this.answers[q.id] !== null;
+      const isAnswered = this._isQuestionAnswered(q, this.answers[q.id]);
       if (idx === this.currentQuestionIndex) {
         btn.classList.add('current');
         if (isAnswered) btn.classList.add('answered');
@@ -7592,7 +7631,7 @@ const ExamApp = {
 
   _updateAnsweredStatus() {
     const total = this.questionOrder.length;
-    const answered = Object.values(this.answers).filter(v => v !== null && v !== undefined && v !== '').length;
+    const answered = this.questionOrder.filter(q => this._isQuestionAnswered(q, this.answers[q.id])).length;
     const review = this.markedForReview ? this.markedForReview.size : 0;
     const skipped = total - answered;
 
@@ -7622,7 +7661,7 @@ const ExamApp = {
     // Check required questions first — block submission if any are unanswered
     const unansweredRequired = this.questionOrder.filter(q =>
       q.required !== false &&
-      (this.answers[q.id] === null || this.answers[q.id] === undefined || this.answers[q.id] === '')
+      !this._isQuestionAnswered(q, this.answers[q.id])
     );
 
     if (unansweredRequired.length > 0) {
@@ -7651,7 +7690,7 @@ const ExamApp = {
     });
 
     const total = this.questionOrder.length;
-    const answered = Object.values(this.answers).filter(v => v !== null && v !== undefined && v !== '').length;
+    const answered = this.questionOrder.filter(q => this._isQuestionAnswered(q, this.answers[q.id])).length;
     const unanswered = total - answered;
 
     let msg = 'Are you sure you want to submit your exam?';
