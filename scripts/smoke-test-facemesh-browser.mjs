@@ -126,6 +126,7 @@ try {
       overlapGhostIgnored: duplicateBoxes.extraFaces.length === 0,
       countdown: timeline.map(item => item.remainingSeconds),
       oneContinuousWarning: warnings.filter(item => item.type === 'multiple_people').length === 1,
+      countdownClearedImmediately: !recoveryStart.detected,
       recoveryStarted: recoveryStart.active && !recoveryStart.justEnded,
       recoveryEnded: !recoveryEnd.active && recoveryEnd.justEnded,
       briefYoloDidNotWarn: warnings.filter(item => item.type === 'multiple_people').length === 1,
@@ -137,6 +138,7 @@ try {
     || !cameraBehavior.overlapGhostIgnored
     || cameraBehavior.countdown.join(',') !== '10,9,8,7,6,5,4,3,2,1,0,0'
     || !cameraBehavior.oneContinuousWarning
+    || !cameraBehavior.countdownClearedImmediately
     || !cameraBehavior.recoveryStarted
     || !cameraBehavior.recoveryEnded
     || !cameraBehavior.briefYoloDidNotWarn

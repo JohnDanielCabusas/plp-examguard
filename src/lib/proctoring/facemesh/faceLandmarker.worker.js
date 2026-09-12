@@ -72,7 +72,10 @@ async function createLandmarker(fileset, modelUrl, options, delegate) {
   return FaceLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: modelUrl, delegate },
     runningMode: 'VIDEO',
-    numFaces: 1,
+    // Track a second face as well as the student's face. The previous one-face
+    // limit made multiple-face warnings depend solely on the slower object
+    // detector, even though MediaPipe was already scanning every camera frame.
+    numFaces: 2,
     minFaceDetectionConfidence: options.minFaceDetectionConfidence,
     minFacePresenceConfidence: options.minFacePresenceConfidence,
     minTrackingConfidence: options.minTrackingConfidence,
@@ -117,6 +120,7 @@ function infer(message) {
   try {
     if (!landmarker) throw new Error('Face Landmarker is not initialized.');
     const result = landmarker.detectForVideo(bitmap, message.timestampMs);
+    const faceCount = Math.min(2, result.faceLandmarks?.length || 0);
     const landmarks = result.faceLandmarks?.[0] || null;
     if (!landmarks) {
       lastTrackedPoints = null;
@@ -127,6 +131,7 @@ function infer(message) {
         observation: {
           timestampMs: message.timestampMs,
           facePresent: false,
+          faceCount,
           trackingQuality: 0,
           geometry: null,
           pose: null,
@@ -153,6 +158,7 @@ function infer(message) {
       observation: {
         timestampMs: message.timestampMs,
         facePresent: true,
+        faceCount,
         trackingQuality,
         geometry,
         pose,

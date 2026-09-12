@@ -143,6 +143,7 @@ const ExamApp = {
   _FACE_PRESENCE_CONFIRM_SEC: 1.2,
   _MULTIPLE_FACE_WARN_SEC: 10,
   _MULTIPLE_FACE_CONFIRM_SEC: 1.2,
+  _MULTIPLE_FACE_RECOVERY_MS: 500,
   _LOOK_DOWN_WARN_SEC: 10,
   _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
@@ -4364,6 +4365,7 @@ const ExamApp = {
       && this._latestFaceContext?.capturedAt
       && Date.now() - this._latestFaceContext.capturedAt <= 1600;
     const yoloPersonStillVisible = Date.now() <= Number(this._yoloPersonSeenUntil || 0);
+    const observedFaceCount = Number(observation?.faceCount);
     const enriched = {
       ...classified,
       occluded: blazeFaceStillVisible,
@@ -4371,9 +4373,12 @@ const ExamApp = {
       faceCount: this._latestFaceContext?.capturedAt
         && Date.now() - this._latestFaceContext.capturedAt <= 1600
         ? Math.min(2, Math.max(0, Number(this._latestFaceContext.faces?.length || 0)))
-        : (classified.facePresent ? 1 : 0),
+        : Number.isFinite(observedFaceCount)
+          ? Math.min(2, Math.max(0, Math.round(observedFaceCount)))
+          : (classified.facePresent ? 1 : 0),
     };
     this._lastFaceMeshObservation = enriched;
+    this._updateMultiplePeopleTracking('facemesh', enriched.faceCount >= 2, { holdMs: 500 });
     this._faceAggregator?.observe?.(enriched);
     this._faceRuleEngine.update(enriched);
     this._renderFaceConditionCountdown();
@@ -5701,7 +5706,11 @@ const ExamApp = {
   _updateMultiplePeopleTracking(source, detected, options = {}) {
     const now = Number(options.now ?? this._getDetectionNow());
     const holdMs = Math.max(250, Number(options.holdMs || 1000));
+    // A fresh negative result is stronger than an old positive result from the
+    // same detector. Removing it now stops a stale hold window from keeping the
+    // visible countdown alive after the second person has left the frame.
     if (detected) this._multiplePeopleSources.set(source, now + holdMs);
+    else this._multiplePeopleSources.delete(source);
     for (const [key, expiresAt] of this._multiplePeopleSources) {
       if (expiresAt < now) this._multiplePeopleSources.delete(key);
     }
@@ -5720,7 +5729,7 @@ const ExamApp = {
       this._multiplePeopleCandidateSince = null;
       if (this._multiplePeopleActive) {
         if (this._multiplePeopleRecoverySince === null) this._multiplePeopleRecoverySince = now;
-        if (now - this._multiplePeopleRecoverySince >= 1000) {
+        if (now - this._multiplePeopleRecoverySince >= this._MULTIPLE_FACE_RECOVERY_MS) {
           this._multiplePeopleActive = false;
           this._multiplePeopleRecoverySince = null;
           justEnded = true;

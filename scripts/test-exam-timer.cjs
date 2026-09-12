@@ -22,6 +22,7 @@ const element = id => {
         },
         contains(name) { return classes.has(name); },
       },
+      dataset: {},
       textContent: '',
       setAttribute(name, value) { this[name] = String(value); },
       querySelector(selector) { return element(selector); },
@@ -69,6 +70,21 @@ sandbox.window.innerWidth = 1000;
 sandbox.window.innerHeight = 700;
 assert.equal(JSON.stringify(app._constrainCameraPosition(-200, -100, 200, 180)), JSON.stringify({ left: 8, top: 8 }));
 assert.equal(JSON.stringify(app._constrainCameraPosition(950, 680, 200, 180)), JSON.stringify({ left: 792, top: 512 }));
+
+// A current one-person result must clear that detector's stale multiple-face
+// state immediately, while the short internal recovery window prevents the
+// already-issued incident from flapping on a single noisy frame.
+const realIssueWarning = app.issueWarning;
+app.issueWarning = () => true;
+app._resetMultiplePeopleTracking();
+const multipleFaceCandidate = app._updateMultiplePeopleTracking('facemesh', true, { now: 0, holdMs: 500 });
+const oneFaceAgain = app._updateMultiplePeopleTracking('facemesh', false, { now: 100, holdMs: 500 });
+assert.equal(multipleFaceCandidate.detected, true);
+assert.equal(oneFaceAgain.detected, false);
+assert.equal(element('camera-status-text').textContent, 'Camera scan active');
+assert.equal(element('camera-status-text').dataset.faceCountdown, undefined);
+app._resetMultiplePeopleTracking();
+app.issueWarning = realIssueWarning;
 
 // Every supported answer shape must use the same immediate completion rule.
 assert.equal(app._isQuestionAnswered({ type: 'mcq' }, 'Option A'), true);

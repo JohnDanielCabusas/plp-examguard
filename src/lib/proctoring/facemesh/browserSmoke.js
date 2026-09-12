@@ -9,7 +9,7 @@ export async function smokeTestFaceLandmarker() {
       delegate: 'CPU',
     },
     runningMode: 'VIDEO',
-    numFaces: 1,
+    numFaces: 2,
     minFaceDetectionConfidence: 0.5,
     minFacePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
