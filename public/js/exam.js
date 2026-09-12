@@ -119,6 +119,8 @@ const ExamApp = {
   _warningCountdownTotalSeconds: 0,
   _warningCountdownMode: null, // 'focus' | 'focus_expired' | 'read' | 'info'
   _cameraStream: null,      // MediaStream from camera
+  _cameraDragCleanup: null,
+  _cameraDragPosition: null,
   _snapInterval: null,      // periodic snapshot interval
   _liveSnapshotInFlight: false,
   _liveSnapshotCanvas: null,
@@ -2843,6 +2845,7 @@ const ExamApp = {
     // This map only protects edits made during the current runtime from stale
     // polling responses; never carry those guards into another attempt.
     this._pendingLocalAnswers = new Map();
+    this._resetCameraDragPosition();
     this._prepareExamShell();
     this._webcamConsentAccepted = false;
     this._cameraRequired = false;
@@ -2972,6 +2975,7 @@ const ExamApp = {
     this._enableRefreshProtection();
     this.requestFullscreen();
     this.initAntiCheat({ preserveCamera: !!this._cameraStream });
+    this._initCameraDragging();
     // initAntiCheat first tears down stale listeners and connection polling.
     // Start the current exam's pollers afterwards so they are not immediately
     // cancelled by that cleanup pass.
@@ -6188,6 +6192,110 @@ const ExamApp = {
     } catch(e) {}
   },
 
+  _resetCameraDragPosition() {
+    this._cameraDragPosition = null;
+    const container = document.getElementById('camera-container');
+    if (!container) return;
+    container.style.left = '';
+    container.style.top = '';
+    container.style.right = '';
+    container.style.bottom = '';
+    container.classList.remove('is-dragging');
+  },
+
+  _constrainCameraPosition(left, top, width, height) {
+    const padding = 8;
+    const viewportWidth = Number(window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || width);
+    const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || height);
+    return {
+      left: Math.min(Math.max(padding, left), Math.max(padding, viewportWidth - width - padding)),
+      top: Math.min(Math.max(padding, top), Math.max(padding, viewportHeight - height - padding)),
+    };
+  },
+
+  _applyCameraDragPosition(left, top) {
+    const container = document.getElementById('camera-container');
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const next = this._constrainCameraPosition(left, top, rect.width, rect.height);
+    container.style.left = `${Math.round(next.left)}px`;
+    container.style.top = `${Math.round(next.top)}px`;
+    container.style.right = 'auto';
+    container.style.bottom = 'auto';
+    this._cameraDragPosition = next;
+  },
+
+  _initCameraDragging() {
+    this._destroyCameraDragging();
+    const container = document.getElementById('camera-container');
+    const handle = document.getElementById('camera-drag-handle');
+    if (!container || !handle) return;
+
+    let drag = null;
+    const onPointerMove = (event) => {
+      if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+      event.preventDefault();
+      this._applyCameraDragPosition(event.clientX - drag.offsetX, event.clientY - drag.offsetY);
+    };
+    const stopDragging = (event) => {
+      if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+      try { handle.releasePointerCapture?.(drag.pointerId); } catch (_) {}
+      drag = null;
+      container.classList.remove('is-dragging');
+    };
+    const onPointerDown = (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      const rect = container.getBoundingClientRect();
+      drag = {
+        pointerId: event.pointerId,
+        offsetX: event.clientX - rect.left,
+        offsetY: event.clientY - rect.top,
+      };
+      event.preventDefault();
+      try { handle.setPointerCapture?.(event.pointerId); } catch (_) {}
+      container.classList.add('is-dragging');
+      // Switch from the CSS bottom/right anchor to explicit viewport coordinates.
+      this._applyCameraDragPosition(rect.left, rect.top);
+    };
+    const onKeyDown = (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const step = event.shiftKey ? 24 : 10;
+      const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+      const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+      this._applyCameraDragPosition(rect.left + dx, rect.top + dy);
+    };
+    const onResize = () => {
+      if (!this._cameraDragPosition) return;
+      this._applyCameraDragPosition(this._cameraDragPosition.left, this._cameraDragPosition.top);
+    };
+
+    handle.addEventListener('pointerdown', onPointerDown);
+    handle.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', stopDragging);
+    window.addEventListener('pointercancel', stopDragging);
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+
+    this._cameraDragCleanup = () => {
+      handle.removeEventListener('pointerdown', onPointerDown);
+      handle.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+      container.classList.remove('is-dragging');
+    };
+  },
+
+  _destroyCameraDragging() {
+    if (this._cameraDragCleanup) this._cameraDragCleanup();
+    this._cameraDragCleanup = null;
+  },
+
   _captureLiveSnapshotAsync() {
     if (this._liveSnapshotInFlight || !this.session || !this._cameraStream) return;
     const video = document.getElementById('camera-feed');
@@ -6358,6 +6466,7 @@ const ExamApp = {
   },
 
   destroyAntiCheat(options = {}) {
+    this._destroyCameraDragging();
     if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
     if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
     if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }

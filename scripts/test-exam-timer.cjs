@@ -64,6 +64,12 @@ sandbox.DB = {
 vm.runInNewContext(source, sandbox, { filename: 'public/js/exam.js' });
 const app = sandbox.window.ExamApp;
 
+// A dragged webcam preview must always remain inside the visible viewport.
+sandbox.window.innerWidth = 1000;
+sandbox.window.innerHeight = 700;
+assert.equal(JSON.stringify(app._constrainCameraPosition(-200, -100, 200, 180)), JSON.stringify({ left: 8, top: 8 }));
+assert.equal(JSON.stringify(app._constrainCameraPosition(950, 680, 200, 180)), JSON.stringify({ left: 792, top: 512 }));
+
 // Every supported answer shape must use the same immediate completion rule.
 assert.equal(app._isQuestionAnswered({ type: 'mcq' }, 'Option A'), true);
 assert.equal(app._isQuestionAnswered({ type: 'identification' }, '   '), false);
