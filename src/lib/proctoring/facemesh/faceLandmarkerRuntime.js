@@ -66,6 +66,7 @@ export class FaceLandmarkerRuntime {
       let handSettled = !handWorker;
       let faceBackend = '';
       let faceInitializationStarted = false;
+      let handInitializationStarted = false;
       const finish = (error = null) => {
         if (settled) return;
         settled = true;
@@ -86,10 +87,17 @@ export class FaceLandmarkerRuntime {
           options: this.config,
         });
       };
+      const beginHandCaptureIfReady = () => {
+        if (!this.ready || !this.handReady || this.handTimer || generation !== this.generation) return;
+        const handIntervalMs = Number(this.config.randomForest?.handInferenceIntervalMs || 300);
+        this.handTimer = setInterval(() => this._captureHandFrame(), handIntervalMs);
+        this._captureHandFrame();
+      };
       const beginCaptureIfReady = () => {
-        if (!faceReady || !handSettled || settled) return;
-        clearTimeout(this.handInitTimer);
-        this.handInitTimer = null;
+        // Face positioning must not wait for the optional hand model. Starting
+        // those models serially made calibration look broken for several
+        // seconds (or until the hand-model timeout on slower devices).
+        if (!faceReady || settled) return;
         this.ready = true;
         this.onStatus({
           state: 'ready',
@@ -99,11 +107,7 @@ export class FaceLandmarkerRuntime {
         const intervalMs = Math.round(1000 / this.config.inferenceFps);
         this.timer = setInterval(() => this._captureFrame(), intervalMs);
         this._captureFrame();
-        if (this.handReady) {
-          const handIntervalMs = Number(this.config.randomForest?.handInferenceIntervalMs || 300);
-          this.handTimer = setInterval(() => this._captureHandFrame(), handIntervalMs);
-          this._captureHandFrame();
-        }
+        beginHandCaptureIfReady();
         finish();
       };
       const settleUnavailableHand = message => {
@@ -122,8 +126,18 @@ export class FaceLandmarkerRuntime {
           this.handWorker = null;
         }
         this.onStatus({ state: 'hand-unavailable', message });
-        startFaceInitialization();
-        beginCaptureIfReady();
+      };
+      const startHandInitialization = () => {
+        if (!handWorker || handInitializationStarted || generation !== this.generation) return;
+        handInitializationStarted = true;
+        this.handInitTimer = setTimeout(() => {
+          settleUnavailableHand('Hand Landmarker initialization timed out.');
+        }, Math.min(10000, this.config.initTimeoutMs));
+        handWorker.postMessage({
+          type: 'init',
+          modelUrl: handModelUrl,
+          options: this.config.randomForest,
+        });
       };
       this.cancelInitialization = () => finish(new Error('Face Landmarker initialization was cancelled.'));
 
@@ -134,6 +148,7 @@ export class FaceLandmarkerRuntime {
           faceReady = true;
           faceBackend = message.backend || '';
           beginCaptureIfReady();
+          startHandInitialization();
         } else if (message.type === 'fallback') {
           this.onStatus({ state: 'fallback', message: message.message || 'GPU unavailable; using CPU.' });
         } else if (message.type === 'hand-unavailable') {
@@ -171,8 +186,16 @@ export class FaceLandmarkerRuntime {
             handSettled = true;
             this.handReady = true;
             this.lastHandCount = null;
-            startFaceInitialization();
-            beginCaptureIfReady();
+            clearTimeout(this.handInitTimer);
+            this.handInitTimer = null;
+            beginHandCaptureIfReady();
+            if (this.ready) {
+              this.onStatus({
+                state: 'ready',
+                backend: faceBackend,
+                handTrackingAvailable: true,
+              });
+            }
           } else if (message.type === 'result') {
             this.handInFlight = false;
             this.lastHandCount = Number.isFinite(Number(message.handCount))
@@ -187,14 +210,6 @@ export class FaceLandmarkerRuntime {
         handWorker.addEventListener('error', event => {
           settleUnavailableHand(event.message || 'Hand Landmarker worker failed.');
         });
-        this.handInitTimer = setTimeout(() => {
-          settleUnavailableHand('Hand Landmarker initialization timed out.');
-        }, Math.min(10000, this.config.initTimeoutMs));
-        handWorker.postMessage({
-          type: 'init',
-          modelUrl: handModelUrl,
-          options: this.config.randomForest,
-        });
       }
 
       this.initTimer = setTimeout(() => {
@@ -204,7 +219,9 @@ export class FaceLandmarkerRuntime {
         this.stop();
       }, this.config.initTimeoutMs);
 
-      if (!handWorker) startFaceInitialization();
+      // Give face initialization priority. Optional hand tracking starts only
+      // after face capture is live, so calibration never waits on that model.
+      startFaceInitialization();
     });
     return this.startPromise;
   }

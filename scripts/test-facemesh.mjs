@@ -105,7 +105,7 @@ const rejectedCalibration = calibration.addObservation({
 assert.equal(rejectedCalibration.complete, false);
 assert.equal(calibration.samples.length, 0);
 let calibrationResult = null;
-for (let time = 0; time <= 1100; time += 100) {
+for (let time = 0; time <= 1500; time += 100) {
   calibrationResult = calibration.addObservation({
     timestampMs: time,
     facePresent: true,
@@ -116,6 +116,48 @@ for (let time = 0; time <= 1100; time += 100) {
 }
 assert.equal(calibrationResult.complete, true);
 assert.equal(calibrationResult.baseline.baselineYaw, 2);
+
+const tolerantCalibration = new FaceCalibrationSession({
+  ...config.calibration,
+  durationMs: 1000,
+  minimumSamples: 8,
+});
+const stableObservation = timestampMs => ({
+  timestampMs,
+  facePresent: true,
+  trackingQuality: 0.82,
+  geometry: { width: 0.3, height: 0.42, centerX: 0.5, centerY: 0.5 },
+  pose: { yaw: 1, pitch: -1, roll: 0 },
+});
+for (let time = 0; time <= 500; time += 100) {
+  tolerantCalibration.addObservation(stableObservation(time));
+}
+const pausedCalibration = tolerantCalibration.addObservation({
+  ...stableObservation(600),
+  facePresent: false,
+  geometry: null,
+  pose: null,
+});
+assert.ok(pausedCalibration.progress >= 0.5, 'One noisy frame should pause instead of erasing calibration progress.');
+for (let time = 700; time <= 1300; time += 100) {
+  calibrationResult = tolerantCalibration.addObservation(stableObservation(time));
+}
+assert.equal(calibrationResult.complete, true, 'Calibration should recover after a brief invalid frame.');
+
+const lostFaceCalibration = new FaceCalibrationSession({ ...config.calibration, durationMs: 1000 });
+for (let time = 0; time <= 500; time += 100) {
+  lostFaceCalibration.addObservation(stableObservation(time));
+}
+for (const time of [600, 1000, 1600]) {
+  calibrationResult = lostFaceCalibration.addObservation({
+    ...stableObservation(time),
+    facePresent: false,
+    geometry: null,
+    pose: null,
+  });
+}
+assert.equal(calibrationResult.progress, 0, 'A persistently missing face must reset calibration.');
+assert.equal(lostFaceCalibration.samples.length, 0);
 
 const briefEvents = [];
 const briefEngine = new FaceTemporalRuleEngine({

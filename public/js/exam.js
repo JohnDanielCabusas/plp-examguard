@@ -41,6 +41,17 @@ const FACEMESH_REPORTED_INCIDENT_TYPES = new Set([
   'PHONE_NEAR_OR_COVERING_FACE',
 ]);
 
+// One timing policy drives every strike-warning path. Keeping these values in
+// one place prevents a focus/visibility event from silently replacing a camera
+// warning's allotted display time with a different countdown.
+const EXAM_WARNING_TIMINGS = Object.freeze({
+  focusSeconds: 10,
+  standardSeconds: 5,
+  finalSeconds: 3,
+  returnedReadSeconds: 3,
+  tickMs: 100,
+});
+
 function loadExamScript(src) {
   if (EXAM_EXTERNAL_ASSETS.has(src)) return EXAM_EXTERNAL_ASSETS.get(src);
   const promise = new Promise((resolve, reject) => {
@@ -159,6 +170,10 @@ const ExamApp = {
   _faceMeshUnavailable: false,
   _faceHandTrackingUnavailable: false,
   _faceMeshStarting: false,
+  _faceCalibrationGeneration: 0,
+  _faceCalibrationObservationTimer: null,
+  _faceCalibrationRuntimeStartedAt: 0,
+  _faceCalibrationLastObservationAt: 0,
   _faceMeshStatus: 'idle',
   _lastFaceMeshObservation: null,
   _faceIncidentRequests: new Map(),
@@ -927,7 +942,7 @@ const ExamApp = {
         return;
       }
 
-      this[timerKey] = setTimeout(tick, Math.min(250, msRemaining));
+      this[timerKey] = setTimeout(tick, Math.min(EXAM_WARNING_TIMINGS.tickMs, msRemaining));
     };
 
     tick();
@@ -3884,7 +3899,7 @@ const ExamApp = {
     // ── Window focus restored ────────────────────────────────────
     const focusHandler = () => {
       if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
-      this.cancelCountdown(); // student came back — cancel the 10s, start 3s read
+      this.cancelCountdown(); // keep any read notice inside the original 10s deadline
     };
     window.addEventListener('focus', focusHandler);
 
@@ -3906,7 +3921,7 @@ const ExamApp = {
         }, 300);
       } else {
         if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
-        this.cancelCountdown(); // student returned to tab
+        this.cancelCountdown(); // student returned; do not extend the warning deadline
       }
     };
     document.addEventListener('visibilitychange', visHandler);
@@ -4259,6 +4274,39 @@ const ExamApp = {
     );
   },
 
+  _clearFaceCalibrationObservationTimer() {
+    if (this._faceCalibrationObservationTimer) {
+      clearInterval(this._faceCalibrationObservationTimer);
+      this._faceCalibrationObservationTimer = null;
+    }
+  },
+
+  _watchForFaceCalibrationObservations(generation) {
+    this._clearFaceCalibrationObservationTimer();
+    this._faceCalibrationObservationTimer = setInterval(() => {
+      if (generation !== this._faceCalibrationGeneration || !this._faceMeshCalibrating) {
+        this._clearFaceCalibrationObservationTimer();
+        return;
+      }
+      const lastFrameAt = Math.max(
+        this._faceCalibrationRuntimeStartedAt,
+        this._faceCalibrationLastObservationAt,
+      );
+      if (Date.now() - lastFrameAt < 8000) return;
+
+      this._clearFaceCalibrationObservationTimer();
+      const stalledRuntime = this._faceMeshRuntime;
+      this._faceMeshRuntime = null;
+      stalledRuntime?.stop?.();
+      this._setFaceMeshStatus('error', 'Face scan is not receiving camera frames');
+      this._setFaceCalibrationStatus(
+        'The face scan is not receiving camera frames. Check that the camera preview is moving, then retry.',
+        0,
+        { retry: true, fallback: !!this._cameraStream },
+      );
+    }, 2000);
+  },
+
   _prepareFaceCalibration() {
     if (this._faceMeshCalibrating || this._examRuntimeStarted) return;
     this._faceMeshCalibrating = true;
@@ -4269,18 +4317,23 @@ const ExamApp = {
 
   async _startFaceCalibrationRuntime(video) {
     if (!this._faceMeshCalibrating || this._faceMeshStarting) return;
+    const generation = ++this._faceCalibrationGeneration;
     this._faceMeshStarting = true;
+    this._faceCalibrationLastObservationAt = 0;
+    this._faceCalibrationRuntimeStartedAt = Date.now();
     this._setFaceCalibrationStatus('Starting the on-device face scan…', 0);
     this._setFaceMeshStatus('loading');
+    let runtime = null;
     try {
       await window.FaceMeshProctor?.load?.();
+      if (generation !== this._faceCalibrationGeneration || !this._faceMeshCalibrating) return;
       if (!window.FaceMeshProctor?.createRuntime || !window.FaceMeshProctor?.createCalibration) {
         throw new Error('FaceMesh runtime is unavailable.');
       }
       this._faceMeshConfig = window.FaceMeshProctor.normalizeConfig({});
       this._faceCalibration = window.FaceMeshProctor.createCalibration(this._faceMeshConfig);
       this._faceMeshRuntime?.stop?.();
-      this._faceMeshRuntime = window.FaceMeshProctor.createRuntime({
+      runtime = window.FaceMeshProctor.createRuntime({
         video,
         config: this._faceMeshConfig,
         onStatus: status => {
@@ -4295,11 +4348,18 @@ const ExamApp = {
         },
         onObservation: observation => this._handleFaceMeshObservation(observation),
       });
-      await this._faceMeshRuntime.start();
+      this._faceMeshRuntime = runtime;
+      await runtime.start();
+      if (generation !== this._faceCalibrationGeneration || !this._faceMeshCalibrating) {
+        runtime.stop?.();
+        return;
+      }
       this._setFaceCalibrationStatus('Center your face and keep looking normally at the screen.', 0);
+      this._watchForFaceCalibrationObservations(generation);
     } catch (error) {
-      this._faceMeshRuntime?.stop?.();
-      this._faceMeshRuntime = null;
+      runtime?.stop?.();
+      if (generation !== this._faceCalibrationGeneration) return;
+      if (this._faceMeshRuntime === runtime) this._faceMeshRuntime = null;
       this._setFaceMeshStatus('error');
       this._setFaceCalibrationStatus(
         `Face scan could not start: ${error?.message || 'unknown error'}`,
@@ -4307,13 +4367,14 @@ const ExamApp = {
         { retry: true, fallback: !!this._cameraStream },
       );
     } finally {
-      this._faceMeshStarting = false;
+      if (generation === this._faceCalibrationGeneration) this._faceMeshStarting = false;
     }
   },
 
   _handleFaceMeshObservation(observation) {
     this._lastFaceMeshObservation = observation;
     if (this._faceMeshCalibrating && this._faceCalibration) {
+      this._faceCalibrationLastObservationAt = Date.now();
       const result = this._faceCalibration.addObservation(observation);
       this._setFaceCalibrationStatus(result.reason || 'Keep your head centered.', result.progress || 0);
       if (result.complete && result.baseline) this._completeFaceCalibration(result.baseline);
@@ -4351,6 +4412,7 @@ const ExamApp = {
 
   _completeFaceCalibration(baseline) {
     if (!this._faceMeshCalibrating) return;
+    this._clearFaceCalibrationObservationTimer();
     this._faceMeshBaseline = baseline;
     this._faceMeshCalibrating = false;
     this._setFaceCalibrationStatus('Calibration complete. Face direction will be compared with this centered position.', 1, { continue: true });
@@ -4368,6 +4430,8 @@ const ExamApp = {
   },
 
   retryFaceCalibration() {
+    this._faceCalibrationGeneration++;
+    this._clearFaceCalibrationObservationTimer();
     this._faceMeshRuntime?.stop?.();
     this._faceMeshRuntime = null;
     this._faceCalibration = null;
@@ -4389,6 +4453,8 @@ const ExamApp = {
 
   continueWithoutFaceMesh() {
     if (!this._cameraStream) return;
+    this._faceCalibrationGeneration++;
+    this._clearFaceCalibrationObservationTimer();
     this._faceMeshRuntime?.stop?.();
     this._faceMeshRuntime = null;
     this._faceMeshUnavailable = true;
@@ -4598,22 +4664,14 @@ const ExamApp = {
     }
     if (event?.kind === 'positioning-warning') {
       this._facePositioningWarnings.set(event.eventType, event.description);
-      const warning = document.getElementById('face-positioning-warning');
-      if (warning) {
-        warning.textContent = event.description;
-        warning.style.display = '';
-      }
+      this._renderFacePositioningNotice(event.description);
       this._setFaceMeshStatus('warning', event.description);
       return;
     }
     if (event?.kind === 'positioning-warning-clear') {
       this._facePositioningWarnings.delete(event.eventType);
-      const warning = document.getElementById('face-positioning-warning');
       const remaining = [...this._facePositioningWarnings.values()].at(-1);
-      if (warning) {
-        warning.textContent = remaining || '';
-        warning.style.display = remaining ? '' : 'none';
-      }
+      this._renderFacePositioningNotice(remaining || '');
       return;
     }
     if (event?.kind !== 'incident') return;
@@ -4645,6 +4703,30 @@ const ExamApp = {
     if (warningIssued) this._captureFaceMeshViolationReplay(trackedEvent, incidentRequest);
     if (event.phase === 'end') this._persistFaceMonitoringSummary();
     if (event.phase === 'end' && event.incidentId) this._faceViolationIncidentIds.delete(event.incidentId);
+  },
+
+  _renderFacePositioningNotice(message) {
+    const warning = document.getElementById('face-positioning-warning');
+    if (!warning) return;
+    if (!message) {
+      warning.innerHTML = '';
+      warning.style.display = 'none';
+      return;
+    }
+
+    warning.innerHTML = `
+      <span class="face-positioning-warning-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/>
+          <path d="M5.5 21a6.5 6.5 0 0 1 13 0"/>
+          <path d="M19 8h3M20.5 6.5v3"/>
+        </svg>
+      </span>
+      <span class="face-positioning-warning-copy">
+        <span class="face-positioning-warning-label">Camera positioning</span>
+        <span class="face-positioning-warning-message">${_esc(message)}</span>
+      </span>`;
+    warning.style.display = '';
   },
 
   _renderFaceConditionCountdown() {
@@ -6237,6 +6319,8 @@ const ExamApp = {
   },
 
   stopCamera() {
+    this._faceCalibrationGeneration++;
+    this._clearFaceCalibrationObservationTimer();
     if (this._faceRuleEngine) {
       this._faceRuleEngine.stop({
         ...(this._lastFaceMeshObservation || {}),
@@ -6377,19 +6461,40 @@ const ExamApp = {
     // cancelCountdown call from the same return event pair), don't interrupt it —
     // just stop the 10s interval if it somehow still exists and bail out.
     if (this._inReadCountdown) {
-      if (this._warningCountdownMode === 'focus') this._stopWarningCountdown();
+      if (!hideOverlay) this._cancelReadCountdown();
       this._countdownInterval = null;
       return;
     }
 
     const hadFocusReminder = this._warningCountdownMode === 'focus'
       || this._warningCountdownMode === 'focus_expired';
+
+    // Camera, object, clipboard and final-strike warnings own their complete
+    // deadline. Focus/visibility recovery events must not cancel those timers.
+    if (!hadFocusReminder) {
+      // Internal teardown/startup calls pass false and still need a full timer
+      // cleanup. User focus events pass true and must leave these modes alone.
+      if (!hideOverlay) this._stopWarningCountdown({ hideWrap: true });
+      return;
+    }
+
+    const remainingMs = Math.max(0, this._warningCountdownDeadline - Date.now());
     this._stopWarningCountdown({ hideWrap: true });
     this._countdownInterval = null;
 
     if (hideOverlay && hadFocusReminder && this.warnings < 3) {
-      // Student returned — keep overlay for 3s so they can read the warning
-      this._startReadCountdown(3);
+      // Let the student read the notice without extending the warning beyond
+      // the focus warning's original allotted deadline.
+      const readSeconds = Math.min(
+        EXAM_WARNING_TIMINGS.returnedReadSeconds,
+        remainingMs / 1000,
+      );
+      if (readSeconds > 0.1) {
+        this._startReadCountdown(readSeconds);
+      } else {
+        const overlay = document.getElementById('warning-overlay');
+        if (overlay) overlay.style.display = 'none';
+      }
     }
   },
 
@@ -6508,16 +6613,13 @@ const ExamApp = {
       this._captureCameraViolationSnapshot(type, detail, warningCount, detectionMetadata);
     });
 
-    if (warningCount >= 3) {
-      // 3 strikes — auto-submit after overlay reads
-      setTimeout(() => this.submitExam('auto'), 3000);
-      return true;
-    }
+    // The final-warning overlay owns its visible deadline and submits on expiry.
+    if (warningCount >= 3) return true;
 
     // Focus-loss violations start a 10-second return window
     const focusLoss = ['window_blur', 'tab_switch', 'fullscreen_exit'];
     if (focusLoss.includes(type)) {
-      this.startCountdown(10);
+      this.startCountdown(EXAM_WARNING_TIMINGS.focusSeconds);
     }
     return true;
   },
@@ -6590,8 +6692,13 @@ const ExamApp = {
     const focusLoss = ['window_blur', 'tab_switch', 'fullscreen_exit'];
     const isFocusLoss = focusLoss.includes(type);
 
-    if (this.warnings < 3) {
-      const secs = isFocusLoss ? 10 : 5;
+    {
+      const isFinalWarning = this.warnings >= 3;
+      const secs = isFinalWarning
+        ? EXAM_WARNING_TIMINGS.finalSeconds
+        : isFocusLoss
+          ? EXAM_WARNING_TIMINGS.focusSeconds
+          : EXAM_WARNING_TIMINGS.standardSeconds;
       const cdWrap = document.getElementById('warning-countdown-wrap');
       const cdNum  = document.getElementById('cd-num');
       const cdCircle = document.getElementById('cd-circle');
@@ -6599,9 +6706,11 @@ const ExamApp = {
       const circumference = 163.36; // 2π × r(26)
 
       if (cdWrap) {
-        if (cdMsg) cdMsg.textContent = isFocusLoss
-          ? 'Return to this window to continue your exam'
-          : 'This violation has been recorded. Returning to your exam…';
+        if (cdMsg) cdMsg.textContent = isFinalWarning
+          ? 'Submitting your exam when the countdown ends'
+          : isFocusLoss
+            ? 'Return to this window to continue your exam'
+            : 'This violation has been recorded. Returning to your exam…';
         cdWrap.style.display = '';
         if (cdNum) cdNum.textContent = secs;
         if (cdCircle) cdCircle.style.strokeDashoffset = '0';
@@ -6609,9 +6718,9 @@ const ExamApp = {
 
       // Focus-loss: issueWarning calls startCountdown() right after this — let it
       // own the interval so only ONE timer updates #cd-num and #cd-circle.
-      // Non-focus: run a 5-second dismiss timer here (startCountdown is not called).
-      if (!isFocusLoss) {
-        this._warningCountdownMode = 'info';
+      // Every other warning is owned here, including final auto-submission.
+      if (!isFocusLoss || isFinalWarning) {
+        this._warningCountdownMode = isFinalWarning ? 'final' : 'info';
         this._startDeadlineCountdown({
           timerKey: '_warningCountdownTimer',
           tokenKey: '_warningCountdownToken',
@@ -6627,8 +6736,13 @@ const ExamApp = {
           },
           onExpire: () => {
             this._warningCountdownMode = null;
-            if (cdWrap) cdWrap.style.display = 'none';
-            overlay.style.display = 'none';
+            if (isFinalWarning) {
+              if (cdNum) cdNum.textContent = '0';
+              this.submitExam('auto');
+            } else {
+              if (cdWrap) cdWrap.style.display = 'none';
+              overlay.style.display = 'none';
+            }
           },
         });
       }

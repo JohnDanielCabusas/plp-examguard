@@ -13,6 +13,7 @@ const element = id => {
       style: {},
       classList: { add() {}, remove() {}, toggle() {}, contains() { return true; } },
       textContent: '',
+      querySelector(selector) { return element(selector); },
     });
   }
   return elements.get(id);
@@ -67,11 +68,34 @@ assert.equal(submitCalls, 0, 'Focus reminder expiry must not submit an exam.');
 assert.equal(app._warningCountdownMode, 'focus_expired');
 assert.match(element('warning-overlay-sub').textContent, /timer expires/i);
 
-// Returning after the reminder expired must still clear it through the read notice.
+// Returning early may show a short read notice, but it must stay inside the
+// focus warning's original deadline instead of adding time to it.
 let readCountdownSeconds = null;
 app._startReadCountdown = seconds => { readCountdownSeconds = seconds; };
+app._warningCountdownMode = 'focus';
+app._warningCountdownDeadline = Date.now() + 8000;
 app.cancelCountdown();
 assert.equal(readCountdownSeconds, 3);
+
+// A return event must never cancel camera/object warning timers. This was the
+// freeze that could leave a warning overlay open indefinitely.
+let stopWarningCalls = 0;
+const realStopWarningCountdown = app._stopWarningCountdown;
+app._stopWarningCountdown = () => { stopWarningCalls += 1; };
+app._warningCountdownMode = 'info';
+app.cancelCountdown();
+assert.equal(stopWarningCalls, 0, 'Focus recovery must not cancel an info-warning countdown.');
+app._stopWarningCountdown = realStopWarningCountdown;
+
+// The final strike uses the same visible deadline as its submission callback.
+let finalWarningOptions = null;
+app._startDeadlineCountdown = options => { finalWarningOptions = options; };
+app.warnings = 3;
+app.showWarningOverlay('restricted_phone', 'Phone detected');
+assert.equal(app._warningCountdownMode, 'final');
+assert.equal(finalWarningOptions?.totalSeconds, 3);
+finalWarningOptions.onExpire();
+assert.equal(submitCalls, 1, 'Final warning must submit exactly when its visible countdown expires.');
 
 // The submission boundary independently rejects a timeout with 50 minutes left.
 app._startDeadlineCountdown = realStartDeadlineCountdown;

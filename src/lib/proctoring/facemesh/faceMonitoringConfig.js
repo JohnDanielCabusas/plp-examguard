@@ -11,13 +11,18 @@ const BASE_CONFIG = Object.freeze({
   minTrackingConfidence: 0.45,
   calibration: Object.freeze({
     durationMs: 5000,
-    maximumSampleGapMs: 600,
-    minimumTrackingQuality: 0.62,
-    minimumFaceWidthRatio: 0.18,
+    // Calibration runs on real webcams where an occasional delayed or noisy
+    // frame is normal. Brief invalid frames pause progress; they do not erase
+    // an otherwise stable five-second sample window.
+    maximumSampleGapMs: 1500,
+    transientInvalidToleranceMs: 900,
+    minimumSamples: 15,
+    minimumTrackingQuality: 0.45,
+    minimumFaceWidthRatio: 0.15,
     maximumFaceWidthRatio: 0.58,
-    maximumCenterOffset: 0.16,
-    maximumYawRange: 12,
-    maximumPitchRange: 12,
+    maximumCenterOffset: 0.2,
+    maximumYawRange: 18,
+    maximumPitchRange: 18,
   }),
   pose: Object.freeze({
     leftYawDegrees: -25,

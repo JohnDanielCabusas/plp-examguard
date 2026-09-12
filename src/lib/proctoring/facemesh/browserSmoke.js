@@ -41,6 +41,11 @@ export async function smokeTestFaceLandmarkerWorker() {
   context.fillStyle = '#111827';
   context.fillRect(0, 0, canvas.width, canvas.height);
   const stream = canvas.captureStream(12);
+  let frameNumber = 0;
+  const frameTimer = setInterval(() => {
+    context.fillStyle = frameNumber++ % 2 ? '#111827' : '#111828';
+    context.fillRect(0, 0, 2, 2);
+  }, 80);
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
@@ -82,6 +87,7 @@ export async function smokeTestFaceLandmarkerWorker() {
     };
   } finally {
     runtime.stop();
+    clearInterval(frameTimer);
     stream.getTracks().forEach(track => track.stop());
     video.remove();
   }
@@ -144,7 +150,9 @@ export async function smokeTestMissingHandLandmarkerModel() {
 
   let handUnavailable = false;
   let resolveObservation;
+  let resolveHandUnavailable;
   const observationPromise = new Promise(resolve => { resolveObservation = resolve; });
+  const handUnavailablePromise = new Promise(resolve => { resolveHandUnavailable = resolve; });
   const runtime = new FaceLandmarkerRuntime({
     video,
     config: {
@@ -153,14 +161,17 @@ export async function smokeTestMissingHandLandmarkerModel() {
       randomForest: { handModelUrl: '/models/hand-landmarker-intentionally-missing.task' },
     },
     onStatus: status => {
-      if (status?.state === 'hand-unavailable') handUnavailable = true;
+      if (status?.state === 'hand-unavailable') {
+        handUnavailable = true;
+        resolveHandUnavailable();
+      }
     },
     onObservation: observation => resolveObservation(observation),
   });
   try {
     await runtime.start();
-    const observation = await Promise.race([
-      observationPromise,
+    const [observation] = await Promise.race([
+      Promise.all([observationPromise, handUnavailablePromise]),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Face inference did not continue after the hand model failed.')), 10000)),
     ]);
     return {

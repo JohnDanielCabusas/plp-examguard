@@ -14235,3 +14235,387 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .exam-chat-panel { left: 12px; right: 12px; width: auto; bottom: 90px; }
   .exam-chat-fab { right: 16px; bottom: 16px; }
 }
+
+/* ============================================================
+   STUDENT EXAM POPUPS
+   A single visual system for exam notices, strike warnings and dialogs.
+   ============================================================ */
+body.exam-page {
+  --exam-popup-accent: #166534;
+  --exam-popup-accent-soft: #ecfdf3;
+  --exam-popup-border: #dce5df;
+  --exam-popup-surface: #ffffff;
+  --exam-popup-muted: #647067;
+  --exam-popup-shadow: 0 28px 80px rgba(4, 24, 13, 0.24), 0 8px 24px rgba(4, 24, 13, 0.12);
+}
+
+.exam-page .modal-backdrop {
+  padding: 24px;
+  background: rgba(5, 18, 11, 0.68);
+  backdrop-filter: blur(8px) saturate(0.9);
+  -webkit-backdrop-filter: blur(8px) saturate(0.9);
+  animation: examPopupBackdropIn 160ms ease-out;
+}
+
+.exam-page .modal-dialog {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 22px !important;
+  background: var(--exam-popup-surface);
+  box-shadow: var(--exam-popup-shadow);
+  animation: examPopupIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.exam-page .modal-dialog::before {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3;
+  height: 4px;
+  background: linear-gradient(90deg, #0f5132, #2f855a 72%, #c8a217);
+  content: '';
+}
+
+.exam-page .modal-header {
+  position: relative;
+  padding: 24px 26px 18px;
+  border-bottom-color: #e8eee9;
+  border-radius: 0 !important;
+  background: var(--exam-popup-surface);
+}
+
+.exam-page .modal-title,
+.exam-page .confirm-title {
+  color: #142119;
+  letter-spacing: -0.025em;
+}
+
+.exam-page .modal-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #e1e8e3;
+  border-radius: 10px;
+  place-items: center;
+  color: #617067;
+  background: #f6f8f6;
+  font-size: 17px;
+}
+
+.exam-page .modal-close:hover {
+  border-color: #cdd9d0;
+  color: #143d24;
+  background: #edf4ef;
+}
+
+.exam-page .confirm-dialog {
+  padding: 38px 32px 30px;
+}
+
+.exam-page .confirm-icon {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 20px;
+  border: 1px solid #cce5d3;
+  border-radius: 17px;
+  color: #166534;
+  background: var(--exam-popup-accent-soft) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
+}
+
+.exam-page .confirm-icon svg {
+  width: 27px;
+  height: 27px;
+  stroke: currentColor !important;
+}
+
+.exam-page #confirm-unenroll-modal .confirm-icon,
+.exam-page #webcam-decline-reason-modal .confirm-icon,
+.exam-page #webcam-denied-modal .confirm-icon {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2 !important;
+}
+
+.exam-page .confirm-title {
+  margin-bottom: 10px;
+  font-size: 22px !important;
+  line-height: 1.25;
+}
+
+.exam-page .confirm-message {
+  max-width: 390px;
+  margin-bottom: 24px;
+  color: var(--exam-popup-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.exam-page .confirm-actions,
+.exam-page .modal-footer {
+  gap: 10px;
+}
+
+.exam-page .confirm-actions .btn,
+.exam-page .modal-footer .btn {
+  min-height: 42px;
+  padding: 10px 18px;
+  border-radius: 11px !important;
+}
+
+.exam-page .confirm-actions .btn-primary,
+.exam-page .modal-footer .btn-primary {
+  background: #14532d;
+  box-shadow: 0 5px 14px rgba(20, 83, 45, 0.18);
+}
+
+.exam-page .confirm-actions .btn-primary:hover,
+.exam-page .modal-footer .btn-primary:hover {
+  background: #0f4224;
+}
+
+.exam-page #violations-info-modal .modal-body {
+  padding: 20px 26px 24px;
+}
+
+.exam-page #violations-info-modal .modal-footer {
+  border-top-color: #e8eee9;
+  background: #fbfcfb;
+}
+
+.exam-page .violations-info-item {
+  padding: 11px 13px;
+  border-color: #f4d9a4;
+  border-radius: 11px;
+  background: #fffbf2;
+}
+
+.exam-page .violations-info-item svg { color: #b7791f; }
+.exam-page .violations-info-text { color: #39473e; }
+
+/* The compact camera prompt shown at the top of the exam. */
+.exam-page .face-positioning-warning {
+  display: flex;
+  align-items: center;
+  width: min(420px, calc(100vw - 32px));
+  max-width: none;
+  min-height: 58px;
+  padding: 10px 14px 10px 11px;
+  border: 1px solid #ead29a;
+  border-left: 4px solid #c58b13;
+  border-radius: 14px;
+  background: rgba(255, 253, 247, 0.98);
+  box-shadow: 0 14px 38px rgba(29, 35, 31, 0.18), 0 2px 8px rgba(29, 35, 31, 0.08);
+  color: #28352c;
+  gap: 11px;
+  text-align: left;
+  animation: examNoticeIn 190ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.face-positioning-warning-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 11px;
+  color: #9a670d;
+  background: #f8e8bd;
+  place-items: center;
+}
+
+.face-positioning-warning-icon svg { width: 20px; height: 20px; }
+.face-positioning-warning-copy { display: grid; min-width: 0; gap: 2px; }
+.face-positioning-warning-label {
+  color: #80580f;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.face-positioning-warning-message {
+  color: #344139;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+/* Strike warning: use the same elevated card language instead of a flat,
+   full-screen orange/red slab. */
+#warning-overlay.warning-level-1,
+#warning-overlay.warning-level-2,
+#warning-overlay.warning-level-3 {
+  --strike-accent: #b7791f;
+  --strike-soft: #fff7df;
+  background: rgba(8, 20, 13, 0.76);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+#warning-overlay.warning-level-2 {
+  --strike-accent: #c05621;
+  --strike-soft: #fff3e9;
+}
+
+#warning-overlay.warning-level-3 {
+  --strike-accent: #b42318;
+  --strike-soft: #fff0ee;
+}
+
+.exam-page .warning-overlay-content {
+  max-width: 450px;
+  padding: 30px 32px 28px;
+  border: 1px solid rgba(255,255,255,0.78);
+  border-top: 4px solid var(--strike-accent);
+  border-radius: 24px;
+  color: #172019;
+  background: #fff;
+  box-shadow: var(--exam-popup-shadow);
+}
+
+.exam-page .warning-overlay-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 14px;
+  border: 1px solid color-mix(in srgb, var(--strike-accent) 28%, white);
+  border-radius: 17px;
+  color: var(--strike-accent);
+  background: var(--strike-soft);
+  animation: warningPulse 1.6s ease-in-out infinite;
+  place-items: center;
+}
+
+.exam-page .warning-overlay-icon svg {
+  width: 31px;
+  height: 31px;
+  filter: none;
+}
+
+.exam-page .warning-overlay-title {
+  margin-bottom: 2px;
+  color: var(--strike-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  opacity: 1;
+}
+
+.exam-page .warning-pips { margin: 10px 0 14px; gap: 7px; }
+.exam-page .warning-pip {
+  width: 28px;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: #e5e9e6;
+}
+.exam-page .warning-pip.active {
+  background: var(--strike-accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.exam-page .warning-overlay-count-row { margin-bottom: 12px; gap: 7px; }
+.exam-page .warning-overlay-count {
+  color: var(--strike-accent);
+  font-size: 62px;
+  letter-spacing: -0.06em;
+  text-shadow: none;
+}
+.exam-page .warning-overlay-of {
+  color: #7a857e;
+  font-size: 15px;
+  opacity: 1;
+}
+.exam-page .warning-overlay-msg {
+  color: #1d2921;
+  font-size: 17px;
+  font-weight: 750;
+}
+.exam-page .warning-overlay-sub { color: #66726a; opacity: 1; }
+.exam-page .warning-countdown-wrap {
+  width: 100%;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #e8ece9;
+}
+.exam-page .cd-track { stroke: #e4e9e5; }
+.exam-page .cd-fill { stroke: var(--strike-accent); }
+.exam-page .cd-num { color: var(--strike-accent); text-shadow: none; }
+.exam-page .warning-countdown-msg { color: #6a766e; opacity: 1; }
+
+.exam-page #toast-container { top: 84px; right: 18px; }
+.exam-page .toast {
+  min-width: 300px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 13px 15px;
+  border: 1px solid var(--exam-popup-border);
+  border-left: 4px solid currentColor;
+  border-radius: 13px;
+  background: rgba(255,255,255,0.98);
+  box-shadow: 0 14px 36px rgba(10, 31, 18, 0.16);
+}
+
+[data-theme="dark"] body.exam-page {
+  --exam-popup-border: #33423a;
+  --exam-popup-surface: #151d18;
+  --exam-popup-muted: #9eaaa2;
+  --exam-popup-shadow: 0 28px 80px rgba(0,0,0,0.56), 0 8px 24px rgba(0,0,0,0.34);
+}
+[data-theme="dark"] .exam-page .modal-dialog,
+[data-theme="dark"] .exam-page .modal-header,
+[data-theme="dark"] .exam-page #violations-info-modal .modal-footer { background: var(--exam-popup-surface) !important; }
+[data-theme="dark"] .exam-page .modal-dialog { border-color: #34423a !important; }
+[data-theme="dark"] .exam-page .modal-title,
+[data-theme="dark"] .exam-page .confirm-title { color: #eef5f0 !important; }
+[data-theme="dark"] .exam-page .modal-close { border-color: #36453c; color: #b5c1b9 !important; background: #202b24; }
+[data-theme="dark"] .exam-page .face-positioning-warning {
+  border-color: #61522f;
+  border-left-color: #d4a72c;
+  color: #eef5f0;
+  background: rgba(27, 31, 27, 0.98);
+}
+[data-theme="dark"] .face-positioning-warning-icon { color: #f2c94c; background: #463d22; }
+[data-theme="dark"] .face-positioning-warning-label { color: #e2b83f; }
+[data-theme="dark"] .face-positioning-warning-message { color: #e3eae5; }
+[data-theme="dark"] .exam-page .warning-overlay-content { border-color: #3b4940; color: #eef5f0; background: #151d18; }
+[data-theme="dark"] .exam-page .warning-overlay-msg { color: #eef5f0; }
+[data-theme="dark"] .exam-page .warning-overlay-sub,
+[data-theme="dark"] .exam-page .warning-overlay-of,
+[data-theme="dark"] .exam-page .warning-countdown-msg { color: #a7b2aa; }
+[data-theme="dark"] .exam-page .warning-countdown-wrap { border-top-color: #344039; }
+[data-theme="dark"] .exam-page .cd-track { stroke: #344039; }
+[data-theme="dark"] .exam-page .toast { border-color: #35443b; background: rgba(21,29,24,0.98); }
+
+@keyframes examPopupBackdropIn { from { opacity: 0; } }
+@keyframes examPopupIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes examNoticeIn {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .exam-page .modal-backdrop { padding: 12px; align-items: center; }
+  .exam-page .modal-dialog,
+  .exam-page .modal-sm,
+  .exam-page .modal-lg { width: 100%; border-radius: 19px !important; }
+  .exam-page .confirm-dialog { padding: 32px 20px 22px; }
+  .exam-page .confirm-actions { flex-direction: column-reverse; }
+  .exam-page .confirm-actions .btn { width: 100%; }
+  .exam-page .warning-overlay-content { padding: 26px 20px 22px; }
+  .exam-page .warning-overlay-count { font-size: 54px; }
+  .exam-page .face-positioning-warning { top: 66px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exam-page .modal-backdrop,
+  .exam-page .modal-dialog,
+  .exam-page .face-positioning-warning,
+  .exam-page .warning-overlay-icon { animation: none; }
+}
