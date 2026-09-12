@@ -7,6 +7,24 @@ const ENROLL_STATUS_ICONS = {
   success: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
 };
+
+function getIdentificationAcceptedAnswers(question) {
+  const stored = Array.isArray(question?.acceptedAnswers) && question.acceptedAnswers.length
+    ? question.acceptedAnswers
+    : [question?.correctAnswer || ''];
+  return stored.map(answer => String(answer ?? '')).filter(answer => answer.trim());
+}
+
+function isIdentificationAnswerCorrect(question, answer) {
+  const normalized = String(answer ?? '').trim().toUpperCase();
+  return !!normalized && getIdentificationAcceptedAnswers(question)
+    .some(accepted => accepted.trim().toUpperCase() === normalized);
+}
+
+function formatIdentificationAcceptedAnswers(question) {
+  return getIdentificationAcceptedAnswers(question).join(' / ');
+}
+
 function setEnrollStatus(el, text, variant, options = {}) {
   if (!el) return;
   if (el._statusTimer) {
@@ -300,6 +318,8 @@ const ExamApp = {
         const sortedGiven = given.slice().sort((a, b) => a - b);
         const exactMatch = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
         if (exactMatch) earned += q.points;
+      } else if (q.type === 'identification') {
+        if (isIdentificationAnswerCorrect(q, ans)) earned += q.points;
       } else {
         const studentAns = ans.toString().trim().toUpperCase();
         const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
@@ -8021,6 +8041,8 @@ const ExamApp = {
           const expected = (q.correctAnswerIndices || []).slice().sort((a, b) => a - b);
           const selected = given.slice().sort((a, b) => a - b);
           isCorrect = expected.length === selected.length && expected.every((value, answerIndex) => value === selected[answerIndex]);
+        } else if (q.type === 'identification') {
+          isCorrect = isIdentificationAnswerCorrect(q, ans);
         } else {
           isCorrect = !!ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
         }
@@ -8131,7 +8153,12 @@ const ExamApp = {
             </div>`;
         }
       } else {
-        const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
+        const correct = q.type === 'identification'
+          ? isIdentificationAnswerCorrect(q, ans)
+          : ans && ans.toString().trim().toUpperCase() === (q.correctAnswer || '').toString().trim().toUpperCase();
+        const correctAnswerDisplay = q.type === 'identification'
+          ? formatIdentificationAcceptedAnswers(q)
+          : (q.correctAnswer || '-');
         const answerClass = !ans ? 'is-empty' : scoreReleased ? (correct ? 'is-correct' : 'is-wrong') : 'is-neutral';
         resultHtml = `
           <div class="review-answer-group">
@@ -8139,7 +8166,7 @@ const ExamApp = {
               <span>${_esc(ans || 'No answer')}</span>
             </div>
             ${scoreReleased && !correct
-              ? `<div class="review-correct-answer"><span>Correct:</span> <strong>${_esc(q.correctAnswer || '-')}</strong></div>`
+              ? `<div class="review-correct-answer"><span>${q.type === 'identification' ? 'Accepted' : 'Correct'}:</span> <strong>${_esc(correctAnswerDisplay)}</strong></div>`
               : ''}
           </div>`;
       }
@@ -8200,7 +8227,12 @@ const ExamApp = {
             }).join('')}
           </div>`;
       } else {
-        const correct = ans && ans.toString().trim().toUpperCase() === (q.correctAnswer||'').toString().trim().toUpperCase();
+        const correct = q.type === 'identification'
+          ? isIdentificationAnswerCorrect(q, ans)
+          : ans && ans.toString().trim().toUpperCase() === (q.correctAnswer||'').toString().trim().toUpperCase();
+        const correctAnswerDisplay = q.type === 'identification'
+          ? formatIdentificationAcceptedAnswers(q)
+          : (q.correctAnswer || '');
         const color = !ans ? '#9ca3af' : correct ? '#15803d' : '#dc2626';
         resultHtml = `
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
@@ -8211,7 +8243,7 @@ const ExamApp = {
             </div>
             ${!correct ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
               <span style="font-weight:700;color:#6b7280;min-width:90px;">Correct:</span>
-              <span style="color:#15803d;font-weight:600;">${_esc(q.correctAnswer)}</span>
+              <span style="color:#15803d;font-weight:600;">${_esc(correctAnswerDisplay)}</span>
             </div>` : ''}
           </div>`;
       }

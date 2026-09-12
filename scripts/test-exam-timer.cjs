@@ -65,6 +65,24 @@ sandbox.DB = {
 vm.runInNewContext(source, sandbox, { filename: 'public/js/exam.js' });
 const app = sandbox.window.ExamApp;
 
+// Identification grading accepts any configured variant while preserving
+// compatibility with older questions that only have `correctAnswer`.
+const identificationExam = {
+  questions: [{
+    id: 'identification-variants',
+    type: 'identification',
+    points: 2,
+    correctAnswer: 'WARNING',
+    acceptedAnswers: ['WARNING', 'warning', 'warnings'],
+  }],
+};
+assert.equal(app._calculateScoreFor(identificationExam, { 'identification-variants': ' warnings ' }).earned, 2);
+assert.equal(app._calculateScoreFor(identificationExam, { 'identification-variants': 'warning' }).earned, 2);
+assert.equal(app._calculateScoreFor(identificationExam, { 'identification-variants': 'warn' }).earned, 0);
+assert.equal(app._calculateScoreFor({
+  questions: [{ id: 'legacy-identification', type: 'identification', points: 1, correctAnswer: 'Legacy' }],
+}, { 'legacy-identification': ' legacy ' }).earned, 1);
+
 // A dragged webcam preview must always remain inside the visible viewport.
 sandbox.window.innerWidth = 1000;
 sandbox.window.innerHeight = 700;

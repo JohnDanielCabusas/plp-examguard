@@ -4011,6 +4011,9 @@ function buildExamShareQuestionAnswerHtml(question) {
     answerHtml = labels.length ? labels.map(label => escHtml(label)).join(', ') : 'No correct options recorded.';
   } else if (question?.type === 'enumeration') {
     answerHtml = answers.length ? answers.map(answer => escHtml(answer)).join(', ') : 'No expected answers recorded.';
+  } else if (question?.type === 'identification') {
+    const acceptedAnswers = getIdentificationAcceptedAnswers(question);
+    answerHtml = acceptedAnswers.length ? acceptedAnswers.map(answer => escHtml(answer)).join(' / ') : 'No accepted answers recorded.';
   } else if (question?.type === 'matching') {
     answerHtml = pairs.length
       ? pairs.map(pair => `${escHtml(pair.term || '')} → ${escHtml(pair.match || '')}`).join('<br>')
@@ -6109,6 +6112,27 @@ function normalizeQuestionDuplicateText(value, { preserveCase = false } = {}) {
   return preserveCase ? normalized : normalized.toLowerCase();
 }
 
+// Identification questions may accept several equivalent spellings or forms.
+// `correctAnswer` remains the primary answer for older saved exams, while new
+// questions store the complete list in `acceptedAnswers`.
+function getIdentificationAcceptedAnswers(question, { includeEmpty = false } = {}) {
+  const stored = Array.isArray(question?.acceptedAnswers) && question.acceptedAnswers.length
+    ? question.acceptedAnswers
+    : [question?.correctAnswer || ''];
+  const answers = stored.map(answer => String(answer ?? ''));
+  return includeEmpty ? answers : answers.filter(answer => answer.trim());
+}
+
+function isIdentificationAnswerCorrect(question, answer) {
+  const normalized = String(answer ?? '').trim().toUpperCase();
+  return !!normalized && getIdentificationAcceptedAnswers(question)
+    .some(accepted => accepted.trim().toUpperCase() === normalized);
+}
+
+function formatIdentificationAcceptedAnswers(question) {
+  return getIdentificationAcceptedAnswers(question).join(' / ');
+}
+
 function getQuestionDuplicateKey(q) {
   if (!q) return null;
 
@@ -6116,7 +6140,10 @@ function getQuestionDuplicateKey(q) {
   const options = Array.isArray(q.options)
     ? q.options.map(option => normalizeQuestionDuplicateText(option)).filter(Boolean)
     : [];
-  const correctAnswer = normalizeQuestionDuplicateText(q.correctAnswer);
+  const identificationAnswers = q.type === 'identification'
+    ? getIdentificationAcceptedAnswers(q).map(answer => normalizeQuestionDuplicateText(answer))
+    : [];
+  const correctAnswer = q.type === 'identification' ? '' : normalizeQuestionDuplicateText(q.correctAnswer);
   const correctAnswerIndices = Array.isArray(q.correctAnswerIndices)
     ? [...q.correctAnswerIndices].sort((a, b) => a - b)
     : [];
@@ -6141,6 +6168,7 @@ function getQuestionDuplicateKey(q) {
     content,
     options,
     correctAnswer,
+    identificationAnswers,
     correctAnswerIndices,
     answers,
     pairs,
@@ -6201,6 +6229,44 @@ function removeEnumAnswer(qIdx, aIdx) {
     if (i !== qIdx) return q;
     const answers = (q.answers || []).filter((_, ai) => ai !== aIdx);
     return { ...q, answers };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+// ── Identification accepted-answer helpers ────────────────
+function updateIdentificationAnswer(qIdx, answerIdx, value) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((question, index) => {
+    if (index !== qIdx) return question;
+    const acceptedAnswers = getIdentificationAcceptedAnswers(question, { includeEmpty: true });
+    acceptedAnswers[answerIdx] = value;
+    return { ...question, acceptedAnswers, correctAnswer: acceptedAnswers[0] || '' };
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  refreshQuestionIssue(qIdx);
+}
+
+function addIdentificationAnswer(qIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((question, index) => index !== qIdx ? question : {
+    ...question,
+    acceptedAnswers: [...getIdentificationAcceptedAnswers(question, { includeEmpty: true }), ''],
+  });
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+function removeIdentificationAnswer(qIdx, answerIdx) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const questions = exam.questions.map((question, index) => {
+    if (index !== qIdx) return question;
+    const acceptedAnswers = getIdentificationAcceptedAnswers(question, { includeEmpty: true })
+      .filter((_, index) => index !== answerIdx);
+    return { ...question, acceptedAnswers, correctAnswer: acceptedAnswers[0] || '' };
   });
   DB.updateExam(currentQBuilderExamId, { questions });
   renderQuestionsList(currentQBuilderExamId);
@@ -6288,7 +6354,7 @@ function changeQuestionType(idx, newType) {
     mcq:           { options: ['','','',''], correctAnswer: '', points: 1 },
     checkbox:      { options: ['','','',''], correctAnswerIndices: [], points: 1 },
     tf:            { options: ['True','False'], correctAnswer: 'True', points: 1 },
-    identification:{ options: [], correctAnswer: '', points: 1 },
+    identification:{ options: [], correctAnswer: '', acceptedAnswers: [''], points: 1 },
     essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
     enumeration:   { options: [], correctAnswer: '', points: 5, answers: ['','',''], partialScoring: true },
     matching:      { options: [], correctAnswer: '', points: 5, pairs: [{term:'',match:''},{term:'',match:''}], partialScoring: true },
@@ -6379,7 +6445,8 @@ function getQuestionIssue(q) {
       if (!q.correctAnswer || !q.correctAnswer.trim()) return 'No correct answer selected';
       break;
     case 'identification':
-      if (!q.correctAnswer || !q.correctAnswer.trim()) return 'Correct answer is empty';
+      if (!getIdentificationAcceptedAnswers(q).length) return 'Add at least one accepted answer';
+      if (getIdentificationAcceptedAnswers(q, { includeEmpty: true }).some(answer => !answer.trim())) return 'One or more accepted answers are empty';
       break;
     case 'enumeration':
       if (!Array.isArray(q.answers) || q.answers.length === 0 || q.answers.some(a => !a || !a.trim())) return 'One or more answers are empty';
@@ -6577,10 +6644,19 @@ function buildQuestionBlock(q, idx) {
         </div>
       </div>`;
   } else if (q.type === 'identification') {
+    const acceptedAnswers = getIdentificationAcceptedAnswers(q, { includeEmpty: true });
     optionsHtml = `
       <div class="form-group">
-        <label>Correct Answer (case-insensitive)</label>
-        <input type="text" class="form-control" value="${escHtml(q.correctAnswer)}" placeholder="Enter correct answer" onchange="updateQField(${idx},'correctAnswer',this.value.toUpperCase())" style="text-transform:uppercase;" />
+        <label>Accepted Answers <span class="text-muted" style="font-weight:400;">(any one is marked correct; case-insensitive)</span></label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${acceptedAnswers.map((answer, answerIdx) => `
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${answerIdx + 1}.</span>
+              <input type="text" class="form-control" value="${escHtml(answer)}" placeholder="Accepted answer ${answerIdx + 1}" onchange="updateIdentificationAnswer(${idx},${answerIdx},this.value)" style="flex:1;" />
+              <button type="button" class="btn btn-danger btn-sm" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>&times;</button>
+            </div>`).join('')}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addIdentificationAnswer(${idx})">+ Add Accepted Answer</button>
       </div>`;
   }
 
@@ -6767,7 +6843,7 @@ function addQuestion(type) {
     mcq:           { options: ['','','',''], correctAnswer: '', points: 1 },
     checkbox:      { options: ['','','',''], correctAnswerIndices: [], points: 1 },
     tf:            { options: ['True','False'], correctAnswer: 'True', points: 1 },
-    identification:{ options: [], correctAnswer: '', points: 1 },
+    identification:{ options: [], correctAnswer: '', acceptedAnswers: [''], points: 1 },
     essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
     enumeration:   { options: [], correctAnswer: '', points: 5, answers: ['','',''], partialScoring: true },
     matching:      { options: [], correctAnswer: '', points: 5, pairs: [{term:'',match:''},{term:'',match:''}], partialScoring: true },
@@ -6800,6 +6876,7 @@ function cloneQuestionForDuplicate(question) {
     id: DB.generateId(),
     options: Array.isArray(question?.options) ? [...question.options] : [],
     correctAnswerIndices: Array.isArray(question?.correctAnswerIndices) ? [...question.correctAnswerIndices] : [],
+    acceptedAnswers: Array.isArray(question?.acceptedAnswers) ? [...question.acceptedAnswers] : undefined,
     answers: Array.isArray(question?.answers) ? [...question.answers] : [],
     pairs: Array.isArray(question?.pairs) ? question.pairs.map(pair => ({ ...pair })) : [],
   };
@@ -7115,8 +7192,10 @@ function viewStudentAnswersLegacy(sessionId) {
           </div>
         </div>`;
     } else {
-      const correctAnswer = q.correctAnswer || '';
-      const isCorrect = studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
+      const correctAnswer = q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : (q.correctAnswer || '');
+      const isCorrect = q.type === 'identification'
+        ? isIdentificationAnswerCorrect(q, studentAns)
+        : studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
       const rowClass = studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
       html += `
         <div class="answer-row ${rowClass}">
@@ -7207,6 +7286,7 @@ function calculateEarnedPointsForQuestion(question, rawAnswer, essayGrades = {})
 
   const normalizedAnswer = String(rawAnswer).trim();
   if (!normalizedAnswer) return 0;
+  if (question.type === 'identification') return isIdentificationAnswerCorrect(question, normalizedAnswer) ? maxPoints : 0;
   return normalizedAnswer.toUpperCase() === String(question.correctAnswer || '').trim().toUpperCase() ? maxPoints : 0;
 }
 
@@ -7401,8 +7481,10 @@ function viewStudentAnswers(sessionId, source = currentSection) {
       return;
     }
 
-    const correctAnswer = q.correctAnswer || '';
-    const isCorrect = studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
+    const correctAnswer = q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : (q.correctAnswer || '');
+    const isCorrect = q.type === 'identification'
+      ? isIdentificationAnswerCorrect(q, studentAns)
+      : studentAns.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
     const rowClass = studentAns ? (isCorrect ? 'correct' : 'wrong') : '';
     html += `
       <div class="answer-row ${rowClass}">
@@ -7533,7 +7615,11 @@ function viewQuestionBreakdown(examId) {
       const correctAnswer = (q.correctAnswer || '').toString().trim().toUpperCase();
       choiceStats = Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
-        .map(([label, count]) => ({ label, count, isCorrect: label.toUpperCase() === correctAnswer }));
+        .map(([label, count]) => ({
+          label,
+          count,
+          isCorrect: q.type === 'identification' ? isIdentificationAnswerCorrect(q, label) : label.toUpperCase() === correctAnswer,
+        }));
       if (noAnswer) choiceStats.push({ label: '(No answer)', count: noAnswer, isCorrect: false, muted: true });
     }
 
@@ -8996,22 +9082,16 @@ async function forceSubmitStudent(sessionId) {
   if (!session) return;
   const exam = DB.getExam(session.examId);
   const forcedAt = new Date().toISOString();
-  let score = 0, max = 0;
-  if (exam) {
-    exam.questions.forEach(q => {
-      max += q.points;
-      if (q.type === 'essay') return; // manual grading
-      const ans = (session.answers || {})[q.id];
-      if (ans && ans.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase()) score += q.points;
-    });
-  }
+  const scoreBreakdown = exam
+    ? calculateSessionScoreBreakdown(exam, session)
+    : { earned: 0, max: 0 };
   DB.updateSession(sessionId, {
     submitted: true,
     autoSubmitted: true,
     submitReason: 'force_submit',
     endTime: forcedAt,
-    score,
-    maxScore: max,
+    score: scoreBreakdown.earned,
+    maxScore: scoreBreakdown.max,
     activities: [
       ...(Array.isArray(session.activities) ? session.activities : []),
       { type: 'force_submit', timestamp: forcedAt, details: 'Force submitted by professor' },
@@ -9092,7 +9172,8 @@ function scoreQuestionEarned(q, ans) {
     const exact = correct.length === sortedGiven.length && correct.every((v, i) => v === sortedGiven[i]);
     return exact ? points : 0;
   }
-  // mcq / tf / identification — single correct string
+  // Identification accepts any configured variant; MCQ/TF use one answer.
+  if (q.type === 'identification') return isIdentificationAnswerCorrect(q, ans) ? points : 0;
   const studentAns = ans.toString().trim().toUpperCase();
   const correctAns = (q.correctAnswer || '').toString().trim().toUpperCase();
   return studentAns === correctAns ? points : 0;
@@ -12036,13 +12117,13 @@ async function runAIGenerate() {
 
   const schemaRules = `Return ONLY a valid JSON array with no other text, explanation, or markdown.
 Each question object schema:
-  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "answers": [...], "pairs": [...], "points": 1, "difficulty": "easy"|"medium"|"hard", "bloom": "remember"|"understand"|"apply"|"analyze"|"evaluate"|"create" }
+  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "acceptedAnswers": [...], "answers": [...], "pairs": [...], "points": 1, "difficulty": "easy"|"medium"|"hard", "bloom": "remember"|"understand"|"apply"|"analyze"|"evaluate"|"create" }
 - "difficulty": REQUIRED on every question. Your best estimate of how hard it is for a typical student — "easy" (recall/definition), "medium" (application/understanding), or "hard" (analysis/multi-step reasoning). This is a provisional label; the system refines it from real student results later.
 - "bloom": REQUIRED on every question. The Bloom's Taxonomy cognitive level the question assesses: "remember" (recall facts), "understand" (explain concepts), "apply" (use in new situations), "analyze" (compare/break down), "evaluate" (justify/critique), or "create" (design/produce). Aim for a spread across levels — not every question should be "remember".
 - For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
 - For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
 - For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
-- For "identification": options = []; correctAnswer = expected answer string (1-4 words).
+- For "identification": options = []; acceptedAnswers = array of equivalent accepted answer strings; correctAnswer = the first accepted answer.
 - For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.
 - For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.
 - For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
@@ -12196,7 +12277,7 @@ function renderAIPreview(questions) {
             <span style="flex-shrink:0;display:flex;gap:5px;">${BLOOM_LEVELS.includes(q.bloom) ? bloomBadge(q.bloom) : ''}${['easy','medium','hard'].includes(q.difficulty) ? difficultyBadge(q.difficulty) : ''}</span>
           </div>
           ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
-          <div class="ai-q-correct">✓ ${escHtml(q.correctAnswer)}</div>
+          <div class="ai-q-correct">✓ ${escHtml(q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : q.correctAnswer)}</div>
         </div>
       </label>
     </div>`;
@@ -12227,7 +12308,12 @@ function importAIQuestions() {
       type: q.type,
       content: q.content || '',
       options: Array.isArray(q.options) ? q.options : [],
-      correctAnswer: q.correctAnswer || '',
+      correctAnswer: q.type === 'identification'
+        ? (getIdentificationAcceptedAnswers(q)[0] || q.correctAnswer || '')
+        : (q.correctAnswer || ''),
+      acceptedAnswers: q.type === 'identification'
+        ? getIdentificationAcceptedAnswers(q)
+        : undefined,
       // Checkbox type
       correctAnswerIndices: Array.isArray(q.correctAnswerIndices) ? q.correctAnswerIndices : undefined,
       // Matching type
