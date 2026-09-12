@@ -786,13 +786,9 @@ export default function ExamPage() {
 
       {/* Camera Container */}
       <div id="camera-container" className="camera-container" style={{ display: 'none' }}>
-        <div className="camera-feed-wrap">
-          <video id="camera-feed" className="camera-feed" autoPlay muted playsInline />
+        <div id="camera-drag-surface" className="camera-feed-wrap">
+          <video id="camera-feed" className="camera-feed" autoPlay muted playsInline draggable={false} />
           <canvas id="camera-canvas" style={{ display: 'none' }} />
-          <button type="button" id="camera-drag-handle" className="camera-drag-handle" data-exam-control="true" aria-label="Move webcam preview" title="Drag to move webcam preview">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="7" r="1"/><circle cx="16" cy="7" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="17" r="1"/><circle cx="16" cy="17" r="1"/></svg>
-            <span>Move</span>
-          </button>
           <span className="camera-live-label">REC</span>
           <span id="yolo-camera-status" className="yolo-camera-status" data-state="idle">Object scan off</span>
           <span id="facemesh-camera-status" className="facemesh-camera-status" data-state="idle">Face scan off</span>

@@ -8657,33 +8657,11 @@ body.exam-page {
   border: 2px solid rgba(15,45,26,0.58);
   box-shadow: 0 12px 30px rgba(0,0,0,0.34);
   position: relative;
-}
-.camera-drag-handle {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 25px;
-  padding: 3px 8px 3px 6px;
-  border: 1px solid rgba(255,255,255,0.3);
-  border-radius: 999px;
-  color: #fff;
-  background: rgba(15,23,42,0.72);
-  box-shadow: 0 3px 10px rgba(0,0,0,0.24);
-  font: 700 10px/1 inherit;
   cursor: grab;
   touch-action: none;
-  transform: translateX(-50%);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
 }
-.camera-drag-handle:hover,
-.camera-drag-handle:focus-visible { background: rgba(15,45,26,0.9); outline: 2px solid rgba(255,255,255,0.8); outline-offset: 2px; }
-.camera-container.is-dragging .camera-drag-handle { cursor: grabbing; background: rgba(15,45,26,0.94); }
-.camera-drag-handle svg { width: 14px; height: 14px; fill: currentColor; }
+.camera-feed-wrap:hover { border-color: rgba(34,197,94,0.9); }
+.camera-container.is-dragging .camera-feed-wrap { cursor: grabbing; border-color: #22c55e; }
 .camera-feed {
   width: 100%;
   height: 100%;

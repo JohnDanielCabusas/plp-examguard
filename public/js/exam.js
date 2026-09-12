@@ -6228,8 +6228,8 @@ const ExamApp = {
   _initCameraDragging() {
     this._destroyCameraDragging();
     const container = document.getElementById('camera-container');
-    const handle = document.getElementById('camera-drag-handle');
-    if (!container || !handle) return;
+    const dragSurface = document.getElementById('camera-drag-surface');
+    if (!container || !dragSurface) return;
 
     let drag = null;
     const onPointerMove = (event) => {
@@ -6239,7 +6239,7 @@ const ExamApp = {
     };
     const stopDragging = (event) => {
       if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
-      try { handle.releasePointerCapture?.(drag.pointerId); } catch (_) {}
+      try { dragSurface.releasePointerCapture?.(drag.pointerId); } catch (_) {}
       drag = null;
       container.classList.remove('is-dragging');
     };
@@ -6252,27 +6252,17 @@ const ExamApp = {
         offsetY: event.clientY - rect.top,
       };
       event.preventDefault();
-      try { handle.setPointerCapture?.(event.pointerId); } catch (_) {}
+      try { dragSurface.setPointerCapture?.(event.pointerId); } catch (_) {}
       container.classList.add('is-dragging');
       // Switch from the CSS bottom/right anchor to explicit viewport coordinates.
       this._applyCameraDragPosition(rect.left, rect.top);
-    };
-    const onKeyDown = (event) => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-      event.preventDefault();
-      const rect = container.getBoundingClientRect();
-      const step = event.shiftKey ? 24 : 10;
-      const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
-      const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
-      this._applyCameraDragPosition(rect.left + dx, rect.top + dy);
     };
     const onResize = () => {
       if (!this._cameraDragPosition) return;
       this._applyCameraDragPosition(this._cameraDragPosition.left, this._cameraDragPosition.top);
     };
 
-    handle.addEventListener('pointerdown', onPointerDown);
-    handle.addEventListener('keydown', onKeyDown);
+    dragSurface.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove, { passive: false });
     window.addEventListener('pointerup', stopDragging);
     window.addEventListener('pointercancel', stopDragging);
@@ -6280,8 +6270,7 @@ const ExamApp = {
     window.visualViewport?.addEventListener('resize', onResize);
 
     this._cameraDragCleanup = () => {
-      handle.removeEventListener('pointerdown', onPointerDown);
-      handle.removeEventListener('keydown', onKeyDown);
+      dragSurface.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', stopDragging);
       window.removeEventListener('pointercancel', stopDragging);
