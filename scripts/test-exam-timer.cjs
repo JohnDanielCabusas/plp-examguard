@@ -124,6 +124,72 @@ app.questionOrder = [];
 app.answers = {};
 app.markedForReview = new Set();
 
+// Free-text handlers and the submission snapshot must preserve the student's
+// exact case, spelling, leading/trailing spaces, and enumeration line values.
+app.questionOrder = [
+  { id: 'exact-id', type: 'identification' },
+  { id: 'exact-enum', type: 'enumeration', answers: ['one', 'two'] },
+  { id: 'exact-essay', type: 'essay' },
+  { id: 'exact-code', type: 'coding' },
+];
+element('id-input-exact-id').value = 'McArthur  ';
+element('enum-exact-enum-0').value = '  First Item';
+element('enum-exact-enum-1').value = 'second itme  ';
+element('essay-input-exact-essay').value = 'My exact Speling.  ';
+element('coding-textarea-exact-code').value = 'print("Exact")\n';
+app.handleIdentificationInput({ target: element('id-input-exact-id') }, 'exact-id');
+app.handleEnumInput({}, 'exact-enum', 2);
+assert.equal(app.answers['exact-id'], 'McArthur  ');
+assert.equal(app.answers['exact-enum'], '  First Item\nsecond itme  ');
+const exactSnapshot = app._collectFinalAnswersFromControls();
+assert.equal(exactSnapshot['exact-id'], 'McArthur  ');
+assert.equal(exactSnapshot['exact-enum'], '  First Item\nsecond itme  ');
+assert.equal(exactSnapshot['exact-essay'], 'My exact Speling.  ');
+assert.equal(exactSnapshot['exact-code'], 'print("Exact")\n');
+app.questionOrder = [];
+app.answers = {};
+
+// Final collection reads the last visible value for every supported question
+// type. In particular, a changed choice must replace the earlier saved choice.
+const finalQuestions = [
+  { id: 'final-mcq', type: 'mcq' },
+  { id: 'final-checkbox', type: 'checkbox' },
+  { id: 'final-tf', type: 'tf' },
+  { id: 'final-id', type: 'identification' },
+  { id: 'final-enum', type: 'enumeration', answers: ['a', 'b'] },
+  { id: 'final-match', type: 'matching', pairs: [{}, {}] },
+  { id: 'final-essay', type: 'essay' },
+  { id: 'final-code', type: 'coding' },
+];
+app.questionOrder = finalQuestions;
+app.answers = { 'final-mcq': 'Previous choice' };
+element('mcq-final-mcq').querySelector = () => ({ dataset: { val: 'Latest Choice — exact' } });
+const checkboxOptions = [
+  { dataset: { idx: '2' }, querySelector: () => ({ checked: true }) },
+  { dataset: { idx: '0' }, querySelector: () => ({ checked: true }) },
+  { dataset: { idx: '1' }, querySelector: () => ({ checked: false }) },
+];
+element('checkbox-final-checkbox').querySelectorAll = () => checkboxOptions;
+element('tf-final-tf').querySelector = () => ({ classList: { contains: name => name === 'tf-false' } });
+element('id-input-final-id').value = 'iPhone eSIM';
+element('enum-final-enum-0').value = ' First ';
+element('enum-final-enum-1').value = 'SecOnd';
+element('match-final-match-0').value = 'Exact Match A';
+element('match-final-match-1').value = 'Exact Match B';
+element('essay-input-final-essay').value = 'Essay Case & punctuation!  ';
+element('coding-cm-final-code')._cm = { getValue: () => 'const Value = "Exact";\n' };
+const allTypesSnapshot = app._collectFinalAnswersFromControls();
+assert.equal(allTypesSnapshot['final-mcq'], 'Latest Choice — exact');
+assert.equal(allTypesSnapshot['final-checkbox'], '[0,2]');
+assert.equal(allTypesSnapshot['final-tf'], 'False');
+assert.equal(allTypesSnapshot['final-id'], 'iPhone eSIM');
+assert.equal(allTypesSnapshot['final-enum'], ' First \nSecOnd');
+assert.equal(allTypesSnapshot['final-match'], '{"0":"Exact Match A","1":"Exact Match B"}');
+assert.equal(allTypesSnapshot['final-essay'], 'Essay Case & punctuation!  ');
+assert.equal(allTypesSnapshot['final-code'], 'const Value = "Exact";\n');
+app.questionOrder = [];
+app.answers = {};
+
 // A stale session poll must not erase an answer while autosave is in flight.
 app._pendingLocalAnswers = new Map([['race-answer', 'Newest choice']]);
 app.answers = { 'race-answer': 'Newest choice' };

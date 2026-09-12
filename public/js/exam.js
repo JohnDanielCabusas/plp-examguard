@@ -7102,7 +7102,7 @@ const ExamApp = {
 
   _renderIdentification(q, idx) {
     return `<input type="text" class="id-input" id="id-input-${q.id}" data-exam-control="true" placeholder="Type your answer here..."
-      autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
       oninput="ExamApp.handleIdentificationInput(event, '${q.id}')" />`;
   },
 
@@ -7112,7 +7112,7 @@ const ExamApp = {
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:13px;color:var(--text-muted);font-weight:700;min-width:22px;">${i+1}.</span>
         <input type="text" class="form-control" id="enum-${q.id}-${i}" data-exam-control="true" placeholder="Item ${i+1}"
-          autocomplete="off" spellcheck="true"
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="true"
           oninput="ExamApp.handleEnumInput(event,'${q.id}',${count})" style="flex:1;" />
       </div>`).join('');
     return `<div style="display:flex;flex-direction:column;gap:8px;">${rows}</div>
@@ -7143,7 +7143,7 @@ const ExamApp = {
     const note = minW > 0 ? `Minimum ${minW} words required.` : 'Write a detailed response.';
     return `
       <textarea class="essay-textarea" id="essay-input-${q.id}" data-exam-control="true" placeholder="Write your answer here..."
-        autocomplete="off" spellcheck="true"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="true"
         oninput="ExamApp.handleEssayInput(event, '${q.id}', ${minW})"
       ></textarea>
       <div class="essay-meta">
@@ -7331,6 +7331,20 @@ const ExamApp = {
       if (ta) ta.value = value;
       const cmWrap = document.getElementById(`coding-cm-${q.id}`);
       if (cmWrap?._cm) cmWrap._cm.setValue(value);
+    } else if (q.type === 'enumeration') {
+      const items = String(value ?? '').split('\n');
+      const count = (q.answers || []).length || 3;
+      for (let i = 0; i < count; i++) {
+        const input = document.getElementById(`enum-${q.id}-${i}`);
+        if (input) input.value = items[i] ?? '';
+      }
+    } else if (q.type === 'matching') {
+      let matches = {};
+      try { matches = typeof value === 'string' ? (JSON.parse(value) || {}) : (value || {}); } catch (_) {}
+      (q.pairs || []).forEach((_, pairIndex) => {
+        const select = document.getElementById(`match-${q.id}-${pairIndex}`);
+        if (select) select.value = matches[pairIndex] ?? '';
+      });
     }
     const card = document.getElementById(`qcard-${q.id}`);
     if (card) card.classList.add('answered');
@@ -7376,9 +7390,7 @@ const ExamApp = {
   },
 
   handleIdentificationInput(event, questionId) {
-    const val = event.target.value.toUpperCase();
-    event.target.value = val;
-    this.selectAnswer(questionId, val);
+    this.selectAnswer(questionId, event.target.value);
   },
 
   handleEnumInput(event, questionId, count) {
@@ -7386,7 +7398,7 @@ const ExamApp = {
     const items = [];
     for (let i = 0; i < count; i++) {
       const el = document.getElementById(`enum-${questionId}-${i}`);
-      items.push(el ? el.value.trim() : '');
+      items.push(el ? el.value : '');
     }
     this.selectAnswer(questionId, items.join('\n'));
   },
@@ -7460,6 +7472,49 @@ const ExamApp = {
     }
     this._updateAnsweredStatus();
     this.autoSave();
+  },
+
+  _collectFinalAnswersFromControls() {
+    const finalAnswers = { ...this.answers };
+
+    this.questionOrder.forEach(q => {
+      if (q.type === 'mcq') {
+        const selected = document.getElementById(`mcq-${q.id}`)?.querySelector('.mcq-option.selected');
+        finalAnswers[q.id] = selected ? selected.dataset.val : '';
+      } else if (q.type === 'checkbox') {
+        const selectedIndices = [...(document.getElementById(`checkbox-${q.id}`)?.querySelectorAll('.checkbox-option') || [])]
+          .filter(option => option.querySelector('input[type="checkbox"]')?.checked)
+          .map(option => Number(option.dataset.idx))
+          .sort((a, b) => a - b);
+        finalAnswers[q.id] = selectedIndices.length ? JSON.stringify(selectedIndices) : '';
+      } else if (q.type === 'tf') {
+        const selected = document.getElementById(`tf-${q.id}`)?.querySelector('.tf-btn.selected');
+        finalAnswers[q.id] = selected?.classList.contains('tf-true') ? 'True'
+          : selected?.classList.contains('tf-false') ? 'False'
+          : '';
+      } else if (q.type === 'identification') {
+        finalAnswers[q.id] = document.getElementById(`id-input-${q.id}`)?.value ?? finalAnswers[q.id] ?? '';
+      } else if (q.type === 'enumeration') {
+        const count = (q.answers || []).length || 3;
+        finalAnswers[q.id] = Array.from({ length: count }, (_, index) =>
+          document.getElementById(`enum-${q.id}-${index}`)?.value ?? ''
+        ).join('\n');
+      } else if (q.type === 'matching') {
+        const matches = {};
+        (q.pairs || []).forEach((_, index) => {
+          matches[index] = document.getElementById(`match-${q.id}-${index}`)?.value ?? '';
+        });
+        finalAnswers[q.id] = JSON.stringify(matches);
+      } else if (q.type === 'essay') {
+        finalAnswers[q.id] = document.getElementById(`essay-input-${q.id}`)?.value ?? finalAnswers[q.id] ?? '';
+      } else if (q.type === 'coding') {
+        const editor = document.getElementById(`coding-cm-${q.id}`)?._cm;
+        const source = document.getElementById(`coding-textarea-${q.id}`);
+        finalAnswers[q.id] = editor ? editor.getValue() : (source?.value ?? finalAnswers[q.id] ?? '');
+      }
+    });
+
+    return finalAnswers;
   },
 
   autoSave() {
@@ -8229,7 +8284,17 @@ const ExamApp = {
     const submitModal = document.getElementById('confirm-submit-modal');
     if (submitModal && !submitModal.classList.contains('hidden')) unlockBodyScroll();
     if (submitModal) submitModal.classList.add('hidden');
-    // The final submission below writes the current answers in one operation.
+    // Capture the exact values currently visible in every control. This is the
+    // final authority for both scoring and persistence and intentionally does
+    // not normalize case, spelling, whitespace, or line contents.
+    this.answers = this._collectFinalAnswersFromControls();
+    if (!this._pendingLocalAnswers || typeof this._pendingLocalAnswers.set !== 'function') {
+      this._pendingLocalAnswers = new Map();
+    }
+    Object.entries(this.answers).forEach(([questionId, value]) => {
+      this._pendingLocalAnswers.set(String(questionId), value);
+    });
+    // The final submission below writes this snapshot in one operation.
     this._discardPendingAutoSave();
 
     this._recordActivity('browser_exam_end', 'Browser examination session ended', {
@@ -8272,7 +8337,7 @@ const ExamApp = {
         autoSubmitted,
         submitReason,
         endTime: new Date().toISOString(),
-        answers: this.answers,
+        answers: { ...this.answers },
         score: score.earned,
         maxScore: score.max,
       });
