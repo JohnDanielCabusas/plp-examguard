@@ -8,13 +8,32 @@ const source = fs.readFileSync(path.join(root, 'public', 'js', 'exam.js'), 'utf8
 const elements = new Map();
 const element = id => {
   if (!elements.has(id)) {
-    elements.set(id, {
+    const classes = new Set();
+    const item = {
       id,
       style: {},
-      classList: { add() {}, remove() {}, toggle() {}, contains() { return true; } },
+      classList: {
+        add(...names) { names.forEach(name => classes.add(name)); },
+        remove(...names) { names.forEach(name => classes.delete(name)); },
+        toggle(name, force) {
+          const enabled = force === undefined ? !classes.has(name) : !!force;
+          if (enabled) classes.add(name); else classes.delete(name);
+          return enabled;
+        },
+        contains(name) { return classes.has(name); },
+      },
       textContent: '',
+      setAttribute(name, value) { this[name] = String(value); },
       querySelector(selector) { return element(selector); },
+    };
+    Object.defineProperty(item, 'className', {
+      get() { return [...classes].join(' '); },
+      set(value) {
+        classes.clear();
+        String(value || '').split(/\s+/).filter(Boolean).forEach(name => classes.add(name));
+      },
     });
+    elements.set(id, item);
   }
   return elements.get(id);
 };
@@ -73,6 +92,31 @@ app.autoSave = realAutoSave;
 app._updateAnsweredStatus = realUpdateAnsweredStatus;
 app.questionOrder = [];
 app.answers = {};
+
+// The real navigator renderer must add the green `answered` class for every
+// question type, including questions that are also marked for review.
+const answerCases = [
+  ['mcq', 'Option A'],
+  ['tf', 'True'],
+  ['identification', 'ANSWER'],
+  ['essay', 'An essay response'],
+  ['coding', 'return 1;'],
+  ['checkbox', '[0]'],
+  ['enumeration', 'First item\n'],
+  ['matching', '{"0":"Match"}'],
+];
+app.questionOrder = answerCases.map(([type], index) => ({ id: `answer-${index}`, type }));
+app.answers = Object.fromEntries(answerCases.map(([, value], index) => [`answer-${index}`, value]));
+app.currentQuestionIndex = 0;
+app.markedForReview = new Set([1]);
+app._updateNavGrid();
+answerCases.forEach((_, index) => {
+  assert.equal(element(`nav-q-${index}`).classList.contains('answered'), true, `Question type ${answerCases[index][0]} must be highlighted as answered.`);
+});
+assert.equal(element('nav-q-1').classList.contains('review'), true);
+app.questionOrder = [];
+app.answers = {};
+app.markedForReview = new Set();
 
 const now = Date.now();
 const startedAt = new Date(now - 10 * 60 * 1000).toISOString();

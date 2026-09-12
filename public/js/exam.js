@@ -7566,14 +7566,10 @@ const ExamApp = {
       if (!btn) return;
       btn.className = 'nav-q-btn';
       const isAnswered = this._isQuestionAnswered(q, this.answers[q.id]);
-      if (idx === this.currentQuestionIndex) {
-        btn.classList.add('current');
-        if (isAnswered) btn.classList.add('answered');
-      } else if (this.markedForReview.has(idx)) {
-        btn.classList.add('review');
-      } else if (isAnswered) {
-        btn.classList.add('answered');
-      }
+      btn.classList.toggle('answered', isAnswered);
+      btn.classList.toggle('review', this.markedForReview.has(idx));
+      btn.classList.toggle('current', idx === this.currentQuestionIndex);
+      btn.setAttribute('aria-label', `Question ${idx + 1}: ${isAnswered ? 'answered' : 'unanswered'}${this.markedForReview.has(idx) ? ', marked for review' : ''}`);
     });
   },
 
