@@ -171,7 +171,11 @@ const ExamApp = {
   _FACE_PRESENCE_CONFIRM_SEC: 1.2,
   _MULTIPLE_FACE_WARN_SEC: 10,
   _MULTIPLE_FACE_CONFIRM_SEC: 1.2,
-  _MULTIPLE_FACE_RECOVERY_MS: 500,
+  // Face/person detectors occasionally miss a frame when somebody turns,
+  // enters at the edge, or is partly hidden behind the student. Keep recent
+  // positive evidence briefly so those normal inference gaps do not restart
+  // the student-facing ten-second countdown.
+  _MULTIPLE_FACE_RECOVERY_MS: 1200,
   _LOOK_DOWN_WARN_SEC: 10,
   _LOOK_DOWN_CONFIRM_SEC: 1.2,
   _faceModel: null,
@@ -191,6 +195,9 @@ const ExamApp = {
   _yoloPreloadPromise: null,
   _yoloStarting: false,
   _yoloStartGeneration: 0,
+  _yoloRetryTimer: null,
+  _yoloRetryCount: 0,
+  _YOLO_MAX_RETRIES: 3,
   _faceMeshRuntime: null,
   _faceMeshConfig: null,
   _faceMeshBaseline: null,
@@ -4104,7 +4111,7 @@ const ExamApp = {
     const statusText = document.getElementById('camera-status-text');
     if (container) container.style.display = '';
     if (blockedMsg) blockedMsg.style.display = 'flex';
-    if (statusText) statusText.textContent = 'Camera denied';
+    this._setCameraStatusText('Camera denied', { force: true });
 
     // Give the student a chance to tell their professor why, so the professor
     // can grant a camera exemption from the in-exam chat if warranted.
@@ -4375,6 +4382,52 @@ const ExamApp = {
     }
   },
 
+  _getPlausibleFaceMeshGeometries(observation = {}) {
+    if (!Array.isArray(observation.faceGeometries)) return null;
+    const candidates = observation.faceGeometries
+      .filter(geometry => (
+        Number.isFinite(Number(geometry?.x))
+        && Number.isFinite(Number(geometry?.y))
+        && Number(geometry?.width) >= 0.07
+        && Number(geometry?.height) >= 0.09
+        && Number(geometry.width) * Number(geometry.height) >= 0.006
+      ))
+      .map(geometry => ({
+        ...geometry,
+        area: Number(geometry.width) * Number(geometry.height),
+        centerX: Number.isFinite(Number(geometry.centerX))
+          ? Number(geometry.centerX)
+          : Number(geometry.x) + (Number(geometry.width) / 2),
+        centerY: Number.isFinite(Number(geometry.centerY))
+          ? Number(geometry.centerY)
+          : Number(geometry.y) + (Number(geometry.height) / 2),
+      }))
+      .sort((a, b) => b.area - a.area);
+    const primary = candidates[0];
+    if (!primary) return [];
+
+    const extras = candidates.slice(1).filter(face => {
+      const left = Math.max(primary.x, face.x);
+      const top = Math.max(primary.y, face.y);
+      const right = Math.min(primary.x + primary.width, face.x + face.width);
+      const bottom = Math.min(primary.y + primary.height, face.y + face.height);
+      const overlapArea = Math.max(0, right - left) * Math.max(0, bottom - top);
+      const overlapRatio = overlapArea / Math.max(0.0001, Math.min(primary.area, face.area));
+      const relativeArea = face.area / Math.max(0.0001, primary.area);
+      const centerDistance = Math.hypot(face.centerX - primary.centerX, face.centerY - primary.centerY);
+      const aspectRatio = face.height / Math.max(0.0001, face.width);
+      return face.width >= 0.075
+        && face.height >= 0.1
+        && face.area >= 0.0075
+        && relativeArea >= 0.15
+        && aspectRatio >= 0.65
+        && aspectRatio <= 2.2
+        && overlapRatio <= 0.35
+        && centerDistance >= Math.max(0.045, Math.min(primary.width, primary.height) * 0.3);
+    });
+    return [primary, ...extras];
+  },
+
   _handleFaceMeshObservation(observation) {
     this._lastFaceMeshObservation = observation;
     if (this._faceMeshCalibrating && this._faceCalibration) {
@@ -4385,6 +4438,31 @@ const ExamApp = {
       return;
     }
     if (!this._faceRuleEngine || !this._faceMeshBaseline || !this._faceMeshConfig) return;
+
+    const plausibleFaceGeometries = this._getPlausibleFaceMeshGeometries(observation);
+    if (plausibleFaceGeometries?.length) {
+      const frameWidth = Number(observation?.frameWidth || 1);
+      const frameHeight = Number(observation?.frameHeight || 1);
+      this._latestFaceContext = {
+        capturedAt: Date.now(),
+        frameWidth,
+        frameHeight,
+        faces: plausibleFaceGeometries.map(face => ({
+          x: face.x * frameWidth,
+          y: face.y * frameHeight,
+          width: face.width * frameWidth,
+          height: face.height * frameHeight,
+          nose: face.nose ? { x: face.nose.x * frameWidth, y: face.nose.y * frameHeight } : null,
+          mouth: face.mouth ? { x: face.mouth.x * frameWidth, y: face.mouth.y * frameHeight } : null,
+        })),
+      };
+    } else if (
+      plausibleFaceGeometries
+      && this._latestFaceContext?.capturedAt
+      && Date.now() - this._latestFaceContext.capturedAt > 1600
+    ) {
+      this._latestFaceContext = null;
+    }
 
     const classified = window.FaceMeshProctor.classifyObservation(
       observation,
@@ -4400,15 +4478,14 @@ const ExamApp = {
       ...classified,
       occluded: blazeFaceStillVisible,
       personPresent: classified.facePresent || blazeFaceStillVisible || yoloPersonStillVisible,
-      faceCount: this._latestFaceContext?.capturedAt
-        && Date.now() - this._latestFaceContext.capturedAt <= 1600
-        ? Math.min(2, Math.max(0, Number(this._latestFaceContext.faces?.length || 0)))
+      faceCount: plausibleFaceGeometries
+        ? Math.min(2, plausibleFaceGeometries.length)
         : Number.isFinite(observedFaceCount)
           ? Math.min(2, Math.max(0, Math.round(observedFaceCount)))
           : (classified.facePresent ? 1 : 0),
     };
     this._lastFaceMeshObservation = enriched;
-    this._updateMultiplePeopleTracking('facemesh', enriched.faceCount >= 2, { holdMs: 500 });
+    this._updateMultiplePeopleTracking('facemesh', enriched.faceCount >= 2, { holdMs: 1500 });
     this._faceAggregator?.observe?.(enriched);
     this._faceRuleEngine.update(enriched);
     this._renderFaceConditionCountdown();
@@ -4737,17 +4814,40 @@ const ExamApp = {
     warning.style.display = '';
   },
 
+  _setCameraStatusText(message, options = {}) {
+    const statusText = document.getElementById('camera-status-text');
+    if (!statusText) return;
+    const hasFaceCountdown = this._multiplePeopleStatus?.detected
+      || this._faceConditionCountdowns.size > 0;
+    if (!options.force && hasFaceCountdown) {
+      this._renderFaceConditionCountdown();
+      return;
+    }
+    statusText.textContent = message;
+    if (options.force) {
+      delete statusText.dataset.faceCountdown;
+      delete statusText.dataset.alert;
+      statusText.removeAttribute?.('title');
+    }
+  },
+
   _renderFaceConditionCountdown() {
     const statusText = document.getElementById('camera-status-text');
     if (!statusText) return;
     const multiplePeople = this._multiplePeopleStatus;
     if (multiplePeople?.detected) {
       statusText.dataset.faceCountdown = 'true';
+      statusText.dataset.alert = 'multiple-people';
       statusText.textContent = multiplePeople.remainingSeconds > 0
-        ? `Multiple faces or people (${multiplePeople.remainingSeconds}s)`
-        : 'Multiple faces or people detected';
+        ? `Another person (${multiplePeople.remainingSeconds}s)`
+        : 'Another person detected';
+      statusText.title = multiplePeople.remainingSeconds > 0
+        ? `Another face or person detected. Warning in ${multiplePeople.remainingSeconds} seconds.`
+        : 'Another face or person was detected.';
       return;
     }
+    delete statusText.dataset.alert;
+    statusText.removeAttribute?.('title');
     const priorities = ['FACE_ABSENT', 'SUSTAINED_LOOKING_DOWN', 'SUSTAINED_HEAD_TURN'];
     const countdown = priorities.map(type => this._faceConditionCountdowns.get(type)).find(Boolean);
     if (!countdown) {
@@ -4777,20 +4877,19 @@ const ExamApp = {
     this._startCameraWatchdog();
     this._startYoloObjectMonitoring(video);
     this._activateFaceMeshMonitoring();
-    const statusText = document.getElementById('camera-status-text');
-    if (statusText) statusText.textContent = 'Starting camera scan…';
+    this._setCameraStatusText('Starting camera scan…', { force: true });
     setTimeout(() => this._checkInitialPresence(video), 500);
     // FaceMesh already performs primary-face inference in a worker. Loading
     // TensorFlow.js + BlazeFace here duplicated that work on the UI thread and
     // caused intermittent stalls. Keep BlazeFace only as the explicit fallback.
     if (this._faceRuleEngine) {
-      if (statusText) statusText.textContent = 'Camera scan active';
+      this._setCameraStatusText('Camera scan active');
     } else {
       this._loadFaceDetectionModel().then(() => {
-        if (statusText) statusText.textContent = 'Camera scan active';
+        this._setCameraStatusText('Camera scan active');
       }).catch(error => {
         this._faceModelReady = false;
-        if (statusText) statusText.textContent = 'Camera scan active';
+        this._setCameraStatusText('Camera scan active');
         console.warn('[Camera] Face detection fallback active:', error?.message || error);
       });
     }
@@ -4823,7 +4922,7 @@ const ExamApp = {
           : navigator.mediaDevices.getUserMedia(cameraConstraints));
       this._cameraPrompting = false;
       this._cameraStream = stream;
-      if (statusText) statusText.textContent = calibrationOnly ? 'Calibrating' : 'Monitoring';
+      this._setCameraStatusText(calibrationOnly ? 'Calibrating' : 'Monitoring', { force: true });
       if (blockedMsg) blockedMsg.style.display = 'none';
 
       // Wait for video to be ready before starting presence checks. Object
@@ -4845,7 +4944,7 @@ const ExamApp = {
       if (video.readyState >= 2) handleCameraReady();
     } catch (err) {
       this._cameraPrompting = false;
-      if (statusText) statusText.textContent = 'Camera denied';
+      this._setCameraStatusText('Camera denied', { force: true });
       if (blockedMsg) blockedMsg.style.display = 'flex';
       this._recordActivity('camera_denied', 'Camera permission denied: ' + err.message);
       // Keep watching — the overlay blocks the exam and retries the camera
@@ -4942,9 +5041,33 @@ const ExamApp = {
         : '';
   },
 
+  _scheduleYoloRetry(video, detail = {}) {
+    if (
+      this._yoloRetryTimer
+      || this._yoloRetryCount >= this._YOLO_MAX_RETRIES
+      || !this.exam?.requireCamera
+      || !this._cameraStream
+      || !video
+    ) return false;
+
+    this._yoloRetryCount += 1;
+    const delayMs = Math.min(5000, 1000 * (2 ** (this._yoloRetryCount - 1)));
+    this._setYoloStatus('degraded', {
+      ...detail,
+      message: `Object detection is restarting (attempt ${this._yoloRetryCount} of ${this._YOLO_MAX_RETRIES}).`,
+    });
+    this._yoloRetryTimer = setTimeout(() => {
+      this._yoloRetryTimer = null;
+      this._startYoloObjectMonitoring(video);
+    }, delayMs);
+    return true;
+  },
+
   async _startYoloObjectMonitoring(video) {
     if (this._yoloStarting) return;
-    this._stopYoloObjectMonitoring();
+    // Keep the retry count while replacing a failed monitor. Explicit camera
+    // shutdowns still reset it through _stopYoloObjectMonitoring().
+    this._stopYoloObjectMonitoring({ resetRetry: false });
     if (!this.exam?.requireCamera || !video) return;
     const generation = this._yoloStartGeneration;
     this._yoloStarting = true;
@@ -4954,8 +5077,10 @@ const ExamApp = {
       await window.YoloProctor?.load?.();
     } catch (error) {
       if (generation !== this._yoloStartGeneration) return;
-      this._setYoloStatus('error');
       console.warn('[YOLO] Object monitoring runtime is unavailable:', error?.message || error);
+      if (!this._scheduleYoloRetry(video, { message: error?.message || '' })) {
+        this._setYoloStatus('error', { message: error?.message || 'Object detection could not start.' });
+      }
       return;
     } finally {
       if (generation === this._yoloStartGeneration) this._yoloStarting = false;
@@ -4965,39 +5090,45 @@ const ExamApp = {
     const config = this._getObjectMonitoringConfig();
     if (!config.enabled) return;
     if (!window.YoloProctor?.createMonitor || !window.YoloProctor?.createPolicy) {
-      this._setYoloStatus('error');
       console.warn('[YOLO] Object monitoring runtime is unavailable.');
+      if (!this._scheduleYoloRetry(video)) this._setYoloStatus('error');
       return;
     }
 
     this._yoloPolicy = window.YoloProctor.createPolicy(config);
     this._yoloConfigSignature = JSON.stringify(config);
-    this._yoloMonitor = window.YoloProctor.createMonitor({
+    const monitor = window.YoloProctor.createMonitor({
       video,
       manifestUrl: '/models/yolo-proctor-v1.json',
       onStatus: status => {
+        if (this._yoloMonitor !== monitor) return;
         this._setYoloStatus(status.state || 'unknown', status);
         if (
           status.state === 'ready'
           && status.modelProfile === 'coco'
           && generation === this._yoloStartGeneration
         ) {
+          this._yoloRetryCount = 0;
           this._startYoloPhoneSpecialist(video, generation);
         }
         if (status.state === 'error') {
           console.warn('[YOLO] Object monitoring disabled:', status.message || 'Model unavailable');
+          this._scheduleYoloRetry(video, status);
         }
       },
       onResult: result => this._handleYoloResult(result),
     });
+    this._yoloMonitor = monitor;
 
     try {
-      await this._yoloMonitor.start();
+      await monitor.start();
     } catch (error) {
-      this._setYoloStatus('error');
-      this._yoloMonitor?.stop();
-      this._yoloMonitor = null;
+      monitor.stop();
+      if (this._yoloMonitor === monitor) this._yoloMonitor = null;
       console.warn('[YOLO] Unable to start object monitoring:', error?.message || error);
+      if (!this._scheduleYoloRetry(video, { message: error?.message || '' })) {
+        this._setYoloStatus('error', { message: error?.message || 'Object detection could not start.' });
+      }
     }
   },
 
@@ -5035,9 +5166,12 @@ const ExamApp = {
     }
   },
 
-  _stopYoloObjectMonitoring() {
+  _stopYoloObjectMonitoring(options = {}) {
     this._yoloStartGeneration += 1;
     this._yoloStarting = false;
+    if (this._yoloRetryTimer) clearTimeout(this._yoloRetryTimer);
+    this._yoloRetryTimer = null;
+    if (options.resetRetry !== false) this._yoloRetryCount = 0;
     this._yoloMonitor?.stop();
     this._yoloPhoneMonitor?.stop();
     this._yoloMonitor = null;
@@ -5070,6 +5204,54 @@ const ExamApp = {
     }
   },
 
+  _getPlausibleYoloPeople(detections = []) {
+    const people = detections
+      .filter(detection => detection?.contextClass === 'person' && detection?.boundingBox)
+      .map(detection => {
+        const box = detection.boundingBox;
+        const width = Number(box.width || 0);
+        const height = Number(box.height || 0);
+        const frameArea = Number(box.frameWidth || 0) * Number(box.frameHeight || 0);
+        return {
+          ...detection,
+          _personArea: width * height,
+          _personAreaRatio: frameArea > 0 ? (width * height) / frameArea : 0,
+          _personAspectRatio: height / Math.max(1, width),
+          _personCenterX: Number(box.x || 0) + (width / 2),
+          _personCenterY: Number(box.y || 0) + (height / 2),
+        };
+      })
+      .filter(person => (
+        person._personAreaRatio >= 0.015
+        && person._personAspectRatio >= 0.9
+        && person._personAspectRatio <= 4.5
+      ))
+      .sort((a, b) => b._personArea - a._personArea);
+    const primary = people[0];
+    if (!primary) return [];
+
+    const extras = people.slice(1).filter(person => {
+      const primaryBox = primary.boundingBox;
+      const box = person.boundingBox;
+      const left = Math.max(primaryBox.x, box.x);
+      const top = Math.max(primaryBox.y, box.y);
+      const right = Math.min(primaryBox.x + primaryBox.width, box.x + box.width);
+      const bottom = Math.min(primaryBox.y + primaryBox.height, box.y + box.height);
+      const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+      const overlapRatio = intersection / Math.max(1, Math.min(primary._personArea, person._personArea));
+      const centerDistance = Math.hypot(
+        person._personCenterX - primary._personCenterX,
+        person._personCenterY - primary._personCenterY,
+      );
+      return person._personAreaRatio >= 0.012
+        && person._personArea / Math.max(1, primary._personArea) >= 0.12
+        && person._personAspectRatio >= 1.05
+        && overlapRatio <= 0.55
+        && centerDistance >= Math.max(24, Math.min(primaryBox.width, primaryBox.height) * 0.25);
+    });
+    return [primary, ...extras];
+  },
+
   _handleYoloResult(result = {}) {
     if (!this._yoloPolicy || !this.session || !this.exam) return;
     this._lastYoloResult = result;
@@ -5078,9 +5260,19 @@ const ExamApp = {
       detectorRole: result.detectorRole || 'primary',
     }));
     if ((result.detectorRole || 'primary') === 'primary') {
-      const people = detections.filter(detection => detection.contextClass === 'person');
+      // A successful frame proves the worker recovered from a transient
+      // inference error. Restore the active state instead of leaving the chip
+      // stuck on "retrying" after scanning has resumed.
+      if (this._yoloStatus === 'degraded') {
+        this._setYoloStatus('ready', {
+          backend: result.backend || '',
+          modelVersion: result.modelVersion || '',
+          modelProfile: result.modelProfile || '',
+        });
+      }
+      const people = this._getPlausibleYoloPeople(detections);
       if (people.length) this._yoloPersonSeenUntil = Date.now() + 1500;
-      this._updateMultiplePeopleTracking('yolo', people.length >= 2, { holdMs: 1000 });
+      this._updateMultiplePeopleTracking('yolo', people.length >= 2, { holdMs: 2000 });
     }
     const events = this._yoloPolicy.evaluate(detections, {
       now: Date.now(),
@@ -5269,7 +5461,7 @@ const ExamApp = {
     if (this._isCameraRecoveryPending()) {
       this._showCameraOffOverlay({ status: 'Checking camera...' });
       const statusText = document.getElementById('camera-status-text');
-      if (statusText) statusText.textContent = 'Checking camera...';
+      this._setCameraStatusText('Checking camera...', { force: true });
       return;
     }
 
@@ -5279,7 +5471,7 @@ const ExamApp = {
         this._cameraOffWarningIssued = false;
         this._hideCameraOffOverlay();
         const statusText = document.getElementById('camera-status-text');
-        if (statusText) statusText.textContent = '● Monitoring';
+        this._setCameraStatusText('● Monitoring', { force: true });
         this._recordActivity('camera_restored', 'Webcam re-enabled — monitoring resumed');
       }
       return;
@@ -5288,7 +5480,7 @@ const ExamApp = {
     // Camera is off / blocked / unplugged
     this._showCameraOffOverlay();
     const statusText = document.getElementById('camera-status-text');
-    if (statusText) statusText.textContent = 'Camera off';
+    this._setCameraStatusText('Camera off', { force: true });
 
     this._cameraOffSeconds += 1;
     if (this._cameraOffSeconds >= this._CAMERA_OFF_WARN_SEC && !this._cameraOffWarningIssued) {
@@ -5318,7 +5510,7 @@ const ExamApp = {
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';
       const statusText = document.getElementById('camera-status-text');
-      if (statusText) statusText.textContent = 'Checking camera...';
+      this._setCameraStatusText('Checking camera...', { force: true });
       this._cameraRecoveryGraceUntil = Date.now() + 2500;
       this._showCameraOffOverlay({ status: 'Checking camera...' });
       // If the camera was denied at exam start, detection never began — start it now
@@ -5480,20 +5672,20 @@ const ExamApp = {
         this._noMotionSec = 0;
         this._motionBlocked = false;
       }
-      if (statusText) statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+      this._setCameraStatusText(presenceStable ? 'Person detected' : 'Confirming person...');
       if (presenceStable) this._clearMotionWarning();
     } else {
       const now = this._getDetectionNow();
       this._resetPresenceTracking();
       if (this._isPresenceGraceActive(now)) {
-        if (statusText) statusText.textContent = 'Checking camera...';
+        this._setCameraStatusText('Checking camera...');
         return;
       }
 
       // No significant motion
       this._noMotionSec += 0.5;
       const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
-      if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
+      this._setCameraStatusText(`No person (${Math.ceil(remaining)}s)`);
 
       if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
         this._handleNoMotion();
@@ -5736,13 +5928,14 @@ const ExamApp = {
   _updateMultiplePeopleTracking(source, detected, options = {}) {
     const now = Number(options.now ?? this._getDetectionNow());
     const holdMs = Math.max(250, Number(options.holdMs || 1000));
-    // A fresh negative result is stronger than an old positive result from the
-    // same detector. Removing it now stops a stale hold window from keeping the
-    // visible countdown alive after the second person has left the frame.
+    // Positive results are held until their short expiry instead of being
+    // erased by the next negative frame. Multi-person inference is naturally
+    // noisy at frame edges and during head turns; the hold joins those brief
+    // gaps into one continuous observation without allowing a short sighting
+    // to reach the ten-second warning threshold.
     if (detected) this._multiplePeopleSources.set(source, now + holdMs);
-    else this._multiplePeopleSources.delete(source);
     for (const [key, expiresAt] of this._multiplePeopleSources) {
-      if (expiresAt < now) this._multiplePeopleSources.delete(key);
+      if (expiresAt <= now) this._multiplePeopleSources.delete(key);
     }
 
     const multipleDetected = [...this._multiplePeopleSources.values()].some(expiresAt => expiresAt >= now);
@@ -5918,9 +6111,11 @@ const ExamApp = {
         }
         const remaining = multiplePeopleState.remainingSeconds;
         if (statusText) {
+          statusText.dataset.faceCountdown = 'true';
+          statusText.dataset.alert = 'multiple-people';
           statusText.textContent = multiplePeopleState.active
-            ? 'Multiple faces or people detected'
-            : `Multiple faces or people (${remaining}s)`;
+            ? 'Another person detected'
+            : `Another person (${remaining}s)`;
         }
         if (presenceStable) this._clearMotionWarning();
       } else if (primaryFace && primaryLookingDown) {
@@ -5934,11 +6129,12 @@ const ExamApp = {
         }
         const remaining = Math.max(0, this._LOOK_DOWN_WARN_SEC - this._lookDownSeconds);
         if (statusText) {
-          statusText.textContent = this._lookDownWarningIssued
+          const message = this._lookDownWarningIssued
             ? 'Looking down detected'
             : lookDownConfirmed
               ? `Looking down (${Math.ceil(remaining)}s)`
               : (presenceStable ? 'Person detected' : 'Confirming person...');
+          this._setCameraStatusText(message);
         }
         if (presenceStable) this._clearMotionWarning();
         if (this._lookDownSeconds >= this._LOOK_DOWN_WARN_SEC && !this._lookDownWarningIssued) {
@@ -5958,7 +6154,7 @@ const ExamApp = {
           this._motionBlocked = false;
         }
         if (statusText && !this._faceRuleEngine) {
-          statusText.textContent = presenceStable ? 'Person detected' : 'Confirming person...';
+          this._setCameraStatusText(presenceStable ? 'Person detected' : 'Confirming person...');
         }
         if (presenceStable) this._clearMotionWarning();
       } else {
@@ -5969,13 +6165,13 @@ const ExamApp = {
         this._lookDownWarningIssued = false;
         this._resetPresenceTracking();
         if (this._isPresenceGraceActive(now)) {
-          if (statusText && useLegacyPrimaryRules) statusText.textContent = 'Checking camera...';
+          if (useLegacyPrimaryRules) this._setCameraStatusText('Checking camera...');
           return;
         }
         if (useLegacyPrimaryRules) {
           this._noMotionSec += deltaSec;
           const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
-          if (statusText) statusText.textContent = `No person (${Math.ceil(remaining)}s)`;
+          this._setCameraStatusText(`No person (${Math.ceil(remaining)}s)`);
           if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
             this._handleNoMotion();
           }
@@ -6081,9 +6277,9 @@ const ExamApp = {
 
     if (ratio < 0.75) {
       this._darkSeconds += 0.6;
-      if (statusText && this._darkSeconds < 10) {
+      if (this._darkSeconds < 10) {
         const pct = Math.round(ratio * 100);
-        statusText.textContent = `⚠ Brightness ${pct}% (${Math.ceil(10 - this._darkSeconds)}s)`;
+        this._setCameraStatusText(`⚠ Brightness ${pct}% (${Math.ceil(10 - this._darkSeconds)}s)`);
       }
       if (this._darkSeconds >= 10 && !this._brightnessWarningIssued) {
         this._brightnessWarningIssued = true;
@@ -6093,7 +6289,7 @@ const ExamApp = {
       if (this._darkSeconds > 0) {
         this._darkSeconds = 0;
         this._brightnessWarningIssued = false;
-        if (statusText) statusText.textContent = '● Monitoring';
+        this._setCameraStatusText('● Monitoring');
       }
     }
   },

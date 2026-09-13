@@ -7950,17 +7950,12 @@ function renderCameraGrid(examId) {
   container.style.display = 'grid';
 
   container.innerHTML = entries.map(({ session, snapshot }) => {
-    const rawWarningCount = getSessionRawWarningCount(session);
     const adjustedWarningCount = Math.max(0, getEffectiveSessionWarningCount(session));
     const warningCount = adjustedWarningCount;
     const warnColor = warningCount >= 3 ? '#dc2626' : warningCount >= 2 ? '#f59e0b' : '#eab308';
     const warnBadge = `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${warningCount}/3</div>`;
     const violationLabel = getBehaviorLabel(snapshot?.violationType || 'camera_off');
     const replayEvidence = getBestEvidenceForSnapshot(session.id, snapshot);
-    const warnSuffix = warningCount !== rawWarningCount ? ` <span style="font-size:10px;font-weight:700;opacity:0.86;">raw ${rawWarningCount}</span>` : '';
-    const displayWarnBadge = warningCount !== rawWarningCount
-      ? `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);" title="Adjusted warnings: ${warningCount}. Recorded warnings: ${rawWarningCount}.">Warning ${warningCount}/3${warnSuffix}</div>`
-      : warnBadge;
     const replayBadge = replayEvidence
       ? `<div style="position:absolute;right:10px;bottom:68px;background:rgba(16,185,129,0.92);color:#052e16;font-size:10px;font-weight:800;padding:4px 8px;border-radius:999px;">Replay ready</div>`
       : '';
@@ -7977,7 +7972,7 @@ function renderCameraGrid(examId) {
       <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
         style="width:100%;height:100%;object-fit:cover;display:block;"
         onerror="this.style.display='none'" />
-      ${displayWarnBadge}
+      ${warnBadge}
       ${replayBadge}
       <div style="position:absolute;top:10px;left:10px;background:rgba(15,23,42,0.76);color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:20px;backdrop-filter:blur(4px);text-transform:uppercase;letter-spacing:0.05em;">${escHtml(violationLabel)}</div>
       <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">

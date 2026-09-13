@@ -71,6 +71,7 @@ try {
     !result.initialized
     || !result.matrixOutputAvailable
     || !result.workerInitialized
+    || !result.faceGeometryOutputAvailable
     || !result.handTrackingAvailable
     || !Number.isFinite(result.handCount)
     || !result.missingModelRejected
@@ -112,8 +113,9 @@ try {
     app._resetMultiplePeopleTracking();
     const timeline = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000]
       .map(now => app._updateMultiplePeopleTracking('blazeface', true, { now, holdMs: 1000 }));
+    const heldDropout = app._updateMultiplePeopleTracking('blazeface', false, { now: 11500, holdMs: 1000 });
     const recoveryStart = app._updateMultiplePeopleTracking('blazeface', false, { now: 12001, holdMs: 1000 });
-    const recoveryEnd = app._updateMultiplePeopleTracking('blazeface', false, { now: 13002, holdMs: 1000 });
+    const recoveryEnd = app._updateMultiplePeopleTracking('blazeface', false, { now: 13202, holdMs: 1000 });
 
     app._resetMultiplePeopleTracking();
     app._updateMultiplePeopleTracking('yolo', true, { now: 0, holdMs: 1000 });
@@ -126,7 +128,8 @@ try {
       overlapGhostIgnored: duplicateBoxes.extraFaces.length === 0,
       countdown: timeline.map(item => item.remainingSeconds),
       oneContinuousWarning: warnings.filter(item => item.type === 'multiple_people').length === 1,
-      countdownClearedImmediately: !recoveryStart.detected,
+      countdownSurvivedBriefDropout: heldDropout.detected,
+      countdownClearedAfterHold: !recoveryStart.detected,
       recoveryStarted: recoveryStart.active && !recoveryStart.justEnded,
       recoveryEnded: !recoveryEnd.active && recoveryEnd.justEnded,
       briefYoloDidNotWarn: warnings.filter(item => item.type === 'multiple_people').length === 1,
@@ -138,7 +141,8 @@ try {
     || !cameraBehavior.overlapGhostIgnored
     || cameraBehavior.countdown.join(',') !== '10,9,8,7,6,5,4,3,2,1,0,0'
     || !cameraBehavior.oneContinuousWarning
-    || !cameraBehavior.countdownClearedImmediately
+    || !cameraBehavior.countdownSurvivedBriefDropout
+    || !cameraBehavior.countdownClearedAfterHold
     || !cameraBehavior.recoveryStarted
     || !cameraBehavior.recoveryEnded
     || !cameraBehavior.briefYoloDidNotWarn

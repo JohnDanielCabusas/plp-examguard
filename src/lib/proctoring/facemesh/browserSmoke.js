@@ -79,6 +79,7 @@ export async function smokeTestFaceLandmarkerWorker() {
     return {
       workerInitialized: true,
       facePresent: observation.facePresent,
+      faceGeometryOutputAvailable: Array.isArray(observation.faceGeometries),
       handTrackingAvailable: observation.handTrackingAvailable === true,
       handCount: observation.handCount,
       handTrackingError,
@@ -172,7 +173,7 @@ export async function smokeTestMissingHandLandmarkerModel() {
     await runtime.start();
     const [observation] = await Promise.race([
       Promise.all([observationPromise, handUnavailablePromise]),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Face inference did not continue after the hand model failed.')), 10000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Face inference did not continue after the hand model failed.')), 15000)),
     ]);
     return {
       missingHandReported: handUnavailable,

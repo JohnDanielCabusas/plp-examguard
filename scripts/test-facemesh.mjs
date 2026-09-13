@@ -54,7 +54,9 @@ assert.equal(config.temporal.lookingDownIncidentMs, 10000);
 assert.equal(config.inferenceFps, 10);
 assert.equal(config.maximumInferenceDimension, 480);
 assert.equal(config.randomForest.handInferenceIntervalMs, 300);
+assert.equal(config.minFaceDetectionConfidence, 0.5);
 assert.equal(config.minFacePresenceConfidence, 0.45);
+assert.equal(config.minTrackingConfidence, 0.45);
 assert.equal(config.pose.pitchDirectionMultiplier, -1);
 const relative = relativePose(
   { yaw: 35, pitch: 3, roll: 2 },

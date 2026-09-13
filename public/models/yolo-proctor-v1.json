@@ -12,14 +12,16 @@
   "confidenceThresholds": {
     "mobile_phone": 0.12
   },
+  "contextConfidenceThresholds": {
+    "person": 0.3
+  },
   "verificationThresholds": {
     "mobile_phone": 0.24
   },
   "verificationMargin": 0.03,
   "verificationPadding": 0.18,
   "policyMappings": {
-    "cell phone": "mobile_phone",
-    "remote": "mobile_phone"
+    "cell phone": "mobile_phone"
   },
   "negativeConfidenceThresholds": {
     "mouse": 0.15

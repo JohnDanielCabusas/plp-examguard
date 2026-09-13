@@ -789,16 +789,14 @@ export default function ExamPage() {
         <div id="camera-drag-surface" className="camera-feed-wrap">
           <video id="camera-feed" className="camera-feed" autoPlay muted playsInline draggable={false} />
           <canvas id="camera-canvas" style={{ display: 'none' }} />
-          <span className="camera-live-label">REC</span>
-          <span id="yolo-camera-status" className="yolo-camera-status" data-state="idle">Object scan off</span>
-          <span id="facemesh-camera-status" className="facemesh-camera-status" data-state="idle">Face scan off</span>
+          <span id="yolo-camera-status" className="yolo-camera-status" data-state="loading">Object scan loading</span>
           <div id="camera-blocked-msg" className="camera-blocked-msg" style={{ display: 'none', position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
             <span>Camera<br />blocked</span>
           </div>
         </div>
         <div className="camera-status-bar">
           <span className="cam-rec-dot" />
-          <span id="camera-status-text">Camera active</span>
+          <span id="camera-status-text" role="status" aria-live="polite">Camera active</span>
         </div>
       </div>
 

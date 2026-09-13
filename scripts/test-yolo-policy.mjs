@@ -42,7 +42,9 @@ events.push(...policy.evaluate(
   { now: 1000, modelVersion: 'test-v1', backend: 'wasm' },
 ));
 assert.equal(events.length, 0, 'A single phone-shaped frame must not issue a violation.');
-events.push(...policy.evaluate([detection('mobile_phone')], { now: 2000, modelVersion: 'test-v1', backend: 'wasm' }));
+events.push(...policy.evaluate([detection('mobile_phone', 0.9, {
+  x: 219, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+})], { now: 2000, modelVersion: 'test-v1', backend: 'wasm' }));
 assert.equal(events.length, 1, 'A clear phone must confirm on a repeated frame.');
 assert.equal(events[0].violationType, 'restricted_phone');
 assert.equal(events[0].policyDecision, 'warning');
@@ -54,14 +56,18 @@ assert.equal(events.length, 1, 'A continuously visible object must not emit dupl
 policy.evaluate([], { now: 12000 });
 const resetEvents = [];
 resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13000 }));
-resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13500 }));
+resetEvents.push(...policy.evaluate([detection('mobile_phone', 0.9, {
+  x: 219, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+})], { now: 13500 }));
 assert.equal(resetEvents.length, 1, 'An object may emit again only after a confirmed absence.');
 
 const shadowPolicy = new YoloObjectPolicy({ enabled: true, mode: 'shadow', calibrationMs: 0 });
 let shadowEvents = [];
 for (let index = 0; index < 2; index += 1) {
   shadowEvents = shadowEvents.concat(
-    shadowPolicy.evaluate([detection('mobile_phone')], { now: 1000 + (index * 1000) }),
+    shadowPolicy.evaluate([detection('mobile_phone', 0.9, {
+      x: 210 + (index * 9), y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+    })], { now: 1000 + (index * 1000) }),
   );
 }
 assert.equal(shadowEvents[0].policyDecision, 'shadow');
@@ -146,7 +152,7 @@ for (let index = 0; index < 2; index += 1) {
   const now = 5000 + (index * 500);
   faceOverlapPhoneEvents = faceOverlapPhoneEvents.concat(faceOverlapPhonePolicy.evaluate([
     detection('mobile_phone', 0.82, {
-      x: 315,
+      x: 315 + (index * 12),
       y: 155,
       width: 130,
       height: 205,
@@ -195,11 +201,31 @@ assert.equal(
   'A stationary shelf-like candidate below the strong threshold must not emit an alert.',
 );
 
+const calendarPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+const calendarBox = { x: 35, y: 25, width: 135, height: 80, frameWidth: 640, frameHeight: 480 };
+let calendarEvents = [];
+for (let index = 0; index < 8; index += 1) {
+  const detectorRole = index % 2 ? 'phone-specialist' : 'primary';
+  calendarEvents = calendarEvents.concat(calendarPolicy.evaluate([{
+    ...detection('mobile_phone', 0.96, calendarBox),
+    rawClass: detectorRole === 'phone-specialist' ? 'mobile_phone' : 'cell phone',
+    detectorRole,
+  }], { now: 1000 + (index * 500), detectorRole }));
+}
+assert.equal(
+  calendarEvents.length,
+  0,
+  'A static wall calendar must remain non-violating even when both phone detectors misclassify it.',
+);
+
 const realPhoneBox = { x: 220, y: 180, width: 90, height: 150, frameWidth: 640, frameHeight: 480 };
 let calibratedEvents = [];
 for (let index = 0; index < 2; index += 1) {
   calibratedEvents = calibratedEvents.concat(
-    calibratedPolicy.evaluate([detection('mobile_phone', 0.75, realPhoneBox)], { now: 8000 + (index * 1000) }),
+    calibratedPolicy.evaluate([detection('mobile_phone', 0.75, {
+      ...realPhoneBox,
+      x: realPhoneBox.x + (index * 9),
+    })], { now: 8000 + (index * 1000) }),
   );
 }
 assert.equal(calibratedEvents.length, 1, 'A phone entering after calibration must still emit an alert.');
@@ -208,7 +234,10 @@ const fastPathPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
 let fastPathEvents = [];
 for (let index = 0; index < 2; index += 1) {
   fastPathEvents = fastPathEvents.concat(
-    fastPathPolicy.evaluate([detection('mobile_phone', 0.8, realPhoneBox)], { now: 1000 + (index * 500) }),
+    fastPathPolicy.evaluate([detection('mobile_phone', 0.8, {
+      ...realPhoneBox,
+      x: realPhoneBox.x + (index * 9),
+    })], { now: 1000 + (index * 500) }),
   );
 }
 assert.equal(fastPathEvents.length, 1, 'A clear phone must confirm quickly during startup calibration.');
@@ -242,7 +271,10 @@ let startupPhoneEvents = [];
 for (let index = 0; index < 3; index += 1) {
   startupPhoneEvents = startupPhoneEvents.concat(
     startupPhoneSpecialistPolicy.evaluate([{
-      ...detection('mobile_phone', 0.35, realPhoneBox),
+      ...detection('mobile_phone', 0.35, {
+        ...realPhoneBox,
+        x: realPhoneBox.x + (index * 9),
+      }),
       rawClass: 'mobile_phone',
       detectorRole: 'phone-specialist',
     }], {
@@ -269,7 +301,10 @@ for (let index = 0; index < 2; index += 1) {
 for (let index = 0; index < 3; index += 1) {
   mixedDetectorPhoneEvents = mixedDetectorPhoneEvents.concat(
     mixedDetectorPhonePolicy.evaluate([{
-      ...detection('mobile_phone', 0.35, realPhoneBox),
+      ...detection('mobile_phone', 0.35, {
+        ...realPhoneBox,
+        x: realPhoneBox.x + (index * 9),
+      }),
       rawClass: 'mobile_phone',
       detectorRole: 'phone-specialist',
     }], {
@@ -326,8 +361,8 @@ for (let index = 0; index < 6; index += 1) {
 }
 assert.equal(
   stationaryPhoneBackEvents.length,
-  1,
-  'A clearly sized stationary phone from the specialist must confirm after an extra frame.',
+  0,
+  'A stationary candidate seen by only one detector must not be treated as a phone.',
 );
 
 const angledShelfPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
@@ -468,8 +503,8 @@ assert.equal(
   remoteFallbackPolicy.evaluate([
     { ...remotePhone, boundingBox: { ...realPhoneBox, x: realPhoneBox.x + 8 } },
   ], { now: 1300 }).length,
-  1,
-  'A verified moving remote-shaped phone must confirm after two frames.',
+  0,
+  'A generic remote must never be promoted into a mobile-phone violation.',
 );
 
 const remoteShelfPolicy = new YoloObjectPolicy({ enabled: true, mode: 'alert', calibrationMs: 0 });

@@ -9,11 +9,10 @@ const POLICY_RULES = Object.freeze({
   mobile_phone: {
     violationType: 'restricted_phone',
     label: 'Mobile phone',
+    allowedRawClasses: ['cell phone', 'mobile_phone'],
     hitCount: 2,
     fastHitCount: 2,
     fastConfidence: 0.78,
-    fastExcludedRawClasses: ['remote'],
-    fallbackMovementRawClasses: ['remote'],
     windowMs: 5500,
     absenceResetMs: 6000,
     minimumPeakConfidence: 0.3,
@@ -27,10 +26,11 @@ const POLICY_RULES = Object.freeze({
     frameEdgeMarginRatio: 0.025,
     frameEdgeHitCount: 3,
     frameEdgeMinimumMovement: 0.15,
-    minimumAspectRatio: 1.35,
+    minimumAspectRatio: 1.5,
     maximumAspectRatio: 4.2,
     backgroundHitCount: 4,
     backgroundMinimumMovement: 0.18,
+    minimumPhoneMovement: 0.04,
     requiresVerification: true,
   },
 });
@@ -52,9 +52,7 @@ function bestDetectionForClass(detections, objectClass) {
 
 function requiredHitsForTrack(rule, track) {
   const peakConfidence = Number(track.bestDetection?.confidence || 0);
-  const rawClass = String(track.bestDetection?.rawClass || '');
-  const fastExcluded = rule.fastExcludedRawClasses?.includes(rawClass);
-  if (!fastExcluded && peakConfidence >= Number(rule.fastConfidence || Infinity)) {
+  if (peakConfidence >= Number(rule.fastConfidence || Infinity)) {
     return Number(rule.fastHitCount || rule.hitCount || 1);
   }
   return Number(rule.hitCount || 1);
@@ -385,6 +383,10 @@ export class YoloObjectPolicy {
     const policyDetections = detections.filter(detection => {
       if (this._isCalibratedBackground(detection)) return false;
       const rule = POLICY_RULES[detection?.objectClass];
+      if (
+        Array.isArray(rule?.allowedRawClasses)
+        && !rule.allowedRawClasses.includes(String(detection?.rawClass || ''))
+      ) return false;
       if (rule?.requiresVerification && detection?.verified !== true) return false;
       if (detection?.objectClass === 'mobile_phone' && !hasPlausiblePhoneShape(detection, rule)) return false;
       if (isLikelyFacialFeatureFalsePositive(detection, { ...context, now })) return false;
@@ -506,9 +508,6 @@ export class YoloObjectPolicy {
         && isFrameEdgeBound(prior.bestDetection?.boundingBox, rule.frameEdgeMarginRatio);
       if (edgeBoundPhone && prior.hits.length < Number(rule.frameEdgeHitCount || Infinity)) return;
       const specialistDetection = prior.bestDetection?.detectorRole === 'phone-specialist';
-      const fallbackMovementDetection = rule.fallbackMovementRawClasses?.includes(
-        String(prior.bestDetection?.rawClass || ''),
-      );
       const phoneEvidenceDetection = prior.bestSpecialistDetection || prior.bestDetection;
       const stationaryPhoneEvidenceIsClear = isClearlySizedPhone(
         phoneEvidenceDetection,
@@ -521,9 +520,15 @@ export class YoloObjectPolicy {
       const specialistStationaryEvidence = (prior.specialistHits || []).length > 0
         && stationaryPhoneEvidenceIsClear
         && prior.specialistHits.length >= Number(rule.specialistStationaryHitCount || Infinity);
+      // Static wall and desk items can repeatedly resemble a phone to both the
+      // general and specialist models. A prohibited phone in use moves with a
+      // hand; require a small but meaningful displacement before enforcement,
+      // regardless of model confidence or detector count.
+      const stationaryPhoneCandidate = objectClass === 'mobile_phone'
+        && prior.maxMovement < Number(rule.minimumPhoneMovement || 0);
+      if (stationaryPhoneCandidate) return;
       const smallPhoneNeedsMovement = objectClass === 'mobile_phone' && !stationaryPhoneEvidenceIsClear;
-      const movementRequiredDetection = fallbackMovementDetection
-        || smallPhoneNeedsMovement
+      const movementRequiredDetection = smallPhoneNeedsMovement
         || edgeBoundPhone
         || separatedFromStudent
         || (specialistDetection && !specialistStationaryEvidence);

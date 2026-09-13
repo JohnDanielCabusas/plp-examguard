@@ -95,20 +95,73 @@ sandbox.window.innerHeight = 700;
 assert.equal(JSON.stringify(app._constrainCameraPosition(-200, -100, 200, 180)), JSON.stringify({ left: 8, top: 8 }));
 assert.equal(JSON.stringify(app._constrainCameraPosition(950, 680, 200, 180)), JSON.stringify({ left: 792, top: 512 }));
 
-// A current one-person result must clear that detector's stale multiple-face
-// state immediately, while the short internal recovery window prevents the
-// already-issued incident from flapping on a single noisy frame.
+// A single missed frame must not clear an active multi-person countdown. The
+// detector's hold expires soon afterward so a brief sighting cannot warn.
 const realIssueWarning = app.issueWarning;
 app.issueWarning = () => true;
 app._resetMultiplePeopleTracking();
 const multipleFaceCandidate = app._updateMultiplePeopleTracking('facemesh', true, { now: 0, holdMs: 500 });
 const oneFaceAgain = app._updateMultiplePeopleTracking('facemesh', false, { now: 100, holdMs: 500 });
+app._setCameraStatusText('⚠ Brightness 60% (9s)');
+const heldCountdownText = element('camera-status-text').textContent;
+const expiredCandidate = app._updateMultiplePeopleTracking('facemesh', false, { now: 501, holdMs: 500 });
 assert.equal(multipleFaceCandidate.detected, true);
-assert.equal(oneFaceAgain.detected, false);
+assert.equal(oneFaceAgain.detected, true);
+assert.equal(heldCountdownText, 'Another person (10s)');
+assert.equal(expiredCandidate.detected, false);
 assert.equal(element('camera-status-text').textContent, 'Camera scan active');
 assert.equal(element('camera-status-text').dataset.faceCountdown, undefined);
 app._resetMultiplePeopleTracking();
 app.issueWarning = realIssueWarning;
+
+// Printed faces and wide wall objects must not become extra people, while a
+// realistically sized second face/body remains detectable.
+const studentFaceGeometry = { x: 0.34, y: 0.14, width: 0.3, height: 0.48, centerX: 0.49, centerY: 0.38 };
+const printedCalendarFace = { x: 0.08, y: 0.12, width: 0.045, height: 0.07, centerX: 0.1025, centerY: 0.155 };
+const secondPersonFace = { x: 0.08, y: 0.2, width: 0.14, height: 0.22, centerX: 0.15, centerY: 0.31 };
+assert.equal(app._getPlausibleFaceMeshGeometries({
+  faceGeometries: [studentFaceGeometry, printedCalendarFace],
+}).length, 1);
+assert.equal(app._getPlausibleFaceMeshGeometries({
+  faceGeometries: [studentFaceGeometry, secondPersonFace],
+}).length, 2);
+
+const yoloStudent = {
+  contextClass: 'person',
+  confidence: 0.92,
+  boundingBox: { x: 220, y: 45, width: 260, height: 420, frameWidth: 640, frameHeight: 480 },
+};
+const calendarPerson = {
+  contextClass: 'person',
+  confidence: 0.42,
+  boundingBox: { x: 30, y: 35, width: 145, height: 100, frameWidth: 640, frameHeight: 480 },
+};
+const actualSecondPerson = {
+  contextClass: 'person',
+  confidence: 0.78,
+  boundingBox: { x: 35, y: 110, width: 120, height: 260, frameWidth: 640, frameHeight: 480 },
+};
+assert.equal(app._getPlausibleYoloPeople([yoloStudent, calendarPerson]).length, 1);
+assert.equal(app._getPlausibleYoloPeople([yoloStudent, actualSecondPerson]).length, 2);
+
+// A successful primary YOLO frame must clear a transient degraded state.
+const priorExam = app.exam;
+const priorSession = app.session;
+const priorYoloPolicy = app._yoloPolicy;
+app.exam = { id: 'object-test', requireCamera: true };
+app.session = { id: 'object-session' };
+app._yoloPolicy = {
+  evaluate: () => [],
+  getConfirmedDetections: () => [],
+  getDetectionProgress: () => [],
+};
+app._yoloStatus = 'degraded';
+app._handleYoloResult({ detectorRole: 'primary', backend: 'wasm', detections: [] });
+assert.equal(app._yoloStatus, 'ready');
+assert.equal(element('yolo-camera-status').textContent, 'Object scan active');
+app.exam = priorExam;
+app.session = priorSession;
+app._yoloPolicy = priorYoloPolicy;
 
 // Every supported answer shape must use the same immediate completion rule.
 assert.equal(app._isQuestionAnswered({ type: 'mcq' }, 'Option A'), true);

@@ -39,6 +39,8 @@ function geometryFromLandmarks(landmarks, geometryConfig) {
     height,
     centerX: left + (width / 2),
     centerY: top + (height / 2),
+    nose: landmarks[1] ? { x: landmarks[1].x, y: landmarks[1].y } : null,
+    mouth: landmarks[13] ? { x: landmarks[13].x, y: landmarks[13].y } : null,
     partiallyVisible: left <= margin || top <= margin || right >= 1 - margin || bottom >= 1 - margin,
     nearFrameEdge: left <= edgeMargin || top <= edgeMargin || right >= 1 - edgeMargin || bottom >= 1 - edgeMargin,
     tooClose: width >= geometryConfig.tooCloseWidthRatio || height >= geometryConfig.tooCloseHeightRatio,
@@ -121,6 +123,10 @@ function infer(message) {
     if (!landmarker) throw new Error('Face Landmarker is not initialized.');
     const result = landmarker.detectForVideo(bitmap, message.timestampMs);
     const faceCount = Math.min(2, result.faceLandmarks?.length || 0);
+    const faceGeometries = (result.faceLandmarks || [])
+      .slice(0, 2)
+      .map(faceLandmarks => geometryFromLandmarks(faceLandmarks, message.geometryConfig))
+      .filter(Boolean);
     const landmarks = result.faceLandmarks?.[0] || null;
     if (!landmarks) {
       lastTrackedPoints = null;
@@ -132,6 +138,7 @@ function infer(message) {
           timestampMs: message.timestampMs,
           facePresent: false,
           faceCount,
+          faceGeometries,
           trackingQuality: 0,
           geometry: null,
           pose: null,
@@ -144,7 +151,7 @@ function infer(message) {
       return;
     }
 
-    const geometry = geometryFromLandmarks(landmarks, message.geometryConfig);
+    const geometry = faceGeometries[0] || geometryFromLandmarks(landmarks, message.geometryConfig);
     const trackingQuality = calculateTrackingQuality(landmarks, geometry);
     const pose = smoothHeadPose(
       lastSmoothedPose,
@@ -159,6 +166,7 @@ function infer(message) {
         timestampMs: message.timestampMs,
         facePresent: true,
         faceCount,
+        faceGeometries,
         trackingQuality,
         geometry,
         pose,
