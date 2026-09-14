@@ -14859,3 +14859,87 @@ label.theme-switch,
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   REPORTS TABLE
+   Centred data columns, single-line student names, and action
+   buttons on one row. Scoped to #report-tbody so the students,
+   monitoring and archive tables keep their own alignment.
+   Everything here is desktop-only: below 768px the table
+   collapses to label-left / value-right cards, which already
+   force their own alignment with !important.
+   ============================================================ */
+@media (min-width: 769px) {
+  #report-tbody td[data-label="Student ID"],
+  #report-tbody td[data-label="Year & Section"],
+  #report-tbody td[data-label="Score"],
+  #report-tbody td[data-label="Percentage"],
+  #report-tbody td[data-label="Time"],
+  #report-tbody td[data-label="Submitted"] {
+    text-align: center;
+  }
+
+  /* the score cell wraps its value and progress bar in a flex row */
+  #report-tbody td[data-label="Score"] > div {
+    justify-content: center;
+  }
+
+  /* the time cell stacks a SUBMITTED label over the timestamp */
+  #report-tbody .report-session-time {
+    align-items: center;
+  }
+
+  /* one student per line: let the column take the width it needs
+     rather than wrapping a long name onto a second row */
+  #report-tbody td[data-label="Name"] {
+    white-space: nowrap;
+  }
+
+  /* Review + Allow Retake side by side instead of stacked. One row makes the
+     Actions column the widest in the table, so the button chrome is tightened
+     here to buy the width back and keep the table inside its wrapper rather
+     than triggering a horizontal scrollbar. */
+  #report-tbody .table-actions {
+    flex-wrap: nowrap;
+    gap: 5px;
+  }
+  #report-tbody .table-actions > * {
+    white-space: nowrap;
+    padding-inline: 10px;
+    /* .btn-action-ghost carries min-width:80px with justify-content:flex-start,
+       so a short label like "Review" (~68px) leaves all 12px of slack on the
+       right and reads as left-aligned. Longer labels fill their min-width and
+       look fine, which is why only Review appeared off. Centre the label; the
+       icon is absolutely positioned so it is unaffected. */
+    justify-content: center;
+  }
+
+  /* These buttons already swap label for icon on hover: :hover sets the label
+     to color:transparent and slides the icon from right:14px to the centre.
+     The icon was simply never hidden at rest, so it sat on top of the label in
+     a narrow column. Hiding it at rest completes that swap -- label only at
+     rest, icon only on hover -- and means no right-hand clearance has to be
+     reserved, because the two are never visible at the same time.
+     The 0.3s matches the label's own colour transition so the two cross-fade. */
+  #report-tbody .table-actions svg {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  #report-tbody .table-actions > *:hover svg,
+  #report-tbody .table-actions > *:focus-visible svg {
+    opacity: 1;
+  }
+  #report-tbody td[data-label="Actions"] {
+    padding-inline: 8px;
+  }
+
+  /* An unusually long name yields space instead of widening the table. It
+     still stays on a single line. */
+  #report-tbody td[data-label="Name"] strong {
+    display: inline-block;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+}

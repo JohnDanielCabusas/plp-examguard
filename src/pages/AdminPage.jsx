@@ -534,7 +534,7 @@ export default function AdminPage() {
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th scope="col">Student ID</th><th scope="col">Name</th><th scope="col">Year Level</th><th scope="col">Section</th><th scope="col">Email</th><th scope="col">Program</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead><tr><th scope="col" style={{ textAlign: 'center' }}>Student ID</th><th scope="col">Name</th><th scope="col" style={{ textAlign: 'center' }}>Year Level</th><th scope="col" style={{ textAlign: 'center' }}>Section</th><th scope="col">Email</th><th scope="col" style={{ textAlign: 'center' }}>Program</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                       <tbody id="students-tbody" />
                     </table>
                   </div>
@@ -949,9 +949,9 @@ export default function AdminPage() {
                         <tr>
                           <th scope="col">Rank</th>
                           <th scope="col">Name</th>
-                          <th scope="col">Student ID</th>
-                          <th scope="col">Year / Section</th>
-                          <th scope="col">
+                          <th scope="col" style={{ textAlign: 'center' }}>Student ID</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Year &amp; Section</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>
                             <span className="report-score-heading">
                               <span>Score</span>
                               <button
@@ -970,9 +970,9 @@ export default function AdminPage() {
                               </button>
                             </span>
                           </th>
-                          <th scope="col">Percentage</th>
-                          <th scope="col">Time</th>
-                          <th scope="col">Submitted</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Percentage</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Time</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Submitted</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Actions</th>
                         </tr>
                       </thead>

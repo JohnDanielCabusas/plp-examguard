@@ -2526,14 +2526,14 @@ function viewEnrolledStudents(subjectId) {
 
   const studentsHtml = students.length
     ? `<div class="table-wrapper"><table>
-        <thead><tr><th scope="col">Student ID</th><th scope="col">Name</th><th scope="col">Year Level</th><th scope="col">Section</th><th scope="col" style="text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th scope="col" style="text-align:center;">Student ID</th><th scope="col">Name</th><th scope="col" style="text-align:center;">Year Level</th><th scope="col" style="text-align:center;">Section</th><th scope="col" style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${students.map(s => `
             <tr>
-              <td><span class="code-tag">${escHtml(s.studentId)}</span></td>
+              <td style="text-align:center;"><span class="code-tag">${escHtml(s.studentId)}</span></td>
               <td><strong>${escHtml(s.name)}</strong></td>
-              <td>${escHtml(s.yearLevel || '—')}</td>
-              <td>${escHtml(getStudentSectionDisplay(s) || '—')}</td>
+              <td style="text-align:center;">${escHtml(s.yearLevel || '—')}</td>
+              <td style="text-align:center;">${escHtml(getStudentSectionDisplay(s) || '—')}</td>
               <td style="text-align:center;">
                 <div class="table-actions">
                   <button class="tbl-btn tbl-btn-warning" onclick="unenrollStudentFromCourse('${s.id}','${subjectId}')">Unenroll${icRedoStroke}</button>
@@ -3596,17 +3596,17 @@ function renderStudents(filter) {
     const ylClass = ylColors[yl] || 'yl-1';
     return `
     <tr>
-      <td data-label="Student ID"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
+      <td data-label="Student ID" style="text-align:center;"><span class="student-id-badge">${escHtml(s.studentId)}</span></td>
       <td data-label="Name">
         <div class="student-name-cell">
           <div class="student-avatar">${initials}</div>
           <span class="student-name-text">${escHtml(s.name)}</span>
         </div>
       </td>
-      <td data-label="Year Level"><span class="yl-badge ${ylClass}">${escHtml(ylDisplay)}</span></td>
-      <td data-label="Section"><span class="section-text">${escHtml(sectionDisplay)}</span></td>
+      <td data-label="Year Level" style="text-align:center;"><span class="yl-badge ${ylClass}">${escHtml(ylDisplay)}</span></td>
+      <td data-label="Section" style="text-align:center;"><span class="section-text">${escHtml(sectionDisplay)}</span></td>
       <td data-label="Email" class="email-cell">${escHtml(emailDisplay)}</td>
-      <td data-label="Program"><span class="section-text">${escHtml(programDisplay)}</span></td>
+      <td data-label="Program" style="text-align:center;"><span class="section-text">${escHtml(programDisplay)}</span></td>
       <td data-label="">
         <div class="table-actions">
           <button class="btn-action btn-action-ghost" onclick="viewStudentHistory('${s.id}')">View${icEyeFill}</button>
@@ -10060,7 +10060,7 @@ function renderReportAbsentRows(absentStudents) {
     <td data-label="Rank"><span class="report-rank-absent">&mdash;</span></td>
     <td data-label="Name"><strong>${escHtml(student.studentName || student.name)}</strong></td>
     <td data-label="Student ID">${escHtml(student.studentId)}</td>
-    <td data-label="Year / Section">${escHtml(getStudentYearSectionSummary(student))}</td>
+    <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(student))}</td>
     <td data-label="Score"><span class="text-muted">&mdash;</span></td>
     <td data-label="Percentage"><span class="text-muted">&mdash;</span></td>
     <td data-label="Time" class="report-session-cell"><span class="report-session-empty">-</span></td>
@@ -10206,7 +10206,7 @@ function renderReportTable() {
       <td data-label="Rank"><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
       <td data-label="Name"><strong>${escHtml(s.studentName)}</strong></td>
       <td data-label="Student ID">${escHtml(s.studentId)}</td>
-      <td data-label="Year / Section">${escHtml(getStudentYearSectionSummary(s))}</td>
+      <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(s))}</td>
       <td data-label="Score" data-report-score="${s.score !== null && s.score !== undefined ? escAttr(String(s.score)) : ''}">
         <div style="display:flex;align-items:center;gap:8px;">
           <span>${s.score !== null ? s.score : '—'}/${s.maxScore}</span>
