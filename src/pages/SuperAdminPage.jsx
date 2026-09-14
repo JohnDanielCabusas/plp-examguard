@@ -26,7 +26,7 @@ function EyeToggle({ show, onToggle }) {
     <button
       type="button"
       onClick={onToggle}
-      tabIndex={-1}
+      aria-label={show ? "Hide password" : "Show password"}
       style={{
         position: "absolute",
         right: "8px",
@@ -132,7 +132,7 @@ function Toast({ message, type, onDone }) {
     ),
   };
   return (
-    <div className={`sa-toast sa-toast-${type}`}>
+    <div role="status" aria-live="polite" className={`sa-toast sa-toast-${type}`}>
       <span className="sa-toast-icon">{icons[type] || icons.info}</span>
       <span className="sa-toast-message">{message}</span>
     </div>
@@ -249,9 +249,9 @@ function ActivityLogTable({ entries }) {
       <table>
         <thead>
           <tr>
-            <th>Professor</th>
-            <th>Activity</th>
-            <th>Date &amp; Time</th>
+            <th scope="col">Professor</th>
+            <th scope="col">Activity</th>
+            <th scope="col">Date &amp; Time</th>
           </tr>
         </thead>
         <tbody>
@@ -456,6 +456,8 @@ function ProfessorModal({ professor, onSave, onClose }) {
             {isEdit ? "Edit Professor" : "Add Professor"}
           </span>
           <button
+            type="button"
+            aria-label="Close dialog"
             onClick={onClose}
             style={{
               background: "none",
@@ -507,6 +509,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
               <div style={{ position: "relative" }}>
                 <input
                   ref={passRef}
+                  autoComplete="new-password"
                   type={showPass ? "text" : "password"}
                   className="form-control"
                   placeholder="Minimum 6 characters"
@@ -523,7 +526,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
             </div>
           )}
           {error && (
-            <div className="text-danger mb-12" style={{ fontSize: "13px" }}>
+            <div role="alert" className="text-danger mb-12" style={{ fontSize: "13px" }}>
               {error}
             </div>
           )}
@@ -587,6 +590,8 @@ function ProfessorAccountModal({ professor, onSave, onClose }) {
             {isEdit ? "Edit Professor" : "Add Professor"}
           </span>
           <button
+            type="button"
+            aria-label="Close dialog"
             onClick={onClose}
             style={{
               background: "none",
@@ -633,7 +638,7 @@ function ProfessorAccountModal({ professor, onSave, onClose }) {
             </div>
           )}
           {error && (
-            <div className="text-danger mb-12" style={{ fontSize: "13px" }}>
+            <div role="alert" className="text-danger mb-12" style={{ fontSize: "13px" }}>
               {error}
             </div>
           )}
@@ -1167,6 +1172,8 @@ export default function SuperAdminPage() {
                 All Activity
               </span>
               <button
+                type="button"
+                aria-label="Close dialog"
                 onClick={() => setActivityLogExpanded(false)}
                 style={{
                   background: "none",
@@ -1264,6 +1271,8 @@ export default function SuperAdminPage() {
             <header className="topbar sa-topbar">
               <div className="sa-topbar-main">
                 <button
+                  type="button"
+                  aria-label="Toggle sidebar"
                   className="hamburger-btn"
                   onClick={() => {
                     if (window.innerWidth <= 768) {
@@ -1450,11 +1459,11 @@ export default function SuperAdminPage() {
                           <table>
                             <thead>
                               <tr>
-                                <th>Name</th>
-                                <th>Username</th>
-                                <th>Email</th>
-                                <th>Created</th>
-                                <th style={{ textAlign: "center" }}>Actions</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">Username</th>
+                                <th scope="col">Email</th>
+                                <th scope="col">Created</th>
+                                <th scope="col" style={{ textAlign: "center" }}>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2025,6 +2034,7 @@ export default function SuperAdminPage() {
                           <div style={{ position: "relative" }}>
                             <input
                               ref={curPassRef}
+                              autoComplete="current-password"
                               type={showCurPass ? "text" : "password"}
                               className="form-control"
                               placeholder="Enter current password"
@@ -2041,6 +2051,7 @@ export default function SuperAdminPage() {
                           <div style={{ position: "relative" }}>
                             <input
                               ref={newPassRef}
+                              autoComplete="new-password"
                               type={showNewPass ? "text" : "password"}
                               className="form-control"
                               placeholder="Minimum 6 characters"
@@ -2057,6 +2068,7 @@ export default function SuperAdminPage() {
                           <div style={{ position: "relative" }}>
                             <input
                               ref={confirmPassRef}
+                              autoComplete="new-password"
                               type={showConfirmPass ? "text" : "password"}
                               className="form-control"
                               placeholder="Re-enter new password"
@@ -2074,6 +2086,7 @@ export default function SuperAdminPage() {
                       </div>
                       {settingsError && (
                         <div
+                          role="alert"
                           className="text-danger mb-12"
                           style={{ fontSize: "13px" }}
                         >

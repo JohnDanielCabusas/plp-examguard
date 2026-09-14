@@ -1359,7 +1359,7 @@ document.addEventListener('dbReady', function init() {
 
   if (settings.logoUrl) {
     const wrap = document.getElementById('sb-logo-wrap');
-    wrap.innerHTML = `<img src="${settings.logoUrl}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
+    wrap.innerHTML = `<img src="${settings.logoUrl}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
   }
 
   // Date in topbar
@@ -2140,7 +2140,7 @@ function renderDashboard() {
   // Recent exams
   const recentExams = [...exams].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
   const recentHtml = recentExams.length
-    ? `<table style="width:100%;"><thead><tr><th>Title</th><th style="text-align:center;">Status</th><th style="text-align:center;">Questions</th></tr></thead><tbody>
+    ? `<table style="width:100%;"><thead><tr><th scope="col">Title</th><th scope="col" style="text-align:center;">Status</th><th scope="col" style="text-align:center;">Questions</th></tr></thead><tbody>
         ${recentExams.map(e => `<tr><td>${escHtml(e.title)}</td><td style="text-align:center;">${statusBadge(e.status)}</td><td style="text-align:center;">${e.questions.length}</td></tr>`).join('')}
        </tbody></table>`
     : `<div class="empty-state"><p>No exams yet</p></div>`;
@@ -2151,7 +2151,7 @@ function renderDashboard() {
     .filter(s => !s.submitted && (s.startTime || s.createdAt))
     .sort((a, b) => new Date(b.startTime || b.createdAt || 0) - new Date(a.startTime || a.createdAt || 0));
   const sessHtml = activeSessions.length
-    ? `<table style="width:100%;"><thead><tr><th>Student</th><th style="text-align:center;">Exam</th><th style="text-align:center;">Live</th><th style="text-align:center;">Warnings</th></tr></thead><tbody>
+    ? `<table style="width:100%;"><thead><tr><th scope="col">Student</th><th scope="col" style="text-align:center;">Exam</th><th scope="col" style="text-align:center;">Live</th><th scope="col" style="text-align:center;">Warnings</th></tr></thead><tbody>
         ${activeSessions.map(s => {
           const exam = DB.getExam(s.examId);
           return `<tr>
@@ -2526,7 +2526,7 @@ function viewEnrolledStudents(subjectId) {
 
   const studentsHtml = students.length
     ? `<div class="table-wrapper"><table>
-        <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th style="text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th scope="col">Student ID</th><th scope="col">Name</th><th scope="col">Year Level</th><th scope="col">Section</th><th scope="col" style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${students.map(s => `
             <tr>
@@ -2546,7 +2546,7 @@ function viewEnrolledStudents(subjectId) {
 
   const examsHtml = exams.length
     ? `<div class="table-wrapper"><table>
-        <thead><tr><th>Title</th><th style="text-align:center;">Code</th><th style="text-align:center;">Questions</th><th style="text-align:center;">Time</th><th style="text-align:center;">Status</th><th style="text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th scope="col">Title</th><th scope="col" style="text-align:center;">Code</th><th scope="col" style="text-align:center;">Questions</th><th scope="col" style="text-align:center;">Time</th><th scope="col" style="text-align:center;">Status</th><th scope="col" style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${exams.map(e => `
             <tr>
@@ -7059,7 +7059,7 @@ function viewExamResults(examId) {
     </div>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Rank</th><th>Name</th><th>Student ID</th><th>Score</th><th>%</th><th>Warnings</th><th>Submit Type</th><th style="text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th scope="col">Rank</th><th scope="col">Name</th><th scope="col">Student ID</th><th scope="col">Score</th><th scope="col">%</th><th scope="col">Warnings</th><th scope="col">Submit Type</th><th scope="col" style="text-align:center;">Actions</th></tr></thead>
         <tbody>
           ${sorted.map((s, i) => {
             const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
@@ -10896,7 +10896,7 @@ function handleLogoUpload(file) {
     document.getElementById('logo-preview-img').src = base64;
     document.getElementById('logo-preview-wrap').classList.remove('hidden');
     document.getElementById('btn-remove-logo').style.display = 'inline-flex';
-    document.getElementById('sb-logo-wrap').innerHTML = `<img src="${base64}" style="width:38px;height:38px;object-fit:contain;border-radius:8px;" />`;
+    document.getElementById('sb-logo-wrap').innerHTML = `<img src="${base64}" alt="" style="width:38px;height:38px;object-fit:contain;border-radius:8px;" />`;
     showToast('Logo uploaded.', 'success', { variant: 'settings' });
   };
   reader.readAsDataURL(file);
@@ -10907,7 +10907,7 @@ function removeLogo() {
   document.getElementById('logo-preview-wrap').classList.add('hidden');
   document.getElementById('btn-remove-logo').style.display = 'none';
   const PLP_LOGO_URL = 'https://plpasig.edu.ph/wp-content/uploads/2023/01/cropped-logo120.png';
-  document.getElementById('sb-logo-wrap').innerHTML = `<img src="${PLP_LOGO_URL}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
+  document.getElementById('sb-logo-wrap').innerHTML = `<img src="${PLP_LOGO_URL}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:4px;" />`;
   showToast('Logo removed.', 'success', { variant: 'settings' });
 }
 

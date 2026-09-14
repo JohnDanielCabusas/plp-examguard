@@ -14773,3 +14773,89 @@ body.exam-page {
   .exam-page .face-positioning-warning,
   .exam-page .warning-overlay-icon { animation: none; }
 }
+
+/* ============================================================
+   ACCESSIBILITY BASELINE
+   Cross-cutting rules that were missing app-wide. Kept last so
+   they win ties against the targeted rules earlier in this file.
+   ============================================================ */
+
+/* Tell the UA which palette the native widgets (scrollbars, select
+   dropdowns, checkboxes, date pickers) should render in. Without this
+   they stay light-on-dark in the dark theme. */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Focus rings for the two controls that zero their outline with no
+   replacement (.search-input input, .qe-opt-input). :focus-visible so
+   the ring appears for keyboard users but never on mouse click. */
+.search-input:focus-within {
+  border-color: var(--primary, #0f2d1a);
+}
+.search-input input:focus-visible,
+.qe-opt-input:focus-visible {
+  outline: 2px solid var(--primary, #0f2d1a);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+[data-theme="dark"] .search-input input:focus-visible,
+[data-theme="dark"] .qe-opt-input:focus-visible {
+  outline-color: #22c55e;
+}
+
+/* Modal and overlay scroll containment — stops the page behind a dialog
+   from scrolling once the dialog's own scroll hits its end. */
+.modal-backdrop,
+.modal-dialog,
+.modal-body,
+.sa-modal-overlay,
+.sa-modal,
+.sa-modal-body {
+  overscroll-behavior: contain;
+}
+
+/* Remove the 300ms double-tap delay on controls. Not applied globally:
+   the exam camera surface and the floating timer set touch-action: none
+   for dragging, and a blanket rule here would fight them. */
+button,
+.btn,
+.nav-item,
+.portal-nav-item,
+.tab-btn,
+.add-q-btn,
+.modal-close,
+label.theme-switch,
+.dm-toggle {
+  touch-action: manipulation;
+}
+
+/* Fixed-width digits so counters and scores stop jittering as they
+   change, and so score columns align down the table. */
+.examv2-timer,
+#timer-display,
+.warning-count,
+#warning-overlay-count,
+#report-tbody td,
+#monitor-tbody td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Honour the OS "reduce motion" setting across the whole app. The two
+   existing blocks cover only .rf-loading and four .exam-page overlays;
+   this catches the remaining ~40 keyframe animations. Transitions are
+   shortened rather than removed so state changes still read as changes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

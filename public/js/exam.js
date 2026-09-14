@@ -8477,7 +8477,7 @@ const ExamApp = {
           </div>
           <div style="font-size:10px;font-weight:700;background:${typeColors[q.type]||'#6b7280'}22;color:${typeColors[q.type]||'#6b7280'};padding:2px 8px;border-radius:20px;white-space:nowrap;">${typeLabel[q.type]||q.type}</div>
         </div>
-        ${q.imageUrl?`<img src="${q.imageUrl}" style="max-width:100%;border-radius:8px;margin-bottom:10px;" />`:''}
+        ${q.imageUrl?`<img src="${q.imageUrl}" alt="Image for this question" loading="lazy" style="max-width:100%;border-radius:8px;margin-bottom:10px;" />`:''}
         ${resultHtml}
       </div>`;
     }).join('');

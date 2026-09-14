@@ -229,7 +229,7 @@ export default function ExamPage() {
           <div className="portal-main" id="portal-main">
             <div className="portal-topbar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button className="hamburger-btn" onClick={() => window._portalToggleSidebar?.()}>
+                <button type="button" aria-label="Toggle sidebar" className="hamburger-btn" onClick={() => window._portalToggleSidebar?.()}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                 </button>
                 <span className="portal-topbar-title" id="portal-topbar-title">Home</span>
@@ -344,21 +344,21 @@ export default function ExamPage() {
                     <div className="form-group">
                       <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label>
                       <div style={{ position: 'relative' }}>
-                        <input type={showStudentCurrentPass ? 'text' : 'password'} className="form-control" id="stg-cur-pass" placeholder="Enter your current account password" style={{ paddingRight: '42px' }} />
+                        <input type={showStudentCurrentPass ? 'text' : 'password'} className="form-control" id="stg-cur-pass" autoComplete="current-password" placeholder="Enter your current account password" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentCurrentPass} onToggle={() => setShowStudentCurrentPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
                       <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label>
                       <div style={{ position: 'relative' }}>
-                        <input type={showStudentNewPass ? 'text' : 'password'} className="form-control" id="stg-new-pass" placeholder="e.g. At least 6 characters" style={{ paddingRight: '42px' }} />
+                        <input type={showStudentNewPass ? 'text' : 'password'} className="form-control" id="stg-new-pass" autoComplete="new-password" placeholder="e.g. At least 6 characters" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentNewPass} onToggle={() => setShowStudentNewPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
                       <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label>
                       <div style={{ position: 'relative' }}>
-                        <input type={showStudentConfirmPass ? 'text' : 'password'} className="form-control" id="stg-confirm-pass" placeholder="Re-enter the new password exactly" style={{ paddingRight: '42px' }} />
+                        <input type={showStudentConfirmPass ? 'text' : 'password'} className="form-control" id="stg-confirm-pass" autoComplete="new-password" placeholder="Re-enter the new password exactly" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentConfirmPass} onToggle={() => setShowStudentConfirmPass(v => !v)} />
                       </div>
                     </div>
@@ -448,7 +448,7 @@ export default function ExamPage() {
             <label>Access Code</label>
             <input type="text" className="form-control" id="entry-exam-code" placeholder="Exam access code" style={{ textTransform: 'uppercase' }} />
           </div>
-          <div id="entry-error" className="text-danger mb-12" style={{ fontSize: '13px', display: 'none' }} />
+          <div id="entry-error" role="alert" className="text-danger mb-12" style={{ fontSize: '13px', display: 'none' }} />
           <button className="btn btn-primary btn-block btn-lg" onClick={() => window.ExamApp.submitEntry()}>Proceed</button>
           <a href="index.html" style={{ display: 'block', marginTop: '12px', fontSize: '13px' }}>Back to Login</a>
         </div>
@@ -789,7 +789,7 @@ export default function ExamPage() {
         <div id="camera-drag-surface" className="camera-feed-wrap">
           <video id="camera-feed" className="camera-feed" autoPlay muted playsInline draggable={false} />
           <canvas id="camera-canvas" style={{ display: 'none' }} />
-          <span id="yolo-camera-status" className="yolo-camera-status" data-state="loading">Object scan loading</span>
+          <span id="yolo-camera-status" className="yolo-camera-status" data-state="loading">Object scan loading…</span>
           <div id="camera-blocked-msg" className="camera-blocked-msg" style={{ display: 'none', position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
             <span>Camera<br />blocked</span>
           </div>
@@ -1013,7 +1013,7 @@ export default function ExamPage() {
                 className="form-control"
                 rows={3}
                 maxLength={500}
-                placeholder="e.g. My webcam is broken, I don't own one..."
+                placeholder="e.g. My webcam is broken, I don’t own one…"
                 style={{ width: '100%', resize: 'vertical' }}
               />
             </div>
@@ -1074,7 +1074,7 @@ export default function ExamPage() {
         <div className="modal-dialog modal-lg">
           <div className="modal-header">
             <span className="modal-title">What Is Monitored?</span>
-            <button type="button" data-exam-control="true" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
+            <button type="button" data-exam-control="true" aria-label="Close dialog" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
           </div>
           <div className="modal-body">
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px', lineHeight: 1.6 }}>

@@ -28,7 +28,7 @@ function EyeToggle({ show, onToggle }) {
     <button
       type="button"
       onClick={onToggle}
-      tabIndex={-1}
+      aria-label={show ? "Hide password" : "Show password"}
       style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#666' }}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -930,16 +930,16 @@ export default function LoginPage() {
                   </div>
                 </>
               )}
-              {adminError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{adminError}</div>}
+              {adminError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{adminError}</div>}
               {adminVerifyMessage && (adminStep === 'verify' || adminStep === 'setup' || adminStep === 'password') && (
-                <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminVerifyMessage}</div>
+                <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminVerifyMessage}</div>
               )}
-              {adminResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminResetMessage}</div>}
+              {adminResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{adminResetMessage}</div>}
               {adminStep === 'email' && (
                 <>
                   <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorEmailContinue} disabled={adminEmailLookupBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     {adminEmailLookupBusy && <ButtonSpinner />}
-                    <span>{adminEmailLookupBusy ? 'Loading...' : 'Continue'}</span>
+                    <span>{adminEmailLookupBusy ? 'Loading…' : 'Continue'}</span>
                   </button>
                 </>
               )}
@@ -948,7 +948,7 @@ export default function LoginPage() {
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyProfessorEmail}>Verify Email</button>
                   <div style={{ marginTop: '10px', textAlign: 'right' }}>
                     <button type="button" onClick={resendProfessorVerificationCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
-                      {adminEmailSendBusy ? 'Sending...' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
+                      {adminEmailSendBusy ? 'Sending…' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
                 </>
@@ -969,7 +969,7 @@ export default function LoginPage() {
                 <>
                   <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorFirstSetup} disabled={adminSetupBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     {adminSetupBusy && <ButtonSpinner />}
-                    <span>{adminSetupBusy ? 'Creating Account...' : 'Create Account & Sign In'}</span>
+                    <span>{adminSetupBusy ? 'Creating Account…' : 'Create Account & Sign In'}</span>
                   </button>
                 </>
               )}
@@ -977,7 +977,7 @@ export default function LoginPage() {
                 <>
                   <button className="btn btn-primary btn-block btn-lg" onClick={sendAdminResetCode} disabled={adminEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     {adminEmailSendBusy && <ButtonSpinner />}
-                    <span>{adminEmailSendBusy ? 'Sending Code...' : 'Send Code'}</span>
+                    <span>{adminEmailSendBusy ? 'Sending Code…' : 'Send Code'}</span>
                   </button>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Back</button>
                 </>
@@ -987,7 +987,7 @@ export default function LoginPage() {
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
                   <div style={{ marginTop: '10px', textAlign: 'right' }}>
                     <button type="button" onClick={sendAdminResetCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
-                      {adminEmailSendBusy ? 'Sending...' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
+                      {adminEmailSendBusy ? 'Sending…' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Back</button>
@@ -1013,10 +1013,10 @@ export default function LoginPage() {
                       placeholder="e.g. juandelacruz@plpasig.edu.ph" autoComplete="email"
                       onKeyDown={(e) => { if (e.key === 'Enter') doEmailContinue(); }} />
                   </div>
-                  {step1Error && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
+                  {step1Error && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={doEmailContinue} disabled={studentEmailLookupBusy || studentEmailSendBusy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     {(studentEmailLookupBusy || studentEmailSendBusy) && <ButtonSpinner />}
-                    <span>{studentEmailSendBusy ? 'Sending Code...' : 'Continue'}</span>
+                    <span>{studentEmailSendBusy ? 'Sending Code…' : 'Continue'}</span>
                   </button>
                   <p className="text-center text-muted mt-8" style={{ fontSize: '12px' }}>Must be a <strong>@plpasig.edu.ph</strong> email address.</p>
                 </div>
@@ -1035,11 +1035,11 @@ export default function LoginPage() {
                       placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                       onKeyDown={(e) => { if (e.key === 'Enter') verifyStudentEmail(); }} />
                   </div>
-                  {studentVerifyMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentVerifyMessage}</div>}
-                  {step1Error && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
+                  {studentVerifyMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentVerifyMessage}</div>}
+                  {step1Error && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step1Error}</div>}
                   <div style={{ marginTop: '-2px', marginBottom: '12px', textAlign: 'right' }}>
                     <button type="button" onClick={doEmailContinue} disabled={studentEmailSendBusy || studentResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: studentEmailSendBusy || studentResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentEmailSendBusy || studentResendCooldown > 0 ? 0.6 : 1 }}>
-                      {studentEmailSendBusy ? 'Sending...' : studentResendCooldown > 0 ? `Send Code Again in ${studentResendCooldown}s` : 'Send Code Again'}
+                      {studentEmailSendBusy ? 'Sending…' : studentResendCooldown > 0 ? `Send Code Again in ${studentResendCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentEmail}>Verify Email</button>
@@ -1063,12 +1063,12 @@ export default function LoginPage() {
                       <EyeToggle show={showStudentPass} onToggle={() => setShowStudentPass(v => !v)} />
                     </div>
                   </div>
-                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
-                  {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
+                  {studentResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
+                  {step2aError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={doPasswordLogin}>Sign In</button>
                   <div style={{ marginTop: '10px', textAlign: 'center' }}>
                     <button type="button" onClick={startStudentReset} disabled={studentResetBusy} style={{ background: 'none', border: 'none', cursor: studentResetBusy ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentResetBusy ? 0.6 : 1 }}>
-                      {studentResetBusy ? 'Sending Code...' : 'Forgot Password?'}
+                      {studentResetBusy ? 'Sending Code…' : 'Forgot Password?'}
                     </button>
                   </div>
                 </div>
@@ -1087,11 +1087,11 @@ export default function LoginPage() {
                       placeholder="Enter the 6-digit code" inputMode="numeric" maxLength={6} autoComplete="one-time-code"
                       onKeyDown={(e) => { if (e.key === 'Enter') verifyStudentResetCode(); }} />
                   </div>
-                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
-                  {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
+                  {studentResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
+                  {step2aError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
                   <div style={{ marginTop: '-2px', marginBottom: '12px', textAlign: 'right' }}>
                     <button type="button" onClick={resendStudentResetCode} disabled={studentResetBusy || studentResetCooldown > 0} style={{ background: 'none', border: 'none', cursor: studentResetBusy || studentResetCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentResetBusy || studentResetCooldown > 0 ? 0.6 : 1 }}>
-                      {studentResetBusy ? 'Sending...' : studentResetCooldown > 0 ? `Send Code Again in ${studentResetCooldown}s` : 'Send Code Again'}
+                      {studentResetBusy ? 'Sending…' : studentResetCooldown > 0 ? `Send Code Again in ${studentResetCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
                   <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentResetCode}>Verify Code</button>
@@ -1123,8 +1123,8 @@ export default function LoginPage() {
                       <EyeToggle show={showStudentResetConfirmPass} onToggle={() => setShowStudentResetConfirmPass(v => !v)} />
                     </div>
                   </div>
-                  {studentResetMessage && <div className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
-                  {step2aError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
+                  {studentResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
+                  {step2aError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={saveStudentNewPassword} disabled={studentResetBusy}>Update Password</button>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={studentResetBackToSignIn}>Cancel</button>
                 </div>
@@ -1192,7 +1192,7 @@ export default function LoginPage() {
                       <EyeToggle show={showSetupConfirmPass} onToggle={() => setShowSetupConfirmPass(v => !v)} />
                     </div>
                   </div>
-                  {step2bError && <div className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2bError}</div>}
+                  {step2bError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2bError}</div>}
                   <button className="btn btn-primary btn-block btn-lg" onClick={doFirstSetup}>Create Account &amp; Sign In</button>
                 </div>
               )}

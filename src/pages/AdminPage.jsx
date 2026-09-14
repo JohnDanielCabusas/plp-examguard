@@ -287,7 +287,7 @@ export default function AdminPage() {
       </div>
 
       {/* Toast Container */}
-      <div id="toast-container" />
+      <div id="toast-container" role="status" aria-live="polite" aria-atomic="false" />
 
       {/* Sidebar Overlay (mobile) */}
       <div className="sidebar-overlay" id="sidebar-overlay" onClick={() => window.closeSidebar()} />
@@ -368,7 +368,7 @@ export default function AdminPage() {
         <div className="main-content">
           <header className="topbar">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button className="hamburger-btn" onClick={() => window._adminToggleSidebar?.()}>
+              <button type="button" aria-label="Toggle sidebar" className="hamburger-btn" onClick={() => window._adminToggleSidebar?.()}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               </button>
               <span className="topbar-title" id="topbar-title">Dashboard</span>
@@ -395,7 +395,7 @@ export default function AdminPage() {
 
               {/* Notifications bell */}
               <div className="topbar-bell-wrap">
-                <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" onClick={() => window.toggleNotifDropdown?.()}>
+                <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" aria-label="Notifications" onClick={() => window.toggleNotifDropdown?.()}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                   <span className="topbar-bell-badge" id="topbar-bell-badge" style={{ display: 'none' }}>0</span>
                 </button>
@@ -527,14 +527,14 @@ export default function AdminPage() {
               <div className="toolbar" style={{ gap: '10px', marginBottom: '16px' }}>
                 <div className="search-input" style={{ flex: 1 }}>
                   <span className="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-                  <input type="text" id="student-search" placeholder="Search students..." onInput={() => window.filterStudents()} />
+                  <input type="text" id="student-search" placeholder="Search students…" onInput={() => window.filterStudents()} />
                 </div>
               </div>
               <div className="card">
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
-                      <thead><tr><th>Student ID</th><th>Name</th><th>Year Level</th><th>Section</th><th>Email</th><th>Program</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
+                      <thead><tr><th scope="col">Student ID</th><th scope="col">Name</th><th scope="col">Year Level</th><th scope="col">Section</th><th scope="col">Email</th><th scope="col">Program</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                       <tbody id="students-tbody" />
                     </table>
                   </div>
@@ -864,7 +864,7 @@ export default function AdminPage() {
                   </div>
                   <div className="table-wrapper monitor-table-shell">
                     <table>
-                      <thead><tr><th>Student</th><th style={{textAlign:'center'}}>Progress</th><th style={{textAlign:'center'}}>Warnings</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Logs</th><th style={{textAlign:'center'}}>Actions</th></tr></thead>
+                      <thead><tr><th scope="col">Student</th><th scope="col" style={{textAlign:'center'}}>Progress</th><th scope="col" style={{textAlign:'center'}}>Warnings</th><th scope="col" style={{textAlign:'center'}}>Status</th><th scope="col" style={{textAlign:'center'}}>Logs</th><th scope="col" style={{textAlign:'center'}}>Actions</th></tr></thead>
                       <tbody id="monitor-tbody" />
                     </table>
                   </div>
@@ -947,11 +947,11 @@ export default function AdminPage() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Rank</th>
-                          <th>Name</th>
-                          <th>Student ID</th>
-                          <th>Year / Section</th>
-                          <th>
+                          <th scope="col">Rank</th>
+                          <th scope="col">Name</th>
+                          <th scope="col">Student ID</th>
+                          <th scope="col">Year / Section</th>
+                          <th scope="col">
                             <span className="report-score-heading">
                               <span>Score</span>
                               <button
@@ -970,10 +970,10 @@ export default function AdminPage() {
                               </button>
                             </span>
                           </th>
-                          <th>Percentage</th>
-                          <th>Time</th>
-                          <th>Submitted</th>
-                          <th style={{ textAlign: 'center' }}>Actions</th>
+                          <th scope="col">Percentage</th>
+                          <th scope="col">Time</th>
+                          <th scope="col">Submitted</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody id="report-tbody" />
@@ -1019,7 +1019,7 @@ export default function AdminPage() {
                       <label>Groq API Key</label>
                       <div style={{ position: 'relative' }}>
                         <input type="password" className="form-control" id="set-claude-api-key" placeholder="gsk_..." style={{ paddingRight: '42px', fontFamily: 'monospace' }} />
-                        <button type="button" onClick={(e) => window.togglePassword('set-claude-api-key', e.currentTarget)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#666' }}>
+                        <button type="button" onClick={(e) => window.togglePassword('set-claude-api-key', e.currentTarget)} aria-label="Show or hide API key" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#666' }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
                       </div>
@@ -1060,9 +1060,9 @@ export default function AdminPage() {
                 <div className="card settings-password-card">
                   <div className="card-header"><span className="card-title">Change Password</span></div>
                   <div className="card-body">
-                    <div className="form-group"><label>Current Password</label><input type="password" className="form-control" id="set-cur-pass" /></div>
-                    <div className="form-group"><label>New Password</label><input type="password" className="form-control" id="set-new-pass" /></div>
-                    <div className="form-group"><label>Confirm New Password</label><input type="password" className="form-control" id="set-confirm-pass" /></div>
+                    <div className="form-group"><label>Current Password</label><input type="password" className="form-control" id="set-cur-pass" autoComplete="current-password" /></div>
+                    <div className="form-group"><label>New Password</label><input type="password" className="form-control" id="set-new-pass" autoComplete="new-password" /></div>
+                    <div className="form-group"><label>Confirm New Password</label><input type="password" className="form-control" id="set-confirm-pass" autoComplete="new-password" /></div>
                     <div className="sa-card-actions">
                       <button className="btn btn-warning" onClick={() => window.changePassword()}>Change Password</button>
                     </div>
@@ -1103,7 +1103,7 @@ export default function AdminPage() {
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Title</th><th>Subject</th><th style={{ textAlign: 'center' }}>Code</th><th style={{ textAlign: 'center' }}>Questions</th><th style={{ textAlign: 'center' }}>Time</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-tbody" /></table>
+                    <table><thead><tr><th scope="col" style={{ width: '36px' }}></th><th scope="col">Title</th><th scope="col">Subject</th><th scope="col" style={{ textAlign: 'center' }}>Code</th><th scope="col" style={{ textAlign: 'center' }}>Questions</th><th scope="col" style={{ textAlign: 'center' }}>Time</th><th scope="col" style={{ textAlign: 'center' }}>Archived</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-tbody" /></table>
                   </div>
                 </div>
               </div>
@@ -1125,7 +1125,7 @@ export default function AdminPage() {
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Code</th><th>Course Name</th><th>Year Level</th><th>Sections</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
+                    <table><thead><tr><th scope="col" style={{ width: '36px' }}></th><th scope="col">Code</th><th scope="col">Course Name</th><th scope="col">Year Level</th><th scope="col">Sections</th><th scope="col" style={{ textAlign: 'center' }}>Archived</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
                   </div>
                 </div>
               </div>
@@ -1147,7 +1147,7 @@ export default function AdminPage() {
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th style={{ width: '36px' }}></th><th>Student ID</th><th>Name</th><th style={{ textAlign: 'center' }}>Year Level</th><th style={{ textAlign: 'center' }}>Section</th><th style={{ textAlign: 'center' }}>Archived</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-students-tbody" /></table>
+                    <table><thead><tr><th scope="col" style={{ width: '36px' }}></th><th scope="col">Student ID</th><th scope="col">Name</th><th scope="col" style={{ textAlign: 'center' }}>Year Level</th><th scope="col" style={{ textAlign: 'center' }}>Section</th><th scope="col" style={{ textAlign: 'center' }}>Archived</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-students-tbody" /></table>
                   </div>
                 </div>
               </div>
@@ -1195,14 +1195,14 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-more-actions">
         <div className="modal-dialog modal-sm">
-          <div className="modal-header"><span className="modal-title" id="modal-more-title">More Actions</span><button className="modal-close" onClick={() => window.closeModal('modal-more-actions')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-more-title">More Actions</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-more-actions')}>&#10005;</button></div>
           <div className="modal-body" id="modal-more-body" style={{ padding: '8px 0' }} />
         </div>
       </div>
 
       <div className="modal-backdrop hidden" id="modal-duplicate-exam">
         <div className="modal-dialog">
-          <div className="modal-header"><span className="modal-title">Duplicate Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-duplicate-exam')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title">Duplicate Exam</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-duplicate-exam')}>&#10005;</button></div>
           <div className="modal-body">
             <input type="hidden" id="duplicate-exam-source-id" />
             <div className="form-group">
@@ -1230,7 +1230,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-share-exam">
         <div className="modal-dialog">
-          <div className="modal-header"><span className="modal-title">Share Exam</span><button className="modal-close" onClick={() => window.closeModal('modal-share-exam')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title">Share Exam</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-share-exam')}>&#10005;</button></div>
           <div className="modal-body">
             <input type="hidden" id="share-exam-id" />
             <div className="form-group">
@@ -1267,7 +1267,7 @@ export default function AdminPage() {
               <span className="modal-title">Shared Exams</span>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Review received requests and track the exams you have shared.</div>
             </div>
-            <button className="modal-close" onClick={() => window.closeModal('modal-shared-exams')}>&#10005;</button>
+            <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-shared-exams')}>&#10005;</button>
           </div>
           <div className="modal-body">
             <div className="shared-exams-tabs">
@@ -1290,7 +1290,7 @@ export default function AdminPage() {
               <span className="modal-title" id="modal-exam-share-preview-title">Shared Exam Preview</span>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }} id="modal-exam-share-preview-subtitle" />
             </div>
-            <button className="modal-close" onClick={() => window.closeModal('modal-exam-share-preview')}>&#10005;</button>
+            <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-share-preview')}>&#10005;</button>
           </div>
           <div className="modal-body" id="modal-exam-share-preview-body" />
           <div className="modal-footer" id="modal-exam-share-preview-footer">
@@ -1301,7 +1301,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-subject">
         <div className="modal-dialog">
-          <div className="modal-header"><span className="modal-title" id="modal-subject-title">Add Course</span><button className="modal-close" onClick={() => window.closeModal('modal-subject')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-subject-title">Add Course</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-subject')}>&#10005;</button></div>
           <div className="modal-body">
             <input type="hidden" id="subj-id" />
             <div className="form-row cols-2">
@@ -1310,7 +1310,7 @@ export default function AdminPage() {
             </div>
             <div className="form-group">
               <label>Description <span className="label-hint">(Optional)</span></label>
-              <textarea className="form-control" id="subj-desc" rows="2" maxLength={100} placeholder="Brief description..." onInput={() => window.updateCharCounter('subj-desc', 'subj-desc-counter', 100)} />
+              <textarea className="form-control" id="subj-desc" rows="2" maxLength={100} placeholder="Brief description…" onInput={() => window.updateCharCounter('subj-desc', 'subj-desc-counter', 100)} />
               <div className="char-counter" id="subj-desc-counter">0/100</div>
             </div>
             <div className="form-group"><label>School Year *</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
@@ -1365,7 +1365,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-student">
         <div className="modal-dialog">
-          <div className="modal-header"><span className="modal-title" id="modal-student-title">Add Student</span><button className="modal-close" onClick={() => window.closeModal('modal-student')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-student-title">Add Student</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-student')}>&#10005;</button></div>
           <div className="modal-body">
             <input type="hidden" id="stu-id" />
             <div className="form-row cols-2">
@@ -1390,7 +1390,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-exam-results">
         <div className="modal-dialog modal-xl">
-          <div className="modal-header"><span className="modal-title" id="modal-results-title">Exam Results</span><button className="modal-close" onClick={() => window.closeModal('modal-exam-results')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-results-title">Exam Results</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-results')}>&#10005;</button></div>
           <div className="modal-body" id="modal-results-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-exam-results')}>Close</button></div>
         </div>
@@ -1400,7 +1400,7 @@ export default function AdminPage() {
         <div className="modal-dialog modal-lg">
           <div className="modal-header">
             <div><span className="modal-title">Manage Absentees</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-absentees-sub" /></div>
-            <button className="modal-close" onClick={() => window.closeModal('modal-exam-absentees')}>&#10005;</button>
+            <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-absentees')}>&#10005;</button>
           </div>
           <div className="modal-body" id="modal-absentees-body" style={{ padding: '16px 20px' }} />
           <div className="modal-footer">
@@ -1416,7 +1416,7 @@ export default function AdminPage() {
             <div>
               <span className="modal-title" id="exam-policy-modal-title">Add Examination Rule</span>
             </div>
-            <button className="modal-close" onClick={() => window.closeModal('modal-exam-policy')}>&#10005;</button>
+            <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-policy')}>&#10005;</button>
           </div>
           <div className="modal-body">
             <input type="hidden" id="exam-policy-edit-index" />
@@ -1442,7 +1442,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-student-answers">
         <div className="modal-dialog modal-lg">
-          <div className="modal-header"><span className="modal-title" id="modal-answers-title">Student Answers</span><button className="modal-close" onClick={() => window.closeModal('modal-student-answers')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-answers-title">Student Answers</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-student-answers')}>&#10005;</button></div>
           <div className="modal-body" id="modal-answers-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-student-answers')}>Close</button></div>
         </div>
@@ -1450,7 +1450,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-student-history">
         <div className="modal-dialog modal-xl">
-          <div className="modal-header"><span className="modal-title" id="modal-student-history-title">Student History</span><button className="modal-close" onClick={() => window.closeModal('modal-student-history')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-student-history-title">Student History</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-student-history')}>&#10005;</button></div>
           <div className="modal-body" id="modal-student-history-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-student-history')}>Close</button></div>
         </div>
@@ -1458,7 +1458,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-question-breakdown">
         <div className="modal-dialog modal-xl">
-          <div className="modal-header"><span className="modal-title" id="modal-qbreak-title">Question Breakdown</span><button className="modal-close" onClick={() => window.closeModal('modal-question-breakdown')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-qbreak-title">Question Breakdown</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-question-breakdown')}>&#10005;</button></div>
           <div className="modal-body" id="modal-qbreak-body" />
           <div className="modal-footer"><button className="btn btn-secondary" onClick={() => window.closeModal('modal-question-breakdown')}>Close</button></div>
         </div>
@@ -1473,7 +1473,7 @@ export default function AdminPage() {
 
       <div className="modal-backdrop hidden" id="modal-camera-snap">
         <div className="modal-dialog modal-sm">
-          <div className="modal-header"><span className="modal-title" id="modal-cam-title">Student Camera</span><button className="modal-close" onClick={() => window.closeModal('modal-camera-snap')}>&#10005;</button></div>
+          <div className="modal-header"><span className="modal-title" id="modal-cam-title">Student Camera</span><button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-camera-snap')}>&#10005;</button></div>
           <div className="modal-body" style={{ textAlign: 'center' }}>
             <img id="modal-cam-img" src="/plp-logo.png" alt="Camera snapshot" style={{ maxWidth: '100%', borderRadius: '10px', border: '1px solid var(--border)', display: 'none' }} />
             <p id="modal-cam-time" className="text-muted" style={{ fontSize: '12px', marginTop: '8px' }} />
@@ -1499,10 +1499,10 @@ export default function AdminPage() {
                 Ready to generate
               </div>
             </div>
-            <button onClick={() => window.toggleAIGenFullscreen()} title="Fullscreen" style={{ background: 'none', border: 'none', cursor: 'pointer', color: aiTheme.textMuted, padding: '4px 8px', lineHeight: 1 }}>
+            <button type="button" aria-label="Toggle fullscreen" onClick={() => window.toggleAIGenFullscreen()} title="Fullscreen" style={{ background: 'none', border: 'none', cursor: 'pointer', color: aiTheme.textMuted, padding: '4px 8px', lineHeight: 1 }}>
               <svg id="ai-gen-expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
             </button>
-            <button onClick={() => window.closeAIGen()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: aiTheme.textMuted, fontSize: '20px', lineHeight: 1, padding: '4px' }}>&#10005;</button>
+            <button type="button" aria-label="Close AI generator" onClick={() => window.closeAIGen()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: aiTheme.textMuted, fontSize: '20px', lineHeight: 1, padding: '4px' }}>&#10005;</button>
           </div>
 
           {/* Hidden sync inputs for admin.js */}
@@ -1636,7 +1636,7 @@ export default function AdminPage() {
                       <span key={i} style={{ width:'7px', height:'7px', background:aiTheme.textMuted, borderRadius:'50%', display:'inline-block', animation:`typingDot 1.2s ease-in-out ${d}s infinite` }} />
                     ))}
                   </div>
-                  <span id="ai-status-text" style={{ fontSize:'11px', color:aiTheme.textMuted }}>Working...</span>
+                  <span id="ai-status-text" style={{ fontSize:'11px', color:aiTheme.textMuted }}>Working…</span>
                 </div>
               </div>
 
@@ -1767,7 +1767,7 @@ export default function AdminPage() {
 
                     <textarea id="ai-custom-prompt-custom" rows={1}
                       value={aiCustomPrompt}
-                      placeholder="Ask Tuklas AI anything..."
+                      placeholder="Ask Tuklas AI anything…"
                       style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'16px 18px 6px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
                       onChange={(e) => setAiCustomPrompt(e.target.value)}
                       onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,96)+'px'; }}
