@@ -67,7 +67,7 @@ try {
         { examSessionId: 's-pending', studentId: '24-0004', studentName: 'Pending Student', status: 'pending', suspiciousProbability: null, submittedAt: '2026-09-08T01:33:00.000Z' },
         { examSessionId: 's-risk', studentId: '24-0003', studentName: 'Risk Student', status: 'completed', riskLevel: 'suspicious', suspiciousProbability: 0.912, submittedAt: '2026-09-08T01:32:00.000Z' },
         { examSessionId: 's-review', studentId: '24-0002', studentName: 'Review Student', status: 'completed', riskLevel: 'needs_monitoring', suspiciousProbability: 0.62, submittedAt: '2026-09-08T01:31:00.000Z' },
-        { examSessionId: 's-old', studentId: '24-0005', studentName: 'Legacy Student', status: 'unavailable', suspiciousProbability: null, unavailableReason: 'This session predates the required monitoring summary.', submittedAt: '2026-09-08T01:34:00.000Z' },
+        { examSessionId: 's-old', studentId: '24-0005', studentName: 'Legacy Student', status: 'unavailable', suspiciousProbability: null, unavailableReason: 'This session predates the Random Forest browser summary and cannot be analyzed safely.', submittedAt: '2026-09-08T01:34:00.000Z' },
       ],
       modelVersion: '1.0.0',
       generatedAt: '2026-09-08T02:00:00.000Z',
@@ -84,15 +84,18 @@ try {
   });
   if (
     !states.loading
-    || states.title !== 'Random Forest Risk Analysis'
-    || !states.populated?.includes('3/5')
+    || states.title !== 'Suspicion Probability'
+    || !states.populated?.includes('3 of 5 sessions')
+    || !states.partial?.includes('2 sessions not analyzed')
     || !states.partial?.includes('1 pending · 1 unavailable')
-    || !states.disclaimer?.includes('do not prove misconduct')
+    || !states.disclaimer?.includes('does not prove misconduct')
     || !states.studentTableLabel?.includes('by student')
     || !states.studentRows?.[0]?.includes('Risk Student')
     || !states.studentRows?.[0]?.includes('91.2%')
     || !states.studentRows?.some(row => row.includes('Review Student') && row.includes('Needs monitoring'))
     || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Unavailable'))
+    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Not calculated'))
+    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('exam start or end record is missing'))
   ) {
     throw new Error(`Unexpected populated Random Forest card: ${JSON.stringify(states)}`);
   }

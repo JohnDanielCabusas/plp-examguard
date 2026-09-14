@@ -55,7 +55,7 @@ function aggregateSessionFeatures(session) {
   const endCount = countActivities(activities, 'browser_exam_end');
   if (startCount < 1 || endCount < 1) {
     throw new PredictionUnavailableError(
-      'This session predates the Random Forest browser summary and cannot be analyzed safely.',
+      'The required exam start or end record is missing. This session may have been completed before probability tracking was enabled.',
       'BROWSER_SUMMARY_UNAVAILABLE',
     );
   }
@@ -108,4 +108,3 @@ module.exports = {
   PredictionUnavailableError,
   aggregateSessionFeatures,
 };
-

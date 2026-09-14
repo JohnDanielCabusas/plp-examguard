@@ -60,7 +60,9 @@ assert.equal('copy_attempt' in features, false);
 
 assert.throws(
   () => aggregateSessionFeatures({ ...session, activities: [] }),
-  (error) => error instanceof PredictionUnavailableError && error.code === 'BROWSER_SUMMARY_UNAVAILABLE',
+  (error) => error instanceof PredictionUnavailableError
+    && error.code === 'BROWSER_SUMMARY_UNAVAILABLE'
+    && /exam start or end record is missing/i.test(error.message),
 );
 assert.throws(
   () => aggregateSessionFeatures({ ...session, ai_detections: {} }),
