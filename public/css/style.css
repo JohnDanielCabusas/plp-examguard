@@ -1604,7 +1604,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 }
 
 .login-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: radial-gradient(ellipse at 30% 20%, #0d2b1a 0%, #050e09 50%, #080d1a 100%);
   display: flex;
   align-items: center;
@@ -2203,7 +2203,7 @@ textarea.form-control {
    ============================================================ */
 .admin-layout {
   display: flex;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* SIDEBAR */
@@ -2213,7 +2213,7 @@ textarea.form-control {
   position: fixed;
   top: 0;
   left: 0;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   z-index: 200;
@@ -2457,7 +2457,7 @@ textarea.form-control {
   margin-left: var(--sidebar-width);
   flex: 1;
   background: var(--bg);
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -5051,7 +5051,7 @@ body.exam-page {
 
 /* State center layouts */
 .state-center {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5433,7 +5433,7 @@ body.exam-page {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 .review-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top, rgba(20, 83, 45, 0.08), transparent 32%),
     linear-gradient(180deg, #f6f8fb 0%, #eef2f7 100%);
@@ -5811,7 +5811,7 @@ body.exam-page {
 
 /* Flat university-style review layout */
 .review-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   color: #eef2f6;
   background: #0b121b !important;
 }
@@ -6276,7 +6276,7 @@ body.exam-page {
    ============================================================ */
 body.exam-page {
   background-color: #f1f3f7;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ============================================================
@@ -7591,7 +7591,7 @@ body.exam-page {
 
 .student-portal {
   display: flex;
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
 }
 
@@ -7603,7 +7603,7 @@ body.exam-page {
   flex-direction: column;
   position: fixed;
   top: 0; left: 0;
-  height: 100vh;
+  height: 100dvh;
   z-index: 200;
   transition: width 0.22s cubic-bezier(0.4,0,0.2,1);
   overflow: hidden;
@@ -7819,7 +7819,7 @@ body.exam-page {
 .portal-main {
   flex: 1;
   margin-left: var(--sidebar-w);
-  display: flex; flex-direction: column; min-height: 100vh;
+  display: flex; flex-direction: column; min-height: 100dvh;
   transition: margin-left 0.22s cubic-bezier(0.4,0,0.2,1);
   min-width: 0;
 }
@@ -10258,8 +10258,11 @@ tr:hover td { background: #fafbfc !important; }
    ============================================================ */
 .course-cards-grid {
   display: grid;
+  /* Match the FaceMesh branch proportions: keep compact card tracks instead
+     of stretching a short row across the entire workspace. */
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   gap: 20px;
+  align-items: stretch;
 }
 
 .course-card {
@@ -10271,9 +10274,13 @@ tr:hover td { background: #fafbfc !important; }
   display: flex;
   flex-direction: column;
   font-family: 'Plus Jakarta Sans', sans-serif;
+  width: 100%;
+  min-width: 0;
 }
 .course-card:hover {
-  transform: translateY(-3px);
+  /* Keep hover paint-only. Moving a whole card caused it to intrude into
+     the row above when browser zoom reduced the effective grid gap. */
+  transform: none;
   box-shadow: 16px 16px 32px #c0c5c9, -16px -16px 32px #ffffff;
 }
 
@@ -10494,6 +10501,7 @@ tr:hover td { background: #fafbfc !important; }
   align-items: center;
   justify-content: center;
   gap: 6px;
+  overflow: hidden;
 }
 /* Icons return to the flow so they centre with the label instead of
    being pinned to the right edge with padding reserved for them. */
@@ -10504,6 +10512,12 @@ tr:hover td { background: #fafbfc !important; }
   transform: none;
   opacity: 1;
   flex-shrink: 0;
+}
+.course-card-actions .btn-action-ghost,
+.course-card-actions .btn-action-ghost:hover,
+.course-card-actions .tbl-btn-archive,
+.course-card-actions .tbl-btn-archive:hover {
+  transform: none;
 }
 
 /* Color palette button on card header */
@@ -11285,7 +11299,7 @@ tr:hover td { background: #fafbfc !important; }
   padding: 24px 28px 60px;
   display: flex; flex-direction: column; gap: 18px;
   background: #f1f4f1;
-  min-height: calc(100vh - 58px);
+  min-height: calc(100dvh - 58px);
 }
 @keyframes editorSlideIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -11338,7 +11352,7 @@ tr:hover td { background: #fafbfc !important; }
 [data-theme="dark"] .exam-editor-subtab.active { color: #4ade80; border-bottom-color: #4ade80; }
 
 /* Exam Paper — printable preview */
-.exam-paper-tab { background: #f1f4f1; min-height: calc(100vh - 58px - 46px); }
+.exam-paper-tab { background: #f1f4f1; min-height: calc(100dvh - 58px - 46px); }
 [data-theme="dark"] .exam-paper-tab { background: var(--bg) !important; }
 .exam-paper-toolbar {
   display: flex;
@@ -12307,6 +12321,7 @@ tr:hover td { background: #fafbfc !important; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
+  align-items: stretch;
 }
 .exam-cards-grid:has(.empty-state) {
   display: flex;
@@ -12325,10 +12340,12 @@ tr:hover td { background: #fafbfc !important; }
   cursor: pointer;
   transition: box-shadow 0.3s ease, transform 0.2s cubic-bezier(0.4,0,0.2,1);
   overflow: hidden;
+  width: 100%;
+  min-width: 0;
 }
 .exam-card:hover {
   box-shadow: 16px 16px 32px #c0c5c9, -16px -16px 32px #ffffff;
-  transform: translateY(-3px);
+  transform: none;
 }
 
 /* Colored header (like course card) */
@@ -12490,6 +12507,15 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-card-footer > * {
   flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.exam-card-footer .btn-action-ghost,
+.exam-card-footer .btn-action-ghost:hover,
+.exam-card-footer .tbl-btn-archive,
+.exam-card-footer .tbl-btn-archive:hover {
+  transform: none;
 }
 
 /* Sized so Edit/Share/Archive/More sit in a single row without the
@@ -15948,4 +15974,474 @@ label.theme-switch,
 .course-card .course-card-actions > *:hover svg.share-icon {
   right: 50%;
   transform: translateX(50%);
+}
+
+/* ============================================================
+   ZOOM-RESPONSIVE APPLICATION SHELLS
+   Browser zoom reduces the usable inline size without necessarily
+   crossing the old viewport breakpoints. These named containers make
+   every workspace respond to the space left after its fixed sidebar.
+   ============================================================ */
+html,
+body,
+#root,
+.admin-layout,
+.main-content,
+.content-area,
+.student-portal,
+.portal-main,
+.portal-content,
+.super-admin-shell,
+#state-exam {
+  min-width: 0;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.main-content {
+  container: app-shell / inline-size;
+  width: calc(100% - var(--sidebar-width));
+  max-width: calc(100% - var(--sidebar-width));
+  flex: 0 0 auto;
+  transition: margin-left 0.28s cubic-bezier(0.4,0,0.2,1),
+              width 0.28s cubic-bezier(0.4,0,0.2,1),
+              max-width 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+
+.main-content.sidebar-collapsed {
+  width: calc(100% - 72px);
+  max-width: calc(100% - 72px);
+}
+
+.content-area {
+  container: workspace / inline-size;
+  width: 100%;
+}
+
+.portal-main {
+  container: portal-shell / inline-size;
+  width: calc(100% - var(--sidebar-w));
+  max-width: calc(100% - var(--sidebar-w));
+  flex: 0 0 auto;
+  transition: margin-left 0.22s cubic-bezier(0.4,0,0.2,1),
+              width 0.22s cubic-bezier(0.4,0,0.2,1),
+              max-width 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+
+.student-portal.collapsed .portal-main,
+.portal-main.portal-sidebar-collapsed {
+  width: calc(100% - var(--sidebar-w-collapsed));
+  max-width: calc(100% - var(--sidebar-w-collapsed));
+}
+
+.portal-content {
+  container: portal-workspace / inline-size;
+  width: 100%;
+}
+
+#state-exam {
+  container: exam-shell / inline-size;
+}
+
+@media (max-width: 768px) {
+  .main-content,
+  .main-content.sidebar-collapsed,
+  .portal-main,
+  .student-portal.collapsed .portal-main,
+  .portal-main.portal-sidebar-collapsed {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .main-content,
+  .main-content.sidebar-collapsed {
+    margin-left: 0;
+  }
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+@container app-shell (max-width: 900px) {
+  .content-area {
+    padding: 18px;
+  }
+
+  .topbar {
+    height: auto;
+    min-height: 60px;
+    padding-block: 10px;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .topbar-actions,
+  .sa-topbar-main,
+  .sa-topbar-actions {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .topbar-user-pill,
+  .topbar-actions > * {
+    max-width: 100%;
+  }
+
+  #topbar-admin-name,
+  .topbar-user-pill > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@container app-shell (max-width: 560px) {
+  .content-area {
+    padding: 10px;
+  }
+
+  .topbar-date,
+  .sa-topbar-date {
+    display: none;
+  }
+
+  .topbar {
+    padding-inline: 12px;
+  }
+}
+
+@container workspace (max-width: 1100px) {
+  .monitoring-grid,
+  .dashboard-panels-grid,
+  .settings-main-grid,
+  .course-exam-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activity-log {
+    position: static;
+    min-height: 320px;
+    max-height: none;
+  }
+
+  .course-exam-actions-pane {
+    padding: 0 22px 22px;
+  }
+
+  .course-exam-panel {
+    padding: 18px 0 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
+@container workspace (max-width: 920px) {
+  .monitor-hero {
+    padding: 18px 18px 20px;
+  }
+
+  .monitor-toolbar {
+    align-items: stretch;
+  }
+
+  .monitor-toolbar .reports-toolbar-select,
+  .monitor-toolbar .monitor-view-toggle,
+  .monitor-toolbar .monitor-exam-timer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .monitor-toolbar .monitor-view-toggle {
+    justify-content: flex-start;
+  }
+
+  .monitor-sessions-panel {
+    min-height: 0;
+  }
+
+  .monitor-panel-header {
+    min-height: 72px;
+    padding: 18px;
+  }
+
+  .reports-toolbar,
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .reports-toolbar-actions,
+  .report-card-controls,
+  .monitor-panel-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .stats-overview-grid,
+  .rf-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container workspace (max-width: 760px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .stats-analysis-grid,
+  .form-row.cols-2,
+  .form-row.cols-3,
+  .ai-options-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .table-wrapper table,
+  .table-wrapper thead,
+  .table-wrapper tbody,
+  .table-wrapper tr,
+  .table-wrapper th,
+  .table-wrapper td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-wrapper table,
+  #report-card table {
+    min-width: 0 !important;
+  }
+
+  .table-wrapper thead {
+    display: none;
+  }
+
+  .table-wrapper tr {
+    margin-bottom: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--white);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .table-wrapper tr:hover td {
+    background: transparent;
+  }
+
+  .table-wrapper td,
+  .table-wrapper td:has(> .table-actions),
+  .table-wrapper td:has(> .student-id-badge) {
+    display: flex;
+    width: 100%;
+    padding: 10px 14px;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+    text-align: right !important;
+    white-space: normal;
+  }
+
+  .table-wrapper td:last-child {
+    border-bottom: 0;
+  }
+
+  .table-wrapper td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .table-wrapper td[data-label=""] {
+    justify-content: center;
+  }
+
+  .table-wrapper td[data-label=""]::before {
+    display: none;
+  }
+
+  .table-wrapper td .table-actions,
+  .table-wrapper td:has(> .table-actions) > .table-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  #report-card th:nth-child(7),
+  #report-card td:nth-child(7),
+  #report-card th:nth-child(8),
+  #report-card td:nth-child(8) {
+    width: auto;
+  }
+
+  .rf-student-header {
+    display: none;
+  }
+
+  .rf-student-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 11px 14px;
+    padding: 14px;
+  }
+
+  .rf-student-person {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .rf-student-result {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .rf-student-probability {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@container workspace (max-width: 520px) {
+  .stats-grid,
+  .stats-overview-grid,
+  .rf-summary-grid,
+  .rf-loading,
+  .course-cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitor-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .monitor-sort-btn,
+  .monitor-count-chip,
+  .monitor-panel-actions > .btn {
+    max-width: 100%;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@container portal-shell (max-width: 900px) {
+  .portal-content {
+    padding: 18px 14px 28px;
+  }
+
+  .portal-topbar {
+    height: auto;
+    min-height: var(--topbar-h);
+    padding-block: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .portal-topbar-actions {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@container portal-workspace (max-width: 760px) {
+  .dash-quick-row,
+  .settings-grid,
+  .course-exam-shell,
+  .course-cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash-active-banner,
+  .course-card-enroll {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .btn-take-exam {
+    width: 100%;
+  }
+}
+
+@container exam-shell (max-width: 820px) {
+  .examv2-topbar {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .examv2-topbar-left {
+    flex-basis: calc(100% - 150px);
+  }
+
+  .examv2-topbar-right {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .examv2-stats-bar {
+    padding: 8px 12px;
+    row-gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .examv2-stats-bar > div:last-child {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+
+  .examv2-nav-panel {
+    display: none;
+  }
+
+  .examv2-question-wrap .mcq-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .examv2-stats-bar .examv2-stat {
+    padding-inline: 10px;
+  }
+}
+
+@container exam-shell (max-width: 520px) {
+  .examv2-question-wrap {
+    padding: 16px 12px 8px;
+  }
+
+  .examv2-question-wrap .question-card {
+    padding: 20px 16px;
+  }
+
+  .examv2-nav-controls {
+    padding: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
 }

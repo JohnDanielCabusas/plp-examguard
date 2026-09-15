@@ -300,6 +300,47 @@ assert.equal(
 assert.equal(app._pendingLocalAnswers.has('race-answer'), false);
 app.answers = {};
 
+// A professor-granted retake is a new attempt, not a replay-review reopen.
+// The student must see the clean-attempt state and restart the full launch
+// sequence so no in-memory monitoring state carries into the retake.
+const realShowState = app.showState;
+const realStartSessionSyncPolling = app._startSessionSyncPolling;
+const realStartExam = app.startExam;
+const realShowToast = app._showToast;
+let cleanRetakeStarts = 0;
+app.showState = () => {};
+app._startSessionSyncPolling = () => {};
+app.startExam = () => { cleanRetakeStarts += 1; };
+app._showToast = () => {};
+app.exam = { id: 'retake-exam', title: 'Retake Exam' };
+app.session = {
+  id: 'retake-session',
+  studentId: 'student-1',
+  submitted: false,
+  startTime: null,
+  endTime: null,
+  score: null,
+  answers: {},
+  warnings: 0,
+  activities: [],
+  aiDetections: {},
+  cameraSnapshots: [],
+};
+app._showReviewReopenedState(app.session);
+assert.equal(app._pendingCleanRetake, true);
+assert.equal(element('submitted-title').textContent, 'Retake Ready');
+assert.match(element('submitted-msg').textContent, /warnings, activity history, and score have been cleared/i);
+assert.equal(element('btn-resume-reopened-exam').textContent, 'Start Retake');
+app.resumeReopenedExam();
+assert.equal(cleanRetakeStarts, 1, 'A clean retake must restart the exam initialization path.');
+assert.equal(app._pendingCleanRetake, false);
+app.showState = realShowState;
+app._startSessionSyncPolling = realStartSessionSyncPolling;
+app.startExam = realStartExam;
+app._showToast = realShowToast;
+app.session = null;
+app.exam = null;
+
 const now = Date.now();
 const startedAt = new Date(now - 10 * 60 * 1000).toISOString();
 const deadline = app._getExamDeadlineMs({ timeLimit: 60, startedAt });

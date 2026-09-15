@@ -78,17 +78,25 @@ async function loadOwnedSession(professorId, sessionId) {
 
 async function savePredictionRecord(session, modelVersion, values) {
   const { rows } = await query(
-    `insert into public.random_forest_predictions as existing (
+    `with current_attempt as (
+       select s.id
+         from public.sessions s
+        where s.id = $3
+          and s.submitted = true
+          and s.end_time is not distinct from $15::timestamptz
+        for share of s
+     )
+     insert into public.random_forest_predictions as existing (
        id, owner_admin_id, exam_session_id, student_id, exam_id, course_id,
        status, suspicious_probability, risk_level, requires_professor_review,
        model_version, feature_snapshot_json, unavailable_reason, predicted_at,
        created_at, updated_at
-     ) values (
+     ) select
        $1, $2, $3, $4, $5, $6,
        $7, $8, $9, $10,
        $11, $12::jsonb, $13, $14::timestamptz,
        now(), now()
-     )
+       from current_attempt
      on conflict (exam_session_id, model_version) do update
        set owner_admin_id = excluded.owner_admin_id,
            student_id = excluded.student_id,
@@ -119,9 +127,14 @@ async function savePredictionRecord(session, modelVersion, values) {
       JSON.stringify(values.features || {}),
       values.unavailableReason || null,
       values.predictedAt || (values.status === 'completed' ? new Date().toISOString() : null),
+      session.end_time || null,
     ],
   );
-  if (!rows.length) throw new Error('Prediction record ownership conflict.');
+  if (!rows.length) {
+    const error = new Error('This examination attempt changed before its prediction was saved.');
+    error.code = 'RF_ATTEMPT_SUPERSEDED';
+    throw error;
+  }
   return rows[0];
 }
 
@@ -147,6 +160,7 @@ async function generateSessionPrediction(session) {
       unavailableReason: dataNote,
     });
   } catch (error) {
+    if (error?.code === 'RF_ATTEMPT_SUPERSEDED') throw error;
     if (error instanceof PredictionUnavailableError) {
       return savePredictionRecord(session, metadata.model_version, {
         status: 'unavailable',
@@ -360,6 +374,12 @@ async function handleRandomForestRoute(req, res) {
     }
     return jsonResponse(res, 404, { success: false, message: 'Random Forest route not found.' });
   } catch (error) {
+    if (error?.code === 'RF_ATTEMPT_SUPERSEDED') {
+      return jsonResponse(res, 409, {
+        success: false,
+        message: 'The examination attempt changed while it was being analyzed. Refresh before calculating again.',
+      });
+    }
     const connectivityIssue = isConnectivityIssue(error);
     const fallback = 'Unable to process Random Forest predictions right now.';
     const message = connectivityIssue

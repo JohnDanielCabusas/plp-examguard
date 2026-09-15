@@ -4,9 +4,11 @@ const { connect, query } = require('./db.cjs');
 const { isConnectivityIssue, toUserMessage } = require('./error-utils.cjs');
 const { broadcastViolation, broadcastViolationEvidence } = require('./monitor-websocket.cjs');
 const {
+  deleteEvidenceFile,
   readEvidenceFile,
 } = require('./violation-evidence-store.cjs');
 const {
+  deleteStorageObject,
   downloadStorageObject,
   uploadStorageObject,
 } = require('./supabase-storage.cjs');
@@ -249,6 +251,165 @@ function normalizeEvidenceRow(row) {
       ? `/api/monitor/violation-evidence/${encodeURIComponent(row.id)}/file`
       : '',
   };
+}
+
+async function removeRetiredEvidenceFiles(evidenceRows) {
+  const records = Array.isArray(evidenceRows) ? evidenceRows : [];
+  const results = await Promise.allSettled(records.map((record) => {
+    const storagePath = String(record?.storage_path || '').trim();
+    if (!storagePath) return Promise.resolve();
+    if (record.storage_bucket === 'local-server') return deleteEvidenceFile(storagePath);
+    return deleteStorageObject(record.storage_bucket, storagePath);
+  }));
+
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.warn('[Monitor] Retake metadata was cleared, but an old replay file could not be removed:', result.reason?.message || result.reason);
+    }
+  });
+}
+
+async function resetSessionsForRetake(client, sessionIds) {
+  const ids = Array.from(new Set((sessionIds || []).map(id => String(id || '').trim()).filter(Boolean)));
+  if (!ids.length) return { sessions: [], evidence: [], cleared: { logs: 0, violations: 0, evidence: 0, predictions: 0 } };
+
+  const evidenceResult = await client.query(
+    `delete from public.violation_evidence
+      where session_id = any($1::text[])
+      returning storage_bucket, storage_path`,
+    [ids],
+  );
+  const violationResult = await client.query(
+    `delete from public.violation_events where session_id = any($1::text[])`,
+    [ids],
+  );
+  const logResult = await client.query(
+    `delete from public.logs where session_id = any($1::text[])`,
+    [ids],
+  );
+  const predictionResult = await client.query(
+    `delete from public.random_forest_predictions where exam_session_id = any($1::text[])`,
+    [ids],
+  );
+  const sessionResult = await client.query(
+    `update public.sessions
+        set submitted = false,
+            auto_submitted = false,
+            submit_reason = null,
+            start_time = null,
+            end_time = null,
+            answers = '{}'::jsonb,
+            essay_grades = '{}'::jsonb,
+            ai_detections = '{}'::jsonb,
+            warnings = 0,
+            activities = '[]'::jsonb,
+            camera_snapshots = '[]'::jsonb,
+            score = null,
+            score_released = false,
+            updated_at = now()
+      where id = any($1::text[])
+      returning *`,
+    [ids],
+  );
+
+  return {
+    sessions: sessionResult.rows || [],
+    evidence: evidenceResult.rows || [],
+    cleared: {
+      logs: Number(logResult.rowCount || 0),
+      violations: Number(violationResult.rowCount || 0),
+      evidence: Number(evidenceResult.rowCount || 0),
+      predictions: Number(predictionResult.rowCount || 0),
+    },
+  };
+}
+
+async function handleSessionRetake(req, res, sessionId) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+  const id = String(sessionId || '').trim();
+  if (!id) return badRequest(res, 'Session ID is required.');
+
+  const client = await connect();
+  let result;
+  try {
+    await client.query('begin');
+    const ownedResult = await client.query(
+      `select s.id
+         from public.sessions s
+         join public.exams e on e.id = s.exam_id
+        where s.id = $1
+          and coalesce(s.owner_admin_id, e.owner_admin_id) = $2
+          and s.submitted = true
+        for update of s`,
+      [id, admin.id],
+    );
+    if (!ownedResult.rows.length) {
+      await client.query('rollback');
+      return jsonResponse(res, 404, { success: false, message: 'Submitted examination session not found.' });
+    }
+    result = await resetSessionsForRetake(client, [id]);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await removeRetiredEvidenceFiles(result.evidence);
+  return jsonResponse(res, 200, {
+    success: true,
+    session: result.sessions[0] || null,
+    cleared: result.cleared,
+    resetAt: new Date().toISOString(),
+  });
+}
+
+async function handleExamRetakes(req, res, examId) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+  const id = String(examId || '').trim();
+  if (!id) return badRequest(res, 'Exam ID is required.');
+
+  const client = await connect();
+  let result;
+  try {
+    await client.query('begin');
+    const examResult = await client.query(
+      `select id from public.exams where id = $1 and owner_admin_id = $2 limit 1`,
+      [id, admin.id],
+    );
+    if (!examResult.rows.length) {
+      await client.query('rollback');
+      return jsonResponse(res, 404, { success: false, message: 'Exam not found.' });
+    }
+    const sessionsResult = await client.query(
+      `select s.id
+         from public.sessions s
+         join public.exams e on e.id = s.exam_id
+        where s.exam_id = $1
+          and coalesce(s.owner_admin_id, e.owner_admin_id) = $2
+          and s.submitted = true
+        for update of s`,
+      [id, admin.id],
+    );
+    result = await resetSessionsForRetake(client, sessionsResult.rows.map(row => row.id));
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await removeRetiredEvidenceFiles(result.evidence);
+  return jsonResponse(res, 200, {
+    success: true,
+    sessions: result.sessions,
+    cleared: result.cleared,
+    resetAt: new Date().toISOString(),
+  });
 }
 
 async function getSessionWarningSummary(sessionId) {
@@ -1002,6 +1163,8 @@ async function handleMonitorRoute(req, res) {
   const pathname = url.pathname;
   const evidenceReviewMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/review$/);
   const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
+  const sessionRetakeMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/retake$/);
+  const examRetakesMatch = pathname.match(/^\/api\/monitor\/exams\/([^/]+)\/retake-sessions$/);
 
   try {
     if (pathname === '/api/monitor/incident') {
@@ -1034,6 +1197,16 @@ async function handleMonitorRoute(req, res) {
     if (pathname === '/api/monitor/sessions') {
       if (req.method !== 'GET') return methodNotAllowed(res);
       return await handleSessionList(req, res, url);
+    }
+
+    if (sessionRetakeMatch) {
+      if (req.method !== 'POST') return methodNotAllowed(res);
+      return await handleSessionRetake(req, res, decodeURIComponent(sessionRetakeMatch[1]));
+    }
+
+    if (examRetakesMatch) {
+      if (req.method !== 'POST') return methodNotAllowed(res);
+      return await handleExamRetakes(req, res, decodeURIComponent(examRetakesMatch[1]));
     }
 
     if (pathname === '/api/monitor/violation-evidence') {

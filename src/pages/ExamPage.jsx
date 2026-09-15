@@ -461,7 +461,7 @@ export default function ExamPage() {
       </div>
 
       {/* STATE: EXAM (active) */}
-      <div id="state-exam" className="hidden" style={{ display:'none', flexDirection:'column', height:'100vh', overflow:'hidden', background:'var(--bg)' }}>
+      <div id="state-exam" className="hidden" style={{ display:'none', flexDirection:'column', height:'100dvh', overflow:'hidden', background:'var(--bg)' }}>
 
         {/* Top bar */}
         <div className="examv2-topbar">

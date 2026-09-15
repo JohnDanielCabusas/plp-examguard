@@ -18,6 +18,8 @@
     "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
     "test:exam-timer": "node scripts/test-exam-timer.cjs",
     "test:identification": "node scripts/test-identification-answers.cjs",
+    "test:retake-reset": "node scripts/test-retake-reset.cjs",
+    "test:responsive": "node scripts/test-zoom-responsive-ui.mjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"
   },

@@ -85,7 +85,26 @@ async function downloadStorageObject(bucket, objectPath, range = '') {
   };
 }
 
+async function deleteStorageObject(bucket, objectPath) {
+  const { url, key } = getStorageConfig();
+  const response = await fetch(`${url}/storage/v1/object/${encodeObjectPath(bucket, objectPath)}`, {
+    method: 'DELETE',
+    headers: storageHeaders(key),
+  });
+
+  // Deletion is intentionally idempotent. A missing object already satisfies
+  // the cleanup requested by a retake, while every other storage failure is
+  // surfaced to the caller for logging.
+  if (!response.ok && response.status !== 404) {
+    const error = new Error(await readStorageError(response));
+    error.code = 'SUPABASE_STORAGE_DELETE_FAILED';
+    error.status = response.status;
+    throw error;
+  }
+}
+
 module.exports = {
+  deleteStorageObject,
   downloadStorageObject,
   uploadStorageObject,
 };

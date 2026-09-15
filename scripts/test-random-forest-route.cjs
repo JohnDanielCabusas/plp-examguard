@@ -9,6 +9,7 @@ const workerPath = require.resolve(path.join(serverRoot, 'random-forest-worker.c
 
 let currentAdmin = { id: 'professor-a' };
 let forcedDatabaseError = null;
+let supersedePredictionWrite = false;
 const executedSql = [];
 const completeSession = {
   id: 'session-a',
@@ -115,6 +116,7 @@ require.cache[dbPath] = {
         };
       }
       if (/insert into public\.random_forest_predictions/i.test(sql)) {
+        if (supersedePredictionWrite) return { rows: [] };
         return {
           rows: [{
             id: values[0],
@@ -194,6 +196,11 @@ async function run() {
   assert.equal(allowed.body.prediction.riskLevel, 'needs_monitoring');
   assert.equal(allowed.body.prediction.suspiciousProbability, 0.73);
   assert.ok(executedSql.some(entry => /on conflict \(exam_session_id, model_version\)/i.test(entry.sql)));
+  const firstPredictionWrite = executedSql.find(entry => /insert into public\.random_forest_predictions/i.test(entry.sql));
+  assert.match(firstPredictionWrite.sql, /s\.submitted = true/i);
+  assert.match(firstPredictionWrite.sql, /s\.end_time is not distinct from \$15::timestamptz/i);
+  assert.match(firstPredictionWrite.sql, /for share of s/i);
+  assert.equal(firstPredictionWrite.values[14], completeSession.end_time);
   assert.ok(executedSql.every(entry => !/update\s+public\.sessions/i.test(entry.sql)), 'Prediction must not update grades or session state.');
 
   const originalActivities = completeSession.activities;
@@ -247,6 +254,17 @@ async function run() {
   assert.equal(refreshed.body.completed, 1);
   assert.equal(refreshed.body.hasMorePending, true);
   assert.ok(executedSql.some(entry => /order by case when p\.id is null or p\.status = 'pending' then 0/i.test(entry.sql)));
+
+  supersedePredictionWrite = true;
+  const superseded = responseCapture();
+  await handleRandomForestRoute({
+    method: 'POST',
+    url: '/api/exam-sessions/session-a/random-forest-prediction',
+    headers: { host: 'localhost' },
+  }, superseded);
+  supersedePredictionWrite = false;
+  assert.equal(superseded.status, 409);
+  assert.match(superseded.body.message, /attempt changed/i);
 
   forcedDatabaseError = new Error("ENOENT: no such file or directory, open 'C:\\private\\artifact.json'");
   const internalFailure = responseCapture();

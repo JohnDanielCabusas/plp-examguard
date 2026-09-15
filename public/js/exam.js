@@ -134,6 +134,7 @@ const ExamApp = {
   timeRemaining: 0,
   _examRuntimeStarted: false,
   _pendingReviewReopen: false,
+  _pendingCleanRetake: false,
   _blurTimer: null,         // debounce timer for window blur
   _visTimer: null,          // grace timer for tab-hidden (visibilitychange)
   _fsLossTimer: null,       // grace timer for fullscreen-exit — forgives transient display blips (e.g. brightness/HDR re-sync)
@@ -3288,7 +3289,15 @@ const ExamApp = {
   },
 
   _showReviewReopenedState(liveSession) {
+    const activities = Array.isArray(liveSession?.activities) ? liveSession.activities : [];
+    const isCleanRetake = !liveSession?.startTime
+      && !liveSession?.endTime
+      && (liveSession?.score === null || typeof liveSession?.score === 'undefined')
+      && !Object.keys(liveSession?.answers || {}).length
+      && !activities.length
+      && !Number(liveSession?.warnings || 0);
     this._pendingReviewReopen = true;
+    this._pendingCleanRetake = isCleanRetake;
     this._examRuntimeStarted = false;
     this.session = liveSession;
     this.answers = liveSession.answers || this.answers || {};
@@ -3302,32 +3311,51 @@ const ExamApp = {
     const autoNote = document.getElementById('submitted-auto-note');
     const resumeBtn = document.getElementById('btn-resume-reopened-exam');
     const reviewBtn = document.getElementById('btn-review-answers');
-    if (titleEl) titleEl.textContent = 'Exam Reopened';
-    if (msgEl) msgEl.textContent = 'Your professor dismissed a webcam violation. Your warning was deducted and you may continue this attempt.';
+    if (titleEl) titleEl.textContent = isCleanRetake ? 'Retake Ready' : 'Exam Reopened';
+    if (msgEl) {
+      msgEl.textContent = isCleanRetake
+        ? 'Your professor granted a retake. Your previous answers, warnings, activity history, and score have been cleared.'
+        : 'Your professor dismissed a webcam violation. Your warning was deducted and you may continue this attempt.';
+    }
     if (iconWrap) {
       iconWrap.innerHTML = _submittedIcon('success');
       iconWrap.className = 'submitted-icon-wrap success';
     }
     if (autoNote) {
       autoNote.classList.remove('hidden');
-      autoNote.innerHTML = `
-        <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Professor reviewed replay</span></span>
-        <span class="submitted-auto-text">Select Resume Reopened Exam to continue with your saved answers.</span>
-      `;
+      autoNote.innerHTML = isCleanRetake
+        ? `
+          <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Clean attempt</span></span>
+          <span class="submitted-auto-text">Select Start Retake to begin again with an empty violation record.</span>
+        `
+        : `
+          <span class="submitted-auto-badge">${this._portalIcon('checkCircle', { size: 13, stroke: 'currentColor' })}<span>Professor reviewed replay</span></span>
+          <span class="submitted-auto-text">Select Resume Reopened Exam to continue with your saved answers.</span>
+        `;
     }
-    if (resumeBtn) resumeBtn.style.display = '';
+    if (resumeBtn) {
+      resumeBtn.style.display = '';
+      resumeBtn.textContent = isCleanRetake ? 'Start Retake' : 'Resume Reopened Exam';
+    }
     if (reviewBtn) reviewBtn.style.display = 'none';
   },
 
   resumeReopenedExam() {
     const liveSession = this.session?.id ? (DB.getSession(this.session.id) || this.session) : null;
     if (!liveSession || liveSession.submitted || !this._pendingReviewReopen) return;
+    const isCleanRetake = this._pendingCleanRetake;
     this._pendingReviewReopen = false;
+    this._pendingCleanRetake = false;
     this.session = liveSession;
     this.answers = liveSession.answers || {};
     this.warnings = Number(liveSession.warnings || 0);
     const resumeBtn = document.getElementById('btn-resume-reopened-exam');
     if (resumeBtn) resumeBtn.style.display = 'none';
+    if (isCleanRetake) {
+      this.startExam();
+      this._showToast('Your clean retake is ready to begin.', 'success');
+      return;
+    }
     this._prepareExamShell();
     this._continueExamLaunch();
     this._showToast('Your exam is active again. Your saved answers have been restored.', 'success');
@@ -8651,8 +8679,12 @@ const ExamApp = {
   _showSubmitted(freshSubmit) {
     this.showState('submitted');
     this._pendingReviewReopen = false;
+    this._pendingCleanRetake = false;
     const resumeBtn = document.getElementById('btn-resume-reopened-exam');
-    if (resumeBtn) resumeBtn.style.display = 'none';
+    if (resumeBtn) {
+      resumeBtn.style.display = 'none';
+      resumeBtn.textContent = 'Resume Reopened Exam';
+    }
 
     // Keep the professor chat reachable after submission.
     if (this.exam && this.session) {

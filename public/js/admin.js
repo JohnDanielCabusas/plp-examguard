@@ -315,6 +315,7 @@ function getRecordedSubmissionReason(session) {
 
 function getSubmissionStatusText(session) {
   if (!session) return 'Pending';
+  if (isSessionRetakeReady(session)) return 'Retake Ready';
   if (!session.submitted) return 'Pending';
   if (!session.autoSubmitted) return 'Submitted';
 
@@ -333,6 +334,7 @@ function getSubmissionStatusText(session) {
 function getSubmissionStatusBadge(session) {
   const text = getSubmissionStatusText(session);
   if (text === 'Submitted') return '<span class="badge badge-success">Submitted</span>';
+  if (text === 'Retake Ready') return '<span class="badge badge-warning">Retake Ready</span>';
   if (text === 'Pending') return '<span class="badge badge-secondary">Pending</span>';
   if (text === 'Force-Submitted (Professor)') return `<span class="badge badge-danger">${escHtml(text)}</span>`;
   return `<span class="badge badge-warning">${escHtml(text)}</span>`;
@@ -1072,6 +1074,13 @@ window.acknowledgeAllViolationAlerts = acknowledgeAllViolationAlerts;
 function clearViolationAlertsForSession(sessionId) {
   if (!sessionId) return;
   const prefix = `violation:${sessionId}:`;
+  const retiredNotificationIds = _bellNotifs
+    .filter(notification => notification?.kind === 'violation' && notification?.sessionId === sessionId)
+    .map(notification => notification.id);
+  rememberDismissedNotificationIds(retiredNotificationIds);
+  _bellNotifs = _bellNotifs.filter(
+    notification => notification?.kind !== 'violation' || notification?.sessionId !== sessionId
+  );
 
   _violationAlertQueue = _violationAlertQueue.filter((entry) => {
     if (entry?.sessionId !== sessionId) return true;
@@ -1083,12 +1092,64 @@ function clearViolationAlertsForSession(sessionId) {
   });
   _seenViolationActivityBySession.delete(sessionId);
   _recentViolationEventKeys.delete(sessionId);
+  _monitorViolationFlashExpirations.delete(sessionId);
+  _monitorEvidenceRecords = _monitorEvidenceRecords.filter(record => record?.sessionId !== sessionId);
 
   if (_activeViolationAlert?.sessionId === sessionId) {
     _activeViolationAlert = null;
     showNextViolationAlert();
   }
   renderViolationAlertModal();
+  renderBell();
+}
+
+function isSessionRetakeReady(session) {
+  return !!session?.retakeGrantedAt && !session.submitted && !session.startTime;
+}
+
+function applyRetakeCleanupLocally(sessionRows) {
+  const rows = Array.isArray(sessionRows) ? sessionRows.filter(row => row?.id) : [];
+  if (!rows.length) return;
+
+  const normalizedById = new Map(rows.map(row => {
+    const normalized = normalizeMonitorSessionRow(row);
+    return [normalized.id, normalized];
+  }));
+  const currentSessions = Array.isArray(DB._read(DB.KEYS.sessions, []))
+    ? DB._read(DB.KEYS.sessions, [])
+    : [];
+  DB._write(DB.KEYS.sessions, currentSessions.map(session => normalizedById.get(session.id) || session));
+
+  if (DB.KEYS?.logs) {
+    const currentLogs = Array.isArray(DB._read(DB.KEYS.logs, [])) ? DB._read(DB.KEYS.logs, []) : [];
+    DB._write(DB.KEYS.logs, currentLogs.filter(log => !normalizedById.has(log?.sessionId)));
+  }
+
+  rows.forEach(row => clearViolationAlertsForSession(row.id));
+  if (_activeLogSessionId && normalizedById.has(_activeLogSessionId)) refreshOpenStudentLog();
+}
+
+async function requestSessionRetakeReset(sessionId) {
+  const result = await monitorApiRequest(`/api/monitor/sessions/${encodeURIComponent(sessionId)}/retake`, {
+    method: 'POST',
+  });
+  if (result.success && result.session) {
+    result.session.retakeGrantedAt = result.resetAt || new Date().toISOString();
+    applyRetakeCleanupLocally([result.session]);
+  }
+  return result;
+}
+
+async function requestExamRetakeReset(examId) {
+  const result = await monitorApiRequest(`/api/monitor/exams/${encodeURIComponent(examId)}/retake-sessions`, {
+    method: 'POST',
+  });
+  if (result.success) {
+    const resetAt = result.resetAt || new Date().toISOString();
+    result.sessions = (result.sessions || []).map(session => ({ ...session, retakeGrantedAt: resetAt }));
+    applyRetakeCleanupLocally(result.sessions);
+  }
+  return result;
 }
 
 function queueViolationAlert(entry) {
@@ -6006,24 +6067,14 @@ async function reopenExam(id) {
   if (!choice) return;
 
   if (choice === 'all') {
-    // Reset all submitted sessions so everyone can retake
-    const sessions = DB.getSessionsByExam(id).filter(s => s.submitted);
-    sessions.forEach(s => {
-      DB.updateSession(s.id, {
-        submitted: false,
-        autoSubmitted: false,
-        startTime: null,
-        endTime: null,
-        score: null,
-        scoreReleased: false,
-        answers: {},
-        aiDetections: {},
-        warnings: 0,
-        activities: [],
-        cameraSnapshots: [],
-      });
-      clearViolationAlertsForSession(s.id);
-    });
+    // Reset attempts and their dependent audit/model rows together. Reusing the
+    // session id without clearing those tables made old violations appear in a
+    // retake and could leave a stale Random Forest prediction attached to it.
+    const resetResult = await requestExamRetakeReset(id);
+    if (!resetResult.success) {
+      showToast(resetResult.message || 'Unable to prepare clean retakes right now.', 'error');
+      return;
+    }
     const startedAt = new Date().toISOString();
     DB.updateExam(id, {
       status: 'active',
@@ -8186,7 +8237,7 @@ async function monitorApiRequest(url, options = {}) {
 }
 
 function normalizeMonitorSessionRow(row) {
-  return {
+  const normalized = {
     id: row.id,
     examId: row.exam_id,
     examCode: row.exam_code || '',
@@ -8214,6 +8265,9 @@ function normalizeMonitorSessionRow(row) {
     ownerAdminId: row.owner_admin_id || '',
     createdAt: row.created_at || null,
   };
+  const retakeGrantedAt = row.retakeGrantedAt || row.retake_granted_at || null;
+  if (retakeGrantedAt) normalized.retakeGrantedAt = retakeGrantedAt;
+  return normalized;
 }
 
 function applyMonitorSessionsSnapshot(examId, sessionRows) {
@@ -8523,6 +8577,8 @@ function renderMonitoringTable(examId) {
       ? (s.autoSubmitted
           ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
           : '<span class="ms-badge ms-badge-green">Submitted</span>')
+      : isSessionRetakeReady(s)
+        ? '<span class="ms-badge ms-badge-amber">Retake Ready</span>'
       : s.startTime
         ? '<span class="ms-badge ms-badge-blue">In Progress</span>'
         : s.monitorAbsent
@@ -10210,6 +10266,28 @@ function getOrderedSubmittedReportSessions(examId) {
     .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 }
 
+function getOrderedRetakeReadyReportSessions(examId) {
+  if (!examId) return [];
+  return DB.getSessionsByExam(examId)
+    .filter(isSessionRetakeReady)
+    .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
+}
+
+function renderReportRetakeRows(sessions) {
+  if (!sessions.length) return '';
+  return sessions.map(session => `<tr class="report-row-retake-ready">
+    <td data-label="Rank"><span class="report-rank-absent">&mdash;</span></td>
+    <td data-label="Name"><strong>${escHtml(session.studentName)}</strong></td>
+    <td data-label="Student ID">${escHtml(session.studentId)}</td>
+    <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(session))}</td>
+    <td data-label="Score"><span class="text-muted">&mdash;</span></td>
+    <td data-label="Percentage"><span class="text-muted">&mdash;</span></td>
+    <td data-label="Time" class="report-session-cell"><span class="report-session-empty">-</span></td>
+    <td data-label="Submitted" class="report-status-cell"><span class="badge badge-warning">Retake Ready</span></td>
+    <td data-label="Actions"><span class="report-absent-hint">Waiting for the student's new attempt</span></td>
+  </tr>`).join('');
+}
+
 let reportCopyFeedbackTimer = null;
 
 function showReportScoresCopiedFeedback() {
@@ -10305,6 +10383,8 @@ function renderReportTable() {
 
   const sorted = getOrderedSubmittedReportSessions(examId);
   const sessions = sorted;
+  const retakeReadySessions = getOrderedRetakeReadyReportSessions(examId);
+  const retakeReadyRowsHtml = renderReportRetakeRows(retakeReadySessions);
 
   const absentStudents = getExamAbsentStudents(exam);
   const absentRowsHtml = renderReportAbsentRows(absentStudents);
@@ -10323,7 +10403,7 @@ function renderReportTable() {
   const maxScore = sessions[0]?.maxScore || '?';
   document.getElementById('report-avg-score').textContent = `Avg: ${avgScore}/${maxScore}`;
 
-  if (!sorted.length) {
+  if (!sorted.length && !retakeReadySessions.length) {
     // Still list the absentees — an exam with no submissions but a full absentee
     // list is exactly the case a professor needs to see explained.
     document.getElementById('report-tbody').innerHTML =
@@ -10331,7 +10411,7 @@ function renderReportTable() {
     return;
   }
 
-  document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
+  const submittedRowsHtml = sorted.map((s, i) => {
     const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
     const submissionStatus = getSubmissionStatusBadge(s);
     const sessionTimeHtml = renderReportSessionTime(s);
@@ -10352,11 +10432,12 @@ function renderReportTable() {
       <td data-label="Actions">
         <div class="table-actions">
           <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}', 'reports')">Review${icEyeFill}</button>
-          <button class="tbl-btn tbl-btn-warning" onclick="allowStudentRetake('${s.id}')" title="Reset this student's submission so they can retake">Allow Retake${icRedoStroke}</button>
+          <button class="tbl-btn tbl-btn-warning" onclick="allowStudentRetake('${s.id}', this)" title="Reset this student's submission so they can retake">Allow Retake${icRedoStroke}</button>
         </div>
       </td>
     </tr>`;
-  }).join('') + absentRowsHtml;
+  }).join('');
+  document.getElementById('report-tbody').innerHTML = submittedRowsHtml + retakeReadyRowsHtml + absentRowsHtml;
 }
 
 function generatePDF() {
@@ -10849,50 +10930,72 @@ async function hideScores() {
   renderReportTable();
 }
 
-async function allowStudentRetake(sessionId) {
+async function allowStudentRetake(sessionId, triggerButton = null) {
   const session = DB.getSession(sessionId);
-  if (!session) return;
+  if (!session) {
+    showToast('This student session is no longer available. Refresh the report and try again.', 'error');
+    return;
+  }
   const exam = DB.getExam(session.examId);
   const ok = await showConfirm(
-    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nTheir previous submission, answers, and score will be cleared.`
+    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nTheir previous submission, answers, score, violation history, and activity logs will be cleared for a clean attempt.`
   );
   if (!ok) return;
-  let retakeExam = exam;
-  if (exam?.id && window.SupabaseSync?.refreshExams) {
-    // The exemption may have been changed from another professor tab. Refresh
-    // before removing it so the reset is based on the authoritative list.
-    await Promise.resolve(SupabaseSync.refreshExams()).catch(() => {});
-    retakeExam = DB.getExam(exam.id) || exam;
+  const originalButtonHtml = triggerButton?.innerHTML || '';
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.setAttribute('aria-busy', 'true');
+    triggerButton.textContent = 'Preparing...';
   }
-  if (retakeExam?.id && session.studentId) {
-    // A fresh retake should restore the original webcam requirement for this exam.
-    // Wait for that exam-row change before publishing the session reset, otherwise
-    // the student can see the retake first and relaunch with a stale exemption.
-    DB.setStudentCameraExempt(retakeExam.id, session.studentId, false);
-    await (window.SupabaseSync?.waitForDocSync?.('exams', retakeExam.id) || Promise.resolve());
-    if (_profChatCtx?.examId === retakeExam.id && _profChatCtx?.studentId === session.studentId) {
-      renderProfCameraRow();
+
+  try {
+    let retakeExam = exam;
+    if (exam?.id && window.SupabaseSync?.refreshExams) {
+      // The exemption may have been changed from another professor tab. Refresh
+      // before removing it so the reset is based on the authoritative list.
+      await Promise.resolve(SupabaseSync.refreshExams()).catch(() => {});
+      retakeExam = DB.getExam(exam.id) || exam;
+    }
+    if (retakeExam?.id && session.studentId) {
+      // A fresh retake should restore the original webcam requirement for this exam.
+      // Wait for that exam-row change before publishing the session reset, otherwise
+      // the student can see the retake first and relaunch with a stale exemption.
+      DB.setStudentCameraExempt(retakeExam.id, session.studentId, false);
+      await (window.SupabaseSync?.waitForDocSync?.('exams', retakeExam.id) || Promise.resolve()).catch(() => {});
+      if (_profChatCtx?.examId === retakeExam.id && _profChatCtx?.studentId === session.studentId) {
+        renderProfCameraRow();
+      }
+    }
+    const resetResult = await requestSessionRetakeReset(sessionId);
+    if (!resetResult.success) {
+      showToast(resetResult.message || 'Unable to prepare a clean retake right now.', 'error');
+      return;
+    }
+
+    // Pull once after the mutation so every status/count is based on the server.
+    // Reapply the exact reset response afterward to protect against a stale replica
+    // read arriving during that very small window.
+    await Promise.resolve(window.SupabaseSync?.refreshSessions?.()).catch(() => {});
+    if (resetResult.session) applyRetakeCleanupLocally([resetResult.session]);
+
+    const updatedSession = DB.getSession(sessionId);
+    if (!updatedSession || updatedSession.submitted || updatedSession.startTime) {
+      showToast('The server did not confirm the student retake. Please try again.', 'error');
+      return;
+    }
+
+    showToast(`Retake ready for ${session.studentName}.`, 'success');
+    if (currentSection === 'monitoring') renderMonitoringSectionLive();
+    renderReportTable();
+  } finally {
+    if (triggerButton?.isConnected) {
+      triggerButton.disabled = false;
+      triggerButton.removeAttribute('aria-busy');
+      triggerButton.innerHTML = originalButtonHtml;
     }
   }
-  DB.updateSession(sessionId, {
-    submitted:     false,
-    autoSubmitted: false,
-    startTime:     null,
-    endTime:       null,
-    score:         null,
-    scoreReleased: false,
-    answers:       {},
-    essayGrades:   {},
-    aiDetections:  {},
-    warnings:      0,
-    activities:    [],
-    cameraSnapshots: [],
-  });
-  clearViolationAlertsForSession(sessionId);
-  showToast(`Retake granted for ${session.studentName}.`, 'success');
-  if (currentSection === 'monitoring') renderMonitoringSectionLive();
-  renderReportTable();
 }
+window.allowStudentRetake = allowStudentRetake;
 
 // ============================================================
 // SETTINGS
