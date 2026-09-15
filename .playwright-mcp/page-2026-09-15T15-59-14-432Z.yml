@@ -1,0 +1,210 @@
+- generic [ref=f74e2]:
+  - status
+  - generic [ref=f74e6]:
+    - complementary [ref=f74e7]:
+      - generic [ref=f74e11]:
+        - heading "Pamantasan ng Lungsod ng Pasig" [level=2] [ref=f74e129]
+        - paragraph [ref=f74e13]: Professor Panel
+      - navigation [ref=f74e14]:
+        - generic [ref=f74e15]: Main
+        - generic [ref=f74e16] [cursor=pointer]: Dashboard
+        - generic [ref=f74e24] [cursor=pointer]: Courses
+        - generic [ref=f74e30] [cursor=pointer]: Students
+        - generic [ref=f74e38] [cursor=pointer]: Exams
+        - generic [ref=f74e44]: Live
+        - generic [ref=f74e45] [cursor=pointer]: Monitoring
+        - generic [ref=f74e51]: Analysis
+        - generic [ref=f74e52] [cursor=pointer]: Reports
+        - generic [ref=f74e56] [cursor=pointer]: Statistics
+        - generic [ref=f74e62]: System
+        - generic [ref=f74e63] [cursor=pointer]: Settings
+        - generic [ref=f74e69] [cursor=pointer]: Archive
+      - button "Sign Out Sign Out" [ref=f74e76] [cursor=pointer]:
+        - generic [ref=f74e80]: Sign Out
+        - text: Sign Out
+    - generic [ref=f74e81]:
+      - banner [ref=f74e82]:
+        - generic [ref=f74e83]:
+          - button "Toggle sidebar" [ref=f74e84] [cursor=pointer]
+          - generic [ref=f74e86]: Courses
+        - generic [ref=f74e87]:
+          - generic [ref=f74e130]: Tue, September 15, 2026
+          - button "Mute" [ref=f74e131] [cursor=pointer]
+          - button "Notifications" [ref=f74e96] [cursor=pointer]
+          - generic "Toggle dark / light mode" [ref=f74e100] [cursor=pointer]:
+            - checkbox [checked]
+          - button "A Administrator" [ref=f74e108] [cursor=pointer]:
+            - generic [ref=f74e109]: A
+            - generic [ref=f74e110]: Administrator
+      - generic [ref=f74e111]:
+        - generic [ref=f74e137]:
+          - generic [ref=f74e138]:
+            - generic [ref=f74e139]:
+              - generic [ref=f74e140]: College of Computer Studies (CCS)
+              - generic [ref=f74e141]: Manage courses and their target year levels & sections
+            - button "+ Add Course" [ref=f74e142] [cursor=pointer]
+          - generic [ref=f74e143]:
+            - generic [ref=f74e144]:
+              - generic [ref=f74e146] [cursor=pointer]:
+                - generic: C
+                - button "Change card color" [ref=f74e147]
+                - generic [ref=f74e154]:
+                  - generic [ref=f74e155]: CS101 · S.Y. 2025-2026
+                  - generic [ref=f74e156]: Introduction to Computing (ADMIN)
+              - generic [ref=f74e157]:
+                - generic [ref=f74e158]:
+                  - generic [ref=f74e159]:
+                    - generic [ref=f74e160]: Exams
+                    - generic [ref=f74e161]: "1"
+                  - generic [ref=f74e162]:
+                    - generic [ref=f74e163]: Students
+                    - generic [ref=f74e164]: "1"
+                - generic [ref=f74e165]:
+                  - generic [ref=f74e166]:
+                    - generic [ref=f74e167]: "Enroll Code:"
+                    - button "YVRURZ" [ref=f74e168] [cursor=pointer]
+                  - generic [ref=f74e172]: 1-B
+                - generic [ref=f74e182]:
+                  - button "Edit" [ref=f74e183] [cursor=pointer]
+                  - button "Archive" [ref=f74e186] [cursor=pointer]
+            - generic [ref=f74e190]:
+              - generic [ref=f74e192] [cursor=pointer]:
+                - generic: C
+                - button "Change card color" [ref=f74e193]
+                - generic [ref=f74e200]:
+                  - generic [ref=f74e201]: CS102
+                  - generic [ref=f74e202]: Networking
+                  - generic [ref=f74e203]: hehe
+              - generic [ref=f74e204]:
+                - generic [ref=f74e205]:
+                  - generic [ref=f74e206]:
+                    - generic [ref=f74e207]: Exams
+                    - generic [ref=f74e208]: "0"
+                  - generic [ref=f74e209]:
+                    - generic [ref=f74e210]: Students
+                    - generic [ref=f74e211]: "0"
+                - generic [ref=f74e212]:
+                  - generic [ref=f74e213]:
+                    - generic [ref=f74e214]: "Enroll Code:"
+                    - button "9MSFCD" [ref=f74e215] [cursor=pointer]
+                  - generic [ref=f74e219]: 4-A
+                - generic [ref=f74e229]:
+                  - button "Edit" [ref=f74e230] [cursor=pointer]
+                  - button "Archive" [ref=f74e233] [cursor=pointer]
+            - generic [ref=f74e237]:
+              - generic [ref=f74e239] [cursor=pointer]:
+                - generic: C
+                - button "Change card color" [ref=f74e240]
+                - generic [ref=f74e247]:
+                  - generic [ref=f74e248]: CS101 · S.Y. 2025-2026
+                  - generic [ref=f74e249]: Introduction to Computing (1C)
+              - generic [ref=f74e250]:
+                - generic [ref=f74e251]:
+                  - generic [ref=f74e252]:
+                    - generic [ref=f74e253]: Exams
+                    - generic [ref=f74e254]: "0"
+                  - generic [ref=f74e255]:
+                    - generic [ref=f74e256]: Students
+                    - generic [ref=f74e257]: "0"
+                - generic [ref=f74e258]:
+                  - generic [ref=f74e259]:
+                    - generic [ref=f74e260]: "Enroll Code:"
+                    - button "86CQNN" [ref=f74e261] [cursor=pointer]
+                  - generic [ref=f74e265]: 1-A
+                - generic [ref=f74e275]:
+                  - button "Edit" [ref=f74e276] [cursor=pointer]
+                  - button "Archive" [ref=f74e279] [cursor=pointer]
+            - generic [ref=f74e283]:
+              - generic [ref=f74e285] [cursor=pointer]:
+                - generic: I
+                - button "Change card color" [ref=f74e286]
+                - generic [ref=f74e293]:
+                  - generic [ref=f74e294]: IT107 · S.Y. 2025-2026
+                  - generic [ref=f74e295]: Networking
+                  - generic [ref=f74e296]: Networking in your area
+              - generic [ref=f74e297]:
+                - generic [ref=f74e298]:
+                  - generic [ref=f74e299]:
+                    - generic [ref=f74e300]: Exams
+                    - generic [ref=f74e301]: "1"
+                  - generic [ref=f74e302]:
+                    - generic [ref=f74e303]: Students
+                    - generic [ref=f74e304]: "1"
+                - generic [ref=f74e305]:
+                  - generic [ref=f74e306]:
+                    - generic [ref=f74e307]: "Enroll Code:"
+                    - button "H4Y45W" [ref=f74e308] [cursor=pointer]
+                  - generic [ref=f74e312]: 3-B
+                - generic [ref=f74e322]:
+                  - button "Edit" [ref=f74e323] [cursor=pointer]
+                  - button "Archive" [ref=f74e326] [cursor=pointer]
+            - generic [ref=f74e330]:
+              - generic [ref=f74e332] [cursor=pointer]:
+                - generic: I
+                - button "Change card color" [ref=f74e333]
+                - generic [ref=f74e340]:
+                  - generic [ref=f74e341]: IT108 · S.Y. 2025-2026
+                  - generic [ref=f74e342]: Introduction to Computing - 3B
+              - generic [ref=f74e343]:
+                - generic [ref=f74e344]:
+                  - generic [ref=f74e345]:
+                    - generic [ref=f74e346]: Exams
+                    - generic [ref=f74e347]: "0"
+                  - generic [ref=f74e348]:
+                    - generic [ref=f74e349]: Students
+                    - generic [ref=f74e350]: "2"
+                - generic [ref=f74e351]:
+                  - generic [ref=f74e352]:
+                    - generic [ref=f74e353]: "Enroll Code:"
+                    - button "6CG768" [ref=f74e354] [cursor=pointer]
+                  - generic [ref=f74e358]: 3-B
+                - generic [ref=f74e368]:
+                  - button "Edit" [ref=f74e369] [cursor=pointer]
+                  - button "Archive" [ref=f74e372] [cursor=pointer]
+            - generic [ref=f74e376]:
+              - generic [ref=f74e378] [cursor=pointer]:
+                - generic: C
+                - button "Change card color" [ref=f74e379]
+                - generic [ref=f74e386]:
+                  - generic [ref=f74e387]: CS103 · S.Y. 2025-2026
+                  - generic [ref=f74e388]: Human-Computer Interaction
+              - generic [ref=f74e389]:
+                - generic [ref=f74e390]:
+                  - generic [ref=f74e391]:
+                    - generic [ref=f74e392]: Exams
+                    - generic [ref=f74e393]: "0"
+                  - generic [ref=f74e394]:
+                    - generic [ref=f74e395]: Students
+                    - generic [ref=f74e396]: "0"
+                - generic [ref=f74e397]:
+                  - generic [ref=f74e398]:
+                    - generic [ref=f74e399]: "Enroll Code:"
+                    - button "8WRR9C" [ref=f74e400] [cursor=pointer]
+                  - generic [ref=f74e404]: 1-B
+                - generic [ref=f74e414]:
+                  - button "Edit" [ref=f74e415] [cursor=pointer]
+                  - button "Archive" [ref=f74e418] [cursor=pointer]
+            - generic [ref=f74e422]:
+              - generic [ref=f74e424] [cursor=pointer]:
+                - generic: I
+                - button "Change card color" [ref=f74e425]
+                - generic [ref=f74e432]:
+                  - generic [ref=f74e433]: IT113 · S.Y. 2026-2025
+                  - generic [ref=f74e434]: System Administration and Maintenance (3B)
+              - generic [ref=f74e435]:
+                - generic [ref=f74e436]:
+                  - generic [ref=f74e437]:
+                    - generic [ref=f74e438]: Exams
+                    - generic [ref=f74e439]: "5"
+                  - generic [ref=f74e440]:
+                    - generic [ref=f74e441]: Students
+                    - generic [ref=f74e442]: "1"
+                - generic [ref=f74e443]:
+                  - generic [ref=f74e444]:
+                    - generic [ref=f74e445]: "Enroll Code:"
+                    - button "FAR9FW" [ref=f74e446] [cursor=pointer]
+                  - generic [ref=f74e450]: 4-B
+                - generic [ref=f74e460]:
+                  - button "Edit" [ref=f74e461] [cursor=pointer]
+                  - button "Archive" [ref=f74e464] [cursor=pointer]
+        - text: "+ ADD QUESTION:"

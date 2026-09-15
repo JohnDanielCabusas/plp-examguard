@@ -770,7 +770,7 @@ export default function LoginPage() {
       {fbLoading && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
           <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
-          <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
+          <p style={{ color: 'var(--text-muted-2)', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
         </div>
       )}
 
@@ -814,7 +814,7 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminIdentifier || adminEmail}</span>
-                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
                     <label htmlFor="admin-verify-code">6-Digit Verification Code</label>
@@ -829,7 +829,7 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminIdentifier || adminEmail}</span>
-                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
                     <label htmlFor="admin-password">{adminAccountType === 'sysadmin' ? 'System Admin Password' : 'Password'}</label>
@@ -847,9 +847,9 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', background: '#f0f7f2', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#15803d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminEmail}</span>
-                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={professorGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '14px' }}>First login detected. Create your username and password to continue.</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted-2)', marginBottom: '14px' }}>First login detected. Create your username and password to continue.</p>
                   <div className="form-group">
                     <label htmlFor="admin-setup-username">Create Username</label>
                     <input type="text" className="form-control" id="admin-setup-username" ref={adminSetupUsernameRef}
@@ -1027,7 +1027,7 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
-                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-verify-code">6-Digit Verification Code</label>
@@ -1052,7 +1052,7 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
-                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-password">Password</label>
@@ -1079,7 +1079,7 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
-                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-reset-code">6-Digit Verification Code</label>
@@ -1136,9 +1136,9 @@ export default function LoginPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', background: '#f0f7f2', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '8px 12px' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: '#15803d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentEmail}</span>
-                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
+                    <button onClick={studentGoBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted-2)', whiteSpace: 'nowrap', padding: 0 }}>Change</button>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '14px' }}>First login detected. Set up your account to continue.</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted-2)', marginBottom: '14px' }}>First login detected. Set up your account to continue.</p>
                   <div className="form-group">
                     <label htmlFor="student-setup-name">Full Name</label>
                     <input type="text" className="form-control" id="student-setup-name" ref={setupNameRef}
@@ -1146,7 +1146,7 @@ export default function LoginPage() {
                       onKeyDown={(e) => { if (e.key === 'Enter') setupIdRef.current?.focus(); }} />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="student-setup-id">Student ID <span style={{ color: '#9ca3af', fontWeight: 400 }}>(YY-NNNNN)</span></label>
+                    <label htmlFor="student-setup-id">Student ID <span style={{ color: 'var(--text-muted-2)', fontWeight: 400 }}>(YY-NNNNN)</span></label>
                     <input type="text" className="form-control" id="student-setup-id" ref={setupIdRef}
                       placeholder="e.g. 23-00218" inputMode="numeric" maxLength={8} autoComplete="off"
                       onInput={formatStudentId}

@@ -1,0 +1,82 @@
+- generic [ref=f6e2]:
+  - status
+  - generic [ref=f6e6]:
+    - complementary [ref=f6e7]:
+      - generic [ref=f6e11]:
+        - heading "Pamantasan ng Lungsod ng Pasig" [level=2] [ref=f6e127]
+        - paragraph [ref=f6e13]: Professor Panel
+      - navigation [ref=f6e14]:
+        - generic [ref=f6e15]: Main
+        - generic [ref=f6e16] [cursor=pointer]: Dashboard
+        - generic [ref=f6e24] [cursor=pointer]: Courses
+        - generic [ref=f6e30] [cursor=pointer]: Students
+        - generic [ref=f6e38] [cursor=pointer]: Exams
+        - generic [ref=f6e44]: Live
+        - generic [ref=f6e45] [cursor=pointer]: Monitoring
+        - generic [ref=f6e51]: Analysis
+        - generic [ref=f6e52] [cursor=pointer]: Reports
+        - generic [ref=f6e56] [cursor=pointer]: Statistics
+        - generic [ref=f6e62]: System
+        - generic [ref=f6e63] [cursor=pointer]: Settings
+        - generic [ref=f6e69] [cursor=pointer]: Archive
+      - button "Sign Out Sign Out" [ref=f6e76] [cursor=pointer]:
+        - generic [ref=f6e80]: Sign Out
+        - text: Sign Out
+    - generic [ref=f6e81]:
+      - banner [ref=f6e82]:
+        - generic [ref=f6e83]:
+          - button "Toggle sidebar" [ref=f6e84] [cursor=pointer]
+          - generic [ref=f6e86]: Statistics
+        - generic [ref=f6e87]:
+          - generic [ref=f6e128]: Tue, September 15, 2026
+          - button "Mute" [ref=f6e129] [cursor=pointer]
+          - button "Notifications" [ref=f6e96] [cursor=pointer]
+          - generic "Toggle dark / light mode" [ref=f6e100] [cursor=pointer]:
+            - checkbox
+          - button "A Administrator" [ref=f6e108] [cursor=pointer]:
+            - generic [ref=f6e109]: A
+            - generic [ref=f6e110]: Administrator
+      - generic [ref=f6e111]:
+        - text: "+ ADD QUESTION:"
+        - generic [ref=f6e134]:
+          - generic [ref=f6e135]:
+            - generic [ref=f6e136]: Exam analytics
+            - generic [ref=f6e141]:
+              - button "Select an exam to explore analytics" [ref=f6e142] [cursor=pointer]
+              - generic:
+                - generic: Select an exam to explore analytics
+                - generic:
+                  - generic:
+                    - generic: Quiz 1
+                    - generic:
+                      - generic:
+                        - generic: Networking
+                        - generic [aria-hidden]: ·
+                        - generic: CS102
+                      - generic: CLOSED
+                - generic:
+                  - generic:
+                    - generic: QUIZ1
+                    - generic:
+                      - generic:
+                        - generic: Introduction to Computing (ADMIN)
+                        - generic [aria-hidden]: ·
+                        - generic: CS101
+                      - generic: ACTIVE
+                - generic:
+                  - generic:
+                    - generic: Quiz 1 (Shared Copy)
+                    - generic:
+                      - generic:
+                        - generic: Introduction to Computing (ADMIN)
+                        - generic [aria-hidden]: ·
+                        - generic: CS101
+                      - generic: CLOSED
+          - generic [ref=f6e148]:
+            - generic [ref=f6e149]: No exam selected
+            - generic [ref=f6e150]: Pick an exam above to view performance trends, scores, and question insights.
+        - timer "Drag to move · Ends at 10:06 PM" [ref=f6e151]:
+          - generic [ref=f6e162]:
+            - generic [ref=f6e163]: QUIZ1
+            - strong [ref=f6e164]: 18:38
+          - button "Hide exam countdown" [ref=f6e165] [cursor=pointer]: ✕

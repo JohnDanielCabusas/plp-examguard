@@ -1,0 +1,6 @@
+[     403ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[     804ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     804ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     804ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     804ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[   50409ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4173/api/statistics/random-forest?examId=mrrjob11knukyc9gplp:0

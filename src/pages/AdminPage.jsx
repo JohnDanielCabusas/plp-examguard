@@ -158,8 +158,8 @@ export default function AdminPage() {
         composerFieldBg: '#ffffff',
         textStrong: '#0f2d1a',
         text: '#374151',
-        textMuted: '#9ca3af',
-        accent: '#16a34a',
+        textMuted: '#6f7973',
+        accent: '#0f7a38',
         accentStrong: '#1a4d2a',
         accentBg: '#e8f5ec',
         accentSoft: '#f0f7f2',
@@ -282,7 +282,7 @@ export default function AdminPage() {
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
         <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
-        <p style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
+        <p style={{ color: 'var(--text-muted-2)', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
         <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
 
@@ -420,7 +420,7 @@ export default function AdminPage() {
 
               {/* User chip */}
               <button type="button" className="topbar-user-pill" onClick={() => window.showSection('settings')}>
-                <div id="topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>A</div>
+                <div id="topbar-avatar" style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: 'var(--brand-900)', flexShrink: 0 }}>A</div>
                 <span id="topbar-admin-name" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary)', whiteSpace: 'nowrap' }}>Administrator</span>
               </button>
             </div>
@@ -436,7 +436,7 @@ export default function AdminPage() {
                   <div className="section-subtitle" id="dashboard-department-title" style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '-0.03em', lineHeight: 1.15 }} />
                   <div className="section-subtitle">Overview and predictive analytics</div>
                 </div>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }} id="dash-refresh-time" />
+                <span style={{ fontSize: '12px', color: 'var(--text-muted-2)' }} id="dash-refresh-time" />
               </div>
               <div className="stats-grid" id="dash-stats" />
               <div className="analytics-section">
@@ -449,11 +449,11 @@ export default function AdminPage() {
               <div className="dashboard-panels-grid">
                 <div className="card">
                   <div className="card-header"><span className="card-title">Recent Exams</span></div>
-                  <div className="card-body" id="dash-recent-exams" style={{ padding: 0 }} />
+                  <div className="card-body" id="dash-recent-exams" />
                 </div>
                 <div className="card">
                   <div className="card-header"><span className="card-title">Active Sessions</span></div>
-                  <div className="card-body" id="dash-active-sessions" style={{ padding: 0 }} />
+                  <div className="card-body" id="dash-active-sessions" />
                 </div>
               </div>
             </section>
@@ -462,7 +462,7 @@ export default function AdminPage() {
             <section id="section-subjects" className="admin-section hidden" style={{ padding: 0 }}>
 
               {/* VIEW 1: Cards grid */}
-              <div id="courses-list-view" style={{ padding: '28px' }}>
+              <div id="courses-list-view">
                 <div className="section-header">
                   <div>
                     <div className="section-title">Courses</div>
@@ -546,7 +546,7 @@ export default function AdminPage() {
             <section id="section-exams" className="admin-section hidden" style={{ padding: 0 }}>
 
               {/* VIEW 1: Cards grid */}
-              <div id="exams-list-view" style={{ padding: '28px' }}>
+              <div id="exams-list-view">
                 <div className="section-header">
                   <div>
                     <div className="section-title">Exams</div>
@@ -823,9 +823,9 @@ export default function AdminPage() {
               {/* Camera grid view */}
               <div id="camera-grid-view" className="camera-grid-view" style={{ display: 'none' }}>
                 <div id="camera-grid-container" className="camera-grid-container" />
-                <div id="camera-grid-empty" className="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: '#9ca3af' }}>
+                <div id="camera-grid-empty" className="camera-grid-empty" style={{ display: 'none', padding: '48px', textAlign: 'center', color: 'var(--text-muted-2)' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#6b7280' }}>No camera feeds available</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted-2)' }}>No camera feeds available</div>
                   <div style={{ fontSize: '12px', marginTop: '4px', color: '#4b5563' }}>Camera feeds appear here when students have Motion Detection enabled</div>
                 </div>
               </div>
@@ -1127,7 +1127,7 @@ export default function AdminPage() {
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
-                    <table><thead><tr><th scope="col" style={{ width: '36px' }}></th><th scope="col">Code</th><th scope="col">Course Name</th><th scope="col">Year Level</th><th scope="col">Sections</th><th scope="col" style={{ textAlign: 'center' }}>Archived</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
+                    <table><thead><tr><th scope="col" style={{ width: '36px' }}></th><th scope="col" style={{ textAlign: 'center' }}>Code</th><th scope="col">Course Name</th><th scope="col" style={{ textAlign: 'center' }}>Year Level</th><th scope="col" style={{ textAlign: 'center' }}>Sections</th><th scope="col" style={{ textAlign: 'center' }}>Archived</th><th scope="col" style={{ textAlign: 'center' }}>Actions</th></tr></thead><tbody id="archive-courses-tbody" /></table>
                   </div>
                 </div>
               </div>
@@ -1401,7 +1401,7 @@ export default function AdminPage() {
       <div className="modal-backdrop hidden" id="modal-exam-absentees">
         <div className="modal-dialog modal-lg">
           <div className="modal-header">
-            <div><span className="modal-title">Manage Attendance</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-absentees-sub" /></div>
+            <div><span className="modal-title">Manage Attendance</span><div style={{ fontSize: '12px', color: 'var(--text-muted-2)', marginTop: '2px' }} id="modal-absentees-sub" /></div>
             <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-absentees')}>&#10005;</button>
           </div>
           <div className="modal-body" id="modal-absentees-body" style={{ padding: '16px 20px' }} />
@@ -1816,7 +1816,7 @@ export default function AdminPage() {
 
       {/* Color Picker Popup */}
       <div id="color-picker-popup" className="hidden" style={{ position:'fixed', zIndex:10001, background:'#fff', borderRadius:'16px', padding:'16px', boxShadow:'0 8px 32px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontSize:'10px', fontWeight:800, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'12px' }}>Card Color</div>
+        <div style={{ fontSize:'10px', fontWeight:800, color:'var(--text-muted-2)', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'12px' }}>Card Color</div>
         <div id="color-swatches" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'8px' }} />
       </div>
 

@@ -2494,9 +2494,9 @@ const ExamApp = {
               <div class="dash-subject-name">${_esc(subj.name)}</div>
               <span class="dash-subject-code">${_esc(subj.code)}</span>
             </div>
-            <span style="font-size:11px;font-weight:600;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
+            <span style="font-size:11px;font-weight:600;color:var(--text-muted-2);background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 8px;">Archived</span>
           </div>
-          <div class="dash-no-exams" style="color:#9ca3af;">Open this course to review its exams${submittedCount ? ` and ${submittedCount === 1 ? 'view your result' : 'view your results'}` : ''}.</div>
+          <div class="dash-no-exams" style="color:var(--text-muted-2);">Open this course to review its exams${submittedCount ? ` and ${submittedCount === 1 ? 'view your result' : 'view your results'}` : ''}.</div>
         </div>`;
       });
       listEl.innerHTML = html;
@@ -2504,7 +2504,7 @@ const ExamApp = {
 
     // Show spinner immediately, then re-render after fresh Supabase fetch
     const listEl = document.getElementById('archived-subjects-list');
-    if (listEl) listEl.innerHTML = `<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">Loading…</div>`;
+    if (listEl) listEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted-2);font-size:13px;">Loading…</div>`;
 
     if (window.SupabaseSync?.refreshSubjects) {
       window.SupabaseSync.refreshSubjects().then(render);
@@ -8430,7 +8430,7 @@ const ExamApp = {
       if (q.type === 'essay') {
         resultHtml = `
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;">${_esc(ans||'(no answer)')}</div>
-          <div style="font-size:12px;color:#9ca3af;margin-top:6px;font-style:italic;">Essay — manually graded by instructor.</div>`;
+          <div style="font-size:12px;color:var(--text-muted-2);margin-top:6px;font-style:italic;">Essay — manually graded by instructor.</div>`;
       } else if (q.type === 'enumeration') {
         const expected = q.answers || [];
         const studentItems = (ans||'').split('\n').map(s=>s.trim().toUpperCase()).filter(Boolean);
@@ -8442,11 +8442,11 @@ const ExamApp = {
               return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
                 <span style="color:${got?'#15803d':'#dc2626'};font-size:16px;display:inline-flex;align-items:center;justify-content:center;">${this._portalIcon(got ? 'check' : 'x', { size: 14, stroke: got ? '#15803d' : '#dc2626' })}</span>
                 <span>${_esc(e)}</span>
-                ${!got && studentItems[i] ? `<span style="color:#9ca3af;font-size:12px;">(you wrote: ${_esc(studentItems[i]||'—')})</span>`:''}
+                ${!got && studentItems[i] ? `<span style="color:var(--text-muted-2);font-size:12px;">(you wrote: ${_esc(studentItems[i]||'—')})</span>`:''}
               </div>`;
             }).join('')}
           </div>
-          <div style="font-size:12px;color:#6b7280;margin-top:6px;">${matched.length}/${expected.length} correct</div>`;
+          <div style="font-size:12px;color:var(--text-muted-2);margin-top:6px;">${matched.length}/${expected.length} correct</div>`;
       } else if (q.type === 'matching') {
         const pairs = q.pairs || [];
         const studentAns = (() => { try { return JSON.parse(ans||'{}'); } catch { return {}; } })();
@@ -8459,7 +8459,7 @@ const ExamApp = {
                 <div style="text-align:center;color:${correct?'#15803d':'#dc2626'};font-weight:700;display:flex;align-items:center;justify-content:center;">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</div>
                 <div style="background:${correct?'#f0fdf4':'#fef2f2'};border-radius:6px;padding:6px 10px;border:1px solid ${correct?'#bbf7d0':'#fecaca'};">
                   ${_esc(studentAns[pi]||'(no answer)')}
-                  ${!correct ? `<span style="color:#9ca3af;font-size:11px;display:inline-flex;align-items:center;gap:4px;">${this._portalIcon('arrowRight', { size: 11, stroke: '#9ca3af' })}<span>${_esc(p.match)}</span></span>` : ''}
+                  ${!correct ? `<span style="color:var(--text-muted-2);font-size:11px;display:inline-flex;align-items:center;gap:4px;">${this._portalIcon('arrowRight', { size: 11, stroke: '#9ca3af' })}<span>${_esc(p.match)}</span></span>` : ''}
                 </div>
               </div>`;
             }).join('')}
@@ -8475,12 +8475,12 @@ const ExamApp = {
         resultHtml = `
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
             <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
-              <span style="font-weight:700;color:#6b7280;min-width:90px;">Your answer:</span>
+              <span style="font-weight:700;color:var(--text-muted-2);min-width:90px;">Your answer:</span>
               <span style="color:${color};font-weight:600;">${_esc(ans||'(no answer)')}</span>
               ${ans ? `<span style="font-size:16px;display:inline-flex;align-items:center;justify-content:center;">${this._portalIcon(correct ? 'check' : 'x', { size: 14, stroke: correct ? '#15803d' : '#dc2626' })}</span>` : ''}
             </div>
             ${!correct ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;">
-              <span style="font-weight:700;color:#6b7280;min-width:90px;">Correct:</span>
+              <span style="font-weight:700;color:var(--text-muted-2);min-width:90px;">Correct:</span>
               <span style="color:#15803d;font-weight:600;">${_esc(correctAnswerDisplay)}</span>
             </div>` : ''}
           </div>`;

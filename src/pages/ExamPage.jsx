@@ -37,7 +37,7 @@ export default function ExamPage() {
       type="button"
       onClick={onToggle}
       aria-label={show ? 'Hide password' : 'Show password'}
-      style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#6b7280', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         {show ? EYE_CLOSED : EYE_OPEN}
@@ -133,7 +133,7 @@ export default function ExamPage() {
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
         <div className="theme-loading-spinner" style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
-        <p className="theme-loading-text" style={{ color: '#6b7280', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
+        <p className="theme-loading-text" style={{ color: 'var(--text-muted-2)', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
         <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
 
@@ -336,21 +336,21 @@ export default function ExamPage() {
                       Change Password
                     </div>
                     <div className="form-group">
-                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted-2)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentCurrentPass ? 'text' : 'password'} className="form-control" id="stg-cur-pass" autoComplete="current-password" placeholder="Enter your current account password" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentCurrentPass} onToggle={() => setShowStudentCurrentPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
-                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted-2)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>New Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentNewPass ? 'text' : 'password'} className="form-control" id="stg-new-pass" autoComplete="new-password" placeholder="e.g. At least 6 characters" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentNewPass} onToggle={() => setShowStudentNewPass(v => !v)} />
                       </div>
                     </div>
                     <div className="form-group">
-                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label>
+                      <label className="student-settings-muted-label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted-2)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Confirm New Password</label>
                       <div style={{ position: 'relative' }}>
                         <input type={showStudentConfirmPass ? 'text' : 'password'} className="form-control" id="stg-confirm-pass" autoComplete="new-password" placeholder="Re-enter the new password exactly" style={{ paddingRight: '42px' }} />
                         <EyeToggle show={showStudentConfirmPass} onToggle={() => setShowStudentConfirmPass(v => !v)} />
@@ -526,13 +526,13 @@ export default function ExamPage() {
             <div className="examv2-nav-header">Questions</div>
             <div id="question-nav-grid" className="examv2-nav-grid" />
             <div className="examv2-nav-legend">
-              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'var(--text-muted-2)' }}>
                 <span style={{ width:'15px', height:'15px', borderRadius:'50%', background:'#1a4d2a', display:'inline-block', flexShrink:0 }} /> Answered
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'var(--text-muted-2)' }}>
                 <span style={{ width:'15px', height:'15px', borderRadius:'50%', background:'#f59e0b', display:'inline-block', flexShrink:0 }} /> For Review
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'#6b7280' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'9px', fontSize:'15px', color:'var(--text-muted-2)' }}>
                 <span style={{ width:'15px', height:'15px', borderRadius:'50%', border:'1.5px solid #d1d5db', display:'inline-block', flexShrink:0 }} /> Unanswered
               </div>
             </div>
@@ -724,7 +724,7 @@ export default function ExamPage() {
         <div id="brightness-check-progress" style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.5, marginBottom: '8px' }}>Round 1 of 2</div>
         <div id="brightness-check-msg" style={{ fontSize: '13px', fontWeight: 700, minHeight: '18px', marginBottom: '14px' }} />
         <button type="button" id="brightness-check-skip" data-exam-control="true" onClick={() => window.ExamApp._skipBrightnessCheck()}
-          style={{ display: 'none', background: 'none', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
+          style={{ display: 'none', background: 'none', border: '1px solid #374151', borderRadius: '8px', color: 'var(--text-muted-2)', fontSize: '12px', padding: '8px 16px', cursor: 'pointer' }}>
           I can&rsquo;t see any symbol — continue anyway (this will be reported to your professor)
         </button>
       </div>
@@ -1074,7 +1074,7 @@ export default function ExamPage() {
             <button type="button" data-exam-control="true" aria-label="Close dialog" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
           </div>
           <div className="modal-body">
-            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted-2)', marginBottom: '14px', lineHeight: 1.6 }}>
               This exam monitors camera presence, face direction, focus, clipboard activity, and refresh attempts. Face-direction events are indicators for professor review and do not automatically add a warning; applicable browser or camera-rule violations can still follow the exam&apos;s warning policy.
             </p>
             <div className="violations-info-list">

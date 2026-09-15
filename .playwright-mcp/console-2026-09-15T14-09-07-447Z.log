@@ -1,0 +1,19 @@
+[     173ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[     403ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     403ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     403ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[     404ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/admin:0
+[    2611ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4173/favicon.ico:0
+[   51187ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[   76758ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/index.html:0
+[   78368ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[   99559ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[   99559ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[   99559ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[  101385ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[  101385ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[  101385ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/super-admin.html?section=settings:0
+[  123932ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://xpzocokcxylmtilsosct.supabase.co/rest/v1/professors?select=id%2Cusername%2Cname%2Cemail%2Cdepartment%2Ccreated_at:0
+[  123932ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://xpzocokcxylmtilsosct.supabase.co/rest/v1/students?select=id%2Cstudent_id%2Cname%2Cemail%2Cyear_level%2Csection%2Cyear_section%2Cdepartment%2Cprogram%2Cenrolled_subjects%2Cowner_admin_id%2Carchived%2Carchived_at%2Ccreated_at%2Cupdated_at:0
+[  123932ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://xpzocokcxylmtilsosct.supabase.co/rest/v1/exams?select=*:0
+[  123932ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://xpzocokcxylmtilsosct.supabase.co/rest/v1/subjects?select=*:0

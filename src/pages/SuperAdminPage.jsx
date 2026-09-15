@@ -464,7 +464,7 @@ function ProfessorModal({ professor, onSave, onClose }) {
               border: "none",
               cursor: "pointer",
               fontSize: "20px",
-              color: "#9ca3af",
+              color: "var(--text-muted-2)",
               lineHeight: 1,
             }}
           >
@@ -598,7 +598,7 @@ function ProfessorAccountModal({ professor, onSave, onClose }) {
               border: "none",
               cursor: "pointer",
               fontSize: "20px",
-              color: "#9ca3af",
+              color: "var(--text-muted-2)",
               lineHeight: 1,
             }}
           >
@@ -1119,7 +1119,7 @@ export default function SuperAdminPage() {
         <p
           className="theme-loading-text"
           style={{
-            color: "#6b7280",
+            color: "var(--text-muted-2)",
             fontSize: "13px",
             fontFamily: "sans-serif",
             margin: 0,
@@ -1180,7 +1180,7 @@ export default function SuperAdminPage() {
                   border: "none",
                   cursor: "pointer",
                   fontSize: "20px",
-                  color: "#9ca3af",
+                  color: "var(--text-muted-2)",
                   lineHeight: 1,
                 }}
               >
@@ -1750,9 +1750,9 @@ export default function SuperAdminPage() {
                                   gap: "6px",
                                   padding: "6px 12px",
                                   borderRadius: "6px",
-                                  border: "1px solid #ef4444",
+                                  border: "1px solid var(--danger-border)",
                                   background: "transparent",
-                                  color: "#ef4444",
+                                  color: "var(--danger-fg)",
                                   fontSize: "13px",
                                   fontWeight: 500,
                                   cursor: hasCustomLogo
@@ -1772,7 +1772,7 @@ export default function SuperAdminPage() {
                                   if (hasCustomLogo) {
                                     e.currentTarget.style.background =
                                       "transparent";
-                                    e.currentTarget.style.color = "#ef4444";
+                                    e.currentTarget.style.color = "var(--danger-fg)";
                                   }
                                 }}
                               >

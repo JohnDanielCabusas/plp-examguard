@@ -1,0 +1,7 @@
+[     318ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[     631ms] [ERROR] Failed to load resource: the server responded with a status of 403 (Forbidden) @ http://localhost:4173/api/auth/student/session:0
+[     633ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/exam:0
+[     633ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/exam:0
+[     634ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:4173/exam:0
+[     746ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335
+[     886ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:4173/node_modules/.vite/deps/react-dom_client.js?v=b1506272:14335

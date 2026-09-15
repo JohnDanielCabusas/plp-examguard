@@ -1,0 +1,48 @@
+- generic [ref=f71e2]:
+  - paragraph [ref=f71e5]: Loading your workspace…
+  - status
+  - generic [ref=f71e6]:
+    - complementary [ref=f71e7]:
+      - generic [ref=f71e8]:
+        - img "PLP" [ref=f71e10]
+        - generic [ref=f71e11]:
+          - heading "TUKLAS" [level=2] [ref=f71e12]
+          - paragraph [ref=f71e13]: Professor Panel
+      - navigation [ref=f71e14]:
+        - generic [ref=f71e15]: Main
+        - generic [ref=f71e16] [cursor=pointer]: Dashboard
+        - generic [ref=f71e24] [cursor=pointer]: Courses
+        - generic [ref=f71e30] [cursor=pointer]: Students
+        - generic [ref=f71e38] [cursor=pointer]: Exams
+        - generic [ref=f71e44]: Live
+        - generic [ref=f71e45] [cursor=pointer]: Monitoring
+        - generic [ref=f71e51]: Analysis
+        - generic [ref=f71e52] [cursor=pointer]: Reports
+        - generic [ref=f71e56] [cursor=pointer]: Statistics
+        - generic [ref=f71e62]: System
+        - generic [ref=f71e63] [cursor=pointer]: Settings
+        - generic [ref=f71e69] [cursor=pointer]: Archive
+      - button "Sign Out Sign Out" [ref=f71e76] [cursor=pointer]:
+        - generic [ref=f71e80]: Sign Out
+        - text: Sign Out
+    - generic [ref=f71e81]:
+      - banner [ref=f71e82]:
+        - generic [ref=f71e83]:
+          - button "Toggle sidebar" [ref=f71e84] [cursor=pointer]
+          - generic [ref=f71e86]: Dashboard
+        - generic [ref=f71e87]:
+          - button "Sound On" [ref=f71e88] [cursor=pointer]
+          - button "Notifications" [ref=f71e96] [cursor=pointer]
+          - generic "Toggle dark / light mode" [ref=f71e100] [cursor=pointer]:
+            - checkbox
+          - button "A Administrator" [ref=f71e108] [cursor=pointer]:
+            - generic [ref=f71e109]: A
+            - generic [ref=f71e110]: Administrator
+      - generic [ref=f71e111]:
+        - generic [ref=f71e112]:
+          - generic [ref=f71e113]: Overview and predictive analytics
+          - generic [ref=f71e116]: Predictive Analytics
+          - generic [ref=f71e120]:
+            - generic [ref=f71e121]: Recent Exams
+            - generic [ref=f71e125]: Active Sessions
+        - text: "+ ADD QUESTION:"

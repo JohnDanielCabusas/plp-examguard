@@ -1,0 +1,156 @@
+- generic [ref=f3e2]:
+  - status
+  - generic [ref=f3e6]:
+    - complementary [ref=f3e7]:
+      - generic [ref=f3e11]:
+        - heading "Pamantasan ng Lungsod ng Pasig" [level=2] [ref=f3e127]
+        - paragraph [ref=f3e13]: Professor Panel
+      - navigation [ref=f3e14]:
+        - generic [ref=f3e15]: Main
+        - generic [ref=f3e16] [cursor=pointer]: Dashboard
+        - generic [ref=f3e24] [cursor=pointer]: Courses
+        - generic [ref=f3e30] [cursor=pointer]: Students
+        - generic [ref=f3e38] [cursor=pointer]: Exams
+        - generic [ref=f3e44]: Live
+        - generic [ref=f3e45] [cursor=pointer]: Monitoring
+        - generic [ref=f3e51]: Analysis
+        - generic [ref=f3e52] [cursor=pointer]: Reports
+        - generic [ref=f3e56] [cursor=pointer]: Statistics
+        - generic [ref=f3e62]: System
+        - generic [ref=f3e63] [cursor=pointer]: Settings
+        - generic [ref=f3e69] [cursor=pointer]: Archive
+      - button "Sign Out Sign Out" [ref=f3e76] [cursor=pointer]:
+        - generic [ref=f3e80]: Sign Out
+        - text: Sign Out
+    - generic [ref=f3e81]:
+      - banner [ref=f3e82]:
+        - generic [ref=f3e83]:
+          - button "Toggle sidebar" [ref=f3e84] [cursor=pointer]
+          - generic [ref=f3e86]: Dashboard
+        - generic [ref=f3e87]:
+          - generic [ref=f3e128]: Tue, September 15, 2026
+          - button "Mute" [ref=f3e129] [cursor=pointer]
+          - button "Notifications" [ref=f3e96] [cursor=pointer]
+          - generic "Toggle dark / light mode" [ref=f3e100] [cursor=pointer]:
+            - checkbox
+          - button "A Administrator" [ref=f3e108] [cursor=pointer]:
+            - generic [ref=f3e109]: A
+            - generic [ref=f3e110]: Administrator
+      - generic [ref=f3e111]:
+        - generic [ref=f3e112]:
+          - generic [ref=f3e113]:
+            - generic [ref=f3e114]:
+              - generic [ref=f3e134]: College of Computer Studies (CCS)
+              - generic [ref=f3e115]: Overview and predictive analytics
+            - generic [ref=f3e135]: Updated 09:36 PM
+          - generic [ref=f3e136]:
+            - generic [ref=f3e137]:
+              - generic [ref=f3e138]: Courses
+              - generic [ref=f3e144]: "5"
+            - generic [ref=f3e145]:
+              - generic [ref=f3e146]: Students
+              - generic [ref=f3e154]: "3"
+            - generic [ref=f3e155]:
+              - generic [ref=f3e156]: Total Exams
+              - generic [ref=f3e162]: "3"
+            - generic [ref=f3e163]:
+              - generic [ref=f3e164]: Active Exams
+              - generic [ref=f3e171]: "1"
+            - generic [ref=f3e172]:
+              - generic [ref=f3e173]: Submissions
+              - generic [ref=f3e178]: "6"
+          - generic [ref=f3e116]:
+            - generic [ref=f3e117]: Predictive Analytics
+            - generic [ref=f3e179]:
+              - generic [ref=f3e180]:
+                - generic [ref=f3e181]: SCORE TREND
+                - generic [ref=f3e182]: 5%
+                - generic [ref=f3e183]: Avg Completion Rate
+                - generic [ref=f3e184]: → 0%
+                - img "Average score trend across the last 2 closed exams" [ref=f3e186]
+              - generic [ref=f3e190]:
+                - generic [ref=f3e191]: AT-RISK STUDENTS
+                - generic [ref=f3e192]: "3"
+                - generic [ref=f3e193]: High risk flagged
+                - generic [ref=f3e194]:
+                  - generic [ref=f3e195]:
+                    - generic [ref=f3e196]: J
+                    - generic [ref=f3e197]: John Daniel Cabusas
+                    - generic [ref=f3e198]: 0%
+                    - generic [ref=f3e199]: High Risk
+                  - generic [ref=f3e200]:
+                    - generic [ref=f3e201]: H
+                    - generic [ref=f3e202]: Hernandez, Jenny P.
+                    - generic [ref=f3e203]: 10%
+                    - generic [ref=f3e204]: High Risk
+                  - generic [ref=f3e205]:
+                    - generic [ref=f3e206]: H
+                    - generic [ref=f3e207]: Hermoso, Lyriko Jewel D.
+                    - generic [ref=f3e208]: 0%
+                    - generic [ref=f3e209]: High Risk
+              - generic [ref=f3e210]:
+                - generic [ref=f3e211]: SCORE DISTRIBUTION
+                - generic [ref=f3e212]: "6"
+                - generic [ref=f3e213]: Total scored submissions
+                - img [ref=f3e215]:
+                  - generic [ref=f3e217]: "6"
+                  - generic [ref=f3e218]: 0–49
+                  - generic [ref=f3e220]: 50–59
+                  - generic [ref=f3e222]: 60–74
+                  - generic [ref=f3e224]: 75–84
+                  - generic [ref=f3e226]: 85–94
+                  - generic [ref=f3e228]: 95–100
+              - generic [ref=f3e229]:
+                - generic [ref=f3e230]: FORECAST
+                - generic [ref=f3e231]: 0%
+                - generic [ref=f3e232]: Predicted next exam avg
+                - generic [ref=f3e233]:
+                  - generic [ref=f3e234]:
+                    - generic [ref=f3e235]: Completion Rate
+                    - generic [ref=f3e236]: 100%
+                  - generic [ref=f3e237]:
+                    - generic [ref=f3e238]: At-Risk Students
+                    - generic [ref=f3e239]: "3"
+                  - generic [ref=f3e240]:
+                    - generic [ref=f3e241]: Exams Analyzed
+                    - generic [ref=f3e242]: "2"
+                  - generic [ref=f3e243]:
+                    - generic [ref=f3e244]: Pass Rate ≥75%
+                    - generic [ref=f3e245]: 0%
+          - generic [ref=f3e120]:
+            - generic [ref=f3e121]:
+              - generic [ref=f3e122]: Recent Exams
+              - table [ref=f3e247]:
+                - rowgroup [ref=f3e248]:
+                  - row [ref=f3e249]:
+                    - columnheader "Title" [ref=f3e250]
+                    - columnheader "Status" [ref=f3e251]
+                    - columnheader "Questions" [ref=f3e252]
+                - rowgroup [ref=f3e253]:
+                  - row [ref=f3e254]:
+                    - cell "Quiz 1 (Shared Copy)" [ref=f3e255]
+                    - cell "closed" [ref=f3e256]
+                    - cell "30" [ref=f3e258]
+                  - row [ref=f3e259]:
+                    - cell "QUIZ1" [ref=f3e260]
+                    - cell "active" [ref=f3e261]
+                    - cell "10" [ref=f3e263]
+                  - row [ref=f3e264]:
+                    - cell "Quiz 1" [ref=f3e265]
+                    - cell "closed" [ref=f3e266]
+                    - cell "20" [ref=f3e268]
+            - generic [ref=f3e124]:
+              - generic [ref=f3e125]: Active Sessions
+              - generic [ref=f3e270]:
+                - generic [ref=f3e271]: No students are taking an exam right now, but these exams are live and ready for joins.
+                - generic [ref=f3e272]:
+                  - generic [ref=f3e273]:
+                    - generic [ref=f3e274]: QUIZ1
+                    - generic [ref=f3e275]: 10 questions · 60 min
+                  - generic [ref=f3e276]: 0 live
+        - text: "+ ADD QUESTION:"
+        - timer "Drag to move · Ends at 10:06 PM" [ref=f3e277]:
+          - generic [ref=f3e288]:
+            - generic [ref=f3e289]: QUIZ1
+            - strong [ref=f3e290]: 30:27
+          - button "Hide exam countdown" [ref=f3e291] [cursor=pointer]: ✕

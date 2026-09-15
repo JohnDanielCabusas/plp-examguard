@@ -1,0 +1,33 @@
+- generic [ref=f1e4]:
+  - generic [ref=f1e5]:
+    - img "PLP Logo" [ref=f1e6]
+    - heading "Pamantasan ng Lungsod ng Pasig" [level=1] [ref=f1e7]
+    - paragraph [ref=f1e8]: Online Examination System
+    - paragraph [ref=f1e9]: University of Pasig City
+  - generic [ref=f1e10]:
+    - button "Professor" [ref=f1e11] [cursor=pointer]
+    - button "Student" [ref=f1e12] [cursor=pointer]
+  - generic [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - generic [ref=f1e20]:
+        - generic [ref=f1e24]: admin
+        - button "Change" [ref=f1e25] [cursor=pointer]
+      - generic [ref=f1e26]:
+        - generic [ref=f1e27]: Password
+        - generic [ref=f1e28]:
+          - textbox "Password" [active] [ref=f1e29]:
+            - /placeholder: Enter your password
+          - button "Show password" [ref=f1e30] [cursor=pointer]
+      - button "Sign In" [ref=f1e34] [cursor=pointer]
+      - button "Forgot Password?" [ref=f1e36] [cursor=pointer]
+    - generic:
+      - generic:
+        - generic:
+          - generic: PLP Email Address
+          - textbox "PLP Email Address":
+            - /placeholder: e.g. juandelacruz@plpasig.edu.ph
+        - button "Continue"
+        - paragraph:
+          - text: Must be a
+          - strong: "@plpasig.edu.ph"
+          - text: email address.

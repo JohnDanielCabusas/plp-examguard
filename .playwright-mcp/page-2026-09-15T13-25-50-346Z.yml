@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - paragraph [ref=e5]: Loading your workspace…
+  - status
+  - generic [ref=e6]:
+    - complementary [ref=e7]:
+      - generic [ref=e8]:
+        - img "PLP" [ref=e10]
+        - generic [ref=e11]:
+          - heading "TUKLAS" [level=2] [ref=e12]
+          - paragraph [ref=e13]: Professor Panel
+      - navigation [ref=e14]:
+        - generic [ref=e15]: Main
+        - generic [ref=e16] [cursor=pointer]: Dashboard
+        - generic [ref=e24] [cursor=pointer]: Courses
+        - generic [ref=e30] [cursor=pointer]: Students
+        - generic [ref=e38] [cursor=pointer]: Exams
+        - generic [ref=e44]: Live
+        - generic [ref=e45] [cursor=pointer]: Monitoring
+        - generic [ref=e51]: Analysis
+        - generic [ref=e52] [cursor=pointer]: Reports
+        - generic [ref=e56] [cursor=pointer]: Statistics
+        - generic [ref=e62]: System
+        - generic [ref=e63] [cursor=pointer]: Settings
+        - generic [ref=e69] [cursor=pointer]: Archive
+      - button "Sign Out Sign Out" [ref=e76] [cursor=pointer]:
+        - generic [ref=e80]: Sign Out
+        - text: Sign Out
+    - generic [ref=e81]:
+      - banner [ref=e82]:
+        - generic [ref=e83]:
+          - button "Toggle sidebar" [ref=e84] [cursor=pointer]
+          - generic [ref=e86]: Dashboard
+        - generic [ref=e87]:
+          - button "Sound On" [ref=e88] [cursor=pointer]
+          - button "Notifications" [ref=e96] [cursor=pointer]
+          - generic "Toggle dark / light mode" [ref=e100] [cursor=pointer]:
+            - checkbox
+          - button "A Administrator" [ref=e108] [cursor=pointer]:
+            - generic [ref=e109]: A
+            - generic [ref=e110]: Administrator
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - generic [ref=e113]: Overview and predictive analytics
+          - generic [ref=e117]: Predictive Analytics
+          - generic [ref=e121]:
+            - generic [ref=e122]: Recent Exams
+            - generic [ref=e125]: Active Sessions
+        - text: "+ ADD QUESTION:"
