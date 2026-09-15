@@ -8,7 +8,7 @@ const {
 } = require('./auth-route.cjs');
 const {
   PredictionUnavailableError,
-  aggregateSessionFeatures,
+  aggregateSessionFeatureSnapshot,
 } = require('./random-forest-aggregation.cjs');
 const {
   getModelMetadata,
@@ -16,6 +16,7 @@ const {
 } = require('./random-forest-worker.cjs');
 
 const MAX_REFRESH_SESSIONS = 250;
+const MAX_REFRESH_CONCURRENCY = 4;
 
 function badRequest(res, message) {
   jsonResponse(res, 400, { success: false, message });
@@ -35,6 +36,7 @@ function normalizePredictionRow(row) {
     requiresProfessorReview: row.requires_professor_review === true,
     modelVersion: row.model_version,
     unavailableReason: row.unavailable_reason || null,
+    dataNote: row.status === 'completed' ? (row.unavailable_reason || null) : null,
     predictedAt: row.predicted_at || null,
     updatedAt: row.updated_at || null,
   };
@@ -54,6 +56,7 @@ function normalizeStatisticsPredictionRow(row) {
     riskLevel: row.risk_level || null,
     requiresProfessorReview: row.requires_professor_review === true,
     unavailableReason: row.unavailable_reason || null,
+    dataNote: hasPrediction && row.prediction_status === 'completed' ? (row.unavailable_reason || null) : null,
     predictedAt: row.predicted_at || null,
   };
 }
@@ -125,12 +128,23 @@ async function savePredictionRecord(session, modelVersion, values) {
 async function generateSessionPrediction(session) {
   const metadata = getModelMetadata();
   try {
-    const features = aggregateSessionFeatures(session);
+    const { features, imputedFeatures } = aggregateSessionFeatureSnapshot(
+      session,
+      metadata.missing_feature_defaults,
+    );
     const result = await predict(features);
+    const missingSignalGroups = [
+      imputedFeatures.some(name => name.startsWith('browser_')) ? 'browser' : '',
+      imputedFeatures.some(name => name.startsWith('webcam_')) ? 'webcam' : '',
+    ].filter(Boolean);
+    const dataNote = missingSignalGroups.length
+      ? `Limited recorded data: neutral baseline values were used for missing ${missingSignalGroups.join(' and ')} signals.`
+      : null;
     return savePredictionRecord(session, metadata.model_version, {
       ...result,
       status: 'completed',
       features,
+      unavailableReason: dataNote,
     });
   } catch (error) {
     if (error instanceof PredictionUnavailableError) {
@@ -282,31 +296,47 @@ async function handleRefresh(req, res, url) {
         and s.submitted = true
         and coalesce(s.owner_admin_id, e.owner_admin_id) = $1
         and (p.id is null or p.status in ('pending', 'unavailable', 'failed'))
-      order by s.end_time asc nulls last, s.id asc
+      order by case when p.id is null or p.status = 'pending' then 0
+                    when p.status = 'failed' then 1
+                    else 2 end,
+               s.end_time asc nulls last,
+               s.id asc
       limit $4`,
     [admin.id, examId, metadata.model_version, MAX_REFRESH_SESSIONS],
   );
 
-  let completed = 0;
-  let unavailable = 0;
-  let failed = 0;
-  for (const session of rows) {
-    try {
-      const record = await generateSessionPrediction(session);
-      if (record.status === 'completed') completed += 1;
-      else if (record.status === 'unavailable') unavailable += 1;
-      else failed += 1;
-    } catch (_) {
-      failed += 1;
+  const counts = { completed: 0, unavailable: 0, failed: 0 };
+  let nextIndex = 0;
+  const processNext = async () => {
+    while (nextIndex < rows.length) {
+      const session = rows[nextIndex];
+      nextIndex += 1;
+      try {
+        const record = await generateSessionPrediction(session);
+        if (record.status === 'completed') counts.completed += 1;
+        else if (record.status === 'unavailable') counts.unavailable += 1;
+        else counts.failed += 1;
+      } catch (_) {
+        counts.failed += 1;
+      }
     }
-  }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_REFRESH_CONCURRENCY, rows.length) },
+    () => processNext(),
+  ));
   const summary = await buildStatisticsSummary(admin.id, exam);
   return jsonResponse(res, 200, {
     success: true,
     processed: rows.length,
-    completed,
-    unavailable,
-    failed,
+    completed: counts.completed,
+    unavailable: counts.unavailable,
+    failed: counts.failed,
+    hasMorePending: (
+      Number(summary.summary?.pendingSessions || 0)
+      + Number(summary.summary?.unavailableSessions || 0)
+      + Number(summary.summary?.failedSessions || 0)
+    ) > 0,
     ...summary,
   });
 }

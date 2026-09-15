@@ -124,6 +124,15 @@ for (const item of allTypesExam.questions) {
   assert.match(control, new RegExp(`question-grade-input-session-${item.id}`));
 }
 
+const correctAnswerControl = context.buildQuestionReviewControlHtml(
+  allTypesExam.questions[0],
+  { id: 'session', answers: { mcq: 'A' } },
+  'reports',
+);
+assert.match(correctAnswerControl, /Mark as wrong/, 'A correct answer must offer the opposite grading action.');
+assert.match(correctAnswerControl, /data-override-points="0"/, 'Mark as wrong must override the configured question score to zero.');
+assert.match(correctAnswerControl, /prof-review-mark-wrong/, 'The deducting action must use its warning treatment.');
+
 const markedControl = context.buildQuestionReviewControlHtml(
   allTypesExam.questions[0],
   { id: 'session', answers: allWrongAnswers, essayGrades: { mcq: 2 } },
@@ -150,6 +159,27 @@ assert.equal(toggleElements['question-grade-input-session-mcq'].value, '');
 assert.match(toggleElements['question-grade-status-session-mcq'].textContent, /Automatic/);
 assert.equal(toggleElements['question-grade-mark-session-mcq'].style.display, '');
 assert.equal(toggleElements['question-grade-undo-session-mcq'].style.display, 'none');
+
+const wrongOverrideElements = {
+  'question-grade-input-session-mcq': { value: '', dataset: { automaticPoints: '2', maxPoints: '2', overridePoints: '0' } },
+  'question-review-session-mcq': { classList: { toggle(_name, active) { this.active = active; } } },
+  'question-grade-status-session-mcq': { textContent: '' },
+  'question-grade-mark-session-mcq': { style: {} },
+  'question-grade-undo-session-mcq': { style: {} },
+};
+context.document = { getElementById: id => wrongOverrideElements[id] || null };
+context.setQuestionCorrectOverride('session', 'mcq', true);
+assert.equal(wrongOverrideElements['question-grade-input-session-mcq'].value, '0');
+assert.match(wrongOverrideElements['question-grade-status-session-mcq'].textContent, /Marked wrong/);
+assert.equal(wrongOverrideElements['question-grade-mark-session-mcq'].style.display, 'none');
+assert.equal(wrongOverrideElements['question-grade-undo-session-mcq'].style.display, '');
+
+const deductedBreakdown = context.calculateSessionScoreBreakdown(
+  { questions: [allTypesExam.questions[0]] },
+  { answers: { mcq: 'A' }, essayGrades: { mcq: 0 } },
+);
+assert.equal(deductedBreakdown.earned, 0, 'Mark as wrong must deduct all points configured for the question.');
+assert.equal(deductedBreakdown.max, 2);
 
 let savedSessionUpdates = null;
 const reviewInputs = Object.fromEntries(allTypesExam.questions.map(item => [

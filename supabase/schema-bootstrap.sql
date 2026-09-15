@@ -282,7 +282,7 @@ exception
     null;
 end $$;
 
-+-- Versioned, professor-scoped Random Forest predictions for completed exam sessions.
+-- Versioned, professor-scoped Random Forest predictions for completed exam sessions.
 create table if not exists public.random_forest_predictions (
   id text primary key,
   owner_admin_id text not null,

@@ -364,6 +364,10 @@ const ExamApp = {
   },
 
   _buildRefreshAutoSubmitMarker() {
+    // Capture the latest webcam aggregates before building the reload marker.
+    // The marker is replayed after navigation, so this also protects the
+    // Random Forest feature summary from an interrupted unload-time request.
+    this._persistFaceMonitoringSummary();
     const liveSession = this.session ? DB.getSession(this.session.id) : null;
     if (!this.exam || !liveSession || liveSession.submitted) return null;
 
@@ -395,15 +399,30 @@ const ExamApp = {
     if (baseSession.submitted) return { exam, session: baseSession };
 
     const answers = marker.answers || baseSession.answers || {};
+    const endTime = new Date().toISOString();
+    const activities = Array.isArray(baseSession.activities) ? [...baseSession.activities] : [];
+    if (!activities.some(activity => activity?.type === 'browser_exam_end')) {
+      activities.push({
+        type: 'browser_exam_end',
+        detail: 'Browser examination session ended by page refresh or reload',
+        timestamp: endTime,
+        metadata: {
+          source: 'BROWSER',
+          featureContractVersion: 'rf-session-summary-v1',
+          trigger: 'refresh',
+        },
+      });
+    }
     const score = this._calculateScoreFor(exam, answers);
     const nextSession = {
       ...baseSession,
       answers,
+      activities,
       warnings: marker.warnings ?? baseSession.warnings ?? 0,
       submitted: true,
       autoSubmitted: true,
       submitReason: 'refresh',
-      endTime: new Date().toISOString(),
+      endTime,
       score: score.earned,
       maxScore: score.max || baseSession.maxScore || 0,
     };

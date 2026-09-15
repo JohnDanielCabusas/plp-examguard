@@ -47,6 +47,9 @@ require.cache[dbPath] = {
       if (/select s\.\*,/i.test(sql) && /where s\.id = \$1/i.test(sql)) {
         return { rows: values[1] === 'professor-a' ? [completeSession] : [] };
       }
+      if (/select s\.\*,/i.test(sql) && /where s\.exam_id = \$2/i.test(sql)) {
+        return { rows: values[0] === 'professor-a' ? [completeSession] : [] };
+      }
       if (/select e\.id, e\.subject_id as course_id/i.test(sql)) {
         return {
           rows: values[1] === 'professor-a'
@@ -193,6 +196,24 @@ async function run() {
   assert.ok(executedSql.some(entry => /on conflict \(exam_session_id, model_version\)/i.test(entry.sql)));
   assert.ok(executedSql.every(entry => !/update\s+public\.sessions/i.test(entry.sql)), 'Prediction must not update grades or session state.');
 
+  const originalActivities = completeSession.activities;
+  const originalDetections = completeSession.ai_detections;
+  completeSession.activities = [];
+  completeSession.ai_detections = {};
+  const limitedData = responseCapture();
+  await handleRandomForestRoute({
+    method: 'POST',
+    url: '/api/exam-sessions/session-a/random-forest-prediction',
+    headers: { host: 'localhost' },
+  }, limitedData);
+  completeSession.activities = originalActivities;
+  completeSession.ai_detections = originalDetections;
+  assert.equal(limitedData.status, 200);
+  assert.equal(limitedData.body.prediction.status, 'completed', 'A submitted partial record must still receive a prediction.');
+  const limitedInsert = executedSql.filter(entry => /insert into public\.random_forest_predictions/i.test(entry.sql)).at(-1);
+  assert.equal(Object.keys(JSON.parse(limitedInsert.values[11])).length, 12);
+  assert.match(limitedInsert.values[12], /neutral baseline values.*webcam/i);
+
   const summary = responseCapture();
   await handleRandomForestRoute({
     method: 'GET',
@@ -214,6 +235,18 @@ async function run() {
   assert.match(summary.body.predictions[1].unavailableReason, /incomplete/i);
   assert.equal(summary.body.predictions[2].studentName, 'STUDENT-3');
   assert.equal(summary.body.predictions[2].status, 'pending');
+
+  const refreshed = responseCapture();
+  await handleRandomForestRoute({
+    method: 'POST',
+    url: '/api/statistics/random-forest/refresh?examId=exam-a',
+    headers: { host: 'localhost' },
+  }, refreshed);
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.processed, 1);
+  assert.equal(refreshed.body.completed, 1);
+  assert.equal(refreshed.body.hasMorePending, true);
+  assert.ok(executedSql.some(entry => /order by case when p\.id is null or p\.status = 'pending' then 0/i.test(entry.sql)));
 
   forcedDatabaseError = new Error("ENOENT: no such file or directory, open 'C:\\private\\artifact.json'");
   const internalFailure = responseCapture();

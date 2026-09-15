@@ -1036,7 +1036,10 @@ function showNextViolationAlert() {
 }
 
 function acknowledgeViolationAlert() {
-  if (_activeViolationAlert?.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+  if (_activeViolationAlert?.id) {
+    rememberDismissedNotificationIds([_activeViolationAlert.id]);
+    _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+  }
   _activeViolationAlert = null;
   if (_violationAlertQueue.length) {
     showNextViolationAlert();
@@ -1049,6 +1052,10 @@ window.acknowledgeViolationAlert = acknowledgeViolationAlert;
 // Lets a professor clear a large backlog (e.g. "30 more alerts waiting") in one
 // click instead of clicking OK on every single queued alert one by one.
 function acknowledgeAllViolationAlerts() {
+  rememberDismissedNotificationIds([
+    _activeViolationAlert?.id,
+    ..._violationAlertQueue.map(entry => entry?.id),
+  ]);
   if (_activeViolationAlert?.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
   _violationAlertQueue.forEach((entry) => {
     if (entry?.id) _queuedViolationAlertIds.delete(entry.id);
@@ -1091,6 +1098,7 @@ function queueViolationAlert(entry) {
   // slow HTTP poll racing the WebSocket push for the same event) after the first copy
   // was already dismissed. _alertedViolationIds is never cleared, so once a violation
   // has been shown once it can never pop up again for the same underlying event.
+  if (readDismissedNotificationIds().has(String(entry.id))) return;
   if (_alertedViolationIds.has(entry.id)) return;
   if (_queuedViolationAlertIds.has(entry.id) || _activeViolationAlert?.id === entry.id) return;
 
@@ -1101,6 +1109,8 @@ function queueViolationAlert(entry) {
   // incident; if one is already waiting in the queue, replace it. The professor should
   // only ever see one alert per student at a time, and it should always be the latest.
   if (_activeViolationAlert?.sessionId === entry.sessionId) {
+    _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+    _queuedViolationAlertIds.add(entry.id);
     _activeViolationAlert = entry;
   } else {
     const existingIndex = _violationAlertQueue.findIndex(item => item.sessionId === entry.sessionId);
@@ -7359,35 +7369,45 @@ function buildQuestionReviewControlHtml(question, session, mode) {
   const automaticPoints = calculateEarnedPointsForQuestion(question, (session.answers || {})[question.id], {});
   const maxPoints = Number(question.points) || 0;
   const isMarkedCorrect = hasOverride && maxPoints > 0 && overridePoints >= maxPoints;
-  const statusText = isMarkedCorrect
-    ? `Marked correct · ${formatPointsValue(maxPoints)}/${formatPointsValue(maxPoints)} pts`
-    : hasOverride
-      ? `Professor score · ${formatPointsValue(overridePoints)}/${formatPointsValue(maxPoints)} pts`
-      : `Automatic · ${formatPointsValue(automaticPoints)}/${formatPointsValue(maxPoints)} pts`;
+  const isMarkedWrong = hasOverride && maxPoints > 0 && overridePoints <= 0;
+  const automaticIsCorrect = maxPoints > 0 && automaticPoints >= maxPoints;
+  const oppositePoints = automaticIsCorrect ? 0 : maxPoints;
+  const actionLabel = automaticIsCorrect ? 'Mark as wrong' : 'Mark as correct';
+  const actionTone = automaticIsCorrect ? 'wrong' : 'correct';
+  const overrideTone = isMarkedWrong ? ' is-wrong-override' : hasOverride ? ' is-correct-override' : '';
+  const statusText = isMarkedWrong
+    ? `Marked wrong · 0/${formatPointsValue(maxPoints)} pts`
+    : isMarkedCorrect
+      ? `Marked correct · ${formatPointsValue(maxPoints)}/${formatPointsValue(maxPoints)} pts`
+      : hasOverride
+        ? `Professor score · ${formatPointsValue(overridePoints)}/${formatPointsValue(maxPoints)} pts`
+        : `Automatic · ${formatPointsValue(automaticPoints)}/${formatPointsValue(maxPoints)} pts`;
 
   if (mode !== 'reports') {
     return hasOverride ? `
-      <div class="prof-review-strip is-overridden is-readonly">
+      <div class="prof-review-strip is-overridden${overrideTone} is-readonly">
         <span class="prof-review-label">Professor review</span>
         <span class="prof-review-status">${statusText}</span>
       </div>` : '';
   }
 
   return `
-    <div class="prof-review-strip${hasOverride ? ' is-overridden' : ''}" id="question-review-${session.id}-${question.id}">
+    <div class="prof-review-strip${hasOverride ? ' is-overridden' : ''}${overrideTone}" id="question-review-${session.id}-${question.id}">
       <div class="prof-review-copy">
         <span class="prof-review-label">Professor review</span>
         <span class="prof-review-status" id="question-grade-status-${session.id}-${question.id}">${statusText}</span>
       </div>
       <div class="prof-review-actions">
-        <input type="hidden" id="question-grade-input-${session.id}-${question.id}" value="${hasOverride ? escHtml(formatPointsValue(overridePoints)) : ''}" data-automatic-points="${automaticPoints}" data-max-points="${maxPoints}" />
-        <button type="button" class="prof-review-btn prof-review-mark" id="question-grade-mark-${session.id}-${question.id}" onclick="setQuestionCorrectOverride('${session.id}','${question.id}',true)"${isMarkedCorrect ? ' style="display:none;"' : ''}>Mark as correct</button>
+        <input type="hidden" id="question-grade-input-${session.id}-${question.id}" value="${hasOverride ? escHtml(formatPointsValue(overridePoints)) : ''}" data-automatic-points="${automaticPoints}" data-max-points="${maxPoints}" data-override-points="${oppositePoints}" />
+        <button type="button" class="prof-review-btn prof-review-mark prof-review-mark-${actionTone}" id="question-grade-mark-${session.id}-${question.id}" onclick="setQuestionCorrectOverride('${session.id}','${question.id}',true)"${hasOverride ? ' style="display:none;"' : ''}>${actionLabel}</button>
         <button type="button" class="prof-review-btn prof-review-undo" id="question-grade-undo-${session.id}-${question.id}" onclick="setQuestionCorrectOverride('${session.id}','${question.id}',false)"${hasOverride ? '' : ' style="display:none;"'}>Undo</button>
       </div>
     </div>`;
 }
 
-function setQuestionCorrectOverride(sessionId, questionId, shouldMarkCorrect) {
+// Kept under the existing global name because review buttons call it directly.
+// The selected action can now award or deduct points, depending on the automatic grade.
+function setQuestionCorrectOverride(sessionId, questionId, shouldApplyOverride) {
   const input = document.getElementById(`question-grade-input-${sessionId}-${questionId}`);
   if (!input) return;
   const panel = document.getElementById(`question-review-${sessionId}-${questionId}`);
@@ -7396,16 +7416,54 @@ function setQuestionCorrectOverride(sessionId, questionId, shouldMarkCorrect) {
   const undoButton = document.getElementById(`question-grade-undo-${sessionId}-${questionId}`);
   const maxPoints = Number(input.dataset.maxPoints) || 0;
   const automaticPoints = Number(input.dataset.automaticPoints) || 0;
+  const configuredOverridePoints = Number(input.dataset.overridePoints);
+  const overridePoints = Number.isFinite(configuredOverridePoints)
+    ? Math.min(Math.max(configuredOverridePoints, 0), maxPoints)
+    : maxPoints;
+  const isWrongOverride = maxPoints > 0 && overridePoints <= 0;
 
-  input.value = shouldMarkCorrect ? String(maxPoints) : '';
-  panel?.classList.toggle('is-overridden', shouldMarkCorrect);
+  input.value = shouldApplyOverride ? String(overridePoints) : '';
+  panel?.classList.toggle('is-overridden', shouldApplyOverride);
+  panel?.classList.toggle('is-wrong-override', shouldApplyOverride && isWrongOverride);
+  panel?.classList.toggle('is-correct-override', shouldApplyOverride && !isWrongOverride);
   if (status) {
-    status.textContent = shouldMarkCorrect
-      ? `Marked correct · ${formatPointsValue(maxPoints)}/${formatPointsValue(maxPoints)} pts (unsaved)`
+    status.textContent = shouldApplyOverride
+      ? `${isWrongOverride ? 'Marked wrong' : 'Marked correct'} · ${formatPointsValue(overridePoints)}/${formatPointsValue(maxPoints)} pts (unsaved)`
       : `Automatic · ${formatPointsValue(automaticPoints)}/${formatPointsValue(maxPoints)} pts (unsaved)`;
   }
-  if (markButton) markButton.style.display = shouldMarkCorrect ? 'none' : '';
-  if (undoButton) undoButton.style.display = shouldMarkCorrect ? '' : 'none';
+  if (markButton) markButton.style.display = shouldApplyOverride ? 'none' : '';
+  if (undoButton) undoButton.style.display = shouldApplyOverride ? '' : 'none';
+}
+
+function dismissReviewedViolationAlert(sessionId, activity) {
+  const id = String(sessionId || '').trim();
+  if (!id) return;
+  const matchesReviewedActivity = (entry) => entry?.sessionId === id && (
+    !activity
+    || (
+      String(entry.type || '') === String(activity.type || '')
+      && String(entry.detail || '') === String(activity.detail || '')
+    )
+  );
+  const matchingEntries = [
+    _activeViolationAlert,
+    ..._violationAlertQueue,
+  ].filter(matchesReviewedActivity);
+  const exactId = activity ? buildViolationAlertEntry({ id }, activity).id : '';
+  const dismissedIds = [exactId, ...matchingEntries.map(entry => entry?.id)].filter(Boolean);
+  rememberDismissedNotificationIds(dismissedIds);
+  dismissedIds.forEach(alertId => {
+    _queuedViolationAlertIds.delete(alertId);
+    _alertedViolationIds.add(alertId);
+  });
+  _violationAlertQueue = _violationAlertQueue.filter(entry => !matchesReviewedActivity(entry));
+  if (matchesReviewedActivity(_activeViolationAlert)) {
+    _activeViolationAlert = null;
+    showNextViolationAlert();
+  }
+  _bellNotifs = _bellNotifs.filter(notification => !dismissedIds.includes(notification.id));
+  renderBell();
+  renderViolationAlertModal();
 }
 
 function renderStudentAnswersFooter(mode, sessionId) {
@@ -9551,7 +9609,7 @@ function renderRandomForestStudentRows(predictions) {
       ? 'Waiting for analysis.'
       : ['unavailable', 'failed'].includes(meta.tone)
         ? formatRandomForestUnavailableReason(prediction.unavailableReason)
-        : '';
+        : String(prediction.dataNote || '');
     return `
       <div class="rf-student-row" role="row">
         <div class="rf-student-person" role="cell">
@@ -9654,8 +9712,21 @@ async function loadRandomForestPrediction(examId, forceRefresh = false) {
   }
   let result = await monitorApiRequest(`/api/statistics/random-forest?examId=${encodeURIComponent(examId)}`);
   if (token !== _randomForestStatsRequestToken) return;
-  if (result.success && (forceRefresh || Number(result.summary?.pendingSessions || 0) > 0 || Number(result.summary?.failedSessions || 0) > 0)) {
-    result = await monitorApiRequest(`/api/statistics/random-forest/refresh?examId=${encodeURIComponent(examId)}`, { method: 'POST' });
+  const refreshableCount = summary => (
+    Number(summary?.pendingSessions || 0)
+    + Number(summary?.unavailableSessions || 0)
+    + Number(summary?.failedSessions || 0)
+  );
+  if (result.success && (forceRefresh || refreshableCount(result.summary) > 0)) {
+    let remainingBefore = refreshableCount(result.summary);
+    do {
+      result = await monitorApiRequest(`/api/statistics/random-forest/refresh?examId=${encodeURIComponent(examId)}`, { method: 'POST' });
+      if (token !== _randomForestStatsRequestToken || !result.success) break;
+      const remainingAfter = refreshableCount(result.summary);
+      const madeProgress = remainingAfter < remainingBefore;
+      remainingBefore = remainingAfter;
+      if (!result.hasMorePending || !madeProgress || Number(result.processed || 0) < 1) break;
+    } while (true);
   }
   if (token !== _randomForestStatsRequestToken) return;
   if (document.getElementById('stats-exam-select')?.value !== examId) return;
@@ -9695,10 +9766,10 @@ function renderExamStats() {
   const autoSub = sessions.filter(s => s.autoSubmitted).length;
   const flagged = sessions.filter(s => s.warnings >= 2).length;
   const overviewCards = [
-    {label:'Pass Rate (>=75%)',value:Math.round(passing/sessions.length*100)+'%',color:'#0d9488'},
-    {label:'Auto-Submitted',value:autoSub,color:'#d97706'},
-    {label:'Flagged (>=2 warn)',value:flagged,color:'#dc2626'},
-    {label:'Total Submitted',value:sessions.length,color:'var(--text)'},
+    {label:'Pass Rate (>=75%)',value:Math.round(passing/sessions.length*100)+'%',tone:'positive'},
+    {label:'Auto-Submitted',value:autoSub,tone:'warning'},
+    {label:'Flagged (>=2 warn)',value:flagged,tone:'danger'},
+    {label:'Total Submitted',value:sessions.length,tone:'neutral'},
   ];
 
   // Score distribution
@@ -9774,34 +9845,38 @@ function renderExamStats() {
       ? { arrow: '↓', label: 'Declining', color: '#dc2626' }
       : { arrow: '→', label: 'Steady', color: '#6b7280' };
 
-  content.innerHTML = `
+  content.innerHTML = `<div class="stats-analytics-stack">
     <!-- Overview Strip -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 220px),1fr));gap:14px;margin-bottom:24px;">
-      ${overviewCards.map(c=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.07);min-width:0;">
-        <div style="font-size:28px;font-weight:900;color:${c.color};font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-1px;">${c.value}</div>
-        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.7px;margin-top:4px;">${c.label}</div>
-      </div>`).join('')}
+    <div class="stats-overview-grid">
+      ${overviewCards.map(c=>`<article class="stats-overview-card tone-${c.tone}">
+        <span class="stats-overview-indicator" aria-hidden="true"></span>
+        <div class="stats-overview-copy">
+          <span>${c.label}</span>
+          <strong>${c.value}</strong>
+        </div>
+      </article>`).join('')}
     </div>
 
     <!-- Two column: Distribution + Question Analysis -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div class="stats-analysis-grid">
       <!-- Score Distribution -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;flex-direction:column;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:16px;flex-shrink:0;">Score Distribution</div>
-        <div style="display:flex;align-items:stretch;gap:6px;flex:1;min-height:160px;">${distBars}</div>
-      </div>
+      <section class="stats-analysis-card">
+        <div class="stats-analysis-heading"><h3>Score Distribution</h3></div>
+        <div class="stats-analysis-body stats-chart-body"><div class="stats-bar-chart">${distBars}</div></div>
+      </section>
 
       <!-- Question Difficulty -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow-y:auto;max-height:320px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <div style="font-size:14px;font-weight:700;">Question Difficulty</div>
+      <section class="stats-analysis-card stats-question-card">
+        <div class="stats-analysis-heading">
+          <h3>Question Difficulty</h3>
           ${qStats.length ? `<button class="qbreak-expand-btn" onclick="viewQuestionBreakdown('${examId}')" title="View full question and answer breakdown">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> Expand
           </button>` : ''}
         </div>
+        <div class="stats-analysis-body stats-question-body">
         ${qStats.length ? `
           <!-- Overall exam difficulty gauge -->
-          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
+          <div class="stats-analysis-callout">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Overall</span>
               <span style="display:flex;gap:6px;">
@@ -9832,21 +9907,23 @@ function renderExamStats() {
           </div>`;
           }).join('')}
         ` : '<div style="color:var(--text-muted);font-size:13px;">No auto-graded questions.</div>'}
-      </div>
+        </div>
+      </section>
     </div>
 
     <!-- Discrimination Index -->
     ${discStats.length ? `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;">
-        <div style="font-size:14px;font-weight:700;">Discrimination Index</div>
-        ${discFlagged ? `<span style="font-size:11px;font-weight:700;color:#b91c1c;background:rgba(185,28,28,0.12);padding:3px 10px;border-radius:99px;">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span style="font-size:11px;font-weight:700;color:#15803d;background:rgba(21,128,61,0.12);padding:3px 10px;border-radius:99px;">All questions discriminate well</span>`}
+    <section class="stats-analysis-card">
+      <div class="stats-analysis-heading">
+        <h3>Discrimination Index</h3>
+        ${discFlagged ? `<span class="stats-status-chip tone-danger">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span class="stats-status-chip tone-positive">All questions discriminate well</span>`}
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+      <div class="stats-analysis-body">
+      <div class="stats-analysis-description">
         How well each question separates high performers from low performers (top 27% vs bottom 27% by total score). Higher is better; <strong>negative</strong> means high scorers did <em>worse</em> — usually a miskeyed or confusing question.
         ${!discReliable ? `<br/><strong style="color:#d97706;">Only ${ranked.length} submission${ranked.length===1?'':'s'}</strong> — treat these values as provisional until at least ${DISCRIMINATION_MIN_SAMPLE}.` : ''}
       </div>
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="stats-analysis-list">
         ${discStats.map(({qi,q,d})=>{
           const meta = discriminationMeta(d);
           return `
@@ -9862,19 +9939,21 @@ function renderExamStats() {
           </div>`;
         }).join('')}
       </div>
-    </div>` : ''}
+      </div>
+    </section>` : ''}
 
     <!-- Evaluation Trends across exams in this course -->
     ${trendExams.length >= 2 ? `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;">
-        <div style="font-size:14px;font-weight:700;">Evaluation Trends</div>
+    <section class="stats-analysis-card">
+      <div class="stats-analysis-heading">
+        <h3>Evaluation Trends</h3>
         <span style="font-size:12px;font-weight:800;color:${trendMeta.color};">${trendMeta.arrow} ${trendMeta.label}${trendDelta !== 0 ? ` (${trendDelta > 0 ? '+' : ''}${trendDelta} pts)` : ''}</span>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px;line-height:1.5;">
+      <div class="stats-analysis-body">
+      <div class="stats-analysis-description">
         Class average across every exam in this course, oldest → newest. The highlighted bar is the exam you're viewing.
       </div>
-      <div style="display:flex;align-items:stretch;gap:10px;min-height:170px;">
+      <div class="stats-trend-chart">
         ${trendExams.map(t => {
           const isCurrent = t.id === examId;
           const mm = masteryMeta(t.avg);
@@ -9889,16 +9968,18 @@ function renderExamStats() {
           </div>`;
         }).join('')}
       </div>
-    </div>` : ''}
+      </div>
+    </section>` : ''}
 
     <!-- Student Mastery by cognitive level -->
     ${masteryStats.length ? `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
-      <div style="font-size:14px;font-weight:700;margin-bottom:6px;">Student Mastery — by Cognitive Level</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+    <section class="stats-analysis-card">
+      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
+      <div class="stats-analysis-body">
+      <div class="stats-analysis-description">
         Class average score on each Bloom's Taxonomy level in this exam. Reveals whether students handle higher-order thinking (analyze / evaluate / create) as well as basic recall.
       </div>
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="stats-analysis-list">
         ${masteryStats.map(({level, pct, questionCount})=>{
           const bm = BLOOM_META[level];
           const mm = masteryMeta(pct);
@@ -9920,13 +10001,14 @@ function renderExamStats() {
           </div>`;
         }).join('')}
       </div>
-    </div>` : (taggedCount === 0 ? `
-    <div style="background:var(--surface);border:1px dashed var(--border);border-radius:14px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:20px;">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Student Mastery — by Cognitive Level</div>
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">No questions in this exam are tagged with a Bloom's level yet. Generate questions with AI (auto-tagged) or set the <strong>Bloom</strong> level on each question in the editor to unlock this analysis.</div>
-    </div>` : '')}
+      </div>
+    </section>` : (taggedCount === 0 ? `
+    <section class="stats-analysis-card stats-empty-analysis-card">
+      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
+      <div class="stats-analysis-body"><div class="stats-analysis-description">No questions in this exam are tagged with a Bloom's level yet. Generate questions with AI (auto-tagged) or set the <strong>Bloom</strong> level on each question in the editor to unlock this analysis.</div></div>
+    </section>` : '')}
 
-    ${randomForestCardShell()}`;
+    ${randomForestCardShell()}</div>`;
   loadRandomForestPrediction(examId);
 }
 
@@ -11556,6 +11638,14 @@ async function submitViolationReviewDecision(reviewStatus) {
     reviewedAt: new Date().toISOString(),
   };
   renderViolationReviewDecisionState(savedEvidence);
+
+  if (reviewStatus === 'dismissed') {
+    const reviewedSessionId = _activeViolationReview?.sessionId || '';
+    const reviewedActivity = reviewedSessionId
+      ? DB.getSession(reviewedSessionId)?.activities?.[_activeViolationReview.activityIndex]
+      : null;
+    dismissReviewedViolationAlert(reviewedSessionId, reviewedActivity);
+  }
 
   if (result.session?.id && result.session?.exam_id) {
     applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);

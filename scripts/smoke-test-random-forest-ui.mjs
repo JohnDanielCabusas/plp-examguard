@@ -63,7 +63,7 @@ try {
         suspiciousCount: 1,
       },
       predictions: [
-        { examSessionId: 's-normal', studentId: '24-0001', studentName: 'Normal Student', status: 'completed', riskLevel: 'normal', suspiciousProbability: 0.18, submittedAt: '2026-09-08T01:30:00.000Z' },
+        { examSessionId: 's-normal', studentId: '24-0001', studentName: 'Normal Student', status: 'completed', riskLevel: 'normal', suspiciousProbability: 0.18, dataNote: 'Limited recorded data: neutral baseline values were used for missing webcam signals.', submittedAt: '2026-09-08T01:30:00.000Z' },
         { examSessionId: 's-pending', studentId: '24-0004', studentName: 'Pending Student', status: 'pending', suspiciousProbability: null, submittedAt: '2026-09-08T01:33:00.000Z' },
         { examSessionId: 's-risk', studentId: '24-0003', studentName: 'Risk Student', status: 'completed', riskLevel: 'suspicious', suspiciousProbability: 0.912, submittedAt: '2026-09-08T01:32:00.000Z' },
         { examSessionId: 's-review', studentId: '24-0002', studentName: 'Review Student', status: 'completed', riskLevel: 'needs_monitoring', suspiciousProbability: 0.62, submittedAt: '2026-09-08T01:31:00.000Z' },
@@ -93,6 +93,7 @@ try {
     || !states.studentRows?.[0]?.includes('Risk Student')
     || !states.studentRows?.[0]?.includes('91.2%')
     || !states.studentRows?.some(row => row.includes('Review Student') && row.includes('Needs monitoring'))
+    || !states.studentRows?.some(row => row.includes('Normal Student') && row.includes('neutral baseline values'))
     || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Unavailable'))
     || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Not calculated'))
     || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('exam start or end record is missing'))
@@ -127,6 +128,48 @@ try {
   });
   if (!alternateStates.empty?.includes('No completed sessions') || !alternateStates.error?.includes('Retry')) {
     throw new Error(`Random Forest card states failed: ${JSON.stringify(alternateStates)}`);
+  }
+
+  const refreshBatchState = await page.evaluate(async () => {
+    const root = document.getElementById('test-root');
+    root.innerHTML = `<select id="stats-exam-select"><option value="exam-b" selected>Exam</option></select>${randomForestCardShell()}`;
+    const originalRequest = window.monitorApiRequest;
+    const calls = [];
+    window.monitorApiRequest = async (url, options = {}) => {
+      calls.push({ url, method: options.method || 'GET' });
+      if (calls.length === 1) {
+        return { success: true, summary: { totalSessions: 3, pendingSessions: 1, unavailableSessions: 2 } };
+      }
+      if (calls.length === 2) {
+        return {
+          success: true,
+          processed: 2,
+          hasMorePending: true,
+          summary: { totalSessions: 3, analyzedSessions: 2, pendingSessions: 0, unavailableSessions: 1 },
+          predictions: [],
+        };
+      }
+      return {
+        success: true,
+        processed: 1,
+        hasMorePending: false,
+        summary: { totalSessions: 3, analyzedSessions: 3, pendingSessions: 0, unavailableSessions: 0 },
+        predictions: [],
+      };
+    };
+    try {
+      await loadRandomForestPrediction('exam-b');
+    } finally {
+      window.monitorApiRequest = originalRequest;
+    }
+    return calls;
+  });
+  if (
+    refreshBatchState.length !== 3
+    || refreshBatchState[0].method !== 'GET'
+    || refreshBatchState.slice(1).some(call => call.method !== 'POST')
+  ) {
+    throw new Error(`Random Forest pending batches were not drained: ${JSON.stringify(refreshBatchState)}`);
   }
 
   const violationReviewStates = await page.evaluate(() => {
@@ -180,6 +223,114 @@ try {
     || !violationReviewStates.saving.confirmDisabled
   ) {
     throw new Error(`Violation review footer states failed: ${JSON.stringify(violationReviewStates)}`);
+  }
+
+  const violationDismissalPersistence = await page.evaluate(() => {
+    window.Auth = { getAdminSession: () => ({ id: 'professor-smoke' }) };
+    localStorage.removeItem(NOTIFICATION_DISMISSALS_KEY);
+    _violationAlertQueue = [];
+    _activeViolationAlert = null;
+    _queuedViolationAlertIds = new Set();
+    _alertedViolationIds = new Set();
+    _bellNotifs = [];
+    const entry = {
+      id: 'violation:session-smoke:tab-switch-at-1',
+      sessionId: 'session-smoke',
+      studentId: '24-0099',
+      studentName: 'Smoke Student',
+      examId: 'exam-smoke',
+      examTitle: 'Smoke Exam',
+      type: 'tab_switch',
+      at: '2026-09-08T02:00:00.000Z',
+    };
+    queueViolationAlert(entry);
+    const appearedInitially = _activeViolationAlert?.id === entry.id;
+    acknowledgeViolationAlert();
+    const persisted = readDismissedNotificationIds().has(entry.id);
+
+    // Recreate the volatile state a browser refresh would produce and replay the
+    // same server event. Persistent acknowledgement must suppress it.
+    _violationAlertQueue = [];
+    _activeViolationAlert = null;
+    _queuedViolationAlertIds = new Set();
+    _alertedViolationIds = new Set();
+    queueViolationAlert(entry);
+    return { appearedInitially, persisted, repeated: _activeViolationAlert !== null || _violationAlertQueue.length > 0 };
+  });
+  if (
+    !violationDismissalPersistence.appearedInitially
+    || !violationDismissalPersistence.persisted
+    || violationDismissalPersistence.repeated
+  ) {
+    throw new Error(`Dismissed violation repeated after simulated refresh: ${JSON.stringify(violationDismissalPersistence)}`);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const statisticsThemeState = await page.evaluate(async () => {
+    const root = document.getElementById('test-root');
+    root.innerHTML = `
+      <select id="stats-exam-select"><option value="exam-theme" selected>Theme Exam</option></select>
+      <div id="stats-content"></div>`;
+    const exam = {
+      id: 'exam-theme',
+      title: 'Theme Exam',
+      subjectId: 'subject-theme',
+      status: 'closed',
+      questions: [],
+    };
+    const originalDbMethods = {
+      getExam: window.DB?.getExam,
+      getExams: window.DB?.getExams,
+      getSessionsByExam: window.DB?.getSessionsByExam,
+    };
+    window.DB.getExam = () => exam;
+    window.DB.getExams = () => [exam];
+    window.DB.getSessionsByExam = () => [{
+        id: 'session-theme',
+        submitted: true,
+        score: 8,
+        maxScore: 10,
+        warnings: 0,
+        autoSubmitted: false,
+      }];
+    const originalRequest = window.monitorApiRequest;
+    window.monitorApiRequest = async () => ({
+      success: true,
+      summary: { totalSessions: 0, analyzedSessions: 0 },
+      predictions: [],
+    });
+    try {
+      renderExamStats();
+      await Promise.resolve();
+    } finally {
+      window.monitorApiRequest = originalRequest;
+      window.DB.getExam = originalDbMethods.getExam;
+      window.DB.getExams = originalDbMethods.getExams;
+      window.DB.getSessionsByExam = originalDbMethods.getSessionsByExam;
+    }
+    const overview = document.querySelector('.stats-overview-card');
+    const analysis = document.querySelector('.stats-analysis-card');
+    const rf = document.querySelector('.rf-prediction-card');
+    return {
+      wrapper: !!document.querySelector('.stats-analytics-stack'),
+      overviewCount: document.querySelectorAll('.stats-overview-card').length,
+      analysisCount: document.querySelectorAll('.stats-analysis-card').length,
+      overviewRadius: overview ? getComputedStyle(overview).borderRadius : '',
+      analysisRadius: analysis ? getComputedStyle(analysis).borderRadius : '',
+      rfRadius: rf ? getComputedStyle(rf).borderRadius : '',
+      headings: [...document.querySelectorAll('.stats-analysis-heading h3')].map(node => node.textContent),
+    };
+  });
+  if (
+    !statisticsThemeState.wrapper
+    || statisticsThemeState.overviewCount !== 4
+    || statisticsThemeState.analysisCount < 3
+    || statisticsThemeState.overviewRadius !== statisticsThemeState.rfRadius
+    || statisticsThemeState.analysisRadius !== statisticsThemeState.rfRadius
+    || !statisticsThemeState.headings.includes('Score Distribution')
+    || !statisticsThemeState.headings.includes('Question Difficulty')
+  ) {
+    throw new Error(`Statistics cards do not share the system card theme: ${JSON.stringify(statisticsThemeState)}`);
   }
 
   const monitoringExamOptions = await page.evaluate(() => {

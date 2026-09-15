@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   FEATURE_COLUMNS,
+  NEUTRAL_FEATURE_DEFAULTS,
   PredictionUnavailableError,
+  aggregateSessionFeatureSnapshot,
   aggregateSessionFeatures,
 } = require('../server/random-forest-aggregation.cjs');
 
@@ -15,6 +17,20 @@ const metadata = JSON.parse(fs.readFileSync(
 ));
 assert.deepEqual(contract.features.map(feature => feature.name), FEATURE_COLUMNS);
 assert.deepEqual(metadata.feature_columns, FEATURE_COLUMNS);
+
+const examSource = fs.readFileSync(path.resolve(__dirname, '..', 'public', 'js', 'exam.js'), 'utf8');
+const markerStart = examSource.indexOf('_buildRefreshAutoSubmitMarker()');
+const markerEnd = examSource.indexOf('_applyRefreshAutoSubmitMarker(marker)', markerStart);
+const applyEnd = examSource.indexOf('_enableRefreshProtection()', markerEnd);
+assert.ok(markerStart >= 0 && markerEnd > markerStart && applyEnd > markerEnd);
+const markerSource = examSource.slice(markerStart, markerEnd);
+const refreshSubmitSource = examSource.slice(markerEnd, applyEnd);
+assert.ok(
+  markerSource.indexOf('this._persistFaceMonitoringSummary()') < markerSource.indexOf('DB.getSession'),
+  'Reload submission must snapshot webcam behavior before capturing the session marker.',
+);
+assert.match(refreshSubmitSource, /type:\s*'browser_exam_end'/, 'Reload submission must preserve the browser end feature.');
+assert.match(refreshSubmitSource, /featureContractVersion:\s*'rf-session-summary-v1'/);
 
 const session = {
   submitted: true,
@@ -58,16 +74,42 @@ assert.equal(features.webcam_head_yaw, 0.174533);
 assert.equal('fullscreen_exit' in features, false);
 assert.equal('copy_attempt' in features, false);
 
-assert.throws(
-  () => aggregateSessionFeatures({ ...session, activities: [] }),
-  (error) => error instanceof PredictionUnavailableError
-    && error.code === 'BROWSER_SUMMARY_UNAVAILABLE'
-    && /exam start or end record is missing/i.test(error.message),
-);
-assert.throws(
-  () => aggregateSessionFeatures({ ...session, ai_detections: {} }),
-  (error) => error instanceof PredictionUnavailableError && error.code === 'WEBCAM_SUMMARY_UNAVAILABLE',
-);
+const missingBrowser = aggregateSessionFeatureSnapshot({ ...session, activities: [] });
+assert.equal(missingBrowser.features.browser_start_count, NEUTRAL_FEATURE_DEFAULTS.browser_start_count);
+assert.equal(missingBrowser.features.browser_end_count, NEUTRAL_FEATURE_DEFAULTS.browser_end_count);
+assert.ok(missingBrowser.imputedFeatures.includes('browser_start_count'));
+assert.ok(missingBrowser.imputedFeatures.includes('browser_end_count'));
+
+const missingWebcam = aggregateSessionFeatureSnapshot({ ...session, ai_detections: {} });
+assert.equal(missingWebcam.features.webcam_face_present, NEUTRAL_FEATURE_DEFAULTS.webcam_face_present);
+assert.equal(missingWebcam.features.webcam_face_conf, NEUTRAL_FEATURE_DEFAULTS.webcam_face_conf);
+assert.ok(missingWebcam.imputedFeatures.includes('webcam_face_present'));
+assert.ok(missingWebcam.imputedFeatures.includes('webcam_head_roll'));
+
+const partialWebcam = aggregateSessionFeatureSnapshot({
+  ...session,
+  ai_detections: {
+    faceMonitoring: {
+      observation_count: 20,
+      tracking_sample_count: 0,
+      pose_sample_count: 20,
+      hand_sample_count: 0,
+      final_face_present: 0,
+      maximum_face_count: 2,
+      average_tracking_confidence: 0,
+      maximum_hand_count: 0,
+      average_head_pitch_degrees: 5,
+      average_head_yaw_degrees: 10,
+      average_head_roll_degrees: -0.1,
+    },
+  },
+});
+assert.equal(partialWebcam.features.webcam_face_present, 0, 'Recorded face behavior must be preserved.');
+assert.equal(partialWebcam.features.webcam_head_yaw, 0.174533, 'Recorded pose behavior must be preserved.');
+assert.equal(partialWebcam.features.webcam_face_conf, NEUTRAL_FEATURE_DEFAULTS.webcam_face_conf);
+assert.equal(partialWebcam.features.webcam_hand_count, NEUTRAL_FEATURE_DEFAULTS.webcam_hand_count);
+assert.ok(partialWebcam.imputedFeatures.includes('webcam_face_conf'));
+assert.ok(!partialWebcam.imputedFeatures.includes('webcam_head_yaw'));
 assert.throws(
   () => aggregateSessionFeatures({ ...session, submitted: false }),
   (error) => error instanceof PredictionUnavailableError && error.code === 'SESSION_NOT_COMPLETED',

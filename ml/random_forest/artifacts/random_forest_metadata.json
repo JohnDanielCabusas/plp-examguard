@@ -31,6 +31,21 @@
     "monitoring": 0.5,
     "suspicious": 0.8
   },
+  "missing_feature_policy": "non_suspicious_training_median",
+  "missing_feature_defaults": {
+    "browser_start_count": 1.0,
+    "browser_end_count": 1.0,
+    "browser_tab_switched_count": 0.0,
+    "browser_screenshot_count": 0.0,
+    "browser_exam_duration_minutes": 18.48,
+    "webcam_face_present": 1.0,
+    "webcam_no_of_face": 1.0,
+    "webcam_face_conf": 91.5844,
+    "webcam_hand_count": 0.0,
+    "webcam_head_pitch": 0.005361,
+    "webcam_head_yaw": 0.002756,
+    "webcam_head_roll": 0.000073
+  },
   "random_seed": 42,
   "model_parameters": {
     "n_estimators": 500,

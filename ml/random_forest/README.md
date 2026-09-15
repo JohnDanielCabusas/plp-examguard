@@ -58,6 +58,13 @@ Risk levels are `normal` below 0.50, `needs_monitoring` from 0.50 through 0.79,
 and `suspicious` from 0.80. Every value is statistical review support, not
 proof of academic dishonesty.
 
+Every completed session receives a percentage. Recorded browser and webcam
+features are always retained. If an individual signal was not captured, the
+runtime fills only that signal with the versioned non-suspicious training
+median stored in the model metadata and adds a limited-data note to the result.
+This prevents missing camera telemetry from being mistaken for observed
+face absence while still allowing recorded browser behavior to affect risk.
+
 ## Tests
 
 ```powershell
@@ -69,12 +76,11 @@ npm run test:facemesh:browser
 npm run build
 ```
 
-Apply the idempotent database migration with the repository's normal Supabase
+Apply the idempotent database schema with the repository's normal Supabase
 environment variables:
 
 ```powershell
-$env:DOTENV_CONFIG_PATH='.env.local'
-node -r dotenv/config scripts/apply-supabase-sql.mjs supabase/random-forest-predictions-migration.sql
+npm run supabase:schema
 ```
 
 ## Current limitation

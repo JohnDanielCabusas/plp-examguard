@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { forwardEnvironment } = require('../server/environment.cjs');
+const { aggregateSessionFeatureSnapshot } = require('../server/random-forest-aggregation.cjs');
 const worker = require('../server/random-forest-worker.cjs');
 
 async function run() {
@@ -29,13 +30,82 @@ async function run() {
   assert.notEqual(worker.resolvePythonPath(), 'undefined');
 
   const metadata = worker.getModelMetadata();
-  const features = Object.fromEntries(metadata.feature_columns.map(column => [column, 0]));
-  const prediction = await worker.predict(features);
-  assert.ok(prediction.suspiciousProbability >= 0 && prediction.suspiciousProbability <= 1);
-  assert.ok(['normal', 'needs_monitoring', 'suspicious'].includes(prediction.riskLevel));
-  assert.equal(prediction.modelVersion, metadata.model_version);
-  assert.ok(prediction.predictedAt);
-  console.log('Persistent Random Forest worker test passed.');
+  assert.equal(metadata.feature_contract_version, 'rf-session-summary-v1');
+
+  const ordinaryBehavior = {
+    browser_start_count: 1,
+    browser_end_count: 1,
+    browser_tab_switched_count: 0,
+    browser_screenshot_count: 0,
+    browser_exam_duration_minutes: 24.17,
+    webcam_face_present: 1,
+    webcam_no_of_face: 1,
+    webcam_face_conf: 90.7339,
+    webcam_hand_count: 2,
+    webcam_head_pitch: 0.004707,
+    webcam_head_yaw: -0.013718,
+    webcam_head_roll: 0.00032,
+  };
+  const suspiciousBehavior = {
+    browser_start_count: 1,
+    browser_end_count: 1,
+    browser_tab_switched_count: 0,
+    browser_screenshot_count: 0,
+    browser_exam_duration_minutes: 18.65,
+    webcam_face_present: 0,
+    webcam_no_of_face: 0,
+    webcam_face_conf: 0,
+    webcam_hand_count: 0,
+    webcam_head_pitch: 0,
+    webcam_head_yaw: 0,
+    webcam_head_roll: 0,
+  };
+  const browserFlaggedBehavior = {
+    ...ordinaryBehavior,
+    browser_tab_switched_count: 5,
+    browser_screenshot_count: 1,
+  };
+
+  const ordinaryPrediction = await worker.predict(ordinaryBehavior);
+  const repeatPrediction = await worker.predict(ordinaryBehavior);
+  const browserFlaggedPrediction = await worker.predict(browserFlaggedBehavior);
+  const suspiciousPrediction = await worker.predict(suspiciousBehavior);
+  assert.ok(ordinaryPrediction.suspiciousProbability >= 0 && ordinaryPrediction.suspiciousProbability <= 1);
+  assert.equal(ordinaryPrediction.riskLevel, 'normal');
+  assert.equal(repeatPrediction.suspiciousProbability, ordinaryPrediction.suspiciousProbability, 'Identical behavior must produce a deterministic percentage.');
+  assert.ok(browserFlaggedPrediction.suspiciousProbability > ordinaryPrediction.suspiciousProbability, 'Browser violations must affect the suspicious percentage.');
+  assert.equal(browserFlaggedPrediction.requiresProfessorReview, true);
+  assert.equal(suspiciousPrediction.riskLevel, 'suspicious');
+  assert.ok(suspiciousPrediction.suspiciousProbability > ordinaryPrediction.suspiciousProbability, 'Webcam anomalies must affect the suspicious percentage.');
+  assert.equal(ordinaryPrediction.modelVersion, metadata.model_version);
+  assert.ok(ordinaryPrediction.predictedAt);
+
+  const missingSensorSnapshot = aggregateSessionFeatureSnapshot({
+    submitted: true,
+    activities: [],
+    ai_detections: {},
+  }, metadata.missing_feature_defaults);
+  const missingSensorPrediction = await worker.predict(missingSensorSnapshot.features);
+  assert.ok(Number.isFinite(missingSensorPrediction.suspiciousProbability));
+  assert.equal(missingSensorPrediction.riskLevel, 'normal', 'Missing sensors alone must not flag a student.');
+  assert.equal(missingSensorSnapshot.imputedFeatures.length, 10);
+
+  const partialBrowserSnapshot = aggregateSessionFeatureSnapshot({
+    submitted: true,
+    activities: [{ type: 'tab_switch' }],
+    ai_detections: {},
+  }, metadata.missing_feature_defaults);
+  const partialBrowserPrediction = await worker.predict(partialBrowserSnapshot.features);
+  assert.ok(
+    partialBrowserPrediction.suspiciousProbability > missingSensorPrediction.suspiciousProbability,
+    'Recorded browser behavior must still influence a prediction when webcam readings are absent.',
+  );
+
+  // A replacement worker must produce the same result after a process recycle.
+  worker.stopWorker();
+  const recoveredPrediction = await worker.predict(ordinaryBehavior);
+  assert.equal(recoveredPrediction.suspiciousProbability, ordinaryPrediction.suspiciousProbability);
+  console.log('Persistent, deterministic, behavior-sensitive, and restartable Random Forest worker tests passed.');
 }
 
 run()

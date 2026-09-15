@@ -153,6 +153,11 @@ def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[st
     joblib.dump(model, model_path, compress=3)
 
     class_distribution = frame[TARGET_COLUMN].value_counts().to_dict()
+    neutral_feature_defaults = (
+        frame.loc[frame[TARGET_COLUMN] == "non_suspicious", FEATURE_COLUMNS]
+        .median()
+        .to_dict()
+    )
     metrics = {
         "model_name": "tuklas_random_forest",
         "model_version": model_version,
@@ -189,6 +194,8 @@ def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[st
         "class_names": CLASS_NAMES,
         "model_classes": json_value(model.classes_),
         "thresholds": {"monitoring": 0.50, "suspicious": 0.80},
+        "missing_feature_policy": "non_suspicious_training_median",
+        "missing_feature_defaults": json_value(neutral_feature_defaults),
         "random_seed": RANDOM_SEED,
         "model_parameters": parameters,
         "trained_at": trained_at,

@@ -18,8 +18,12 @@ landmarks, names, student numbers, email addresses, course information, scores,
 or grades. YOLO detections, fullscreen exits, and clipboard events remain
 separate professor-review evidence.
 
-Historical or degraded sessions are marked unavailable when a required summary
-is absent. Missing measurements are never replaced with zeros.
+Every completed session is analyzed, including historical and degraded
+sessions. Recorded values take priority feature by feature. A missing value is
+filled with the versioned non-suspicious training median from model metadata,
+and the professor sees a limited-data note on that result. This avoids treating
+an unavailable sensor as observed suspicious behavior; it also preserves any
+browser or webcam signals that were captured by the other monitoring channel.
 
 ## API
 
@@ -40,4 +44,3 @@ key is `(exam_session_id, model_version)`.
 No result changes a score, warning count, submission state, or academic record.
 Professors must inspect the supporting monitoring incidents before taking any
 action.
-

@@ -143,9 +143,9 @@ npm run test:facemesh
 npm run test:facemesh:browser
 ```
 
-Apply `supabase/random-forest-predictions-migration.sql` before opening the
-Statistics card. Detailed setup, feature units, environment variables, metrics,
-privacy behavior, and retraining limitations are documented in
+Run `npm run supabase:schema` before opening the Statistics card. Detailed
+setup, feature units, environment variables, metrics, privacy behavior, and
+retraining limitations are documented in
 `ml/random_forest/README.md` and `docs/random-forest-implementation.md`.
 
 Random Forest output is review support only. It never confirms academic

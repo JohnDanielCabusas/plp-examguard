@@ -81,6 +81,10 @@ class RandomForestPredictor:
         probability = float(self.model.predict_proba(frame)[0][self.suspicious_class_index])
         if not math.isfinite(probability) or probability < 0 or probability > 1:
             raise ValueError("Model returned an invalid suspicious probability.")
+        # Match the numeric(9, 8) database column before assigning a risk band.
+        # This keeps repeated worker processes deterministic and prevents a
+        # rounded 0.80000000 value from retaining the below-threshold label.
+        probability = round(probability, 8)
         thresholds = self.metadata.get("thresholds") or {}
         monitoring_threshold = float(thresholds.get("monitoring", 0.50))
         suspicious_threshold = float(thresholds.get("suspicious", 0.80))

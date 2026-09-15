@@ -985,17 +985,19 @@ export default function AdminPage() {
 
             {/* STATISTICS */}
             <section id="section-statistics" className="admin-section hidden">
-              <div className="section-header">
-                <div>
-                  <div className="section-title">Statistics</div>
-                  <div className="section-subtitle">Detailed per-exam analytics and performance insights</div>
+              <div className="monitor-hero statistics-hero">
+                <div className="monitor-hero-head">
+                  <div className="monitor-hero-copy">
+                    <div className="monitor-hero-title">Exam analytics</div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>Exam Analytics</label>
-                <select className="form-control exam-context-select" id="stats-exam-select" onChange={() => window.renderExamStats()} style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
-                  <option value="">Select an exam to explore analytics</option>
-                </select>
+                <div className="toolbar monitor-toolbar statistics-toolbar" style={{ marginBottom: 0 }}>
+                  <div className="reports-toolbar-select">
+                    <select className="form-control exam-context-select" id="stats-exam-select" onChange={() => window.renderExamStats()}>
+                      <option value="">Select an exam to explore analytics</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div id="stats-content">
                 <div className="dash-empty"><div className="dash-empty-title">No exam selected</div><div className="dash-empty-sub">Pick an exam above to view performance trends, scores, and question insights.</div></div>
