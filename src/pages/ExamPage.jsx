@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { applyTheme, readStoredTheme, toggleTheme } from '../lib/theme.js';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 const EYE_OPEN = (
   <>
@@ -235,14 +236,7 @@ export default function ExamPage() {
                 <span className="portal-topbar-title" id="portal-topbar-title">Home</span>
               </div>
               <div className="portal-topbar-actions">
-                <label className="theme-switch" title="Toggle dark / light mode">
-                  <input type="checkbox" checked={theme === 'dark'} onChange={handleThemeToggle} />
-                  <span className="theme-switch-track">
-                    <svg className="theme-switch-icon ts-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                    <svg className="theme-switch-icon ts-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-                    <span className="theme-switch-knob"></span>
-                  </span>
-                </label>
+                <ThemeToggle checked={theme === 'dark'} onChange={handleThemeToggle} title="Toggle dark / light mode" />
                 <button type="button" className="portal-user-pill" onClick={() => window.ExamApp.showPortalTab('settings')}>
                   <div id="portal-topbar-avatar" className="portal-user-avatar">S</div>
                   <span id="portal-topbar-name" className="portal-user-name">Student</span>
@@ -483,6 +477,7 @@ export default function ExamPage() {
             <span id="timer-display">--:--</span>
           </div>
           <div className="examv2-topbar-right">
+            <ThemeToggle checked={theme === 'dark'} onChange={handleThemeToggle} title="Toggle dark / light mode" />
             <div className="conn-status conn-online" id="connection-status" title="Connection status">
               <svg id="connection-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12.55a11 11 0 0 1 14.08 0" /><path d="M1.42 9a16 16 0 0 1 21.16 0" /><path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><line x1="12" y1="20" x2="12.01" y2="20" />
@@ -969,10 +964,12 @@ export default function ExamPage() {
 
       {/* Face calibration is session-only. No facial landmarks are uploaded or persisted. */}
       <div id="face-calibration-modal" className="modal-backdrop hidden" data-no-backdrop-close="true">
-        <div className="modal-dialog face-calibration-dialog">
+        <div className="modal-dialog face-calibration-dialog" role="dialog" aria-modal="true" aria-labelledby="face-calibration-title" aria-describedby="face-calibration-instructions">
           <div className="modal-body confirm-dialog">
-            <div className="confirm-title">Position Your Face</div>
-            <div className="confirm-message">
+            <div className="face-calibration-heading">
+              <div className="confirm-title" id="face-calibration-title">Position Your Face</div>
+            </div>
+            <div className="confirm-message" id="face-calibration-instructions">
               Center your face and look at the screen for five seconds. This setup applies only to this exam.
             </div>
             <div className="face-calibration-preview">

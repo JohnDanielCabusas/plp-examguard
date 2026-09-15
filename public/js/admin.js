@@ -6650,13 +6650,13 @@ function buildQuestionBlock(q, idx) {
         <label>Accepted Answers <span class="text-muted" style="font-weight:400;">(any one is marked correct; case-insensitive)</span></label>
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${acceptedAnswers.map((answer, answerIdx) => `
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div class="identification-answer-row">
               <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${answerIdx + 1}.</span>
-              <input type="text" class="form-control" value="${escHtml(answer)}" placeholder="Accepted answer ${answerIdx + 1}" onchange="updateIdentificationAnswer(${idx},${answerIdx},this.value)" style="flex:1;" />
-              <button type="button" class="btn btn-danger btn-sm" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>&times;</button>
+              <input type="text" class="form-control" value="${escHtml(answer)}" aria-label="Accepted answer ${answerIdx + 1}" placeholder="Accepted answer ${answerIdx + 1}" onchange="updateIdentificationAnswer(${idx},${answerIdx},this.value)" />
+              <button type="button" class="btn btn-danger btn-sm identification-answer-remove" aria-label="Remove accepted answer ${answerIdx + 1}" title="Remove answer" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>&times;</button>
             </div>`).join('')}
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addIdentificationAnswer(${idx})">+ Add Accepted Answer</button>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addIdentificationAnswer(${idx})">Add other answer</button>
       </div>`;
   }
 
@@ -6670,9 +6670,12 @@ function buildQuestionBlock(q, idx) {
     : '';
 
   return `
-    <div class="qe-card${issue ? ' qe-card-incomplete' : ''}" id="qblock-${idx}" data-qidx="${idx}" draggable="true" style="--q-accent:${typeColor}">
+    <div class="qe-card${issue ? ' qe-card-incomplete' : ''}" id="qblock-${idx}" data-qidx="${idx}" style="--q-accent:${typeColor}">
       <div class="qe-card-header">
         <div class="qe-header-left">
+          <span class="qe-drag-handle" draggable="true" title="Drag to reorder question" aria-label="Drag to reorder question">
+            <svg width="16" height="20" viewBox="0 0 16 20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="16" r="1.5"/><circle cx="11" cy="16" r="1.5"/></svg>
+          </span>
           <div class="checkbox-wrapper-30" onclick="event.stopPropagation()" title="Select this question">
             <div class="checkbox" style="--size:0.78;--stroke:#1a6b35">
               <input type="checkbox" class="qe-select-cb" ${selectedQuestionIndices.has(idx) ? 'checked' : ''} onchange="toggleQuestionSelect(${idx},this.checked)" />
@@ -6743,52 +6746,73 @@ function initExamEditorDrag() {
   const container = document.getElementById('questions-list');
   if (!container || container._dragInited) return;
   container._dragInited = true;
+  let preview = null;
+  const clearDropTargets = () => container.querySelectorAll('.qe-card').forEach(block =>
+    block.classList.remove('q-drop-before', 'q-drop-after'));
+  const resetDrag = () => {
+    clearDropTargets();
+    container.querySelectorAll('.q-dragging').forEach(block => block.classList.remove('q-dragging'));
+    preview?.remove();
+    preview = null;
+    _dragQIdx = null;
+  };
 
   container.addEventListener('dragstart', e => {
+    if (!e.target.closest('.qe-drag-handle')) { e.preventDefault(); return; }
     const block = e.target.closest('.qe-card');
     if (!block) return;
     _dragQIdx = parseInt(block.dataset.qidx);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(_dragQIdx));
-    setTimeout(() => block.classList.add('q-dragging'), 0);
+    preview = document.createElement('div');
+    preview.className = 'qe-drag-preview';
+    preview.textContent = `Question ${_dragQIdx + 1}`;
+    document.body.appendChild(preview);
+    e.dataTransfer.setDragImage(preview, 16, 16);
+    requestAnimationFrame(() => { if (_dragQIdx !== null) block.classList.add('q-dragging'); });
   });
 
-  container.addEventListener('dragend', () => {
-    container.querySelectorAll('.qe-card').forEach(b =>
-      b.classList.remove('q-dragging', 'q-drag-over'));
-    _dragQIdx = null;
-  });
+  container.addEventListener('dragend', resetDrag);
 
   container.addEventListener('dragover', e => {
+    if (_dragQIdx === null) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    clearDropTargets();
     const block = e.target.closest('.qe-card');
     if (!block) return;
     const overIdx = parseInt(block.dataset.qidx);
     if (overIdx === _dragQIdx) return;
-    container.querySelectorAll('.question-block').forEach(b => b.classList.remove('q-drag-over'));
-    block.classList.add('q-drag-over');
+    const rect = block.getBoundingClientRect();
+    block.classList.add(e.clientY < rect.top + rect.height / 2 ? 'q-drop-before' : 'q-drop-after');
   });
 
   container.addEventListener('dragleave', e => {
     if (!container.contains(e.relatedTarget)) {
-      container.querySelectorAll('.qe-card').forEach(b => b.classList.remove('q-drag-over'));
+      clearDropTargets();
     }
   });
 
   container.addEventListener('drop', e => {
     e.preventDefault();
     const block = e.target.closest('.qe-card');
-    if (!block || _dragQIdx === null) return;
-    const dropIdx = parseInt(block.dataset.qidx);
-    if (dropIdx === _dragQIdx) return;
+    if (!block || _dragQIdx === null) { resetDrag(); return; }
+    const sourceIdx = _dragQIdx;
+    const rect = block.getBoundingClientRect();
+    let dropIdx = parseInt(block.dataset.qidx) + (e.clientY >= rect.top + rect.height / 2 ? 1 : 0);
+    if (dropIdx > sourceIdx) dropIdx--;
+    if (dropIdx === sourceIdx) { resetDrag(); return; }
     const exam = DB.getExam(currentQBuilderExamId);
-    if (!exam) return;
+    if (!exam) { resetDrag(); return; }
+    const selected = new Set(exam.questions.filter((_, index) => selectedQuestionIndices.has(index)));
     const questions = [...exam.questions];
-    const [moved] = questions.splice(_dragQIdx, 1);
+    const [moved] = questions.splice(sourceIdx, 1);
     questions.splice(dropIdx, 0, moved);
+    selectedQuestionIndices = new Set(questions.flatMap((question, index) => selected.has(question) ? [index] : []));
+    resetDrag();
     DB.updateExam(currentQBuilderExamId, { questions });
     renderQuestionsList(currentQBuilderExamId);
+    showToast(`Question moved to position ${dropIdx + 1}.`, 'success');
   });
 }
 
@@ -6917,6 +6941,7 @@ function removeQuestion(idx) {
   DB.updateExam(currentQBuilderExamId, { questions });
   selectedQuestionIndices.clear(); // indices shifted — stale selection would point at the wrong cards
   renderQuestionsList(currentQBuilderExamId);
+  showToast('Question deleted.', 'success');
 }
 
 function updateQField(idx, field, value) {
@@ -9909,7 +9934,10 @@ function renderExamStats() {
 // REPORTS
 // ============================================================
 function loadReportExams() {
-  const exams = DB.getExams().filter(e => ['ready', 'active', 'closed'].includes(e.status));
+  const exams = DB.getExams()
+    .filter(e => ['ready', 'active', 'closed'].includes(e.status))
+    .sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active')
+      || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
   const sel = document.getElementById('report-exam-select');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +

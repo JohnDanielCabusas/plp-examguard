@@ -713,7 +713,7 @@ export default function AdminPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                         <button type="button" className="btn btn-secondary" onClick={() => window.openExamAbsenteesModal()}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px', verticalAlign: '-2px' }}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                          Manage Absentees
+                          Manage Attendance
                         </button>
                         <span id="exam-absentee-summary" className="text-muted" style={{ fontSize: '12px' }} />
                       </div>
@@ -1399,7 +1399,7 @@ export default function AdminPage() {
       <div className="modal-backdrop hidden" id="modal-exam-absentees">
         <div className="modal-dialog modal-lg">
           <div className="modal-header">
-            <div><span className="modal-title">Manage Absentees</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-absentees-sub" /></div>
+            <div><span className="modal-title">Manage Attendance</span><div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }} id="modal-absentees-sub" /></div>
             <button type="button" aria-label="Close dialog" className="modal-close" onClick={() => window.closeModal('modal-exam-absentees')}>&#10005;</button>
           </div>
           <div className="modal-body" id="modal-absentees-body" style={{ padding: '16px 20px' }} />

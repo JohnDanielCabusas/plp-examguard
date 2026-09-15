@@ -8582,6 +8582,21 @@ body.exam-page {
 .analytics-card.ac-dark-red  { border-top: 2px solid rgba(248,113,113,0.6); }
 .analytics-card.ac-dark-teal { border-top: 2px solid rgba(52,211,153,0.6); }
 .analytics-card.ac-dark-amber { border-top: 2px solid rgba(251,191,36,0.6); }
+/* Light analytics use the same surface as the surrounding dashboard cards. */
+:root:not([data-theme="dark"]) #dash-analytics .analytics-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-dark-value, .risk-name-dark, .frd-value) { color: var(--text); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-dark-label, .ac-dark-sub, .risk-score-dark, .frd-label, .ac-trend-flat) { color: var(--text-muted); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.risk-item-dark, .forecast-row-dark) { border-color: var(--border); }
+:root:not([data-theme="dark"]) #dash-analytics .ac-trend-flat { background: var(--surface-2); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-trend-up, .frd-good) { color: var(--chip-ok-text) !important; }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-trend-down, .frd-bad, .risk-badge-high) { color: var(--chip-deny-text) !important; }
+:root:not([data-theme="dark"]) #dash-analytics .risk-badge-medium { color: var(--chip-warn-text); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.risk-list-dark, .sparkline-wrap) > div[style] { color: var(--text-muted) !important; }
+:root:not([data-theme="dark"]) #dash-analytics svg text[fill^="rgba(255"] { fill: var(--text-muted); }
 /* In dark mode the predictive-analytics cards use the same flat card surface
    (#171D22) and border as every other card — no gradient, no green tint. */
 [data-theme="dark"] .analytics-card.ac-dark {
@@ -8788,19 +8803,52 @@ body.exam-page {
   transform: scaleX(-1);
 }
 
-.face-calibration-dialog { width: min(92vw, 520px); }
+.exam-page .modal-dialog.face-calibration-dialog {
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.exam-page .face-calibration-dialog .confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+.face-calibration-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.exam-page .face-calibration-dialog :is(.confirm-title, .confirm-message) { margin: 0; }
+.exam-page .face-calibration-dialog .confirm-message { max-width: none; }
+.exam-page .face-calibration-dialog .confirm-actions { flex-direction: row; }
+.exam-page .face-calibration-dialog .confirm-actions .btn {
+  flex: 1 1 150px;
+  width: auto;
+  min-width: 0;
+  white-space: normal;
+}
+.exam-page .face-calibration-dialog #face-calibration-fallback { flex-basis: 100%; }
+@media (max-height: 620px) {
+  .exam-page .face-calibration-dialog .confirm-dialog { padding: 16px; gap: 8px; }
+  .face-calibration-dialog .face-calibration-preview { width: min(100%, 34dvh); }
+  .face-calibration-dialog .face-calibration-status { min-height: 0; }
+}
 
 .face-calibration-preview {
   position: relative;
-  width: min(100%, 420px);
+  width: min(100%, 420px, 42dvh);
   aspect-ratio: 4 / 3;
-  margin: 16px auto 12px;
+  margin: 0 auto;
+  flex-shrink: 0;
   overflow: hidden;
   border-radius: 16px;
   background: #0f172a;
 }
 
 .face-calibration-preview video {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -8808,6 +8856,7 @@ body.exam-page {
 }
 
 .face-calibration-guide {
+  pointer-events: none;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -8825,12 +8874,14 @@ body.exam-page {
   font-size: 13px;
   line-height: 1.45;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .face-calibration-progress {
   width: min(100%, 420px);
   height: 8px;
-  margin: 0 auto 12px;
+  margin: 0 auto;
+  flex-shrink: 0;
   overflow: hidden;
   border-radius: 999px;
   background: var(--surface-2, #e2e8f0);
@@ -8841,7 +8892,7 @@ body.exam-page {
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: #15803d;
+  background: var(--success);
   transition: width 120ms linear;
 }
 
@@ -12341,8 +12392,26 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .qe-card.qe-new { animation: qeEnter 0.18s ease both; }
 .qe-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.09); }
-.qe-card.q-dragging { opacity: 0.35; transform: scale(0.99); }
-.qe-card.q-drag-over { border-color: #1a6b35; box-shadow: 0 0 0 3px rgba(26,107,53,0.12); }
+.qe-card.q-dragging { opacity: 0.45; }
+.qe-card.q-drop-before, .qe-card.q-drop-after { position: relative; }
+.qe-card.q-drop-before::before, .qe-card.q-drop-after::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 3px;
+  background: var(--primary); border-radius: 999px; pointer-events: none;
+}
+.qe-card.q-drop-before::before { top: -10px; }
+.qe-card.q-drop-after::after { bottom: -10px; }
+.qe-drag-handle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 32px; flex-shrink: 0; border-radius: 6px;
+  color: var(--text-muted); cursor: grab; user-select: none;
+}
+.qe-drag-handle:hover { color: var(--primary); background: var(--surface-2); }
+.qe-drag-handle:active { cursor: grabbing; }
+.qe-drag-preview {
+  position: fixed; top: 0; left: 0; z-index: -1;
+  padding: 10px 16px; border-radius: 8px; border: 1px solid var(--primary);
+  background: var(--surface); color: var(--text); font-size: 13px; font-weight: 700;
+}
 .qe-card.qe-card-incomplete,
 .qe-card.qe-card-duplicate { border-top-color: #dc2626 !important; }
 .qe-issue-banner,
@@ -13395,6 +13464,23 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .examv2-question-wrap .tf-btn.selected { border-color: #1a4d2a; background: #e8f5ec; color: #0f2d1a; }
 
 /* Identification / Essay / Enumeration / Matching inputs */
+.identification-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.identification-answer-row .form-control { flex: 1; min-width: 0; }
+.identification-answer-row .identification-answer-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  line-height: 1;
+  font-size: 20px;
+}
 .examv2-question-wrap .id-input,
 .examv2-question-wrap .essay-textarea {
   width: 100%; border: 1.5px solid #e5e7eb; border-radius: 10px;
@@ -13436,8 +13522,38 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .examv2-question-wrap .checkbox-option:hover { border-color: #1a4d2a; background: #f0f7f2; }
 .examv2-question-wrap .checkbox-option.selected { border-color: #1a4d2a; background: #e8f5ec; }
 
+/* Keep the active exam controls readable when switching the shared theme. */
+.examv2-topbar-left, .examv2-topbar-left > div, .examv2-topbar-right { min-width: 0; }
+.examv2-title, .examv2-subject, .examv2-student-chip { overflow-wrap: anywhere; }
+.examv2-topbar-left > img { flex-shrink: 0; }
+.exam-page .theme-switch { min-height: 40px; }
+.exam-page .theme-switch input:focus-visible + .theme-switch-track {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+[data-theme="dark"] .examv2-stat-num,
+[data-theme="dark"] .examv2-stat.answered .examv2-stat-num { color: var(--success); }
+[data-theme="dark"] .examv2-stat.skipped .examv2-stat-num { color: var(--text-muted); }
+[data-theme="dark"] .examv2-stat.review .examv2-stat-num { color: var(--chip-warn-text); }
+[data-theme="dark"] .examv2-nav-legend > div { color: var(--text-muted) !important; }
+[data-theme="dark"] .examv2-question-wrap .checkbox-option.selected {
+  background: var(--chip-ok-bg) !important;
+  border-color: var(--chip-ok-border) !important;
+  color: var(--chip-ok-text) !important;
+}
+[data-theme="dark"] .examv2-timer.timer-warning {
+  background: var(--chip-deny-bg) !important;
+  border-color: var(--chip-deny-border) !important;
+  color: var(--chip-deny-text) !important;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
+  .examv2-topbar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  .examv2-topbar-left { flex-basis: calc(100% - 150px); }
+  .examv2-topbar-right { flex-basis: 100%; }
+  .examv2-stats-bar { flex-wrap: wrap; row-gap: 10px; padding: 8px 12px; }
+  .examv2-stats-bar > div:last-child { flex-basis: 100%; justify-content: flex-end; }
   .examv2-nav-panel { display: none; }
   .examv2-question-wrap .mcq-options { grid-template-columns: 1fr; }
   .examv2-stats-bar .examv2-stat { padding: 0 10px; }
