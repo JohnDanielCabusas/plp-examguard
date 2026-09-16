@@ -2141,7 +2141,7 @@ function renderDashboard() {
     <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${subjects.length}</div><div class="stat-label">Courses</div></div></div>
     <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-value">${students.length}</div><div class="stat-label">Students</div></div></div>
     <div class="stat-card"><div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-value">${exams.length}</div><div class="stat-label">Total Exams</div></div></div>
-    <div class="stat-card"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
+    <div class="stat-card" data-state="${activeExams.length ? 'live' : 'idle'}"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
     <div class="stat-card"><div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="stat-value">${submittedSessions.length}</div><div class="stat-label">Submissions</div></div></div>
   `;
 
@@ -2150,9 +2150,13 @@ function renderDashboard() {
   // Recent exams
   const recentExams = [...exams].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
   const recentHtml = recentExams.length
-    ? `<table style="width:100%;"><thead><tr><th scope="col">Title</th><th scope="col" style="text-align:center;">Status</th><th scope="col" style="text-align:center;">Questions</th></tr></thead><tbody>
-        ${recentExams.map(e => `<tr><td>${escHtml(e.title)}</td><td style="text-align:center;">${statusBadge(e.status)}</td><td style="text-align:center;">${e.questions.length}</td></tr>`).join('')}
-       </tbody></table>`
+    ? `<ul class="dash-exam-list">
+        ${recentExams.map(e => `<li class="dash-exam-row">
+          <span class="dash-exam-title">${escHtml(e.title)}</span>
+          ${statusBadge(e.status)}
+          <span class="dash-exam-count">${e.questions.length} Q</span>
+        </li>`).join('')}
+       </ul>`
     : `<div class="empty-state"><p>No exams yet</p></div>`;
   document.getElementById('dash-recent-exams').innerHTML = recentHtml;
 
@@ -2293,7 +2297,7 @@ function renderAnalytics(exams, sessions, students) {
     <div class="analytics-card ac-dark">
       <div class="ac-dark-label">SCORE TREND</div>
       <div class="ac-dark-value">${avgPct !== null ? avgPct + '%' : '—'}</div>
-      <div class="ac-dark-sub">Avg Completion Rate</div>
+      <div class="ac-dark-sub">Average score across exams</div>
       <span class="ac-trend-badge ac-trend-${trendClass}">${trendArrow} ${Math.abs(examScores.length >= 2 ? examScores[examScores.length-1].avg - examScores[0].avg : 0)}%</span>
       <div class="sparkline-wrap" style="margin-top:12px;">${darkSparkSvg}</div>
     </div>`;
@@ -2348,7 +2352,10 @@ function renderAnalytics(exams, sessions, students) {
   ));
   // Glowing gradient bar chart
   const barAccent = '#4ade80';
-  const barW = 32, barGap = 9, chartH = 72, labelH = 20;
+  // chartH drives the viewBox height, so it — not CSS — decides how tall the
+  // distribution chart can draw. 72 bottomed out ~79px and left the card half
+  // empty; 140 overshot and made the card top-heavy. 96 fills without looming.
+  const barW = 32, barGap = 9, chartH = 112, labelH = 22;
   const totalW = ranges.length * barW + (ranges.length - 1) * barGap;
   const counts = ranges.map(r => submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length);
   const peak = Math.max(1, ...counts);
@@ -3676,36 +3683,39 @@ function renderExams() {
     container.innerHTML = `<div class="empty-state"><p>No exams yet. Click "+ Create Exam" to get started.</p></div>`;
     return;
   }
-  const statusHeaderColor = {
-    draft:  { bg:'linear-gradient(135deg,#6b7280,#9ca3af)', text:'rgba(255,255,255,0.7)' },
-    ready:  { bg:'linear-gradient(135deg,#1d4ed8,#3b82f6)', text:'rgba(255,255,255,0.7)' },
-    active: { bg:'linear-gradient(135deg,#15803d,#22c55e)', text:'rgba(255,255,255,0.7)' },
-    closed: { bg:'linear-gradient(135deg,#991b1b,#ef4444)', text:'rgba(255,255,255,0.7)' },
+  // The banner carries the title only. What made the old one unwieldy was not
+  // the colour but everything else packed into it: the status badge, access
+  // code and date (which now sit on their own row below), a ghost letter
+  // watermark and two decorative circles — across ~120px, most of it empty.
+  // Tones stay semantic: `closed` is graphite, not the old alarm red, so a
+  // page of finished exams no longer reads as a page of errors.
+  const statusBanner = {
+    draft:  { bg:'linear-gradient(135deg,#6b7280,#9ca3af)', accent:'#9ca3af' },
+    ready:  { bg:'linear-gradient(135deg,#1d4ed8,#3b82f6)', accent:'#3b82f6' },
+    active: { bg:'linear-gradient(135deg,#15803d,#22c55e)', accent:'#22c55e' },
+    closed: { bg:'linear-gradient(135deg,#334155,#64748b)', accent:'#64748b' },
   };
   container.innerHTML = active.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
     const subjectName = subject ? escHtml(formatCourseNameDisplay(subject.name)) : 'No subject';
-    const hdr = statusHeaderColor[e.status] || statusHeaderColor.draft;
+    const bnr = statusBanner[e.status] || statusBanner.draft;
     const qCount = (e.questions || []).length;
     const totalPoints = (e.questions || []).reduce((sum, q) => sum + (Number(q.points) || 0), 0);
     const actions = buildExamActions(e);
     return `
-    <div class="exam-card" onclick="openExamModal('${e.id}')">
-      <!-- Colored header like course card -->
-      <div class="exam-card-header" style="background:${hdr.bg};">
+    <div class="exam-card" style="--exam-accent:${bnr.accent};" onclick="openExamModal('${e.id}')">
+      <div class="exam-card-banner" style="background:${bnr.bg};">
         <div class="exam-card-header-deco"></div>
         <div class="exam-card-letter">${(e.title||'?').charAt(0).toUpperCase()}</div>
-        <div style="position:relative;z-index:1;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
-            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-              ${statusBadge(e.status)}
-              ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy access code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
-            </div>
-            <div class="exam-card-date" title="Date created">${formatDate(e.createdAt)}</div>
-          </div>
-          <div class="exam-card-title">${escHtml(e.title)}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;">${subjectName}</div>
+        <div class="exam-card-title">${escHtml(e.title)}</div>
+        <div class="exam-card-subject">${subjectName}</div>
+      </div>
+      <div class="exam-card-meta">
+        <div class="exam-card-header-tags">
+          ${statusBadge(e.status)}
+          ${e.code ? `<button type="button" class="exam-card-code-btn" title="Copy access code" onclick="event.stopPropagation();copyExamCode('${escHtml(e.code)}')">${escHtml(e.code)}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ''}
         </div>
+        <div class="exam-card-date" title="Date created">${formatDate(e.createdAt)}</div>
       </div>
       <!-- Stats cells -->
       <div class="exam-card-body">
@@ -5125,7 +5135,20 @@ async function handleExamEditorUnready() {
   const btn = document.getElementById('exam-editor-unready-btn');
   const examId = btn?._examId;
   if (!examId) return;
-  await setExamStatus(examId, 'draft');
+
+  // While the editor is open, bindExamEditorPersistenceHooks() patches
+  // DB.updateExam so edits land in the in-memory draft instead of being
+  // committed — right for unsaved field edits, wrong for a status change.
+  // Without the bypass this wrote 'draft' into the draft buffer only: the UI
+  // updated, nothing reached localStorage or Supabase, and the next load
+  // pulled the old status straight back.
+  //
+  // handleExamEditorStatusAction (Set Ready / Activate / Close) already does
+  // this; Revert to Draft was the one transition that didn't.
+  await runExamEditorWithPersistedWritesAsync(() => setExamStatus(examId, 'draft'));
+  setExamEditorDraftExam(getPersistedExamRecord(examId));
+  examEditorSavedSnapshot = getExamEditorSnapshot();
+  updateExamEditorSaveButtonState();
   refreshExamEditorStatusUI(examId);
 }
 
@@ -9740,9 +9763,15 @@ function renderExamStats() {
     ? Math.round(sessions.reduce((sum, session) => sum + session._statsPct, 0) / sessions.length)
     : 0;
   const flagged = sessions.filter(s => Number(s.warnings || 0) > 0).length;
+  // Tone is read off the number, not off which card it is. Pass rate was
+  // hardcoded tone:'positive', so a 0% pass rate rendered green with a tick —
+  // the same mistake as a Flagged card showing red while reading 0.
+  const passRate = Math.round(passing / sessions.length * 100);
+  const passTone = passRate >= 75 ? 'positive' : passRate >= 50 ? 'warning' : 'danger';
+  const avgTone = averageScore >= 75 ? 'positive' : averageScore >= 50 ? 'warning' : 'danger';
   const overviewCards = [
-    {label:'Pass rate',value:Math.round(passing/sessions.length*100)+'%',detail:`${passing} of ${sessions.length} scored 75% or higher`,tone:'positive',icon:'check'},
-    {label:'Average score',value:averageScore+'%',detail:'From recorded answers and score overrides',tone:'neutral',icon:'chart'},
+    {label:'Pass rate',value:passRate+'%',detail:`${passing} of ${sessions.length} scored 75% or higher`,tone:passTone,icon:'check'},
+    {label:'Average score',value:averageScore+'%',detail:'Across all recorded answers',tone:avgTone,icon:'chart'},
     {label:'With violations',value:flagged,detail:`${sessions.length - flagged} submitted with no warnings`,tone:flagged ? 'danger' : 'positive',icon:'shield'},
     {label:'Submissions',value:sessions.length,detail:'Completed student records',tone:'neutral',icon:'users'},
   ];
@@ -9802,15 +9831,14 @@ function renderExamStats() {
     <!-- Overview Strip -->
     <div class="stats-overview-grid">
       ${overviewCards.map(c=>`<article class="stats-overview-card tone-${c.tone}">
-        <span class="stats-overview-icon" aria-hidden="true">${c.icon === 'check'
-          ? '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>'
-          : c.icon === 'chart'
-            ? '<svg viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>'
-            : c.icon === 'shield'
-              ? '<svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.2 8 7.5 9.8 4.3-1.8 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v4m0 3h.01"/></svg>'
-              : '<svg viewBox="0 0 24 24"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7" r="4"/><path d="M17 11a3 3 0 1 0 0-6m3 15v-1.5a4.5 4.5 0 0 0-2.5-4"/></svg>'}</span>
         <div class="stats-overview-copy">
-          <span>${c.label}</span>
+          <span class="stats-overview-label"><span class="stats-overview-icon" aria-hidden="true">${c.icon === 'check'
+            ? '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>'
+            : c.icon === 'chart'
+              ? '<svg viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>'
+              : c.icon === 'shield'
+                ? '<svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.2 8 7.5 9.8 4.3-1.8 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v4m0 3h.01"/></svg>'
+                : '<svg viewBox="0 0 24 24"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7" r="4"/><path d="M17 11a3 3 0 1 0 0-6m3 15v-1.5a4.5 4.5 0 0 0-2.5-4"/></svg>'}</span>${c.label}</span>
           <strong>${c.value}</strong>
           <small>${c.detail}</small>
         </div>
@@ -11128,14 +11156,22 @@ function showToast(message, type = 'success', options = {}) {
 // UTILITIES
 // ============================================================
 function statusBadge(status) {
+  // Tone follows what the state MEANS, not which state it is. `closed` was
+  // badge-danger, so every finished exam rendered as an alarm.
   const map = {
-    draft: 'badge-secondary',
-    ready: 'badge-info',
-    active: 'badge-success',
-    closed: 'badge-danger',
+    draft: 'badge-secondary',   // not published yet
+    ready: 'badge-info',        // scheduled, waiting to open
+    active: 'badge-success',    // running right now
+    closed: 'badge-done',       // finished normally
     archived: 'badge-secondary',
   };
-  return `<span class="badge ${map[status] || 'badge-secondary'}">${status}</span>`;
+  const labels = {
+    draft: 'Draft', ready: 'Ready', active: 'Active',
+    closed: 'Closed', archived: 'Archived',
+  };
+  const key = String(status || '').toLowerCase();
+  const label = labels[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '—');
+  return `<span class="badge ${map[key] || 'badge-secondary'}">${label}</span>`;
 }
 
 function escHtml(str) {

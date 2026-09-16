@@ -15,8 +15,10 @@
   --bg: #f5f6f5;
   --bg-sidebar: #0f2d1a;
   --white: #ffffff;
+  --on-accent: #ffffff;   /* text sitting ON a coloured fill — stays white in both themes */
   --text: #1a1a1a;
-  --text-muted: #6b7280;
+  --text-muted: #4b5563;    /* 7.0:1 — was #6b7280 (4.9:1) */
+  --text-subtle: #5b6573;   /* 5.9:1 — tertiary/meta text */
   --border: #d1d5db;
   --radius: 10px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
@@ -53,8 +55,10 @@
   --bg: #0b0f12;            /* Background */
   --bg-sidebar: #0a150e;    /* Sidebar — subtle dark green (not the saturated light-mode green) */
   --white: #171d22;
+  --on-accent: #ffffff;   /* NOT --white: that is a surface colour here */
   --text: #f1f5f4;          /* Text Primary */
   --text-muted: #94a3a0;    /* Text Secondary */
+  --text-subtle: #8a9a97;   /* Text Tertiary */
   --border: #29333a;        /* Border */
   --surface: #171d22;       /* Card */
   --surface-2: #1c242a;     /* Card Hover */
@@ -202,7 +206,7 @@
   background: #141a1f !important;
   color: var(--text-muted) !important;
   border-bottom: 1px solid var(--border) !important;
-  font-size: 11px; letter-spacing: 0.08em;
+  font-size: 12px; letter-spacing: 0.08em;
 }
 [data-theme="dark"] td {
   background: var(--surface) !important;
@@ -1842,7 +1846,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 }
 
 .label-hint {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
   text-transform: none;
@@ -1868,7 +1872,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 
 /* Login form group staggered entrance — only on initial load (handled by card-in) */
 
-.form-control::placeholder { color: #9ca3af; }
+.form-control::placeholder { color: #5b6573; }
 
 select.form-control {
   cursor: pointer;
@@ -1891,9 +1895,9 @@ textarea.form-control {
 }
 
 .char-counter {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: #9ca3af;
+  color: #5b6573;
   text-align: right;
   margin-top: 4px;
 }
@@ -1948,7 +1952,7 @@ textarea.form-control {
 
 /* Question editor — "Required" toggle switch (replaces plain checkbox) */
 .qe-required-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #6b7280;
   text-transform: uppercase;
@@ -1997,7 +2001,7 @@ textarea.form-control {
   border: 1.5px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
@@ -2046,7 +2050,7 @@ textarea.form-control {
 .qbreak-choice-row.muted .qbreak-choice-label { color: var(--text-muted); font-style: italic; }
 .qbreak-correct-badge {
   display: inline-block;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -2062,13 +2066,13 @@ textarea.form-control {
 .qbreak-bar-wrap {
   height: 8px;
   background: #eef2f7;
-  border-radius: 99px;
+  border-radius: 999px;
   overflow: hidden;
 }
 .qbreak-bar {
   height: 100%;
   background: #173f2a;
-  border-radius: 99px;
+  border-radius: 999px;
 }
 .qbreak-choice-row.correct .qbreak-bar { background: #16a34a; }
 .qbreak-choice-row.correct .qbreak-bar-wrap { background: #e7f6ec; }
@@ -2082,7 +2086,7 @@ textarea.form-control {
 .qbreak-pct {
   font-weight: 500;
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
 }
 [data-theme="dark"] .qbreak-bar-wrap {
   background: var(--surface-2);
@@ -2191,7 +2195,7 @@ textarea.form-control {
   display: inline-block;
   padding: 3px 10px;
   border-radius: 20px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.3px;
 }
@@ -2261,7 +2265,7 @@ textarea.form-control {
 }
 
 .sidebar-brand-text p {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255,255,255,0.7);
   font-weight: 400;
   white-space: nowrap;
@@ -2277,7 +2281,7 @@ textarea.form-control {
 .sidebar-nav::-webkit-scrollbar { display: none; }
 
 .nav-section-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: rgba(255,255,255,0.5);
   text-transform: uppercase;
@@ -2337,7 +2341,7 @@ textarea.form-control {
   background: none;
   cursor: pointer;
   color: rgba(255,255,255,0.65);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   font-family: inherit;
   text-align: left;
@@ -2453,7 +2457,7 @@ textarea.form-control {
 }
 
 .sidebar-user-role {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255,255,255,0.6);
 }
 
@@ -2604,7 +2608,7 @@ textarea.form-control {
 
 .stat-card .stat-label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -3084,7 +3088,7 @@ tr:hover td { background: #F8FDF8; }
   position: relative;
   z-index: 1;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
   text-transform: none;
@@ -3146,7 +3150,7 @@ tr:hover td { background: #F8FDF8; }
 
 .report-session-date,
 .report-session-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0.04em;
@@ -3194,7 +3198,7 @@ tr:hover td { background: #F8FDF8; }
   border-radius: 999px;
   background: #fbe6ce;
   color: #9a4a06;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3225,7 +3229,7 @@ tr:hover td { background: #F8FDF8; }
 }
 
 .report-absent-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: #9a6a3a;
   white-space: normal;
 }
@@ -3376,7 +3380,7 @@ tr:hover td { background: #F8FDF8; }
 .exam-q-badge {
   background: #0f2d1a;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 10px;
@@ -3915,7 +3919,7 @@ tr:hover td { background: #F8FDF8; }
 .monitor-log-student {
   font-weight: 500;
   font-size: 12px;
-  color: #94a3b8;
+  color: #5b6573;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3936,7 +3940,7 @@ tr:hover td { background: #F8FDF8; }
   background: rgba(248, 250, 252, 0.96);
   border-bottom: 1px solid rgba(226, 232, 240, 0.95);
   color: #6b7280;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   padding-top: 16px;
@@ -3990,7 +3994,7 @@ tr:hover td { background: #F8FDF8; }
   margin-bottom: 8px;
   font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #5b6573;
   letter-spacing: 0.02em;
 }
 
@@ -4105,9 +4109,9 @@ tr:hover td { background: #F8FDF8; }
 
 .activity-log-timeline-time {
   margin-bottom: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #5b6573;
 }
 
 .activity-log-empty {
@@ -4116,7 +4120,7 @@ tr:hover td { background: #F8FDF8; }
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: #94a3b8;
+  color: #5b6573;
 }
 
 .monitor-export-btn {
@@ -4197,7 +4201,7 @@ tr:hover td { background: #F8FDF8; }
 .log-type {
   display: inline-block;
   font-weight: 800;
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   margin-bottom: 4px;
@@ -4206,13 +4210,13 @@ tr:hover td { background: #F8FDF8; }
 .log-detail {
   color: #374151;
   margin-bottom: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
 .log-time {
-  color: #9ca3af;
-  font-size: 10.5px;
+  color: #5b6573;
+  font-size: 12px;
 }
 
 .live-dot {
@@ -4353,14 +4357,14 @@ tr:hover td { background: #F8FDF8; }
 
 .prof-review-label {
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .prof-review-status {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -4380,7 +4384,7 @@ tr:hover td { background: #F8FDF8; }
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -4691,7 +4695,7 @@ tr:hover td { background: #F8FDF8; }
   gap: 10px;
   text-align: center;
   color: #6b7280;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -4726,7 +4730,7 @@ tr:hover td { background: #F8FDF8; }
 
 .sa-school-system-card .sa-logo-status {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 12px;
   margin-bottom: 12px;
 }
 
@@ -4734,7 +4738,7 @@ tr:hover td { background: #F8FDF8; }
   content: '\2713';
   width: 18px;
   height: 18px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .sa-school-system-card .sa-logo-preview {
@@ -4769,7 +4773,7 @@ tr:hover td { background: #F8FDF8; }
 }
 
 .sa-school-system-card .sa-logo-upload-sub {
-  font-size: 10px;
+  font-size: 12px;
   margin-bottom: 14px;
 }
 
@@ -5009,7 +5013,7 @@ body.exam-page {
   font-weight: 600;
   background: #f3f4f6;
   padding: 4px 12px;
-  border-radius: 99px;
+  border-radius: 999px;
   border: 1px solid #e5e7eb;
 }
 .exam-answered-chip {
@@ -5018,7 +5022,7 @@ body.exam-page {
   color: #0f2d1a;
   background: #e6ede8;
   padding: 4px 12px;
-  border-radius: 99px;
+  border-radius: 999px;
   border: 1px solid rgba(15,45,26,0.18);
 }
 
@@ -5274,14 +5278,14 @@ body.exam-page {
 .score-released-bar-wrap {
   height: 8px;
   background: #e5e7eb;
-  border-radius: 99px;
+  border-radius: 999px;
   overflow: hidden;
   margin-bottom: 16px;
 }
 .score-released-bar-fill {
   height: 100%;
   background: #0f2d1a;
-  border-radius: 99px;
+  border-radius: 999px;
   transition: width 0.6s ease;
 }
 
@@ -5500,7 +5504,7 @@ body.exam-page {
 .review-score-chip-label {
   margin-top: 5px;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -5577,7 +5581,7 @@ body.exam-page {
   background: #edf8ee;
   border: 1px solid #d8ecd9;
   color: #2a7a41;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -5744,14 +5748,14 @@ body.exam-page {
 }
 .review-matching-correct {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: #1f7a3f;
   line-height: 1.35;
   word-break: break-word;
 }
 .review-matching-note {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: #6b7688;
   line-height: 1.35;
 }
@@ -5884,7 +5888,7 @@ body.exam-page {
 .review-score-released .review-score-chip-label {
   margin: 0;
   color: #a9bbb4;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -5920,7 +5924,7 @@ body.exam-page {
   margin-top: 4px;
   text-align: left;
   color: #b9c9c2;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -6071,7 +6075,7 @@ body.exam-page {
   border-radius: 4px;
   color: #a7e8c1 !important;
   background: #123a2a !important;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.04em;
 }
 .review-question-image,
@@ -6298,7 +6302,7 @@ body.exam-page {
 }
 
 .exam-subject {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255,255,255,0.65);
   font-weight: 500;
   letter-spacing: 0.3px;
@@ -6418,7 +6422,7 @@ body.exam-page {
   transition: background 0.15s ease;
 }
 .exam-zoom-btn:hover { background: #f3f4f6; }
-.exam-zoom-btn:first-child { border-right: 1px solid #e5e7eb; font-size: 11px; }
+.exam-zoom-btn:first-child { border-right: 1px solid #e5e7eb; font-size: 12px; }
 [data-theme="dark"] .exam-zoom-control { border-color: var(--border); }
 [data-theme="dark"] .exam-zoom-btn { background: var(--surface); color: var(--text); }
 [data-theme="dark"] .exam-zoom-btn:first-child { border-right-color: var(--border); }
@@ -6473,7 +6477,7 @@ body.exam-page {
 .progress-bar-wrap {
   height: 6px;
   background: rgba(0,0,0,0.06);
-  border-radius: 99px;
+  border-radius: 999px;
   margin-bottom: 22px;
   overflow: hidden;
 }
@@ -6481,7 +6485,7 @@ body.exam-page {
 .progress-bar-fill {
   height: 100%;
   background: #0f2d1a;
-  border-radius: 99px;
+  border-radius: 999px;
   transition: width 0.4s ease;
 }
 
@@ -6603,22 +6607,22 @@ body.exam-page {
 
 .question-points {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #6b7280;
   background: #f0f2f5;
   padding: 3px 9px;
-  border-radius: 99px;
+  border-radius: 999px;
   white-space: nowrap;
   letter-spacing: 0.3px;
 }
 
 .question-type-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: #9ca3af;
+  color: #5b6573;
   padding: 8px 22px 10px;
 }
 
@@ -7173,7 +7177,7 @@ body.exam-page {
   .course-banner-inner { padding: 22px 20px; }
   .course-banner-title { font-size: 24px; max-width: calc(100% - 80px); }
   .course-banner-stats { gap: 16px; flex-wrap: wrap; }
-  .course-banner-unenroll-btn { top: 12px; right: 12px; padding: 5px 10px; font-size: 11px; }
+  .course-banner-unenroll-btn { top: 12px; right: 12px; padding: 5px 10px; font-size: 12px; }
   .course-tabs-bar { overflow-x: auto; }
   .question-header { flex-wrap: wrap; }
   .question-points { margin-left: 48px; }
@@ -7268,7 +7272,7 @@ body.exam-page {
   .table-wrapper td::before {
     content: attr(data-label);
     font-weight: 700;
-    font-size: 11px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
     color: var(--text-muted);
@@ -7280,7 +7284,7 @@ body.exam-page {
 
   /* Keep actions centered */
   .table-wrapper td .table-actions { justify-content: center; }
-  .table-wrapper td .btn-action { font-size: 11px; }
+  .table-wrapper td .btn-action { font-size: 12px; }
 
   #report-card table {
     min-width: 0;
@@ -7373,7 +7377,7 @@ body.exam-page {
 
   /* Action buttons in tables — stack nicely */
   .table-actions { flex-wrap: wrap; justify-content: center; gap: 4px; }
-  .btn-action { font-size: 11px; padding: 4px 8px; }
+  .btn-action { font-size: 12px; padding: 4px 8px; }
 
   /* AI generator options grid */
   .ai-options-grid { grid-template-columns: 1fr !important; }
@@ -7440,7 +7444,7 @@ body.exam-page {
   display: flex;
   width: 20px; height: 20px;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .portal-sidebar.collapsed .portal-nav-item:hover::after {
   content: attr(data-label);
@@ -7495,7 +7499,7 @@ body.exam-page {
   letter-spacing: -0.2px;
 }
 .portal-logo-subtext {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255,255,255,0.7);
   white-space: nowrap;
 }
@@ -7507,7 +7511,7 @@ body.exam-page {
 .portal-nav-divider { height: 1px; background: rgba(255,255,255,0.12); margin: 8px 0; }
 
 .portal-nav-section-label {
-  font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.5);
+  font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.5);
   text-transform: uppercase; letter-spacing: 1.2px;
   padding: 16px 8px 4px;
   white-space: nowrap;
@@ -7563,7 +7567,7 @@ body.exam-page {
   border-radius: 0 24px 24px 0;
   margin-right: 10px;
   margin-bottom: 1px;
-  color: rgba(255,255,255,0.85); font-size: 13.5px; font-weight: 500;
+  color: rgba(255,255,255,0.85); font-size: 14px; font-weight: 500;
   letter-spacing: 0.01em;
   transition: background 0.18s ease, color 0.18s ease;
 }
@@ -7578,7 +7582,7 @@ body.exam-page {
 .portal-subject-chip {
   width: 20px; height: 20px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 11px; color: #fff; flex-shrink: 0;
+  font-weight: 800; font-size: 12px; color: #fff; flex-shrink: 0;
 }
 
 .portal-subject-label {
@@ -7615,7 +7619,7 @@ body.exam-page {
 .portal-footer-info { overflow: hidden; transition: opacity 0.2s; }
 .portal-sidebar.collapsed .portal-footer-info { opacity: 0; pointer-events: none; }
 .portal-footer-name { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.portal-footer-id   { font-size: 11px; color: rgba(255,255,255,0.58); white-space: nowrap; }
+.portal-footer-id   { font-size: 12px; color: rgba(255,255,255,0.58); white-space: nowrap; }
 
 /* ── Main ─────────────────────────────────────────────── */
 .portal-main {
@@ -7651,7 +7655,7 @@ body.exam-page {
   background: none;
   cursor: pointer;
   color: rgba(255,255,255,0.65);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   font-family: inherit;
   text-align: left;
@@ -7690,11 +7694,11 @@ body.exam-page {
 /* ── Greeting ─────────────────────────────────────────── */
 .dash-greeting { margin-bottom: 18px; }
 .dash-greeting-text { font-size: 22px; font-weight: 800; color: #111827; margin-bottom: 2px; }
-.dash-greeting-sub  { font-size: 13px; color: #9ca3af; }
+.dash-greeting-sub  { font-size: 13px; color: #5b6573; }
 
 /* ── Section label ────────────────────────────────────── */
 .dash-section-label {
-  font-size: 11px; font-weight: 700; color: #9ca3af;
+  font-size: 12px; font-weight: 700; color: #5b6573;
   text-transform: uppercase; letter-spacing: 1px;
   margin-bottom: 10px; padding-left: 2px;
 }
@@ -7719,7 +7723,7 @@ body.exam-page {
   border-top: 3px solid var(--primary);
 }
 .dash-quick-card-title {
-  font-size: 11px; font-weight: 700; color: #6b7280;
+  font-size: 12px; font-weight: 700; color: #6b7280;
   text-transform: uppercase; letter-spacing: 0.8px;
   margin-bottom: 10px;
   display: flex; align-items: center; gap: 6px;
@@ -7742,7 +7746,7 @@ body.exam-page {
   display: inline-flex; align-items: center; gap: 5px;
   background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22);
   border-radius: 20px; padding: 3px 10px;
-  font-size: 10px; font-weight: 800; color: #fff; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 12px; font-weight: 800; color: #fff; letter-spacing: 1px; text-transform: uppercase;
   margin-bottom: 8px;
 }
 .dash-active-live-dot {
@@ -7752,7 +7756,7 @@ body.exam-page {
 .dash-active-exam-title { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 10px; }
 .dash-active-exam-meta  {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
-  font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,0.55);
+  font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.55);
 }
 .dash-meta-item { white-space: nowrap; }
 .dash-meta-divider { width: 1px; height: 11px; background: rgba(255,255,255,0.18); flex-shrink: 0; }
@@ -7847,7 +7851,7 @@ body.exam-page {
 }
 .dash-subject-name { font-size: 14px; font-weight: 700; color: #111827; }
 .dash-subject-code {
-  display: inline-block; font-size: 10px; font-weight: 700; font-family: monospace;
+  display: inline-block; font-size: 12px; font-weight: 700; font-family: monospace;
   color: #0f2d1a; background: rgba(15,45,26,0.08); border: 1px solid rgba(15,45,26,0.14);
   border-radius: 4px; padding: 1px 6px; margin-top: 3px;
 }
@@ -7861,7 +7865,7 @@ body.exam-page {
 .dash-exam-row:hover { background: #fafbfc; }
 .dash-exam-title { font-size: 13px; font-weight: 600; color: #1f2937; flex: 1; min-width: 0; }
 .dash-exam-meta  {
-  font-size: 11px; color: #9ca3af; margin-top: 2px;
+  font-size: 12px; color: #5b6573; margin-top: 2px;
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .dash-exam-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
@@ -7875,7 +7879,7 @@ body.exam-page {
   background: rgba(34, 197, 94, 0.14);
   border: 1px solid rgba(34, 197, 94, 0.25);
   color: #4ade80;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
 }
@@ -7890,7 +7894,7 @@ body.exam-page {
 }
 
 .dash-no-exams {
-  padding: 16px 18px; font-size: 13px; color: #9ca3af;
+  padding: 16px 18px; font-size: 13px; color: #5b6573;
   display: flex; align-items: center; gap: 8px; font-style: italic;
 }
 
@@ -7900,9 +7904,9 @@ body.exam-page {
   background: #fff; border-radius: 14px; margin-bottom: 14px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.07);
 }
-.dash-empty-icon  { font-size: 42px; margin-bottom: 12px; color: #9ca3af; }
+.dash-empty-icon  { font-size: 42px; margin-bottom: 12px; color: #5b6573; }
 .dash-empty-title { font-size: 16px; font-weight: 700; color: #374151; margin-bottom: 5px; }
-.dash-empty-sub   { font-size: 13px; color: #9ca3af; }
+.dash-empty-sub   { font-size: 13px; color: #5b6573; }
 
 /* ── Question builder redesign ───────────────────────── */
 .btn-qtype {
@@ -7997,7 +8001,7 @@ body.exam-page {
   background: rgba(255,255,255,0.16);
   border: 1px solid rgba(255,255,255,0.22);
   color: rgba(255,255,255,0.95);
-  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
   padding: 3px 12px; border-radius: 20px; margin-bottom: 18px;
   font-family: 'Plus Jakarta Sans', monospace;
   text-transform: uppercase;
@@ -8013,7 +8017,7 @@ body.exam-page {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 .course-stat-label {
-  font-size: 11px; color: rgba(255,255,255,0.65); margin-top: 2px;
+  font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px;
   font-weight: 500; letter-spacing: 0.3px;
 }
 
@@ -8027,7 +8031,7 @@ body.exam-page {
 }
 .course-tab-btn {
   padding: 11px 22px; border: none; background: none; cursor: pointer;
-  font-size: 14px; font-weight: 600; color: #9ca3af;
+  font-size: 14px; font-weight: 600; color: #5b6573;
   border-bottom: 2.5px solid transparent; margin-bottom: -1.5px;
   border-radius: 6px 6px 0 0;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
@@ -8056,7 +8060,7 @@ body.exam-page {
   margin-bottom: 10px;
 }
 .course-group-label-text {
-  font-size: 11px; font-weight: 700; color: #9ca3af;
+  font-size: 12px; font-weight: 700; color: #5b6573;
   text-transform: uppercase; letter-spacing: 1px;
 }
 .course-group-label-line {
@@ -8126,7 +8130,7 @@ body.exam-page {
   border-radius: 999px;
   background: #eef8ef;
   color: #78a66d;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 1.1px;
   text-transform: uppercase;
@@ -8160,7 +8164,7 @@ body.exam-page {
   color: #5f6f86;
   padding: 6px 12px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
   border: 1px solid #dfe6f0;
@@ -8236,7 +8240,7 @@ body.exam-page {
   background: rgba(148, 163, 184, 0.28);
 }
 .course-exam-result-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: #8a98ad;
@@ -8269,7 +8273,7 @@ body.exam-page {
   color: #1f2937;
 }
 .course-score-percent {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #334155;
 }
@@ -8288,7 +8292,7 @@ body.exam-page {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
   border: 1px solid transparent;
@@ -8418,9 +8422,9 @@ body.exam-page {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 .people-name { font-size: 13px; font-weight: 700; color: #111827; }
-.people-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.people-meta { font-size: 12px; color: #5b6573; margin-top: 2px; }
 .people-you-badge {
-  font-size: 9px; background: #e6ede8; color: #0f2d1a;
+  font-size: 12px; background: #e6ede8; color: #0f2d1a;
   padding: 1px 7px; border-radius: 10px; font-weight: 700;
   vertical-align: middle; margin-left: 6px; letter-spacing: 0.3px;
 }
@@ -8442,7 +8446,7 @@ body.exam-page {
 .topbar-breadcrumb { display: flex; align-items: center; gap: 6px; }
 .topbar-breadcrumb-link {
   background: none; border: none; cursor: pointer;
-  font-size: 14px; color: #9ca3af; padding: 0;
+  font-size: 14px; color: #5b6573; padding: 0;
   font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600;
   transition: color 0.15s;
 }
@@ -8460,7 +8464,7 @@ body.exam-page {
 }
 .settings-field       { margin-bottom: 14px; }
 .settings-field-label {
-  font-size: 11px; font-weight: 700; color: #9ca3af;
+  font-size: 12px; font-weight: 700; color: #5b6573;
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
 }
 .settings-field-readonly {
@@ -8474,7 +8478,7 @@ body.exam-page {
   text-transform: uppercase;
 }
 .settings-readonly-badge {
-  font-size: 10px; background: #f3f4f6; color: #6b7280;
+  font-size: 12px; background: #f3f4f6; color: #6b7280;
   padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap;
 }
 .settings-actions {
@@ -8524,7 +8528,7 @@ body.exam-page {
    ============================================================ */
 .analytics-section { margin-top: 24px; }
 .analytics-section-heading {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -8658,7 +8662,7 @@ body.exam-page {
 [data-theme="dark"] .analytics-card.ac-dark-amber { border-top: 1px solid var(--border) !important; }
 
 .ac-dark-label {
-  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  font-size: 12px; font-weight: 700; letter-spacing: 1.2px;
   color: rgba(255,255,255,0.35); text-transform: uppercase;
   margin-bottom: 8px;
 }
@@ -8671,7 +8675,7 @@ body.exam-page {
 }
 .ac-trend-badge {
   display: inline-flex; align-items: center; gap: 3px;
-  font-size: 11px; font-weight: 700; padding: 3px 9px;
+  font-size: 12px; font-weight: 700; padding: 3px 9px;
   border-radius: 20px; margin-bottom: 8px; width: fit-content;
 }
 .ac-trend-up   { background: rgba(74,222,128,0.15); color: #4ade80; }
@@ -8687,18 +8691,18 @@ body.exam-page {
 .risk-item-dark {
   display: flex; align-items: center; gap: 9px;
   padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .risk-item-dark:last-child { border-bottom: none; }
 .risk-avatar-dark {
   width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800;
+  font-size: 12px; font-weight: 800;
 }
 .risk-name-dark { flex: 1; color: rgba(255,255,255,0.85); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.risk-score-dark { font-size: 11px; color: rgba(255,255,255,0.35); flex-shrink: 0; }
+.risk-score-dark { font-size: 12px; color: rgba(255,255,255,0.35); flex-shrink: 0; }
 .risk-badge-dark {
-  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  font-size: 12px; font-weight: 700; padding: 2px 8px;
   border-radius: 20px; flex-shrink: 0; white-space: nowrap;
 }
 .risk-badge-dark.risk-badge-high { background: rgba(248,113,113,0.18); color: #f87171; }
@@ -8715,7 +8719,7 @@ body.exam-page {
   transition: box-shadow 0.2s;
 }
 .dist-dot-label {
-  font-size: 7.5px; color: rgba(255,255,255,0.3);
+  font-size: 12px; color: rgba(255,255,255,0.3);
   text-align: center; white-space: nowrap; margin-top: 4px;
 }
 
@@ -8724,7 +8728,7 @@ body.exam-page {
 .forecast-row-dark {
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .forecast-row-dark:last-child { border-bottom: none; }
 .frd-label { color: rgba(255,255,255,0.45); }
@@ -8734,20 +8738,20 @@ body.exam-page {
 
 /* Keep old classes for compat */
 .analytics-card { border-radius: 14px; }
-.analytics-card-title { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+.analytics-card-title { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
 .analytics-card-value { font-size: 30px; font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 2px; }
 .analytics-card-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 14px; }
 .ac-header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .ac-icon-wrap { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .ac-title-group { flex: 1; min-width: 0; }
-.ac-label { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.8px; }
+.ac-label { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.8px; }
 .ac-big-value { font-size: 28px; font-weight: 800; color: #fff; line-height: 1.1; }
-.ac-sub { font-size: 11.5px; color: rgba(255,255,255,0.4); margin-bottom: 12px; }
+.ac-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 12px; }
 .trend-chip {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 20px;
@@ -8765,18 +8769,18 @@ body.exam-page {
 .risk-item {
   display: flex; align-items: center;
   padding: 7px 0; border-bottom: 1px solid #f3f4f6;
-  gap: 8px; font-size: 12.5px;
+  gap: 8px; font-size: 13px;
 }
 .risk-item:last-child { border-bottom: none; }
 .risk-avatar {
   width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: #fff;
+  font-size: 12px; font-weight: 800; color: #fff;
 }
 .risk-item-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1f2937; }
-.risk-score { font-size: 11px; font-weight: 700; color: #9ca3af; flex-shrink: 0; }
+.risk-score { font-size: 12px; font-weight: 700; color: #5b6573; flex-shrink: 0; }
 .risk-badge {
-  font-size: 10px; font-weight: 700;
+  font-size: 12px; font-weight: 700;
   padding: 2px 8px; border-radius: 20px;
   white-space: nowrap; flex-shrink: 0;
 }
@@ -8797,14 +8801,14 @@ body.exam-page {
   width: 100%; border-radius: 4px 4px 0 0; min-height: 4px;
   transition: opacity 0.2s;
 }
-.dist-label { font-size: 8.5px; color: #9ca3af; text-align: center; line-height: 1; white-space: nowrap; }
-.dist-count { font-size: 10px; font-weight: 800; color: #374151; min-height: 14px; }
+.dist-label { font-size: 12px; color: #5b6573; text-align: center; line-height: 1; white-space: nowrap; }
+.dist-count { font-size: 12px; font-weight: 800; color: #374151; min-height: 14px; }
 
 /* forecast table */
 .forecast-rows { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
 .forecast-row {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: 12.5px;
+  padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px;
 }
 .forecast-row:last-child { border-bottom: none; }
 .forecast-row-label { color: var(--text-muted); }
@@ -8973,7 +8977,7 @@ body.exam-page {
   border-radius: 6px;
   background: rgba(17, 24, 39, 0.82);
   color: #e5e7eb;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.2;
   text-align: right;
@@ -9077,7 +9081,7 @@ body.exam-page {
   transform: scale(1.08);
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
-.cam-no-snap { font-size: 11px; color: var(--text-muted); }
+.cam-no-snap { font-size: 12px; color: var(--text-muted); }
 
 /* ============================================================
    ESSAY QUESTION
@@ -9106,7 +9110,7 @@ body.exam-page {
   display: flex;
   justify-content: space-between;
   margin-top: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .essay-hint { font-style: italic; }
@@ -9126,7 +9130,7 @@ body.exam-page {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 20px;
@@ -9164,7 +9168,7 @@ body.exam-page {
   background: #f3f4f6;
   color: #374151;
   border: 1px solid #d1d5db;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 6px;
@@ -9184,7 +9188,7 @@ body.exam-page {
   border-radius: 20px;
   padding: 4px 10px;
   font-family: monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--primary);
   cursor: pointer;
@@ -9296,7 +9300,7 @@ body.exam-page {
 .nav-badge {
   background: #dc2626;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 10px;
@@ -9312,7 +9316,7 @@ body.exam-page {
   gap: 4px;
   background: #dbeafe;
   color: #1e40af;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 20px;
@@ -9360,7 +9364,7 @@ input[type="password"]::-ms-clear {
 }
 
 .nav-section-label {
-  font-size: 10px !important;
+  font-size: 12px !important;
   letter-spacing: 1.2px !important;
 }
 
@@ -9479,7 +9483,7 @@ input[type="password"]::-ms-clear {
   background: color-mix(in srgb, var(--surface) 88%, #dcfce7 12%);
   color: #166534;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0.09em;
@@ -9524,7 +9528,7 @@ input[type="password"]::-ms-clear {
 }
 .monitor-exam-timer > svg { width: 20px; height: 20px; flex-shrink: 0; filter: drop-shadow(0 0 5px rgba(74, 222, 128, 0.22)); }
 .monitor-exam-timer-copy { display: flex; flex-direction: column; gap: 1px; }
-.monitor-exam-timer-copy > span { color: #64748b; font-size: 8px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.75px; white-space: nowrap; }
+.monitor-exam-timer-copy > span { color: #64748b; font-size: 12px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.75px; white-space: nowrap; }
 .monitor-exam-timer-copy > strong { color: #163020; font-size: 20px; line-height: 1.05; letter-spacing: 0.6px; font-variant-numeric: tabular-nums; }
 .monitor-exam-timer.is-urgent { color: #dc2626; border-color: rgba(220, 38, 38, 0.34); background: linear-gradient(145deg, #fff, #fff7f7); box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 5px 14px rgba(127, 29, 29, 0.07); }
 .monitor-exam-timer.is-urgent > svg { filter: drop-shadow(0 0 5px rgba(248, 113, 113, 0.22)); }
@@ -9620,8 +9624,8 @@ input[type="password"]::-ms-clear {
   font-size: 13px;
 }
 .monitor-student-meta {
-  font-size: 11px;
-  color: #9ca3af;
+  font-size: 12px;
+  color: #5b6573;
 }
 [data-theme="dark"] .monitor-session-row.monitor-session-row-alert td {
   background: rgba(248, 113, 113, 0.08) !important;
@@ -9681,7 +9685,7 @@ input[type="password"]::-ms-clear {
 }
 .msc-body { min-width: 0; }
 .msc-value { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; }
-.msc-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+.msc-label { font-size: 12px; font-weight: 700; color: #5b6573; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
 
 /* Better student row in monitoring */
 .monitor-student-row {
@@ -9762,10 +9766,10 @@ input[type="password"]::-ms-clear {
   min-width: 100px; max-width: 140px; margin: 0 auto;
 }
 .monitor-progress-bar {
-  width: 100%; height: 5px; background: #f3f4f6; border-radius: 99px; overflow: hidden; margin-bottom: 4px;
+  width: 100%; height: 5px; background: #f3f4f6; border-radius: 999px; overflow: hidden; margin-bottom: 4px;
 }
-.monitor-progress-fill { height: 100%; border-radius: 99px; background: #0f2d1a; }
-.monitor-progress-label { font-size: 10px; color: #9ca3af; font-weight: 600; text-align: center; }
+.monitor-progress-fill { height: 100%; border-radius: 999px; background: #0f2d1a; }
+.monitor-progress-label { font-size: 12px; color: #5b6573; font-weight: 600; text-align: center; }
 
 /* Activity log event type colors */
 .log-type.no_person      { color: #dc2626; }
@@ -9828,7 +9832,7 @@ input[type="password"]::-ms-clear {
 [data-theme="dark"] .behavior-summary-count { color: var(--text) !important; }
 
 .behavior-summary-label {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
   font-weight: 700;
   color: #6b7280;
@@ -9838,12 +9842,12 @@ input[type="password"]::-ms-clear {
 [data-theme="dark"] .behavior-summary-label { color: var(--text-muted) !important; }
 
 /* Progress bar */
-.monitor-progress-bar { height: 6px; background: #f0f0f0; border-radius: 99px; overflow: hidden; margin-bottom: 4px; }
-.monitor-progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #166534, #22c55e); transition: width 0.4s ease; }
+.monitor-progress-bar { height: 6px; background: #f0f0f0; border-radius: 999px; overflow: hidden; margin-bottom: 4px; }
+.monitor-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #166534, #22c55e); transition: width 0.4s ease; }
 
 /* ── Section headers ───────────────────────────────────── */
 .section-title { display: none !important; } /* already shown in topbar */
-.section-subtitle { font-size: 13px !important; color: #9ca3af !important; font-weight: 500 !important; }
+.section-subtitle { font-size: 13px !important; color: #5b6573 !important; font-weight: 500 !important; }
 
 #courses-department-title {
   font-size: 30px !important;
@@ -9872,17 +9876,17 @@ input[type="password"]::-ms-clear {
 /* ── Tables ────────────────────────────────────────────── */
 th {
   background: #f9fafb !important;
-  font-size: 10.5px !important;
+  font-size: 12px !important;
   letter-spacing: 0.8px !important;
   color: #6b7280 !important;
   padding: 11px 16px !important;
 }
-td { font-size: 13.5px !important; }
+td { font-size: 14px !important; }
 tr:hover td { background: #fafbfc !important; }
 
 /* ── Badges ────────────────────────────────────────────── */
 .badge {
-  font-size: 10.5px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
   padding: 3px 10px !important;
   border-radius: 20px !important;
@@ -9940,7 +9944,7 @@ tr:hover td { background: #fafbfc !important; }
 .question-block-title { font-size: 12px !important; letter-spacing: 0.5px; }
 
 /* ── Code tags ───────────────────────────────────────────── */
-.code-tag { border-radius: 6px !important; font-size: 11.5px !important; }
+.code-tag { border-radius: 6px !important; font-size: 12px !important; }
 
 /* ── Section entrance ────────────────────────────────────── */
 .admin-section:not(.hidden) {
@@ -10019,7 +10023,7 @@ tr:hover td { background: #fafbfc !important; }
   user-select: none; pointer-events: none;
 }
 .course-card-code-label {
-  font-size: 10px; font-weight: 800;
+  font-size: 12px; font-weight: 800;
   color: rgba(255,255,255,0.7);
   letter-spacing: 2px; text-transform: uppercase;
   margin-bottom: 3px; position: relative; z-index: 1;
@@ -10033,7 +10037,7 @@ tr:hover td { background: #fafbfc !important; }
   text-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 .course-card-desc {
-  font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,0.78);
+  font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.78);
   line-height: 1.3; overflow: hidden; margin-top: 4px;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   white-space: normal; position: relative; z-index: 1;
@@ -10056,7 +10060,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .course-meta-pill {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
   white-space: nowrap;
 }
 .course-meta-pill.year { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
@@ -10084,7 +10088,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .course-stat-cell:last-child { border-right: none; }
 .course-stat-num { font-size: 20px; font-weight: 800; color: #111827; line-height: 1; }
-.course-stat-lab { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
+.course-stat-lab { font-size: 12px; color: #5b6573; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
 
 /* Enroll row */
 .course-card-enroll {
@@ -10096,7 +10100,7 @@ tr:hover td { background: #fafbfc !important; }
   display: flex; align-items: center; gap: 14px;
   min-width: 0;
 }
-.course-enroll-label { font-weight: 600; color: #9ca3af; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.course-enroll-label { font-weight: 600; color: #5b6573; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 .course-enroll-divider {
   width: 1px; height: 32px; background: #e5e7eb; flex: 0 0 auto;
 }
@@ -10163,9 +10167,9 @@ tr:hover td { background: #fafbfc !important; }
   grid-column: 1 / -1;
   text-align: center;
   padding: 60px 24px;
-  color: #9ca3af;
+  color: #5b6573;
 }
-.course-empty-icon { font-size: 48px; margin-bottom: 14px; color: #9ca3af; }
+.course-empty-icon { font-size: 48px; margin-bottom: 14px; color: #5b6573; }
 .course-empty-title { font-size: 16px; font-weight: 700; color: #374151; margin-bottom: 6px; }
 .course-empty-sub { font-size: 13px; }
 
@@ -10185,7 +10189,7 @@ tr:hover td { background: #fafbfc !important; }
   /* Login */
   .login-card { padding: 20px 14px; }
   .login-logo h1 { font-size: 15px; }
-  .tab-btn { padding: 8px 8px; font-size: 11px; }
+  .tab-btn { padding: 8px 8px; font-size: 12px; }
 
   /* Section header button */
   .section-header .btn { width: 100%; justify-content: center; }
@@ -10978,23 +10982,23 @@ tr:hover td { background: #fafbfc !important; }
   width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
   background: linear-gradient(135deg,#1a4d2a,#2f7a45);
   color: #fff !important; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
+  font-size: 12px; font-weight: 700;
 }
-.exam-paper-sub { font-size: 12.5px; color: #6b7280 !important; margin-bottom: 24px; text-align: center; }
+.exam-paper-sub { font-size: 13px; color: #6b7280 !important; margin-bottom: 24px; text-align: center; }
 .exam-paper-hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0 26px; }
 .exam-paper-q { margin-bottom: 22px; }
 .exam-paper-q-row { display: flex; gap: 8px; font-size: 14px; font-weight: 700; color: #111827 !important; }
 .exam-paper-q-num { flex-shrink: 0; }
-.exam-paper-q-pts { font-weight: 500; color: #9ca3af !important; font-size: 12px; margin-left: 6px; }
+.exam-paper-q-pts { font-weight: 500; color: #5b6573 !important; font-size: 12px; margin-left: 6px; }
 .exam-paper-q-img { display: block; max-width: 100%; max-height: 220px; margin: 10px 0 4px 24px; border-radius: 6px; }
 .exam-paper-opts { list-style: none; margin: 10px 0 0 24px; padding: 0; }
-.exam-paper-opts li { font-size: 13.5px; color: #374151 !important; margin-bottom: 6px; }
+.exam-paper-opts li { font-size: 14px; color: #374151 !important; margin-bottom: 6px; }
 .exam-paper-opt-letter { font-weight: 700; margin-right: 6px; }
 .exam-paper-opt-empty { color: #b91c1c !important; font-style: italic; }
-.exam-paper-answer-line { margin: 12px 0 0 24px; font-size: 13.5px; color: #374151 !important; border-bottom: 1px solid #9ca3af; width: 320px; padding-bottom: 4px; }
+.exam-paper-answer-line { margin: 12px 0 0 24px; font-size: 14px; color: #374151 !important; border-bottom: 1px solid #9ca3af; width: 320px; padding-bottom: 4px; }
 .exam-paper-instructions { margin: 8px 0 0 24px; font-size: 12px; font-style: italic; color: #6b7280 !important; }
 .exam-paper-match-cols { display: flex; gap: 32px; margin: 10px 0 0 24px; }
-.exam-paper-match-col { font-size: 13.5px; color: #374151 !important; }
+.exam-paper-match-col { font-size: 14px; color: #374151 !important; }
 .exam-paper-match-col div { margin-bottom: 6px; }
 @media print {
   .exam-editor-topbar, .exam-editor-subtabs, .exam-paper-toolbar, .exam-editor-scroll-fab, .exam-outline-nav { display: none !important; }
@@ -11129,7 +11133,7 @@ tr:hover td { background: #fafbfc !important; }
 .floating-exam-timer-grip span { width: 2px; height: 2px; border-radius: 50%; background: currentColor; }
 .floating-exam-timer-icon { width: 20px; height: 20px; flex-shrink: 0; opacity: 0.9; }
 .floating-exam-timer-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; }
-.floating-exam-timer-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; opacity: 0.8; }
+.floating-exam-timer-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; opacity: 0.8; }
 .floating-exam-timer-copy > strong { font-size: 19px; line-height: 1.05; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
 .floating-exam-timer-close {
   display: inline-flex;
@@ -11189,7 +11193,7 @@ tr:hover td { background: #fafbfc !important; }
   border-radius: 6px;
   border: none;
   background: transparent;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #374151;
   cursor: pointer;
@@ -11212,7 +11216,7 @@ tr:hover td { background: #fafbfc !important; }
   background: #166534;
   color: #fff;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
@@ -11252,7 +11256,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-editor-section-label {
   display: flex; align-items: center; gap: 7px;
-  font-size: 11px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; color: #fff;
   text-transform: uppercase; letter-spacing: 0.9px;
   padding: 10px 24px;
   background: linear-gradient(90deg, #163820 0%, #1f5230 100%);
@@ -11389,7 +11393,7 @@ tr:hover td { background: #fafbfc !important; }
   justify-content: center;
   background: #e8f5ec;
   color: #1a6b35;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   flex: 0 0 auto;
 }
@@ -11567,7 +11571,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-add-q-bar::before {
   content: '+ ADD QUESTION:';
-  font-size: 10px; font-weight: 800; color: #166534;
+  font-size: 12px; font-weight: 800; color: #166534;
   letter-spacing: 0.8px;
   margin-right: 6px; flex-shrink: 0;
 }
@@ -11695,12 +11699,12 @@ tr:hover td { background: #fafbfc !important; }
 
 /* Q# badge & type chip */
 .q-number-badge {
-  font-size: 11px; font-weight: 800; color: #fff;
+  font-size: 12px; font-weight: 800; color: #fff;
   background: var(--q-accent, #9ca3af);
   padding: 3px 10px; border-radius: 20px; letter-spacing: 0.3px;
 }
 .q-type-chip {
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   padding: 3px 10px; border-radius: 20px; white-space: nowrap;
 }
 
@@ -11717,7 +11721,7 @@ tr:hover td { background: #fafbfc !important; }
 
 /* Points */
 .q-points-wrap { display: flex; align-items: center; gap: 5px; }
-.q-points-label { font-size: 11px; color: #9ca3af; font-weight: 600; letter-spacing: 0.3px; }
+.q-points-label { font-size: 12px; color: #5b6573; font-weight: 600; letter-spacing: 0.3px; }
 .q-points-input {
   width: 50px; padding: 4px 6px;
   border: 1.5px solid #d1d5db; border-radius: 7px;
@@ -11786,13 +11790,13 @@ tr:hover td { background: #fafbfc !important; }
 .q-image-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .q-upload-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 600; color: #9ca3af;
+  font-size: 12px; font-weight: 600; color: #5b6573;
   padding: 4px 10px; border-radius: 6px;
   border: 1px dashed #d1d5db; background: none;
   cursor: pointer; transition: all 0.15s; font-family: inherit;
 }
 .q-upload-btn:hover { border-color: #6b7280; color: #374151; background: #f9fafb; }
-.q-remove-img-btn { font-size: 11px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
+.q-remove-img-btn { font-size: 12px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
 [data-theme="dark"] .q-upload-btn {
   color: #9ca3af !important;
   border-color: #374151 !important;
@@ -11849,7 +11853,7 @@ tr:hover td { background: #fafbfc !important; }
 #exam-editor-view .option-correct {
   width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
   border: 1.5px solid #d1d5db; background: #f9fafb;
-  cursor: pointer; color: #9ca3af;
+  cursor: pointer; color: #5b6573;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 700; transition: all 0.15s;
 }
@@ -11992,7 +11996,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-stat-cell:last-child { border-right: none; }
 .exam-stat-num { font-size: 20px; font-weight: 800; color: #111827; line-height: 1; }
-.exam-stat-lab { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
+.exam-stat-lab { font-size: 12px; color: #5b6573; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
 
 .exam-card-body {
   padding: 14px 18px 10px;
@@ -12014,7 +12018,7 @@ tr:hover td { background: #fafbfc !important; }
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   font-family: 'Courier New', monospace;
   color: #374151;
@@ -12031,7 +12035,7 @@ tr:hover td { background: #fafbfc !important; }
   padding: 2px 8px;
   border-radius: 20px;
   letter-spacing: 1px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
@@ -12071,14 +12075,14 @@ tr:hover td { background: #fafbfc !important; }
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: #6b7280;
   font-weight: 500;
 }
-.exam-stat svg { color: #9ca3af; flex-shrink: 0; }
+.exam-stat svg { color: #5b6573; flex-shrink: 0; }
 
 .exam-card-date {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: rgba(255,255,255,0.75);
   white-space: nowrap;
@@ -12146,7 +12150,7 @@ table { border-collapse: separate; border-spacing: 0; }
 th {
   background: #f8faf8 !important;
   color: #6b7280 !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.7px !important;
@@ -12231,7 +12235,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 
 /* Section text */
 .section-text {
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -12625,7 +12629,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 [data-theme="dark"] .checkbox-wrapper-30 .checkbox svg .cb-check {
   stroke-width: 2.75px;
 }
-.qe-badge { font-size: 11px; font-weight: 800; color: #fff; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
+.qe-badge { font-size: 12px; font-weight: 800; color: #fff; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
 /* System-wide custom dropdown */
 .sys-dd {
   position: relative;
@@ -12732,7 +12736,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
   color: var(--text-muted);
@@ -12755,7 +12759,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .exam-dd-meta-sep {
   flex-shrink: 0;
-  color: #cbd5e1;
+  color: #6b7280;
 }
 .exam-dd-status {
   flex-shrink: 0;
@@ -12767,7 +12771,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   background: #eef2f7;
   border: 1px solid #d8e0ea;
   color: #64748b;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -12950,7 +12954,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 
 .qtd-chevron {
-  color: #9ca3af; flex-shrink: 0;
+  color: #5b6573; flex-shrink: 0;
   transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), color 0.18s;
 }
 .qe-type-dd.open .qtd-chevron { transform: rotate(180deg); color: #166534; }
@@ -12985,7 +12989,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qtd-opt:last-child { border-bottom: none; }
 .qtd-opt:hover { background: #f0fdf4; color: #166534; }
 .qtd-active { color: #166534; font-weight: 700; background: #f0fdf4; }
-.qe-pts-label { font-size: 12px; font-weight: 600; color: #9ca3af; }
+.qe-pts-label { font-size: 12px; font-weight: 600; color: #5b6573; }
 .qe-diff-group { display: inline-flex; align-items: center; gap: 6px; }
 .qe-diff-select {
   padding: 5px 7px; border: 1.5px solid #e5e7eb; border-radius: 7px;
@@ -13060,12 +13064,12 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qe-img-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .qe-img-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; font-weight: 600; color: #9ca3af;
+  font-size: 12px; font-weight: 600; color: #5b6573;
   padding: 4px 10px; border-radius: 6px; border: 1px dashed #d1d5db;
   cursor: pointer; font-family: inherit; transition: all 0.15s;
 }
 .qe-img-btn:hover { border-color: #6b7280; color: #374151; background: #f9fafb; }
-.qe-img-remove { font-size: 11px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
+.qe-img-remove { font-size: 12px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
 
 /* MCQ option rows — full width box style */
 .qe-opt-row {
@@ -13101,7 +13105,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qe-opt-input::placeholder { color: #adb5bd; }
 .qe-opt-del {
   width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
-  border: none; background: transparent; color: #9ca3af;
+  border: none; background: transparent; color: #5b6573;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: color 0.15s, background 0.15s;
 }
@@ -13112,13 +13116,13 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   padding: 6px 0; transition: color 0.15s;
 }
 .qe-add-opt:hover { color: #1a6b35; }
-.qe-hint { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #9ca3af; margin-top: 10px; }
+.qe-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5b6573; margin-top: 10px; }
 .qe-cb-icon { flex-shrink: 0; transition: opacity 0.15s; }
 .qe-cb-on { filter: drop-shadow(0 0 4px rgba(26,107,53,0.3)); }
 
 /* True/False animated radio group */
 .tf-group { margin-bottom: 12px; }
-.tf-label { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
+.tf-label { font-size: 12px; font-weight: 700; color: #5b6573; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
 .tf-options { display: flex; gap: 10px; }
 .tf-option {
   display: flex; align-items: center; gap: 10px;
@@ -13162,7 +13166,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .examv2-topbar-left { display: flex; align-items: center; gap: 10px; flex: 1; }
 .examv2-title { font-size: 14px; font-weight: 700; color: #0f2d1a; }
-.examv2-subject { font-size: 11px; color: #6b7280; }
+.examv2-subject { font-size: 12px; color: #6b7280; }
 .examv2-timer {
   display: flex; align-items: center; gap: 6px;
   font-size: 20px; font-weight: 800; color: #1a4d2a;
@@ -13213,10 +13217,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .examv2-stat:first-child { padding-left: 0; }
 .examv2-stat-num { font-size: 18px; font-weight: 800; color: #1a4d2a; }
-.examv2-stat-label { font-size: 11px; color: #6b7280; font-weight: 600; }
+.examv2-stat-label { font-size: 12px; color: #6b7280; font-weight: 600; }
 .examv2-stat.answered .examv2-stat-num { color: #1a4d2a; }
 .examv2-stat.review .examv2-stat-num { color: #f59e0b; }
-.examv2-stat.skipped .examv2-stat-num { color: #9ca3af; }
+.examv2-stat.skipped .examv2-stat-num { color: #5b6573; }
 
 /* Main layout */
 .examv2-layout {
@@ -13232,7 +13236,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   overflow: hidden; padding: 16px 12px 72px 16px;
 }
 .examv2-nav-header {
-  font-size: 12px; font-weight: 800; color: #9ca3af;
+  font-size: 12px; font-weight: 800; color: #5b6573;
   text-transform: uppercase; letter-spacing: 0.08em;
   margin-bottom: 14px;
 }
@@ -13317,7 +13321,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 
 /* ── Coding question (exam v2) ── */
 .coding-expected-wrap { margin-bottom: 16px; }
-.coding-section-label { font-size: 11px; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.coding-section-label { font-size: 12px; font-weight: 800; color: #5b6573; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
 .coding-expected-pre {
   background: #f8fafc;
   color: #0f172a;
@@ -13346,7 +13350,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-bottom: 1px solid #dbe4ee;
 }
 .coding-lang-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   color: #1d4ed8;
   letter-spacing: 0.06em;
@@ -13356,11 +13360,11 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 20px;
   border: 1px solid rgba(37, 99, 235, 0.22);
 }
-.coding-editor-hint { font-size: 11px; color: #64748b; }
+.coding-editor-hint { font-size: 12px; color: #64748b; }
 .coding-cm-wrap .CodeMirror {
   height: 260px;
   font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.6;
   background: #f8fafc;
   color: #111827;
@@ -13376,7 +13380,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   width: 44px;
   padding: 0 8px 0 0;
   text-align: right;
-  color: #94a3b8;
+  color: #5b6573;
 }
 .coding-cm-wrap .CodeMirror-lines {
   padding: 12px 0 12px 8px;
@@ -13500,12 +13504,12 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   font-size: calc(16px * var(--exam-font-scale, 1)); font-weight: 600; color: #111827; line-height: 1.6; flex: 1;
 }
 .examv2-question-wrap .question-points {
-  font-size: 11px; font-weight: 700; color: #1a4d2a;
+  font-size: 12px; font-weight: 700; color: #1a4d2a;
   background: #f0f7f2; border-radius: 20px; padding: 3px 10px;
   white-space: nowrap; flex-shrink: 0;
 }
 .examv2-question-wrap .question-type-label {
-  font-size: 11px; font-weight: 700; color: #9ca3af;
+  font-size: 12px; font-weight: 700; color: #5b6573;
   text-transform: uppercase; letter-spacing: 0.08em;
   margin-bottom: 16px;
 }
@@ -13526,7 +13530,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   width: 28px; height: 28px; border-radius: 50%;
   border: 1.5px solid #d1d5db; background: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: #6b7280;
+  font-size: 12px; font-weight: 800; color: #6b7280;
   flex-shrink: 0; transition: all 0.15s;
 }
 .examv2-question-wrap .mcq-option.selected .mcq-option-letter { background: #1a4d2a; border-color: #1a4d2a; color: #fff; }
@@ -13652,12 +13656,12 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .review-topbar-icon { width: 30px; height: 36px; padding-right: 10px; }
   .review-topbar-icon svg { width: 21px; height: 21px; }
   .review-topbar-title { font-size: 15px; }
-  .review-topbar-meta { max-width: 145px; font-size: 11px; overflow-wrap: anywhere; }
+  .review-topbar-meta { max-width: 145px; font-size: 12px; overflow-wrap: anywhere; }
   .review-score-chip { width: fit-content; min-width: 0; max-width: 145px; padding: 8px 14px; gap: 10px; flex: 0 0 auto; }
   .review-score-status-icon { display: none; }
   .review-score-chip-stats { font-size: 14px; gap: 8px; }
-  .review-score-chip-label { max-width: 125px; font-size: 9px; line-height: 1.35; }
-  .review-score-chip-pending .review-score-chip-label { font-size: 9px; }
+  .review-score-chip-label { max-width: 125px; font-size: 12px; line-height: 1.35; }
+  .review-score-chip-pending .review-score-chip-label { font-size: 12px; }
   .review-body { width: 100%; padding: 28px 14px 82px; }
   .review-content-header { display: block; margin-bottom: 22px; }
   .review-content-heading { margin-bottom: 18px; }
@@ -13671,7 +13675,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .review-question-number.is-unanswered { width: 44px; height: 46px; font-size: 14px; }
   .review-question-main { padding-right: 4px; }
   .review-question-title { font-size: 14px; }
-  .review-question-type { min-width: 40px; min-height: 28px; padding: 0 6px; font-size: 9px; }
+  .review-question-type { min-width: 40px; min-height: 28px; padding: 0 6px; font-size: 12px; }
   .review-matching-item { grid-template-columns: 1fr; }
   .review-matching-arrow { justify-content: flex-start; }
   .review-footer { min-height: 58px; padding: 0 16px; }
@@ -13708,7 +13712,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .exam-chat-fab.bounce .exam-chat-fab-inner { animation: examChatBounce .6s ease; }
 .exam-chat-fab-badge {
   position: absolute; top: -4px; right: -4px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px;
-  border-radius: 10px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 800;
+  border-radius: 10px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800;
   display: flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff);
 }
 @keyframes examChatPanelIn { from { opacity: 0; transform: translate(18px, 10px) scale(.94); } to { opacity: 1; transform: none; } }
@@ -13728,12 +13732,12 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .exam-chat-header-title { display: flex; align-items: center; gap: 10px; }
 .exam-chat-header-dot { width: 9px; height: 9px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.25); flex-shrink: 0; }
 .exam-chat-header-name { font-weight: 800; font-size: 14px; }
-.exam-chat-header-sub { font-size: 11px; opacity: 0.8; }
+.exam-chat-header-sub { font-size: 12px; opacity: 0.8; }
 .exam-chat-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; opacity: 0.85; padding: 4px; line-height: 1; }
 .exam-chat-close:hover { opacity: 1; }
 .exam-chat-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--bg, #f5f6f5); }
 .exam-chat-empty { margin: auto; text-align: center; color: var(--text-muted, #6b7280); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px; }
-.exam-chat-empty p { font-size: 12.5px; line-height: 1.55; margin: 0; }
+.exam-chat-empty p { font-size: 13px; line-height: 1.55; margin: 0; }
 .exam-chat-msg { display: flex; flex-direction: column; max-width: 82%; }
 .exam-chat-msg.mine { align-self: flex-end; align-items: flex-end; }
 .exam-chat-msg.theirs { align-self: flex-start; align-items: flex-start; }
@@ -13741,18 +13745,18 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .exam-chat-bubble { padding: 8px 12px; border-radius: 14px; font-size: 13px; line-height: 1.45; word-break: break-word; white-space: pre-wrap; }
 .exam-chat-msg.mine .exam-chat-bubble { background: var(--primary, #0f2d1a); color: #fff; border-bottom-right-radius: 4px; }
 .exam-chat-msg.theirs .exam-chat-bubble { background: var(--surface, #fff); color: var(--text, #1a1a1a); border: 1px solid var(--border, #d1d5db); border-bottom-left-radius: 4px; }
-.exam-chat-report-bubble { display: flex; flex-direction: column; gap: 6px; padding: 10px 13px; border-radius: 16px; font-size: 12.5px; line-height: 1.5; background: color-mix(in srgb, var(--surface, #fff) 72%, var(--chip-warn-bg) 28%); border: 1px solid color-mix(in srgb, var(--chip-warn-border) 58%, var(--border, #d1d5db)); color: var(--text, #1a1a1a); border-bottom-right-radius: 6px; }
-.exam-chat-report-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chip-warn-text); }
+.exam-chat-report-bubble { display: flex; flex-direction: column; gap: 6px; padding: 10px 13px; border-radius: 16px; font-size: 13px; line-height: 1.5; background: color-mix(in srgb, var(--surface, #fff) 72%, var(--chip-warn-bg) 28%); border: 1px solid color-mix(in srgb, var(--chip-warn-border) 58%, var(--border, #d1d5db)); color: var(--text, #1a1a1a); border-bottom-right-radius: 6px; }
+.exam-chat-report-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chip-warn-text); }
 .exam-chat-report-tag svg { width: 12px; height: 12px; flex-shrink: 0; }
 .exam-chat-report-copy { font-size: 13px; line-height: 1.55; color: var(--text, #1a1a1a); }
 .exam-chat-report-bubble.is-decision.is-allow { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-ok-bg) 26%); border-color: color-mix(in srgb, var(--chip-ok-border) 62%, var(--border, #d1d5db)); }
 .exam-chat-report-bubble.is-decision.is-allow .exam-chat-report-tag { color: var(--chip-ok-text); }
 .exam-chat-report-bubble.is-decision.is-deny { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-deny-bg) 26%); border-color: color-mix(in srgb, var(--chip-deny-border) 64%, var(--border, #d1d5db)); }
 .exam-chat-report-bubble.is-decision.is-deny .exam-chat-report-tag { color: var(--chip-deny-text); }
-.exam-chat-time { font-size: 10px; color: var(--text-muted, #9ca3af); margin-top: 3px; }
+.exam-chat-time { font-size: 12px; color: var(--text-muted, #9ca3af); margin-top: 3px; }
 .exam-chat-reports { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff); }
-.exam-chat-reports-label { width: 100%; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted, #9ca3af); margin-bottom: 2px; }
-.exam-chat-report-btn { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border, #d1d5db); background: var(--bg, #f5f6f5); color: var(--text, #374151); cursor: pointer; transition: transform .12s ease; }
+.exam-chat-reports-label { width: 100%; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted, #9ca3af); margin-bottom: 2px; }
+.exam-chat-report-btn { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border, #d1d5db); background: var(--bg, #f5f6f5); color: var(--text, #374151); cursor: pointer; transition: transform .12s ease; }
 .exam-chat-report-btn:hover { border-color: var(--chip-warn-border); color: var(--chip-warn-text); background: var(--chip-warn-bg); transform: translateY(-1px); }
 .exam-chat-composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff); }
 .exam-chat-input { flex: 1; resize: none; max-height: 96px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--border, #d1d5db); font-size: 13px; font-family: inherit; background: var(--bg, #fff); color: var(--text, #1a1a1a); }
@@ -13773,10 +13777,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .ms-action-cell { position: relative; display: flex; align-items: center; justify-content: flex-end; width: 100%; min-height: 34px; padding-right: 44px; }
 .ms-action-main { width: 100%; display: flex; align-items: center; justify-content: center; }
 .ms-chat-btn.ms-chat-btn { position: absolute; right: 0; top: 50%; margin-left: 0; transform: translateY(-50%); }
-.ms-action-status { font-size: 12px; color: #9ca3af; text-align: center; }
+.ms-action-status { font-size: 12px; color: #5b6573; text-align: center; }
 /* Unread-message count on the Monitoring sidebar item */
 .nav-item { position: relative; }
-.nav-msg-badge { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface, #0f2d1a); }
+.nav-msg-badge { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface, #0f2d1a); }
 
 /* Professor incoming-message popup — top-right, auto-dismisses after 3s */
 #prof-msg-popups { position: fixed; top: 74px; right: 18px; z-index: 9500; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
@@ -13822,7 +13826,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .topbar-bell-wrap { position: relative; }
 .topbar-bell { position: relative; width: 40px; height: 40px; border: none; border-radius: 50%; background: transparent; color: var(--text-muted, #6b7280); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
 .topbar-bell:hover { background: var(--surface-2, #eef0ee); color: var(--text, #1a1a1a); }
-.topbar-bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff); }
+.topbar-bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff); }
 .topbar-sound-btn {
   border: 1px solid var(--border, #d1d5db);
   background: var(--surface, #fff);
@@ -13865,13 +13869,13 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .notif-item.unseen { background: rgba(15,45,26,0.05); }
 .notif-item.unseen:hover { background: rgba(15,45,26,0.09); }
 .notif-item-top { display: flex; align-items: center; justify-content: space-between; }
-.notif-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--primary, #0f2d1a); background: rgba(15,45,26,0.1); padding: 2px 7px; border-radius: 99px; }
+.notif-tag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--primary, #0f2d1a); background: rgba(15,45,26,0.1); padding: 2px 7px; border-radius: 999px; }
 .notif-tag-violation { color: #b91c1c; background: rgba(239,68,68,0.14); }
 .notif-tag-report { color: #b45309; background: rgba(217,119,6,0.14); }
 .notif-tag-share { color: #1d4ed8; background: rgba(59,130,246,0.14); }
 .notif-tag-share-success { color: #15803d; background: rgba(34,197,94,0.16); }
 .notif-tag-share-danger { color: #b91c1c; background: rgba(239,68,68,0.14); }
-.notif-item-time { font-size: 10px; color: var(--text-muted, #9ca3af); }
+.notif-item-time { font-size: 12px; color: var(--text-muted, #9ca3af); }
 .notif-item-who { font-size: 13px; font-weight: 700; color: var(--text, #1a1a1a); }
 .notif-item-body { font-size: 12px; color: var(--text-muted, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-theme="dark"] .topbar-bell:hover { background: var(--surface-2) !important; }
@@ -13970,7 +13974,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   min-width: 0;
 }
 .violation-alert-student-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -14014,7 +14018,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   min-width: 0;
 }
 .violation-alert-flag-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -14049,7 +14053,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border: 1px solid var(--border, #e5e7eb);
 }
 .violation-alert-item-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -14083,7 +14087,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 999px;
   background: rgba(245, 158, 11, 0.12);
   color: #b45309;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 .violation-alert-modal-footer {
@@ -14214,7 +14218,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 999px;
   background: #f59e0b;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -14250,7 +14254,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 999px;
   background: var(--surface-2, #f3f4f6);
   color: var(--text-muted, #4b5563);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 .shared-exam-card-note {
@@ -14262,7 +14266,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   padding: 10px 12px;
   line-height: 1.5;
 }
-.shared-exam-card-foot { font-size: 11px; color: var(--text-muted, #6b7280); }
+.shared-exam-card-foot { font-size: 12px; color: var(--text-muted, #6b7280); }
 
 .share-preview-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .share-preview-meta-card {
@@ -14271,7 +14275,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 14px;
   padding: 12px 14px;
 }
-.share-preview-meta-label { font-size: 11px; color: var(--text-muted, #6b7280); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
+.share-preview-meta-label { font-size: 12px; color: var(--text-muted, #6b7280); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 800; }
 .share-preview-meta-value { font-size: 13px; color: var(--text, #111827); font-weight: 700; margin-top: 6px; line-height: 1.4; }
 .share-preview-note {
   margin-top: 16px;
@@ -14299,7 +14303,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   background: var(--surface, #fff);
   padding: 16px;
 }
-.share-preview-question-index { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted, #6b7280); font-weight: 800; margin-bottom: 10px; }
+.share-preview-question-index { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted, #6b7280); font-weight: 800; margin-bottom: 10px; }
 .share-preview-question { display: grid; gap: 10px; }
 .share-preview-question-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .share-preview-question-type {
@@ -14309,10 +14313,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 999px;
   background: rgba(29,78,216,0.08);
   color: #1d4ed8;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
-.share-preview-question-points { font-size: 11px; color: var(--text-muted, #6b7280); font-weight: 700; }
+.share-preview-question-points { font-size: 12px; color: var(--text-muted, #6b7280); font-weight: 700; }
 .share-preview-question-text { font-size: 14px; color: var(--text, #111827); line-height: 1.55; font-weight: 600; }
 .share-preview-options { display: grid; gap: 8px; }
 .share-preview-option {
@@ -14341,7 +14345,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
    washed out on the light topbar (dark mode already has its own contrast). */
 .dm-toggle { border-radius: 50%; background: #e7eae7; }
 [data-theme="dark"] .topbar .dm-toggle { background: transparent !important; }
-.ms-chat-badge { position: absolute; top: -4px; right: -4px; display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; }
+.ms-chat-badge { position: absolute; top: -4px; right: -4px; display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800; }
 .prof-chat-backdrop { position: fixed; inset: 0; z-index: 8000; background: rgba(15,23,42,0.35); display: flex; justify-content: flex-end; }
 .prof-chat-drawer {
   width: min(400px, 100vw); height: 100%; background: var(--surface, #fff);
@@ -14375,28 +14379,28 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .prof-chat-bubble { padding: 9px 13px; border-radius: 14px; font-size: 13px; line-height: 1.45; word-break: break-word; white-space: pre-wrap; }
 .prof-chat-msg.mine .prof-chat-bubble { background: var(--primary, #0f2d1a); color: #fff; border-bottom-right-radius: 4px; }
 .prof-chat-msg.theirs .prof-chat-bubble { background: var(--surface, #fff); color: var(--text, #1a1a1a); border: 1px solid var(--border, #d1d5db); border-bottom-left-radius: 4px; }
-.prof-chat-report-bubble { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 18px; font-size: 12.5px; line-height: 1.5; background: color-mix(in srgb, var(--surface, #fff) 72%, var(--chip-warn-bg) 28%); border: 1px solid color-mix(in srgb, var(--chip-warn-border) 60%, var(--border, #d1d5db)); color: var(--text, #1a1a1a); border-bottom-left-radius: 8px; }
+.prof-chat-report-bubble { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 18px; font-size: 13px; line-height: 1.5; background: color-mix(in srgb, var(--surface, #fff) 72%, var(--chip-warn-bg) 28%); border: 1px solid color-mix(in srgb, var(--chip-warn-border) 60%, var(--border, #d1d5db)); color: var(--text, #1a1a1a); border-bottom-left-radius: 8px; }
 .prof-chat-report-bubble.is-webcam-request { min-width: min(290px, 100%); }
 .prof-chat-report-bubble.is-decision { gap: 7px; padding: 12px 15px; }
 .prof-chat-report-bubble.is-decision.is-allow { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-ok-bg) 26%); border-color: color-mix(in srgb, var(--chip-ok-border) 62%, var(--border, #d1d5db)); }
 .prof-chat-report-bubble.is-decision.is-allow .prof-chat-report-tag { color: var(--chip-ok-text); }
 .prof-chat-report-bubble.is-decision.is-deny { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-deny-bg) 26%); border-color: color-mix(in srgb, var(--chip-deny-border) 64%, var(--border, #d1d5db)); }
 .prof-chat-report-bubble.is-decision.is-deny .prof-chat-report-tag { color: var(--chip-deny-text); }
-.prof-chat-report-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--chip-warn-text); }
+.prof-chat-report-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--chip-warn-text); }
 .prof-chat-report-tag svg { width: 12px; height: 12px; flex-shrink: 0; }
 .prof-chat-report-copy { font-size: 14px; line-height: 1.55; color: var(--text, #1a1a1a); word-break: break-word; white-space: pre-wrap; }
 .prof-chat-report-actions { display: flex; gap: 9px; margin-top: 4px; flex-wrap: wrap; }
-.prof-chat-report-action { border: 1px solid transparent; border-radius: 12px; min-height: 38px; padding: 9px 14px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background .14s ease, border-color .14s ease, color .14s ease; }
+.prof-chat-report-action { border: 1px solid transparent; border-radius: 12px; min-height: 38px; padding: 9px 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .14s ease, border-color .14s ease, color .14s ease; }
 .prof-chat-report-action.allow { background: var(--primary, #0f2d1a); color: #fff; }
 .prof-chat-report-action.allow:hover { background: var(--primary-light, #1a3d27); }
 .prof-chat-report-action.deny { background: color-mix(in srgb, var(--surface, #fff) 78%, var(--chip-deny-bg) 22%); border-color: color-mix(in srgb, var(--chip-deny-border) 68%, var(--border, #d1d5db)); color: var(--chip-deny-text); }
 .prof-chat-report-action.deny:hover { background: color-mix(in srgb, var(--surface, #fff) 68%, var(--chip-deny-bg) 32%); }
-.prof-chat-report-status { margin-top: 4px; display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.01em; }
+.prof-chat-report-status { margin-top: 4px; display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; font-size: 12px; font-weight: 800; letter-spacing: 0.01em; }
 .prof-chat-report-status-icon { width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .prof-chat-report-status-icon svg { width: 15px; height: 15px; }
 .prof-chat-report-status.is-allow { background: color-mix(in srgb, var(--surface, #fff) 80%, var(--chip-ok-bg) 20%); border: 1px solid color-mix(in srgb, var(--chip-ok-border) 74%, var(--border, #d1d5db)); color: var(--chip-ok-text); }
 .prof-chat-report-status.is-deny { background: color-mix(in srgb, var(--surface, #fff) 78%, var(--chip-deny-bg) 22%); border: 1px solid color-mix(in srgb, var(--chip-deny-border) 74%, var(--border, #d1d5db)); color: var(--chip-deny-text); }
-.prof-chat-time { font-size: 10px; color: var(--text-muted, #9ca3af); margin-top: 3px; }
+.prof-chat-time { font-size: 12px; color: var(--text-muted, #9ca3af); margin-top: 3px; }
 .prof-chat-composer { display: flex; align-items: flex-end; gap: 9px; padding: 12px 18px; border-top: 1px solid var(--border, #e5e7eb); }
 .prof-chat-input { flex: 1; resize: none; max-height: 110px; padding: 10px 13px; border-radius: 12px; border: 1px solid var(--border, #d1d5db); font-size: 13px; font-family: inherit; background: var(--bg, #fff); color: var(--text, #1a1a1a); }
 .prof-chat-input:focus { outline: none; border-color: var(--primary, #0f2d1a); }
@@ -14469,7 +14473,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .stats-overview-copy > span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.35;
   letter-spacing: .055em;
@@ -14489,7 +14493,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .stats-overview-copy > small {
   margin-top: 8px;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
 }
@@ -14522,7 +14526,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   display: block;
   margin-bottom: 4px;
   color: var(--primary);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 850;
   letter-spacing: .105em;
   text-transform: uppercase;
@@ -14538,7 +14542,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   margin: 4px 0 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 550;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -14548,10 +14552,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   flex: 0 0 auto;
   padding: 5px 9px;
   border: 1px solid var(--border);
-  border-radius: 99px;
+  border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface-2);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 .stats-analysis-body { padding: 20px 22px 22px; }
@@ -14584,7 +14588,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .stats-analysis-description {
   margin-bottom: 17px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .stats-analysis-description strong { color: var(--text); }
@@ -14607,7 +14611,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   min-height: 24px;
   padding: 3px 9px;
   border-radius: 6px;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -14690,7 +14694,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   align-items: center;
   gap: 7px;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.3;
   text-transform: uppercase;
@@ -14717,7 +14721,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   height: 5px;
   margin-top: 13px;
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--border) 70%, transparent);
 }
 .rf-coverage-track i {
@@ -14752,18 +14756,18 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .rf-students-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 16px; background:var(--surface-2); border-bottom:1px solid var(--border); }
 .rf-students-heading > div { min-width:0; }
 .rf-students-heading h4 { margin:0; color:var(--text); font-size:13px; font-weight:700; }
-.rf-students-heading span { display:block; margin-top:3px; color:var(--text-muted); font-size:10px; font-weight:600; }
+.rf-students-heading span { display:block; margin-top:3px; color:var(--text-muted); font-size:12px; font-weight:600; }
 .rf-student-list { max-height:460px; overflow:auto; background:var(--surface); }
 .rf-student-row { display:grid; grid-template-columns:minmax(210px,1.05fr) minmax(280px,1.45fr) minmax(210px,.9fr); align-items:center; gap:24px; min-width:0; padding:14px 16px; border-bottom:1px solid var(--border); }
 .rf-student-row:last-child { border-bottom:0; }
 .rf-student-row:not(.rf-student-header):hover { background:color-mix(in srgb, var(--surface-2) 65%, transparent); }
-.rf-student-header { position:sticky; top:0; z-index:1; padding-top:10px; padding-bottom:10px; background:var(--surface); color:var(--text-muted); font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.075em; }
+.rf-student-header { position:sticky; top:0; z-index:1; padding-top:10px; padding-bottom:10px; background:var(--surface); color:var(--text-muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.075em; }
 .rf-student-person { min-width:0; display:flex; flex-direction:column; gap:4px; }
 .rf-student-person strong { overflow:hidden; color:var(--text); font-size:13px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
-.rf-student-person span { overflow:hidden; color:var(--text-muted); font-size:10px; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; }
+.rf-student-person span { overflow:hidden; color:var(--text-muted); font-size:12px; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; }
 .rf-student-result { min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
-.rf-student-result small { max-width:64ch; color:var(--text-muted); font-size:10.5px; line-height:1.5; }
-.rf-risk-badge { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:700; white-space:nowrap; }
+.rf-student-result small { max-width:64ch; color:var(--text-muted); font-size:12px; line-height:1.5; }
+.rf-risk-badge { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:700; white-space:nowrap; }
 .rf-risk-badge i { width:7px; height:7px; flex-shrink:0; border-radius:50%; background:currentColor; }
 .rf-risk-badge.tone-normal { color:#15803d; background:rgba(34,197,94,.12); }
 .rf-risk-badge.tone-monitoring { color:#b45309; background:rgba(245,158,11,.14); }
@@ -14773,19 +14777,19 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .rf-risk-badge.tone-failed { color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border); }
 .rf-student-probability { display:flex; align-items:center; gap:12px; min-width:0; }
 .rf-student-probability > strong { width:52px; flex-shrink:0; color:var(--text); font-size:13px; font-weight:800; font-variant-numeric:tabular-nums; text-align:left; }
-.rf-student-probability > strong.rf-probability-unavailable { width:auto; color:var(--text-muted); font-size:10.5px; font-weight:700; white-space:nowrap; }
-.rf-probability-track { display:block; width:100%; max-width:140px; height:7px; overflow:hidden; border-radius:99px; background:var(--surface-2); }
+.rf-student-probability > strong.rf-probability-unavailable { width:auto; color:var(--text-muted); font-size:12px; font-weight:700; white-space:nowrap; }
+.rf-probability-track { display:block; width:100%; max-width:140px; height:7px; overflow:hidden; border-radius: 999px; background:var(--surface-2); }
 .rf-probability-track i { display:block; height:100%; border-radius:inherit; }
 .rf-probability-track i.tone-normal { background:#22c55e; }
 .rf-probability-track i.tone-monitoring { background:#f59e0b; }
 .rf-probability-track i.tone-suspicious { background:#ef4444; }
-.rf-student-empty { padding:24px 16px; color:var(--text-muted); font-size:11px; text-align:center; }
+.rf-student-empty { padding:24px 16px; color:var(--text-muted); font-size:12px; text-align:center; }
 .rf-review-note,
 .rf-partial-note {
   margin: 18px 0 0;
   padding: 11px 13px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .rf-review-note {
@@ -15060,7 +15064,7 @@ body.exam-page {
 .face-positioning-warning-copy { display: grid; min-width: 0; gap: 2px; }
 .face-positioning-warning-label {
   color: #80580f;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 1.2;
@@ -15068,7 +15072,7 @@ body.exam-page {
 }
 .face-positioning-warning-message {
   color: #344139;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.4;
 }
@@ -15136,7 +15140,7 @@ body.exam-page {
   place-items: center;
 }
 .fullscreen-lock-icon svg { width: 30px; height: 30px; }
-.fullscreen-lock-label { color: #1f6b3a; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.fullscreen-lock-label { color: #1f6b3a; font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .fullscreen-lock-card h2 { margin: 5px 0 10px; font-size: 24px; }
 .fullscreen-lock-card p { margin: 0; color: #66726a; font-size: 14px; line-height: 1.55; }
 .fullscreen-lock-return { margin-top: 22px; }
@@ -15374,4 +15378,1167 @@ label.theme-switch,
     text-overflow: ellipsis;
     vertical-align: bottom;
   }
+}
+
+/* ============================================================================
+   UI POLISH LAYER
+   Presentation only. Nothing here changes markup, data flow, or any request
+   the client makes — deleting this whole block reverts it cleanly.
+
+     1. Scale       — one radius/card/gutter vocabulary instead of ad-hoc values.
+     2. Readability — 12px type floor; light-mode greys clear WCAG AA.
+     3. Adaptive    — nothing overflows horizontally at any viewport width.
+   ========================================================================== */
+
+/* --- 1. Scale ------------------------------------------------------------- */
+:root {
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-pill: 999px;
+
+  /* Cards had drifted to their own padding/radius per section. */
+  --card-pad: clamp(14px, 1.6vw, 18px);
+  --card-gap: clamp(12px, 1.4vw, 18px);
+  --card-radius: var(--r-lg);
+  --surface-card: var(--surface);
+  --border-subtle: var(--border);
+
+  /* Fluid page gutter: real margin on phones, no edge-to-edge on desktop. */
+  --gutter: clamp(14px, 3vw, 28px);
+}
+
+/* --- 2. Readability ------------------------------------------------------- */
+/* Grey set directly in admin.js inline styles — the worst light-mode
+   offenders at 2.5:1. Scoped to light so the dark palette is untouched. */
+:root:not([data-theme="dark"]) [style*="#9ca3af"],
+:root:not([data-theme="dark"]) [style*="#94a3b8"] {
+  color: var(--text-subtle) !important;
+}
+
+/* Text this stylesheet cannot otherwise reach: SVG chart labels carry a
+   font-size *attribute* (the score-distribution axis was 8px) and some
+   spans carry an inline font-size. CSS outranks both. */
+.dist-bar-svg text,
+svg.dist-bar-svg text {
+  font-size: 12px;
+}
+[style*="font-size: 10px"], [style*="font-size:10px"],
+[style*="font-size: 11px"], [style*="font-size:11px"],
+[style*="font-size: 9px"],  [style*="font-size:9px"] {
+  font-size: 12px !important;
+}
+
+/* --- 3. Adaptive ---------------------------------------------------------- */
+img, svg, video, canvas, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Wide tables scroll inside their card instead of widening the page.
+   #report-card's table has a 1180px minimum by design. */
+.table-wrap, .table-scroll, #report-card, [class*="-table-wrap"] {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Emails, session ids and filenames are the usual overflow culprits. */
+td, th, .cell-ellipsis { overflow-wrap: anywhere; }
+
+/* Fixed-column grids reflow by width rather than by breakpoint guesswork. */
+@media (max-width: 1100px) {
+  .stats-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .stats-overview-grid { grid-template-columns: 1fr; }
+}
+
+/* The topbar user pill pushed the page ~50px wide on phones. */
+@media (max-width: 640px) {
+  .topbar-actions { flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .topbar-user-pill { min-width: 0; max-width: 100%; }
+  .topbar-user-pill #topbar-admin-name { display: none; }
+}
+@media (max-width: 480px) {
+  #topbar-date { display: none; }
+}
+
+/* Touch targets. */
+@media (max-width: 768px) {
+  button, .btn, [role="button"] { min-height: 40px; }
+}
+
+/* Fixed card heights clip once type gets larger or the viewport is short. */
+@media (max-width: 480px), (max-height: 620px) {
+  .stats-overview-card, .analytics-card { min-height: 0; }
+}
+
+/* ============================================================================
+   DASHBOARD
+   Presentation only. Two problems this fixes:
+
+   1. Colour was keyed to WHICH card it was, not to what the number said.
+      The five KPI cards carried a blue/green/orange/red/purple top bar and a
+      matching icon tile, assigned by position. It read as decoration, and the
+      Active Exams card rendered RED while displaying 0 — an alarm colour for
+      the normal resting state. Same mistake the stats cards already fixed.
+      Colour now means "something is live"; everything else is calm.
+
+   2. The KPI cards (20px radius, 24px padding) and the analytics cards
+      (14px radius) were two different card systems stacked on one screen.
+      Both now use the shared card tokens.
+   ========================================================================== */
+
+/* --- Retire the identity-keyed accent bar --------------------------------- */
+.stat-card::before { display: none; }
+
+/* --- One card contract ---------------------------------------------------- */
+.stat-card {
+  border-radius: var(--card-radius);
+  padding: var(--card-pad);
+  gap: 14px;
+  box-shadow: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+}
+.analytics-card {
+  border-radius: var(--card-radius) !important;
+  padding: var(--card-pad);
+}
+
+/* Lift on hover was 2px + a heavy shadow; it made the row feel unstable. */
+.stat-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border-subtle));
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Neutral icon tiles --------------------------------------------------- */
+/* The hue no longer identifies the card, so all five share one quiet tile.
+   Overrides the .blue/.green/.orange/.red/.purple classes still in the
+   markup without needing to touch admin.js. */
+.stat-card .stat-icon,
+.stat-card .stat-icon.blue,
+.stat-card .stat-icon.green,
+.stat-card .stat-icon.orange,
+.stat-card .stat-icon.red,
+.stat-card .stat-icon.purple {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+[data-theme="dark"] .stat-card .stat-icon,
+[data-theme="dark"] .stat-card .stat-icon.blue,
+[data-theme="dark"] .stat-card .stat-icon.green,
+[data-theme="dark"] .stat-card .stat-icon.orange,
+[data-theme="dark"] .stat-card .stat-icon.red,
+[data-theme="dark"] .stat-card .stat-icon.purple {
+  background: color-mix(in srgb, var(--primary) 16%, transparent) !important;
+  color: var(--primary) !important;
+}
+
+/* --- Colour that means something ------------------------------------------ */
+/* Active Exams only lights up when an exam is actually running. At zero it
+   stays neutral like every other resting metric. */
+.stat-card[data-state="live"] {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border-subtle));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 5%, var(--surface-card)), var(--surface-card));
+}
+.stat-card[data-state="live"] .stat-icon {
+  background: color-mix(in srgb, var(--primary) 16%, transparent) !important;
+}
+.stat-card[data-state="live"] .stat-value::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 9px;
+  border-radius: 50%;
+  background: var(--primary);
+  vertical-align: middle;
+  animation: dashLivePulse 2s ease-in-out infinite;
+}
+@keyframes dashLivePulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-card[data-state="live"] .stat-value::after { animation: none; }
+}
+
+/* --- Typography ----------------------------------------------------------- */
+/* The value was 34px against a 12px uppercase label — a big jump with nothing
+   between. Slightly smaller value, slightly calmer label. */
+.stat-card .stat-value {
+  font-size: clamp(26px, 2.4vw, 30px);
+  letter-spacing: -0.4px;
+  margin-bottom: 5px;
+}
+.stat-card .stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+/* --- Dashboard panel cards ------------------------------------------------
+   Recent Exams / Active Sessions were the last neumorphic components on this
+   screen: grey #e8ecef fill, 28px radius and a double hard-offset shadow
+   (12px 12px 24px #c8cdd1, -12px -12px 24px #fff), sitting directly under
+   flat white KPI and analytics cards. Two design languages on one page.
+
+   Those values were also hardcoded, so the cards stayed light grey in dark
+   mode instead of following the palette. Now they use the same tokens as
+   every other card.
+
+   The identical treatment is still on .course-card and .exam-card (Courses
+   and Exams sections) — same fix applies there if wanted. */
+.dashboard-panels-grid .card {
+  background: var(--surface-card) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--card-radius) !important;
+  box-shadow: none !important;
+}
+.dashboard-panels-grid .card:hover {
+  transform: none !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.dashboard-panels-grid .card-header {
+  padding: 14px var(--card-pad);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* --- At-risk student names -------------------------------------------------
+   The name column was pinned to ~78px, so every student read as
+   "John Danie…" while the row had space to spare. Let the name take the
+   free space and keep the score/badge at their natural width. */
+.risk-item-dark,
+[class*="risk-item"] {
+  gap: 10px;
+}
+.risk-name-dark,
+[class*="risk-name"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.risk-score-dark,
+[class*="risk-score"],
+[class*="risk-badge"] {
+  flex: 0 0 auto;
+}
+
+
+/* --- Analytics row proportions --------------------------------------------
+   The four cards shared equal 1fr columns, but their content is not equally
+   wide: At-Risk Students carries avatar + name + score + badge on one line,
+   while Forecast is short label/value pairs. At equal width the name got
+   ~75px and every student read as "John Danie…".
+
+   Widening that one column fixes the truncation without making rows wrap —
+   wrapping fixed the names but added ~85px of height, and because grid rows
+   stretch, all four cards grew to match and the short ones filled with
+   whitespace. Extra width costs nothing vertically. */
+@media (min-width: 1100px) {
+  .analytics-grid {
+    grid-template-columns: 1fr 1.4fr 1fr 1fr;
+  }
+}
+
+/* Names take the free space; score and badge keep their natural size. */
+.risk-item-dark { gap: 8px; }
+.risk-name-dark {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.risk-avatar-dark,
+.risk-score-dark,
+.risk-badge-dark { flex: 0 0 auto; }
+
+/* A little tighter so more of the row goes to the name. */
+.risk-badge-dark { padding: 2px 7px; }
+
+
+/* --- Recent Exams table ---------------------------------------------------- */
+/* The card is called "Recent Exams" but carried no dates, so nothing on it
+   said what made these recent. The date sits under the title instead of
+   taking a fourth column in an already narrow card. */
+.dash-exam-title {
+  display: block;
+  line-height: 1.35;
+}
+.dash-exam-date {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+
+/* Counts line up on the digit rather than drifting with glyph width. */
+.dash-exam-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The card header and the table header sat as two stacked bands. Tighten the
+   table head so it reads as a column legend, not a second title. */
+.dashboard-panels-grid .card thead th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  color: var(--text-subtle);
+}
+.dashboard-panels-grid .card tbody tr:last-child td {
+  border-bottom: none;
+}
+
+
+/* --- Recent Exams list -----------------------------------------------------
+   Rebuilt from the table to a header-less list: the three column headings
+   (TITLE / STATUS / QUESTIONS) were restating what each row already makes
+   obvious, and they stacked a second header band under the card title.
+   Title carries the weight, status and count trail behind it. */
+.dash-exam-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dash-exam-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px var(--card-pad);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.dash-exam-row:last-child {
+  border-bottom: none;
+}
+.dash-exam-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* Count trails the row, quiet and digit-aligned. The unit is spelled so the
+   number is not left bare once the QUESTIONS heading is gone. */
+.dash-exam-count {
+  flex: 0 0 auto;
+  min-width: 46px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.dash-exam-row .badge {
+  flex: 0 0 auto;
+}
+
+/* Only wrap the title onto its own line when the row genuinely cannot fit
+   it; at 390px there is still room, and forcing the wrap there made every
+   row two lines tall (81px) for no gain. */
+@media (max-width: 360px) {
+  .dash-exam-row { flex-wrap: wrap; row-gap: 6px; }
+  .dash-exam-title { flex: 1 1 100%; }
+}
+
+
+/* --- Recent Exams: status as a real centred column -------------------------
+   The badge previously trailed the title, so it sat at a different x on every
+   row. A fixed, centred slot lines the statuses up as a column. */
+.dash-exam-row .badge {
+  flex: 0 0 96px;
+  text-align: center;
+}
+@media (max-width: 360px) {
+  .dash-exam-row .badge { flex: 0 0 auto; }
+}
+
+
+
+/* ============================================================================
+   STATUS BADGES — single source of truth
+   Replaces five overlapping blocks that accumulated while iterating on this.
+   One colour pair per state, defined once for light and once for dark.
+
+   Each state gets its own hue so status reads at a glance. Fills are opaque
+   so a badge stays legible wherever it lands — a white table row, or the
+   Exams cards' saturated status banner.
+   ========================================================================== */
+.badge-secondary,   /* draft / archived — not published yet */
+.badge-info,        /* ready  — scheduled, not open yet     */
+.badge-success,     /* active — running right now           */
+.badge-done {       /* closed — finished                    */
+  border: 1px solid transparent;
+}
+
+/* Light */
+.badge-secondary { background: #eef1f5; color: #475569; border-color: #cbd5e1; }
+.badge-info      { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+.badge-success   { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+.badge-done      { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+
+/* Dark — deep fill, light text. The light pastels above read as glowing
+   chips on a dark card, so the relationship inverts rather than carrying
+   the same values across.
+
+   !important is required here, not decorative: there is a blanket
+   `[data-theme="dark"] .badge { background/color/border !important }` reset
+   near the top of this file that flattens every badge to a neutral chip.
+   The other variants already beat it the same way. */
+[data-theme="dark"] .badge-secondary { background: #232b33 !important; color: #a9b4c0 !important; border-color: #333f4b !important; }
+[data-theme="dark"] .badge-info      { background: #17233b !important; color: #93b4fd !important; border-color: #23375c !important; }
+[data-theme="dark"] .badge-success   { background: #13301f !important; color: #6ee7a0 !important; border-color: #1d4a30 !important; }
+[data-theme="dark"] .badge-done      { background: #3a1a1c !important; color: #f79c9c !important; border-color: #56272a !important; }
+
+/* Status sits in its own fixed, centred slot so the badges line up as a
+   column instead of trailing each title at a different x. */
+.dash-exam-row .badge {
+  flex: 0 0 96px;
+  text-align: center;
+}
+@media (max-width: 360px) {
+  .dash-exam-row .badge { flex: 0 0 auto; }
+}
+
+/* --- Analytics cards: let the content use the card ------------------------
+   The four cards stretch to a shared grid height, but each card's last child
+   (chart, list, rows) sat at its natural size and left the remainder empty —
+   worst on Score Distribution, which wasted ~79px of a 298px card. The last
+   child now absorbs the leftover space instead of the card doing so. */
+.analytics-card {
+  display: flex;
+  flex-direction: column;
+}
+/* The last child fills the leftover height so it can distribute it (the
+   at-risk list spreads its rows, the charts sit on the baseline) rather than
+   leaving it pooled under the content. Card height is set by the Forecast
+   card's rows, so filling here never makes the row taller. */
+.analytics-card > *:last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The sparkline is preserveAspectRatio="none", so it can stretch to whatever
+   height it is given without distorting anything that has to stay readable. */
+.sparkline-wrap {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+/* Deliberately NOT stretched to fill. The sparkline is
+   preserveAspectRatio="none", so making it fill the card scales the line
+   vertically — a 2% change rendered as a dramatic climb. The chart has to
+   stay honest about magnitude, so it keeps a bounded height and the card
+   closes up around it instead. */
+.ac-dark .sparkline-wrap .sparkline-svg,
+.sparkline-wrap svg {
+  width: 100%;
+  height: 84px;
+}
+
+/* --- Recent Exams: tighter rows -------------------------------------------
+   14px of vertical padding on a 28px row made each row 56px, so four exams
+   filled more height than the list needed. */
+.dash-exam-row {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+/* --- Analytics cards: shorter ---------------------------------------------
+   Card height is set by the tallest content, which is the At-Risk list (152px)
+   and the Forecast rows (150px) — not the charts. Tightening those two rows
+   is what actually brings the row height down. */
+.risk-item-dark,
+.forecast-row-dark {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+/* Card height is set by the Forecast card's four rows — the charts are never
+   the constraint. Size the chart cards to that height rather than letting
+   them leave a block of dead space under the content.
+
+   The sparkline is centred in its remaining space rather than stretched:
+   with preserveAspectRatio="none", filling the box scales the line
+   vertically and turns a 2% change into a dramatic climb. */
+/* Anchored to the bottom, not centred. Centring split the leftover space
+   above AND below the chart, which left a visible gap under it. Both of
+   these are baseline charts — an area fill and a bar chart — so sitting them
+   on the card's lower edge is also how they read best. */
+.sparkline-wrap {
+  margin-top: auto;
+  margin-bottom: 0;
+  align-items: flex-end;
+}
+.dist-bar-svg {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+   COURSE CARDS
+   ========================================================================== */
+
+/* --- Header text on the colour banner --------------------------------------
+   The banner colour is picked per course, so this text has to stay legible on
+   any hue the user chooses. It wasn't:
+
+     • light mode: rgba(255,255,255,0.7) — washes out on the lighter
+       banner choices (the orange and mid-purple especially);
+     • dark mode:  a blanket rule forced #94a3b8 on it, a neutral grey meant
+       for text on a card surface. On a magenta banner that is grey on
+       magenta, which is the "not too visible" complaint.
+
+   The label is now near-solid white in both themes, with a shadow and a
+   stronger scrim behind it so it holds up on light and dark banners alike. */
+.course-card-code-label,
+[data-theme="dark"] .course-card-code-label {
+  color: rgba(255, 255, 255, 0.94) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  letter-spacing: 1.4px;
+}
+.course-card-desc,
+[data-theme="dark"] .course-card-desc {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+/* The existing scrim faded in only from 20% and topped out at 0.22 — not
+   enough to carry white text on a light banner. */
+.course-card-header::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.06) 0%,
+    rgba(0, 0, 0, 0.20) 45%,
+    rgba(0, 0, 0, 0.46) 100%
+  );
+}
+
+/* --- Card surface ----------------------------------------------------------
+   These were the last neumorphic components: #e8ecef fill, 28px radius and a
+   double hard-offset shadow, hardcoded so they ignored the palette. Dark mode
+   already had an override flattening them; light mode never did, which is why
+   the two themes looked like different products. Same tokens as every other
+   card now. */
+.course-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--card-radius);
+  box-shadow: none;
+}
+.course-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border-subtle));
+  box-shadow: var(--shadow-sm);
+}
+.course-card-body {
+  background: var(--surface-card);
+}
+
+/* Header was 108px tall for two lines of text. */
+.course-card-header {
+  min-height: 92px;
+  padding: 16px 18px;
+}
+
+/* Courses without a description got a 94px banner and those with one got
+   114px, so the colour blocks stepped up and down across the row. Reserving
+   the height keeps the banners on a line whether or not a description
+   exists. */
+.course-card-header {
+  min-height: 114px;
+}
+
+/* "ENROLL CODE" wrapped to two lines on three of four cards — the label is
+   short enough to keep whole, and letting it wrap made the row below it
+   jump around. */
+.course-enroll-label {
+  white-space: nowrap;
+}
+
+/* --- Course card stats panel: same treatment in dark mode ------------------
+   Light mode gives this block an inset panel look:
+     background #e8ecef + inset 4px 4px 8px #c8cdd1, inset -4px -4px 8px #fff
+   Dark mode flattened it to a plain surface, so the two themes read
+   differently. Same effect here, with the light/shadow pair rebuilt from the
+   dark palette — the highlight has to be lighter than the fill and the
+   shadow darker, so the values invert rather than carry across. */
+[data-theme="dark"] .course-card-stats {
+  background: #1b2228 !important;
+  border: none !important;
+  box-shadow:
+    inset 4px 4px 8px #12171b,
+    inset -4px -4px 8px #242e36 !important;
+}
+[data-theme="dark"] .course-stat-cell {
+  border-right-color: rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .course-stat-cell:last-child {
+  border-right: none;
+}
+
+/* --- Enroll code reads as one label ---------------------------------------
+   "Enroll Code" and the code sat 14px apart, so they read as two separate
+   things. A colon and a tighter gap make it one statement:
+   ENROLL CODE: YVRURZ  — the colon comes from CSS so the markup stays as is. */
+.course-card-enroll-group {
+  gap: 6px;
+}
+.course-card-enroll .course-enroll-label::after {
+  content: ':';
+}
+
+/* The action row carried `border-top: 1px solid #eef2f7` — a hardcoded
+   near-white with no dark-mode counterpart, so it read as a bright white rule
+   across every card on a dark surface. The spacing above the buttons already
+   separates them; the line was doing nothing the gap wasn't. */
+.course-card-actions {
+  border-top: none;
+}
+
+/* The at-risk list had the largest leftover (33px). Letting it fill and
+   spread its rows uses that space instead of pooling it under the last
+   student. */
+.risk-list-dark {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* ============================================================================
+   EXAM CARDS
+   ========================================================================== */
+
+/* Subject line under the title was inline rgba(255,255,255,0.7) at 11px —
+   below the 12px floor and washed out on the lighter banners. */
+.exam-card-subject {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 3px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* The scrim only reached rgba(0,0,0,0.2), which is thin under white text on
+   the lighter status colours (ready blue, active green). */
+.exam-card-header::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.05) 0%,
+    rgba(0, 0, 0, 0.18) 45%,
+    rgba(0, 0, 0, 0.42) 100%
+  );
+}
+
+/* --- Card surface ----------------------------------------------------------
+   Last of the neumorphic components: hardcoded #e8ecef fill, 28px radius and
+   the double hard-offset shadow, so it ignored the palette entirely. Dark
+   mode had an override; light mode did not. Same tokens as every other card. */
+.exam-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--card-radius);
+  box-shadow: none;
+}
+.exam-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border-subtle));
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Footer ----------------------------------------------------------------
+   Hardcoded #e8ecef again, plus flex-wrap with four buttons that did not fit,
+   which dropped the "..." onto its own centred row and left a ragged second
+   line under three of four cards. The row now fits on one line: the buttons
+   share the space and the icon-only button keeps its natural width. */
+.exam-card-footer {
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.exam-card-footer > * {
+  min-width: 0;
+}
+.exam-card-footer .pushable:not(.pushable-icon-only) {
+  flex: 1 1 auto;
+}
+.exam-card-footer .pushable-icon-only {
+  flex: 0 0 auto;
+}
+
+/* Cards in a row stretch to the tallest, and the body was letting that space
+   pool above the footer — most visible on the Draft card, which has no
+   Archive button. Push the footer to the bottom and let the body take the
+   slack instead. */
+.exam-card {
+  display: flex;
+  flex-direction: column;
+}
+.exam-card-body {
+  flex: 1 1 auto;
+}
+.exam-card-footer {
+  margin-top: auto;
+}
+
+/* The "..." button is a .pushable (32px) sitting next to .btn-action and
+   .tbl-btn (34px), so it rode 2px low against its neighbours. */
+.exam-card-footer .pushable,
+.exam-card-footer .pushable-front {
+  min-height: 34px;
+}
+.exam-card-footer .pushable-front {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Exam card header: use the height instead of stacking at the bottom ----
+   The header was 110px with justify-content:flex-end, so the badge, code,
+   date, title and subject all piled up against the lower edge with the whole
+   top half empty. Everything read as cramped even though there was room.
+
+   The meta row (status, access code, date) now sits at the top and the title
+   block at the bottom, with the space between them instead of above them. */
+.exam-card-header {
+  height: auto;
+  min-height: 118px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 16px;
+}
+.exam-card-header-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.exam-card-header-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.exam-card-header-main {
+  position: relative;
+  z-index: 1;
+}
+.exam-card-header .exam-card-title {
+  line-height: 1.3;
+}
+
+/* --- Stats panel: same inset treatment in dark mode -----------------------
+   As with the course cards, light mode gives this block an inset panel look
+   and dark mode flattened it to a plain surface. Same effect, rebuilt from
+   the dark palette — highlight lighter than the fill, shadow darker. */
+[data-theme="dark"] .exam-card-stats-cells {
+  background: #1b2228 !important;
+  border: none !important;
+  box-shadow:
+    inset 4px 4px 8px #12171b,
+    inset -4px -4px 8px #242e36 !important;
+}
+[data-theme="dark"] .exam-stat-cell {
+  border-right-color: rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .exam-stat-cell:last-child {
+  border-right: none;
+}
+
+/* --- Exam card header, rebuilt ---------------------------------------------
+   Was: a ~120px full-bleed gradient banner with a giant letter watermark and
+   two decorative circles, carrying white text. It gave the card a heavy
+   coloured lid, split it into three stacked bands, and spent its entire top
+   third restating the status that the badge says in words beside it.
+
+   Now: one continuous card surface. The title leads because that is what you
+   scan for; the subject sits under it; status, access code and date share a
+   quiet meta line below. Status survives as a 3px accent on the card's top
+   edge — same signal at a glance, none of the weight. */
+/* Drawn as a bar rather than a border-top: there is a
+   `[data-theme="dark"] .exam-card { border: 1px solid var(--border) !important }`
+   rule that wins against any border shorthand, so in dark mode the accent
+   silently disappeared. A pseudo-element sidesteps that fight entirely. */
+.exam-card {
+  position: relative;
+}
+.exam-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--exam-accent, var(--border-subtle));
+  z-index: 2;
+  pointer-events: none;
+}
+.exam-card-header {
+  min-height: 0;
+  height: auto;
+  background: transparent;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  justify-content: flex-start;
+}
+/* The banner's scrim, watermark and circles have nothing to sit on now. */
+.exam-card-header::before {
+  display: none;
+}
+
+/* Text is on the card surface, so it takes the card's own colours rather
+   than the white-on-colour the banner needed. */
+.exam-card-header .exam-card-title {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.3;
+  text-shadow: none;
+}
+.exam-card-subject {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+  text-shadow: none;
+}
+.exam-card-header-top {
+  gap: 8px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.exam-card-date {
+  color: var(--text-subtle);
+  font-size: 12px;
+  text-shadow: none;
+}
+.exam-card-code-btn {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+}
+.exam-card-code-btn:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border-subtle));
+}
+
+/* --- Exam card banner, restored -------------------------------------------
+   The banner is back, carrying the title and subject. What made the original
+   unwieldy wasn't the colour — it was everything crammed into it: status
+   badge, access code, date, a ghost letter watermark and two decorative
+   circles, spread over ~120px that was mostly empty.
+
+   Now it holds the title alone and sizes to it, and the meta row (status,
+   code, date) sits below on the card surface where it reads quietly. */
+.exam-card-banner {
+  position: relative;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* Depth under the white text, so it holds on the lighter tones (ready blue,
+   active green) without needing the old full-height scrim. */
+.exam-card-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.04), rgba(0,0,0,0.26));
+  pointer-events: none;
+}
+.exam-card-banner > * {
+  position: relative;
+  z-index: 1;
+}
+.exam-card-banner .exam-card-title {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.exam-card-banner .exam-card-subject {
+  color: rgba(255,255,255,0.9);
+  font-size: 12px;
+  margin-top: 0;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Meta row on the card surface — the part of the new layout that worked. */
+.exam-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  row-gap: 6px;
+  padding: 11px 16px 0;
+}
+
+/* The card already has the banner across its top, so the 3px accent bar is
+   now redundant — it read as a stripe above a stripe. */
+.exam-card::before {
+  display: none;
+}
+
+/* The watermark and corner circle move with the banner — they were scoped to
+   .exam-card-header, which the rebuilt markup no longer uses. Sized to the
+   88px banner rather than the old 110px one, and pinned behind the text. */
+.exam-card-banner {
+  overflow: hidden;
+}
+.exam-card-banner .exam-card-letter {
+  position: absolute;
+  right: 8px;
+  bottom: -22px;
+  font-size: 92px;
+  font-weight: 900;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.1);
+  user-select: none;
+  pointer-events: none;
+  z-index: 0;
+}
+.exam-card-banner .exam-card-header-deco {
+  position: absolute;
+  right: -22px;
+  top: -26px;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 0;
+}
+/* The overlay sits above the decoration but below the text, so the letter
+   keeps its depth without washing the title out. */
+.exam-card-banner::after {
+  z-index: 0;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ========================================================================== */
+
+/* The app loaded Plus Jakarta Sans (400-800) and reached for it in 20 places,
+   but `body` stayed on Segoe UI — so the admin shell rendered in one typeface
+   and the cards inside it in another. Setting it once at the root makes the
+   20 component-level declarations redundant rather than corrective. */
+body {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* --- Exam card type scale --------------------------------------------------
+   Two things were wrong beyond the family:
+
+   1. Small text inherited body's line-height: 1.6 — a reading measure meant
+      for paragraphs. On 12px labels it computed to 19.2px, so badges, dates
+      and stat labels all sat in boxes half again taller than their text.
+
+   2. The hierarchy was inverted and flat. The access code was 14px while the
+      badge and date beside it were 12px, making the least important element
+      the largest; and the title (15px) barely led the subject (12px). */
+.exam-card-banner .exam-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.15px;
+}
+.exam-card-banner .exam-card-subject {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.exam-card-meta .badge {
+  line-height: 1.1;
+}
+/* Scoped through .admin-layout deliberately. There is a pre-existing
+   `.admin-layout button, .admin-layout input, ... { font-size: inherit }`
+   reset at (0,1,1) specificity, so every button in the admin shell is pinned
+   to body's 14px no matter what its own class says — which is why the
+   original `.exam-card-code-btn { font-size: 12px }` never took effect
+   either. Matching that specificity is what makes the declaration real. */
+.admin-layout .exam-card-code-btn {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.6px;
+}
+.exam-card-date {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+/* The number is the point of the cell; the label was competing with it at
+   weight 700 and the same generous line-height. */
+.exam-stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.3px;
+}
+.exam-stat-lab {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.4px;
+  margin-top: 3px;
+}
+
+/* --- Statistics overview cards: align the content, not just the boxes -----
+   The four cards were already equal boxes (269x133). What made them look
+   unequal was the copy: one card's detail wrapped to two lines while the
+   others ran to one, so the label / value / detail rows stopped lining up
+   across the row.
+
+   Reserving two lines for the detail keeps every card's rows on the same
+   baseline whatever the copy length, instead of relying on each string
+   happening to be short enough. */
+/* Reserves one line, not two. The two-line reservation was belt-and-braces
+   on top of shortening the copy — with all four details now fitting on one
+   line it just parked an empty 16px line at the bottom of every card. */
+.stats-overview-card small {
+  display: block;
+  min-height: 1.35em;
+  line-height: 1.35;
+}
+.stats-overview-copy {
+  gap: 6px;
+}
+.stats-overview-card strong {
+  line-height: 1.05;
+}
+
+/* 126px min-height was sized for the old two-line detail; with one line the
+   content needs less, and 18px of padding all round is generous for a card
+   this size. */
+.stats-overview-card {
+  min-height: 0;
+  padding: 15px 16px;
+}
+
+/* --- Statistics overview cards: light mode --------------------------------
+   The card stated its tone three separate times: a gradient wash across the
+   whole surface, a 3px bar along the top, and the tinted icon tile. On white
+   the wash read as a pink haze rather than a signal, and stacked with the
+   other two it made the row look grubby instead of informative.
+
+   One carrier now — the icon tile — plus a crisp hairline on the top edge for
+   scanning across the row. The wash is gone.
+
+   It also floated on a drop shadow at an 18px radius while every other card
+   in the app is flat, bordered and 14px. Now it matches. */
+.stats-overview-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--card-radius);
+  box-shadow: none;
+}
+.stats-overview-card::after {
+  height: 2px;
+  opacity: 1;
+}
+.stats-overview-card:hover {
+  border-color: color-mix(in srgb, var(--stats-tone) 45%, var(--border-subtle));
+}
+
+/* The icon tile is the tone carrier, so give it enough presence to do that
+   job on its own rather than relying on the wash behind it. */
+.stats-overview-icon {
+  border-radius: var(--r-md);
+  border-color: color-mix(in srgb, var(--stats-tone) 30%, var(--border-subtle));
+  background: color-mix(in srgb, var(--stats-tone) 12%, var(--surface));
+}
+
+/* Value carries the tone in light mode too — currently it is plain text, so
+   at a glance only the 2px rule and the icon distinguish a bad number from a
+   good one. */
+:root:not([data-theme="dark"]) .stats-overview-card[class*="tone-"] strong {
+  color: var(--text);
+}
+:root:not([data-theme="dark"]) .stats-overview-card .stats-overview-copy > span {
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+/* --- Statistics overview cards: icon inline, not a tile -------------------
+   The icon sat in its own 42px grid column with a tinted box, so ~56px of
+   every card went to a graphic that repeats what the label already says in
+   words. The number — the thing you actually read — got what was left.
+
+   The icon now runs inline ahead of the label at text scale, which frees the
+   full card width for the value and detail. The 2px rule on the top edge
+   still carries the tone, so nothing is lost by unboxing it. */
+.stats-overview-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.stats-overview-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.stats-overview-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.stats-overview-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+/* Light mode: the glyph was a saturated tone colour inside a pale tinted box
+   — pink-on-pink at small size, which read as smudged rather than coloured.
+   Unboxed it only has to mark the metric, so it takes the muted text colour
+   and lets the top rule state the tone. */
+:root:not([data-theme="dark"]) .stats-overview-icon {
+  color: var(--text-muted);
+  background: none !important;
+  border: 0 !important;
+}
+[data-theme="dark"] .stats-overview-icon {
+  color: var(--text-muted) !important;
+  background: none !important;
+  border: 0 !important;
+}
+
+/* --- Text on coloured buttons ---------------------------------------------
+   `--white` is a SURFACE token: #ffffff in light, but #171d22 in dark, where
+   it is the card colour. These buttons used it as a TEXT colour, so in dark
+   mode every one of them rendered near-black text on a saturated fill — the
+   Confirm button in the confirm dialog being the most visible.
+
+   --on-accent means "text that sits on a coloured fill" and stays white in
+   both themes, which is what these actually want. */
+.btn-primary,
+.btn-success,
+.btn-danger,
+.btn-warning,
+.btn-outline:hover {
+  color: var(--on-accent);
+}
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .btn-success,
+[data-theme="dark"] .btn-danger,
+[data-theme="dark"] .btn-warning {
+  color: var(--on-accent) !important;
 }
