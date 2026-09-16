@@ -8,7 +8,7 @@ const {
 } = require('./auth-route.cjs');
 const {
   PredictionUnavailableError,
-  aggregateSessionFeatureSnapshot,
+  aggregateViolationFeatureSnapshot,
 } = require('./random-forest-aggregation.cjs');
 const {
   getModelMetadata,
@@ -17,6 +17,11 @@ const {
 
 const MAX_REFRESH_SESSIONS = 250;
 const MAX_REFRESH_CONCURRENCY = 4;
+const RULE_LOG_POLICY_VERSION = 'rule-logs-v2';
+
+function getPredictionModelVersion(metadata) {
+  return `${metadata.model_version}+${RULE_LOG_POLICY_VERSION}`;
+}
 
 function badRequest(res, message) {
   jsonResponse(res, 400, { success: false, message });
@@ -125,35 +130,68 @@ async function savePredictionRecord(session, modelVersion, values) {
   return rows[0];
 }
 
+async function loadSessionViolationEvents(session) {
+  const { rows } = await query(
+    `select ve.violation_type,
+            ve.detection_metadata,
+            ve.warning_count,
+            exists (
+              select 1
+                from public.violation_evidence evidence
+               where evidence.violation_event_id = ve.id
+                 and evidence.review_status = 'dismissed'
+            ) as dismissed
+       from public.violation_events ve
+      where ve.session_id = $1
+        and ve.exam_id = $2
+        and ve.owner_admin_id = $3
+      order by ve.created_at asc, ve.id asc`,
+    [session.id, session.exam_id, session.resolved_owner_admin_id],
+  );
+  return rows;
+}
+
 async function generateSessionPrediction(session) {
   const metadata = getModelMetadata();
+  const modelVersion = getPredictionModelVersion(metadata);
   try {
-    const { features, imputedFeatures } = aggregateSessionFeatureSnapshot(
+    const recordedEvents = await loadSessionViolationEvents(session);
+    const { features, violations, violationCount } = aggregateViolationFeatureSnapshot(
       session,
+      recordedEvents,
       metadata.missing_feature_defaults,
     );
-    const result = await predict(features);
-    const missingSignalGroups = [
-      imputedFeatures.some(name => name.startsWith('browser_')) ? 'browser' : '',
-      imputedFeatures.some(name => name.startsWith('webcam_')) ? 'webcam' : '',
-    ].filter(Boolean);
-    const dataNote = missingSignalGroups.length
-      ? `Limited recorded data: neutral baseline values were used for missing ${missingSignalGroups.join(' and ')} signals.`
-      : null;
-    return savePredictionRecord(session, metadata.model_version, {
+    // No rule violation means no suspicion. In particular, timeout, elapsed
+    // duration, normal browser start/end records, consent, and calibration do
+    // not enter the model or raise the displayed probability.
+    const result = violationCount > 0
+      ? await predict(features)
+      : {
+          suspiciousProbability: 0,
+          riskLevel: 'normal',
+          requiresProfessorReview: false,
+        };
+    const dataNote = violationCount > 0
+      ? `Based on ${violationCount} recorded rule violation${violationCount === 1 ? '' : 's'}; session timing and pre-exam checks were excluded.`
+      : 'No recorded rule violations. Session timing and pre-exam checks were excluded.';
+    return savePredictionRecord(session, modelVersion, {
       ...result,
       status: 'completed',
-      features,
+      features: {
+        ...features,
+        rule_violation_count: violationCount,
+        rule_violation_types: violations.map(event => String(event.violation_type || event.violationType || event.type || '')),
+      },
       unavailableReason: dataNote,
     });
   } catch (error) {
     if (error instanceof PredictionUnavailableError) {
-      return savePredictionRecord(session, metadata.model_version, {
+      return savePredictionRecord(session, modelVersion, {
         status: 'unavailable',
         unavailableReason: error.message,
       });
     }
-    await savePredictionRecord(session, metadata.model_version, {
+    await savePredictionRecord(session, modelVersion, {
       status: 'failed',
       unavailableReason: 'The prediction service could not analyze this session.',
     });
@@ -174,6 +212,7 @@ async function getOwnedExam(professorId, examId) {
 
 async function buildStatisticsSummary(professorId, exam) {
   const metadata = getModelMetadata();
+  const modelVersion = getPredictionModelVersion(metadata);
   const { rows } = await query(
     `select count(*)::integer as total_sessions,
             count(*) filter (where p.status = 'completed')::integer as analyzed_sessions,
@@ -194,7 +233,7 @@ async function buildStatisticsSummary(professorId, exam) {
       where s.exam_id = $2
         and s.submitted = true
         and coalesce(s.owner_admin_id, e.owner_admin_id) = $1`,
-    [professorId, exam.id, metadata.model_version],
+    [professorId, exam.id, modelVersion],
   );
   const row = rows[0] || {};
   const predictionResult = await query(
@@ -221,7 +260,7 @@ async function buildStatisticsSummary(professorId, exam) {
       order by lower(coalesce(nullif(s.student_name, ''), s.student_id)),
                s.end_time desc nulls last,
                s.id`,
-    [professorId, exam.id, metadata.model_version],
+    [professorId, exam.id, modelVersion],
   );
   const normalCount = Number(row.normal_count || 0);
   const needsMonitoringCount = Number(row.needs_monitoring_count || 0);
@@ -245,7 +284,7 @@ async function buildStatisticsSummary(professorId, exam) {
       { riskLevel: 'suspicious', count: suspiciousCount },
     ],
     predictions: predictionResult.rows.map(normalizeStatisticsPredictionRow),
-    modelVersion: metadata.model_version,
+    modelVersion,
     lastUpdated: row.last_updated || null,
     generatedAt: new Date().toISOString(),
   };
@@ -282,6 +321,7 @@ async function handleRefresh(req, res, url) {
   const exam = await getOwnedExam(admin.id, examId);
   if (!exam) return jsonResponse(res, 404, { success: false, message: 'Exam not found.' });
   const metadata = getModelMetadata();
+  const modelVersion = getPredictionModelVersion(metadata);
   const { rows } = await query(
     `select s.*,
             e.subject_id as course_id,
@@ -302,7 +342,7 @@ async function handleRefresh(req, res, url) {
                s.end_time asc nulls last,
                s.id asc
       limit $4`,
-    [admin.id, examId, metadata.model_version, MAX_REFRESH_SESSIONS],
+    [admin.id, examId, modelVersion, MAX_REFRESH_SESSIONS],
   );
 
   const counts = { completed: 0, unavailable: 0, failed: 0 };

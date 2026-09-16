@@ -2137,61 +2137,22 @@ function renderDashboard() {
   const refreshEl = document.getElementById('dash-refresh-time');
   if (refreshEl) refreshEl.textContent = 'Updated ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-  // One card shape for the whole row. The icon tile is neutral: a count
-  // of courses is not "blue" and a count of submissions is not "purple",
-  // so the five accents were decoration standing in for information.
-  // Active Exams is the exception and keeps a colour, because a running
-  // exam is a live state a professor needs to spot -- and it drops back
-  // to neutral the moment the count is 0.
-  const statCard = (label, icon, value, opts) => {
-    const live = opts && opts.live;
-    return `
-    <div class="stat-card"${live ? ' data-state="live"' : ''}>
-      <div class="stat-card-head">
-        <span class="stat-label">${live ? '<span class="stat-live-dot"></span>' : ''}${label}</span>
-        <span class="stat-icon">${icon}</span>
-      </div>
-      <div class="stat-value">${value}</div>
-    </div>`;
-  };
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${subjects.length}</div><div class="stat-label">Courses</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-value">${students.length}</div><div class="stat-label">Students</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-value">${exams.length}</div><div class="stat-label">Total Exams</div></div></div>
+    <div class="stat-card"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
+    <div class="stat-card"><div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="stat-value">${submittedSessions.length}</div><div class="stat-label">Submissions</div></div></div>
+  `;
 
-  // This section is re-rendered by the 5s live poll, which replaces these
-  // nodes wholesale and restarts any animation bound to them. Only the
-  // first paint should animate; poll ticks must land silently.
-  const dashStatsEl = document.getElementById('dash-stats');
-  const dashFirstPaint = !dashStatsEl.children.length;
-
-  dashStatsEl.innerHTML = [
-    statCard('Courses', `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`, subjects.length),
-    statCard('Students', `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, students.length),
-    statCard('Total Exams', `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`, exams.length),
-    statCard('Active Exams', `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`, activeExams.length, { live: activeExams.length > 0 }),
-    statCard('Submissions', `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`, submittedSessions.length),
-  ].join('');
-
-  dashStatsEl.classList.toggle('dash-animate', dashFirstPaint);
-
-  renderAnalytics(exams, sessions, students, dashFirstPaint);
+  renderAnalytics(exams, sessions, students);
 
   // Recent exams
   const recentExams = [...exams].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
-  // A row list rather than a table. With one variable-length text column
-  // and two short token columns, a centred grid always reads ragged --
-  // every row starts at a different x because every title is a different
-  // length. Here each row anchors its name to the left edge and its meta
-  // cluster to the right, so all five rows begin and end on the same two
-  // lines regardless of content.
   const recentHtml = recentExams.length
-    ? `<ul class="panel-list">
-        ${recentExams.map(e => `
-          <li class="panel-list-row">
-            <span class="panel-list-name" title="${escAttr(e.title)}">${escHtml(e.title)}</span>
-            <span class="panel-list-meta">
-              <span class="panel-list-status">${statusBadge(e.status)}</span>
-              <span class="panel-list-count">${e.questions.length}<abbr title="questions">Q</abbr></span>
-            </span>
-          </li>`).join('')}
-       </ul>`
+    ? `<table style="width:100%;"><thead><tr><th scope="col">Title</th><th scope="col" style="text-align:center;">Status</th><th scope="col" style="text-align:center;">Questions</th></tr></thead><tbody>
+        ${recentExams.map(e => `<tr><td>${escHtml(e.title)}</td><td style="text-align:center;">${statusBadge(e.status)}</td><td style="text-align:center;">${e.questions.length}</td></tr>`).join('')}
+       </tbody></table>`
     : `<div class="empty-state"><p>No exams yet</p></div>`;
   document.getElementById('dash-recent-exams').innerHTML = recentHtml;
 
@@ -2213,7 +2174,7 @@ function renderDashboard() {
        </tbody></table>`
     : activeExams.length
       ? `<div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
-          <div style="font-size:12px;color:var(--text-muted-2);">No students are taking an exam right now, but these exams are live and ready for joins.</div>
+          <div style="font-size:12px;color:var(--text-muted);">No students are taking an exam right now, but these exams are live and ready for joins.</div>
           ${activeExams.slice(0, 5).map(exam => {
             const liveCount = sessions.filter(session => session.examId === exam.id && !session.submitted).length;
             return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
@@ -2241,7 +2202,7 @@ function renderDashboard() {
   document.getElementById('dash-active-sessions').innerHTML = sessHtml;
 }
 
-function renderAnalytics(exams, sessions, students, firstPaint) {
+function renderAnalytics(exams, sessions, students) {
   const analyticsEl = document.getElementById('dash-analytics');
   if (!analyticsEl) return;
 
@@ -2268,34 +2229,64 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
     trendLabel = diff > 2 ? `+${Math.round(diff)}% vs first` : diff < -2 ? `${Math.round(diff)}% vs first` : 'Stable trend';
   }
 
-  // Geometry only -- every colour comes from --chart-* in style.css.
-  let sparkSvg;
+  let sparkSvg = '';
+  if (examScores.length >= 2) {
+    const W = 200, H = 50;
+    const vals = examScores.map(e => e.avg);
+    const minV = Math.min(...vals) - 5, maxV = Math.max(...vals) + 5;
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const areaPath = `M0,${H} L` + vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' L') + ` L${W},${H} Z`;
+    sparkSvg = `
+      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs><linearGradient id="sg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22c55e" stop-opacity="0.28"/><stop offset="100%" stop-color="#22c55e" stop-opacity="0"/></linearGradient></defs>
+        <path d="${areaPath}" fill="url(#sg1)"/>
+        <polyline points="${pts}" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${vals.map((v, i) => { const x = (i / (vals.length-1)) * W; const y = H - ((v - minV) / (maxV - minV)) * H; return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#22c55e"/>`; }).join('')}
+      </svg>`;
+  } else {
+    sparkSvg = `<div class="text-muted" style="font-size:12px;padding:12px 0;">Not enough data for trend. Complete at least 2 exams.</div>`;
+  }
+
+  // Dark sparkline
+  let darkSparkSvg = sparkSvg;
   if (examScores.length >= 2) {
     const W = 200, H = 60;
     const vals = examScores.map(e => e.avg);
     const minV = Math.min(...vals) - 5, maxV = Math.max(...vals) + 5;
-    const coords = vals.map((v, i) => ({
-      x: +((i / (vals.length - 1)) * W).toFixed(1),
-      y: +(H - ((v - minV) / (maxV - minV)) * H).toFixed(1),
-    }));
-    const pts = coords.map(c => `${c.x},${c.y}`).join(' ');
-    const areaPath = `M0,${H} L` + coords.map(c => `${c.x},${c.y}`).join(' L') + ` L${W},${H} Z`;
-    const last = coords[coords.length - 1];
-    sparkSvg = `
-      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Average score trend across the last ${vals.length} closed exams">
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const areaPath = `M0,${H} L` + vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' L') + ` L${W},${H} Z`;
+    const lastPt = pts.split(' ').pop().split(',');
+    darkSparkSvg = `
+      <svg class="sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <defs>
-          <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop class="spark-stop-top" offset="0%"/>
-            <stop class="spark-stop-bottom" offset="100%"/>
+          <linearGradient id="dsg1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4ade80" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>
           </linearGradient>
         </defs>
-        <path class="spark-area" d="${areaPath}"/>
-        <polyline class="spark-line" points="${pts}"/>
-        <circle class="spark-point-halo" cx="${last.x}" cy="${last.y}" r="7"/>
-        <circle class="spark-point" cx="${last.x}" cy="${last.y}" r="3.5"/>
+        <path d="${areaPath}" fill="url(#dsg1)"/>
+        <polyline points="${pts}" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="#4ade80" opacity="0.9"/>
+        <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="7" fill="#4ade80" opacity="0.2"/>
       </svg>`;
   } else {
-    sparkSvg = `<div class="chart-empty">Complete at least 2 exams to see trend.</div>`;
+    darkSparkSvg = `<div style="font-size:11px;color:rgba(255,255,255,0.35);padding:10px 0;">Complete at least 2 exams to see trend.</div>`;
   }
 
   const card1 = `
@@ -2304,8 +2295,7 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
       <div class="ac-dark-value">${avgPct !== null ? avgPct + '%' : '—'}</div>
       <div class="ac-dark-sub">Avg Completion Rate</div>
       <span class="ac-trend-badge ac-trend-${trendClass}">${trendArrow} ${Math.abs(examScores.length >= 2 ? examScores[examScores.length-1].avg - examScores[0].avg : 0)}%</span>
-      <div class="sparkline-wrap" style="margin-top:12px;">${sparkSvg}</div>
-      ${examScores.length >= 2 ? `<div class="ac-footnote"><span>Across ${examScores.length} closed exams</span><strong>${Math.min(...examScores.map(e => e.avg))}–${Math.max(...examScores.map(e => e.avg))}%</strong></div>` : ''}
+      <div class="sparkline-wrap" style="margin-top:12px;">${darkSparkSvg}</div>
     </div>`;
 
   // --- Card 2: At-Risk Students ---
@@ -2323,21 +2313,18 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
     .sort((a, b) => (a.risk === 'high' ? -1 : 1) - (b.risk === 'high' ? -1 : 1))
     .slice(0, 5);
 
-  // The avatar used to pick from a five-colour rainbow by list index, so
-  // the same student changed colour whenever the sort order moved. The
-  // avatar now states the risk level via data-risk, which is the only
-  // thing about a student that colour should be claiming here.
+  const riskColors = ['#f87171','#60a5fa','#c084fc','#fb923c','#34d399'];
   const atRiskHtml = atRiskList.length
-    ? atRiskList.map(s => {
+    ? atRiskList.map((s, i) => {
         const init = (s.name || '?').charAt(0).toUpperCase();
-        return `<div class="risk-item-dark" data-risk="${s.risk}">
-          <div class="risk-avatar-dark">${init}</div>
+        return `<div class="risk-item-dark">
+          <div class="risk-avatar-dark" style="background:${riskColors[i % riskColors.length]}22;color:${riskColors[i % riskColors.length]};border:1px solid ${riskColors[i % riskColors.length]}44;">${init}</div>
           <span class="risk-name-dark">${escHtml(formatCourseNameDisplay(s.name))}</span>
           ${s.avgScore !== null ? `<span class="risk-score-dark">${Math.round(s.avgScore)}%</span>` : ''}
           <span class="risk-badge-dark risk-badge-${s.risk}">${s.risk === 'high' ? 'High Risk' : 'Watch'}</span>
         </div>`;
       }).join('')
-    : `<div class="risk-empty">No at-risk students detected</div>`;
+    : `<div style="color:rgba(255,255,255,0.3);font-size:12px;padding:12px 0;text-align:center;">No at-risk students detected</div>`;
 
   const card2 = `
     <div class="analytics-card ac-dark ac-dark-red">
@@ -2345,7 +2332,6 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
       <div class="ac-dark-value">${atRiskList.filter(s => s.risk === 'high').length}</div>
       <div class="ac-dark-sub">High risk flagged</div>
       <div class="risk-list-dark">${atRiskHtml}</div>
-      ${students.length ? `<div class="ac-footnote"><span>Of ${students.length} enrolled student${students.length === 1 ? '' : 's'}</span><strong>${Math.round((atRiskList.length / students.length) * 100)}%</strong></div>` : ''}
     </div>`;
 
   // --- Card 3: Score Distribution ---
@@ -2360,41 +2346,46 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
   const maxCount = Math.max(1, ...ranges.map(r =>
     submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length
   ));
-  const barW = 32, barGap = 9, chartH = 130, labelH = 20;
+  // Glowing gradient bar chart
+  const barAccent = '#4ade80';
+  const barW = 32, barGap = 9, chartH = 72, labelH = 20;
   const totalW = ranges.length * barW + (ranges.length - 1) * barGap;
   const counts = ranges.map(r => submitted.filter(s => { const p = s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0; return p >= r.min && p <= r.max; }).length);
   const peak = Math.max(1, ...counts);
 
-  // Geometry and class names only. The bars used to carry a per-bar
-  // gradient plus a gaussian glow filter in a green that appeared
-  // nowhere else in the product; the haze read as decoration sitting on
-  // top of the data rather than as the data.
-  const barsSvg = ranges.map((r, i) => {
+  const barsSvg = `<defs>
+    <filter id="bglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>` + ranges.map((r, i) => {
     const count = counts[i];
-    const hasData = count > 0;
-    const h = hasData ? Math.max(4, Math.round((count / peak) * chartH)) : 0;
+    const h = Math.max(4, Math.round((count / peak) * chartH));
     const x = i * (barW + barGap);
     const y = chartH - h;
-    // Every bucket gets a full-height track behind it. Bar heights are
-    // relative to the busiest bucket (peak), so the tallest bar always
-    // fills the well -- without a visible well that reads as an absolute
-    // scale, which is why a count of 6 looked enormous.
+    const hasData = count > 0;
+    const gradId = `dg${i}`;
     return `
-      <rect class="sd-track" x="${x}" y="0" width="${barW}" height="${chartH}" rx="4"/>
-      ${hasData ? `<rect class="sd-bar" x="${x}" y="${y}" width="${barW}" height="${h}" rx="4"/>` : ''}
-      ${hasData ? `<text class="sd-count" x="${x + barW / 2}" y="${y - 6}" text-anchor="middle">${count}</text>` : ''}
-      <text class="sd-axis" x="${x + barW / 2}" y="${chartH + labelH - 2}" text-anchor="middle">${escHtml(r.label)}</text>`;
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${barAccent}" stop-opacity="${hasData ? 0.9 : 0.1}"/>
+          <stop offset="100%" stop-color="${barAccent}" stop-opacity="${hasData ? 0.06 : 0.03}"/>
+        </linearGradient>
+      </defs>
+      <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="url(#${gradId})" ${hasData ? 'filter="url(#bglow)"' : ''}/>
+      ${hasData ? `<rect x="${x+7}" y="${y}" width="${barW-14}" height="3" rx="2" fill="${barAccent}" opacity="1"/>` : ''}
+      ${count > 0 ? `<text x="${x+barW/2}" y="${y-6}" text-anchor="middle" fill="${barAccent}" font-size="10" font-weight="800" font-family="'Plus Jakarta Sans',sans-serif">${count}</text>` : ''}
+      <text x="${x+barW/2}" y="${chartH+labelH-2}" text-anchor="middle" fill="rgba(255,255,255,0.25)" font-size="8" font-family="sans-serif">${escHtml(r.label)}</text>`;
   }).join('');
 
-  const distSvg = `<svg viewBox="0 0 ${totalW} ${chartH+labelH}" class="sd-svg" preserveAspectRatio="xMidYMid meet" style="width:100%;overflow:visible;">${barsSvg}</svg>`;
+  const distSvg = `<svg viewBox="0 0 ${totalW} ${chartH+labelH}" class="dist-bar-svg" preserveAspectRatio="xMidYMid meet" style="width:100%;overflow:visible;">${barsSvg}</svg>`;
 
   const card3 = `
     <div class="analytics-card ac-dark ac-dark-teal">
       <div class="ac-dark-label">SCORE DISTRIBUTION</div>
       <div class="ac-dark-value">${submitted.length}</div>
       <div class="ac-dark-sub">Total scored submissions</div>
-      <div class="sd-wrap" style="margin-top:12px;padding:0 4px;">${distSvg}</div>
-      ${submitted.length ? `<div class="ac-footnote"><span>Most common band</span><strong>${escHtml(ranges[counts.indexOf(Math.max(...counts))].label)}%</strong></div>` : ''}
+      <div style="margin-top:12px;padding:0 4px;">${distSvg}</div>
     </div>`;
 
   // --- Card 4: Performance Forecast ---
@@ -2436,7 +2427,6 @@ function renderAnalytics(exams, sessions, students, firstPaint) {
     </div>`;
 
   analyticsEl.innerHTML = card1 + card2 + card3 + card4;
-  analyticsEl.classList.toggle('dash-animate', !!firstPaint);
 }
 
 // ============================================================
@@ -2681,24 +2671,24 @@ function renderSubjects() {
             ${s.description ? `<div class="course-card-desc">${escHtml(s.description)}</div>` : ''}
           </div>
         </div>
-      </div>
-      <!-- Non-clickable zone: figures + enrol code + actions. The stats
-           moved in here so the whole body shares one gutter and one
-           vertical rhythm; the header above remains the click target. -->
-      <div class="course-card-body" style="padding-top:16px;">
-        <div class="course-card-stats">
-          <div class="course-stat-cell">
-            <div class="course-stat-lab">Exams</div>
-            <div class="course-stat-num">${examCount}</div>
-          </div>
-          <div class="course-stat-cell">
-            <div class="course-stat-lab">Students</div>
-            <div class="course-stat-num">${studentCount}</div>
+        <div style="padding:14px 18px 0;">
+          <div class="course-card-stats">
+            <div class="course-stat-cell">
+              <div class="course-stat-num">${examCount}</div>
+              <div class="course-stat-lab">Exams</div>
+            </div>
+            <div class="course-stat-cell">
+              <div class="course-stat-num">${studentCount}</div>
+              <div class="course-stat-lab">Students</div>
+            </div>
           </div>
         </div>
+      </div>
+      <!-- Non-clickable zone: enroll code + actions -->
+      <div class="course-card-body" style="padding-top:12px;">
         <div class="course-card-enroll">
           <div class="course-card-enroll-group">
-            <span class="course-enroll-label">Enroll Code:</span>
+            <span class="course-enroll-label">Enroll Code</span>
             ${enrollHtml}
           </div>
           ${yearSectionMeta}
@@ -4535,7 +4525,7 @@ function renderArchivedExams() {
         <td data-label="Code" style="text-align:center;">${e.code ? `<span class="code-tag">${e.code}</span>` : '—'}</td>
         <td data-label="Questions" style="text-align:center;">${e.questions.length}</td>
         <td data-label="Time" style="text-align:center;">${e.timeLimit} min</td>
-        <td data-label="Archived" style="text-align:center;">${formatDate(e.updatedAt || e.createdAt)}</td>
+        <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(e.updatedAt || e.createdAt)}</span></td>
         <td data-label="">
           <div class="table-actions">
             ${recoverAction}
@@ -4568,7 +4558,7 @@ function renderArchivedStudents() {
       <td data-label="Name"><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
       <td data-label="Year Level" style="text-align:center;">${escHtml(s.yearLevel || '—')}</td>
       <td data-label="Section" style="text-align:center;">${escHtml(getStudentSectionDisplay(s) || '—')}</td>
-      <td data-label="Archived" style="text-align:center;">${formatDate(s.archivedAt)}</td>
+      <td data-label="Archived" style="text-align:center;"><span class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt)}</span></td>
       <td data-label="">
         <div class="table-actions">
           <button class="btn-action btn-action-ghost" onclick="restoreStudent('${s.id}')">Restore${icUndoFill}</button>
@@ -4621,12 +4611,12 @@ function renderArchivedCourses() {
     return `
       <tr>
         <td style="text-align:center;width:36px;">${archiveRowCheckbox('courses', s.id, selected.has(s.id))}</td>
-        <td data-label="Code" style="text-align:center;"><span class="code-tag">${escHtml(s.code)}</span></td>
-        <td data-label="Course Name"><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
-        <td data-label="Year Level" style="text-align:center;">${escHtml(years)}</td>
-        <td data-label="Sections" style="text-align:center;">${escHtml(sections)}</td>
-        <td data-label="Archived" style="text-align:center;">${formatDate(s.archivedAt || s.createdAt)}</td>
-        <td data-label="">
+        <td><span class="code-tag">${escHtml(s.code)}</span></td>
+        <td><strong>${escHtml(formatCourseNameDisplay(s.name))}</strong></td>
+        <td>${escHtml(years)}</td>
+        <td>${escHtml(sections)}</td>
+        <td style="text-align:center;" class="text-muted" style="font-size:12px;">${formatDate(s.archivedAt || s.createdAt)}</td>
+        <td>
           <div class="table-actions">
             <button class="btn-action btn-action-ghost" onclick="recoverCourse('${s.id}')">Recover${icUndoFill}</button>
             <button class="tbl-btn tbl-btn-archive" onclick="permanentDeleteCourse('${s.id}')">Delete Permanently${icTrashStroke}</button>
@@ -5374,7 +5364,7 @@ function exportExamPaperWord() {
   .exam-paper-title { font-size:20pt; font-weight:bold; margin-bottom:8pt; }
   .exam-paper-meta { font-size:11pt; color:#4b5563; margin-bottom:4pt; }
   .exam-paper-meta-avatar { display:none; }
-  .exam-paper-sub { font-size:10pt; color:var(--text-muted-2); margin-bottom:16pt; }
+  .exam-paper-sub { font-size:10pt; color:#6b7280; margin-bottom:16pt; }
   .exam-paper-hr { border:none; border-top:1px solid #ccc; margin:12pt 0 16pt; }
   .exam-paper-q { margin-bottom:16pt; }
   .exam-paper-q-row { font-size:12pt; font-weight:bold; }
@@ -5864,7 +5854,7 @@ function openExamAbsenteesModal() {
               </div></div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;">${escHtml(s.name)}</div>
-                <div style="font-size:11px;color:var(--text-muted-2);">${escHtml(s.studentId)}${s.yearLevel ? ' · ' + escHtml(s.yearLevel) : ''}${s.section ? ' · ' + escHtml(s.section) : ''}</div>
+                <div style="font-size:11px;color:#9ca3af;">${escHtml(s.studentId)}${s.yearLevel ? ' · ' + escHtml(s.yearLevel) : ''}${s.section ? ' · ' + escHtml(s.section) : ''}</div>
               </div>
             </label>`).join('')}
         </div>`
@@ -6537,7 +6527,7 @@ function buildQuestionBlock(q, idx) {
         <div id="enum-list-${idx}" style="display:flex;flex-direction:column;gap:6px;">
           ${answers.map((a, ai) => `
             <div style="display:flex;gap:8px;align-items:center;">
-              <span style="font-size:12px;color:var(--text-muted-2);font-weight:700;min-width:22px;">${ai+1}.</span>
+              <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${ai+1}.</span>
               <input type="text" class="form-control" value="${escHtml(a)}" placeholder="Expected answer ${ai+1}" onchange="updateEnumAnswer(${idx},${ai},this.value)" style="flex:1;" />
               <button class="btn btn-danger btn-sm" onclick="removeEnumAnswer(${idx},${ai})" ${answers.length<=1?'disabled':''}>✕</button>
             </div>`).join('')}
@@ -6563,8 +6553,8 @@ function buildQuestionBlock(q, idx) {
       <div class="form-group">
         <label>Matching Pairs <span class="text-muted" style="font-weight:400;">(term → correct match)</span></label>
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px 12px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #f3f4f6;">
-          <div style="font-size:10px;font-weight:700;color:var(--text-muted-2);text-transform:uppercase;letter-spacing:0.5px;">Term / Question</div>
-          <div style="font-size:10px;font-weight:700;color:var(--text-muted-2);text-transform:uppercase;letter-spacing:0.5px;">Correct Match</div>
+          <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Term / Question</div>
+          <div style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Correct Match</div>
           <div></div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;">
@@ -6615,7 +6605,7 @@ function buildQuestionBlock(q, idx) {
         <label>Expected Output <span class="text-muted" style="font-weight:400;">(shown to students as reference)</span></label>
         <textarea class="form-control q-textarea" rows="3" placeholder="Expected program output..." style="font-family:monospace;font-size:13px;" onchange="updateQField(${idx},'expectedOutput',this.value)">${escHtml(q.expectedOutput||'')}</textarea>
       </div>
-      <div style="font-size:12px;color:var(--text-muted-2);background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
         <strong>Note:</strong> Students write their solution in a code editor. Answers are manually graded — scores start at 0 until you review them in Reports.
       </div>`;
   } else if (q.type === 'checkbox') {
@@ -6671,7 +6661,7 @@ function buildQuestionBlock(q, idx) {
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${acceptedAnswers.map((answer, answerIdx) => `
             <div class="identification-answer-row">
-              <span style="font-size:12px;color:var(--text-muted-2);font-weight:700;min-width:22px;">${answerIdx + 1}.</span>
+              <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${answerIdx + 1}.</span>
               <input type="text" class="form-control" value="${escHtml(answer)}" aria-label="Accepted answer ${answerIdx + 1}" placeholder="Accepted answer ${answerIdx + 1}" onchange="updateIdentificationAnswer(${idx},${answerIdx},this.value)" />
               <button type="button" class="btn btn-danger btn-sm identification-answer-remove" aria-label="Remove accepted answer ${answerIdx + 1}" title="Remove answer" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>&times;</button>
             </div>`).join('')}
@@ -7811,8 +7801,8 @@ function viewQuestionBreakdown(examId) {
 
     const diff = resolveQuestionDifficulty(q, sessions);
     const diffNote = diff.source === 'statistical'
-      ? ` <span style="font-size:10px;color:var(--text-muted-2);font-weight:600;">${diff.pct}% correct</span>`
-      : diff.level ? ` <span style="font-size:10px;color:var(--text-muted-2);font-weight:600;">${DIFFICULTY_SOURCE_LABEL[diff.source]}</span>` : '';
+      ? ` <span style="font-size:10px;color:#9ca3af;font-weight:600;">${diff.pct}% correct</span>`
+      : diff.level ? ` <span style="font-size:10px;color:#9ca3af;font-weight:600;">${DIFFICULTY_SOURCE_LABEL[diff.source]}</span>` : '';
 
     return `
       <div class="qbreak-item">
@@ -7954,7 +7944,7 @@ function renderCameraGrid(examId) {
       empty.style.display = '';
       empty.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-        <div style="font-size:14px;font-weight:600;color:var(--text-muted-2);">No active camera feeds</div>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">No active camera feeds</div>
         <div style="font-size:12px;margin-top:4px;color:#4b5563;">Feeds appear here for students currently taking the exam</div>`;
     }
     return;
@@ -8016,7 +8006,7 @@ function renderCameraGrid(examId) {
       empty.style.display = '';
       empty.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-        <div style="font-size:14px;font-weight:600;color:var(--text-muted-2);">Camera Grid is only used for camera-proctored exams</div>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">Camera Grid is only used for camera-proctored exams</div>
         <div style="font-size:12px;margin-top:4px;color:#4b5563;">Enable camera monitoring on the exam to collect camera-rule evidence snapshots here</div>`;
     }
     return;
@@ -8033,7 +8023,7 @@ function renderCameraGrid(examId) {
       empty.style.display = '';
       empty.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-        <div style="font-size:14px;font-weight:600;color:var(--text-muted-2);">No camera-rule violations captured yet</div>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">No camera-rule violations captured yet</div>
         <div style="font-size:12px;margin-top:4px;color:#4b5563;">Violation snapshots appear here when students are flagged for camera issues such as no person found, low brightness, or camera off</div>`;
     }
     return;
@@ -9298,9 +9288,9 @@ const DIFFICULTY_HARD_MAX = 40;   // pct <  this → Hard
 const DIFFICULTY_MIN_SAMPLE = 10; // submissions needed before stats override the AI/manual label
 
 const DIFFICULTY_META = {
-  easy:   { label: 'Easy',   color: 'var(--success-fg)', bg: 'var(--success-bg)', bd: 'var(--success-border)', emoji: '🟢' },
-  medium: { label: 'Medium', color: 'var(--warning-fg)', bg: 'var(--warning-bg)', bd: 'var(--warning-border)', emoji: '🟡' },
-  hard:   { label: 'Hard',   color: 'var(--danger-fg)',  bg: 'var(--danger-bg)',  bd: 'var(--danger-border)',  emoji: '🔴' },
+  easy:   { label: 'Easy',   color: '#15803d', bg: 'rgba(21,128,61,0.12)',  emoji: '🟢' },
+  medium: { label: 'Medium', color: '#d97706', bg: 'rgba(217,119,6,0.12)',  emoji: '🟡' },
+  hard:   { label: 'Hard',   color: '#dc2626', bg: 'rgba(220,38,38,0.12)',  emoji: '🔴' },
 };
 
 const DIFFICULTY_SOURCE_LABEL = {
@@ -9399,8 +9389,8 @@ function resolveQuestionDifficulty(q, sessions) {
 // Small inline pill for a difficulty level, used across stats + editor + preview.
 function difficultyBadge(level, extraStyle = '') {
   const meta = DIFFICULTY_META[level];
-  if (!meta) return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:var(--text-muted-2);background:var(--surface-fill);border:1px solid var(--border-subtle);white-space:nowrap;${extraStyle}">Unrated</span>`;
-  return `<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};border:1px solid ${meta.bd};white-space:nowrap;${extraStyle}">${meta.emoji} ${meta.label}</span>`;
+  if (!meta) return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#6b7280;background:rgba(107,114,128,0.12);white-space:nowrap;${extraStyle}">Unrated</span>`;
+  return `<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};white-space:nowrap;${extraStyle}">${meta.emoji} ${meta.label}</span>`;
 }
 
 // Horizontal 3-band gauge with a marker at `pct` (0% = hardest/left, 100% =
@@ -9411,14 +9401,14 @@ function difficultyGauge(pct) {
   return `
     <div style="margin:2px 0 2px;">
       <div style="position:relative;display:flex;height:9px;border-radius:99px;overflow:hidden;">
-        <div style="width:${DIFFICULTY_HARD_MAX}%;background:var(--danger-fg);"></div>
-        <div style="width:${DIFFICULTY_EASY_MIN - DIFFICULTY_HARD_MAX}%;background:var(--warning-fg);"></div>
-        <div style="width:${100 - DIFFICULTY_EASY_MIN}%;background:var(--success-fg);"></div>
+        <div style="width:${DIFFICULTY_HARD_MAX}%;background:#dc2626;opacity:.85;"></div>
+        <div style="width:${DIFFICULTY_EASY_MIN - DIFFICULTY_HARD_MAX}%;background:#d97706;opacity:.85;"></div>
+        <div style="width:${100 - DIFFICULTY_EASY_MIN}%;background:#15803d;opacity:.85;"></div>
       </div>
       <div style="position:relative;height:0;">
         <div style="position:absolute;top:-13px;left:${pos}%;transform:translateX(-50%);width:3px;height:17px;background:var(--text);border-radius:2px;box-shadow:0 0 0 2px var(--surface);"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted-2);margin-top:6px;font-weight:700;">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:6px;font-weight:700;">
         <span>Hard</span><span>Medium</span><span>Easy</span>
       </div>
     </div>`;
@@ -9445,17 +9435,12 @@ function setQuestionDifficulty(idx, level) {
 // high scorers did WORSE than low scorers (usually a miskeyed/ambiguous item).
 const DISCRIMINATION_MIN_SAMPLE = 8; // below this the index is too noisy to trust
 
-// Five bands, three colours. The band names already carry the five-way
-// distinction; colour only says good / watch / bad, which is the most
-// colour can honestly encode here. Excellent and Good were previously a
-// green and a teal that no reader could rank against each other, and
-// Poor and Review were two near-identical reds.
 const DISCRIMINATION_BANDS = [
-  { min: 0.40,      key: 'excellent', label: 'Excellent', tone: 'positive', color: 'var(--success-fg)', bg: 'var(--success-bg)', bd: 'var(--success-border)' },
-  { min: 0.30,      key: 'good',      label: 'Good',      tone: 'positive', color: 'var(--success-fg)', bg: 'var(--success-bg)', bd: 'var(--success-border)' },
-  { min: 0.20,      key: 'fair',      label: 'Fair',      tone: 'warning',  color: 'var(--warning-fg)', bg: 'var(--warning-bg)', bd: 'var(--warning-border)' },
-  { min: 0.00,      key: 'poor',      label: 'Poor',      tone: 'danger',   color: 'var(--danger-fg)',  bg: 'var(--danger-bg)',  bd: 'var(--danger-border)' },
-  { min: -Infinity, key: 'negative',  label: 'Review',    tone: 'danger',   color: 'var(--danger-fg)',  bg: 'var(--danger-bg)',  bd: 'var(--danger-border)' },
+  { min: 0.40,      key: 'excellent', label: 'Excellent', color: '#15803d', bg: 'rgba(21,128,61,0.12)' },
+  { min: 0.30,      key: 'good',      label: 'Good',      color: '#0d9488', bg: 'rgba(13,148,136,0.12)' },
+  { min: 0.20,      key: 'fair',      label: 'Fair',      color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+  { min: 0.00,      key: 'poor',      label: 'Poor',      color: '#dc2626', bg: 'rgba(220,38,38,0.12)' },
+  { min: -Infinity, key: 'negative',  label: 'Review',    color: '#b91c1c', bg: 'rgba(185,28,28,0.18)' },
 ];
 
 function discriminationMeta(d) {
@@ -9482,8 +9467,8 @@ function discriminationBar(d, color) {
   const mag = Math.min(1, Math.abs(d)) * 50; // half-width %
   const left = d >= 0 ? 50 : 50 - mag;
   return `
-    <div style="position:relative;height:8px;background:var(--chart-track);border-radius:99px;">
-      <div style="position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--chart-grid);"></div>
+    <div style="position:relative;height:8px;background:var(--surface-2);border-radius:99px;">
+      <div style="position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--border);"></div>
       <div style="position:absolute;top:0;bottom:0;left:${left}%;width:${mag}%;background:${color};border-radius:99px;"></div>
     </div>`;
 }
@@ -9492,8 +9477,7 @@ function discriminationBar(d, color) {
 // BLOOM'S TAXONOMY  (cognitive level per question)
 // ============================================================
 // Six cognitive levels, low-order (recall) → high-order (creation). Tagged by
-// AI at generation and overridable by the professor. Drives the Student Mastery
-// analysis below — mastery is measured per cognitive level.
+// AI at generation and overridable by the professor in the question editor.
 const BLOOM_LEVELS = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
 const BLOOM_META = {
   remember:   { label: 'Remember',   order: 1, color: '#2563eb', bg: 'rgba(37,99,235,0.12)',  hint: 'Recall facts & basic concepts' },
@@ -9520,40 +9504,6 @@ function setQuestionBloom(idx, level) {
   DB.updateExam(currentQBuilderExamId, { questions });
 }
 
-// ============================================================
-// STUDENT MASTERY  (class performance grouped by cognitive level)
-// ============================================================
-// For each Bloom level present in the exam, the mean proportion of points
-// students earned on questions of that level (0–100%). Answers "which cognitive
-// skills has the class mastered vs struggled with?".
-const MASTERY_MASTERED = 75; // pct >= this → mastered
-const MASTERY_STRUGGLING = 50; // pct <  this → struggling
-
-function masteryMeta(pct) {
-  if (pct >= MASTERY_MASTERED)   return { label: 'Mastered',   color: '#15803d' };
-  if (pct >= MASTERY_STRUGGLING) return { label: 'Developing', color: '#d97706' };
-  return { label: 'Struggling', color: '#dc2626' };
-}
-
-// Returns [{ level, pct, questionCount }] ordered by Bloom order, for every
-// cognitive level that has at least one tagged, auto-graded question.
-function computeMasteryByBloom(exam, sessions) {
-  const graded = (sessions || []).filter(s => s && s.submitted);
-  return BLOOM_LEVELS.map(level => {
-    const qs = (exam.questions || []).filter(q => q.bloom === level && isAutoGradedType(q.type) && (Number(q.points) || 0) > 0);
-    if (!qs.length || !graded.length) return null;
-    let sum = 0, n = 0;
-    graded.forEach(s => {
-      qs.forEach(q => {
-        sum += scoreQuestionEarned(q, (s.answers || {})[q.id], getSessionQuestionGrades(s)) / (Number(q.points) || 1);
-        n++;
-      });
-    });
-    return { level, pct: n ? Math.round((sum / n) * 100) : 0, questionCount: qs.length };
-  }).filter(Boolean);
-}
-
-// ============================================================
 // ============================================================
 // STATISTICS (full page per exam)
 // ============================================================
@@ -9767,7 +9717,15 @@ function renderExamStats() {
   }
 
   const exam = DB.getExam(examId);
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sessions = DB.getSessionsByExam(examId)
+    .filter(s => s.submitted)
+    .map(session => {
+      // Rebuild each result from the recorded answers and persisted professor
+      // overrides so stale cached score fields cannot skew Statistics.
+      const result = calculateSessionScoreBreakdown(exam, session);
+      const pct = result.max > 0 ? Math.round((result.earned / result.max) * 10000) / 100 : 0;
+      return { ...session, _statsEarned: result.earned, _statsMax: result.max, _statsPct: pct };
+    });
 
 
   if (!sessions.length) {
@@ -9776,20 +9734,17 @@ function renderExamStats() {
     return;
   }
 
-  const scores = sessions.map(s => s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0);
-  const passing = sessions.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length;
-  const autoSub = sessions.filter(s => s.autoSubmitted).length;
-  const flagged = sessions.filter(s => s.warnings >= 2).length;
-  // Tone is read off the number, not off the card's identity. Previously
-  // the Flagged card was hardcoded tone:'danger', so it rendered red while
-  // displaying 0, and Auto-Submitted was permanently amber. A count of
-  // zero incidents is not a warning -- these stay neutral until there is
-  // something to report.
+  const scores = sessions.map(s => Math.max(0, Math.min(100, Math.round(s._statsPct))));
+  const passing = sessions.filter(s => s._statsMax > 0 && s._statsPct >= 75).length;
+  const averageScore = sessions.length
+    ? Math.round(sessions.reduce((sum, session) => sum + session._statsPct, 0) / sessions.length)
+    : 0;
+  const flagged = sessions.filter(s => Number(s.warnings || 0) > 0).length;
   const overviewCards = [
-    {label:'Pass Rate (>=75%)',value:Math.round(passing/sessions.length*100)+'%',tone:'neutral'},
-    {label:'Auto-Submitted',value:autoSub,tone:autoSub > 0 ? 'warning' : 'neutral'},
-    {label:'Flagged (>=2 warn)',value:flagged,tone:flagged > 0 ? 'danger' : 'neutral'},
-    {label:'Total Submitted',value:sessions.length,tone:'neutral'},
+    {label:'Pass rate',value:Math.round(passing/sessions.length*100)+'%',detail:`${passing} of ${sessions.length} scored 75% or higher`,tone:'positive',icon:'check'},
+    {label:'Average score',value:averageScore+'%',detail:'From recorded answers and score overrides',tone:'neutral',icon:'chart'},
+    {label:'With violations',value:flagged,detail:`${sessions.length - flagged} submitted with no warnings`,tone:flagged ? 'danger' : 'positive',icon:'shield'},
+    {label:'Submissions',value:sessions.length,detail:'Completed student records',tone:'neutral',icon:'users'},
   ];
 
   // Score distribution
@@ -9807,16 +9762,12 @@ function renderExamStats() {
     // fills whatever vertical space the card ends up with.
     const barGrow = Math.max(cnt, maxCount * 0.03);
     const spacerGrow = Math.max(0, maxCount - cnt);
-    // Paint comes from the chart tokens, matching the dashboard's
-    // distribution chart. Was var(--primary) at opacity .8, which is the
-    // near-black sidebar green -- it read as a black bar, not a data bar.
-    // Empty buckets take the track colour instead of a faded primary.
-    return `<div class="sd-col" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;height:100%;">
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;height:100%;">
       <div style="flex:${spacerGrow} 0 0;width:100%;"></div>
-      <div style="font-size:11px;font-weight:700;color:var(--text-strong);font-variant-numeric:tabular-nums;">${cnt||''}</div>
-      <div style="flex:${barGrow} 0 0;width:100%;background:${cnt ? 'var(--chart-bar)' : 'var(--chart-bar-empty)'};border-radius:4px 4px 0 0;"></div>
-      <div style="font-size:10px;color:var(--chart-axis);text-align:center;">${r.l}%</div>
-      ${pointsLabel ? `<div style="font-size:9px;color:var(--chart-axis);text-align:center;">${pointsLabel}</div>` : ''}
+      <div style="font-size:11px;font-weight:700;color:var(--primary);">${cnt||''}</div>
+      <div style="flex:${barGrow} 0 0;width:100%;background:var(--primary);opacity:0.8;border-radius:4px 4px 0 0;"></div>
+      <div style="font-size:9px;color:var(--text-muted);text-align:center;">${r.l}%</div>
+      ${pointsLabel ? `<div style="font-size:9px;color:var(--text-muted);opacity:0.7;text-align:center;">${pointsLabel}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -9837,7 +9788,7 @@ function renderExamStats() {
   const avgDiffPct = statQs.length ? Math.round(statQs.reduce((a, d) => a + d.pct, 0) / statQs.length) : null;
 
   // Top & bottom performers
-  const ranked = [...sessions].sort((a,b)=>(b.score||0)-(a.score||0));
+  const ranked = [...sessions].sort((a,b)=>b._statsPct-a._statsPct);
 
   // Discrimination Index per auto-graded question (top-27% vs bottom-27%).
   const discStats = exam.questions.map((q, qi) => {
@@ -9847,35 +9798,21 @@ function renderExamStats() {
   const discReliable = ranked.length >= DISCRIMINATION_MIN_SAMPLE;
   const discFlagged = discStats.filter(x => x.d < 0.20).length; // poor + negative — worth reviewing
 
-  // Student Mastery by Bloom's cognitive level.
-  const masteryStats = computeMasteryByBloom(exam, sessions);
-  const taggedCount = (exam.questions || []).filter(q => BLOOM_LEVELS.includes(q.bloom)).length;
-
-  // Evaluation Trends: class average across all exams in this subject over time.
-  const trendExams = DB.getExams()
-    .filter(e => e.subjectId === exam.subjectId && ['active', 'closed', 'archived'].includes(e.status))
-    .map(e => {
-      const es = DB.getSessionsByExam(e.id).filter(s => s.submitted && s.maxScore > 0);
-      if (!es.length) return null;
-      const avg = Math.round(es.reduce((sum, s) => sum + (s.score / s.maxScore) * 100, 0) / es.length);
-      return { id: e.id, title: e.title || 'Untitled', avg, count: es.length, date: e.closedAt || e.createdAt || 0 };
-    })
-    .filter(Boolean)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-  const trendDelta = trendExams.length >= 2 ? trendExams[trendExams.length - 1].avg - trendExams[0].avg : 0;
-  const trendMeta = trendDelta > 2
-    ? { arrow: '↑', label: 'Improving', color: 'var(--success-fg)' }
-    : trendDelta < -2
-      ? { arrow: '↓', label: 'Declining', color: 'var(--danger-fg)' }
-      : { arrow: '→', label: 'Steady', color: 'var(--text-muted-2)' };
-
   content.innerHTML = `<div class="stats-analytics-stack">
     <!-- Overview Strip -->
     <div class="stats-overview-grid">
-      ${overviewCards.map(c=>`<article class="stats-overview-card" data-tone="${c.tone}">
+      ${overviewCards.map(c=>`<article class="stats-overview-card tone-${c.tone}">
+        <span class="stats-overview-icon" aria-hidden="true">${c.icon === 'check'
+          ? '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>'
+          : c.icon === 'chart'
+            ? '<svg viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>'
+            : c.icon === 'shield'
+              ? '<svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.2 8 7.5 9.8 4.3-1.8 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v4m0 3h.01"/></svg>'
+              : '<svg viewBox="0 0 24 24"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7" r="4"/><path d="M17 11a3 3 0 1 0 0-6m3 15v-1.5a4.5 4.5 0 0 0-2.5-4"/></svg>'}</span>
         <div class="stats-overview-copy">
-          <span>${c.tone === 'neutral' ? '' : '<span class="stats-tone-dot" aria-hidden="true"></span>'}${c.label}</span>
+          <span>${c.label}</span>
           <strong>${c.value}</strong>
+          <small>${c.detail}</small>
         </div>
       </article>`).join('')}
     </div>
@@ -9884,14 +9821,14 @@ function renderExamStats() {
     <div class="stats-analysis-grid">
       <!-- Score Distribution -->
       <section class="stats-analysis-card">
-        <div class="stats-analysis-heading"><h3>Score Distribution</h3></div>
+        <div class="stats-analysis-heading"><div><span class="stats-card-kicker">Performance</span><h3>Score Distribution</h3><p>Recorded submissions grouped by percentage score</p></div><span class="stats-heading-metric">${sessions.length} records</span></div>
         <div class="stats-analysis-body stats-chart-body"><div class="stats-bar-chart">${distBars}</div></div>
       </section>
 
       <!-- Question Difficulty -->
       <section class="stats-analysis-card stats-question-card">
         <div class="stats-analysis-heading">
-          <h3>Question Difficulty</h3>
+          <div><span class="stats-card-kicker">Item analysis</span><h3>Question Difficulty</h3><p>Correct-response rate from submitted answers</p></div>
           ${qStats.length ? `<button class="qbreak-expand-btn" onclick="viewQuestionBreakdown('${examId}')" title="View full question and answer breakdown">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> Expand
           </button>` : ''}
@@ -9901,17 +9838,17 @@ function renderExamStats() {
           <!-- Overall exam difficulty gauge -->
           <div class="stats-analysis-callout">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <span style="font-size:11px;font-weight:700;color:var(--text-muted-2);text-transform:uppercase;letter-spacing:0.5px;">Overall</span>
+              <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Overall</span>
               <span style="display:flex;gap:6px;">
                 ${diffDist.easy ? difficultyBadge('easy') : ''}${diffDist.medium ? difficultyBadge('medium') : ''}${diffDist.hard ? difficultyBadge('hard') : ''}
               </span>
             </div>
             ${avgDiffPct !== null
-              ? `${difficultyGauge(avgDiffPct)}<div style="font-size:10px;color:var(--text-muted-2);margin-top:4px;">Class averaged <strong>${avgDiffPct}%</strong> correct across ${statQs.length} question${statQs.length===1?'':'s'} with enough data — overall <strong style="color:${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].color};">${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].label}</strong>.</div>`
-              : `<div style="font-size:10px;color:var(--text-muted-2);">Fewer than ${DIFFICULTY_MIN_SAMPLE} submissions — showing AI/professor estimates until enough students submit.</div>`}
+              ? `${difficultyGauge(avgDiffPct)}<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Class averaged <strong>${avgDiffPct}%</strong> correct across ${statQs.length} question${statQs.length===1?'':'s'} with enough data — overall <strong style="color:${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].color};">${DIFFICULTY_META[pctToDifficulty(avgDiffPct)].label}</strong>.</div>`
+              : `<div style="font-size:10px;color:var(--text-muted);">Fewer than ${DIFFICULTY_MIN_SAMPLE} submissions — showing AI/professor estimates until enough students submit.</div>`}
           </div>
           ${qStats.map(({qi,q,level,source,pct,sampleSize})=>{
-            const meta = DIFFICULTY_META[level] || { label:'Unrated', color:'var(--text-muted-2)' };
+            const meta = DIFFICULTY_META[level] || { label:'Unrated', color:'#9ca3af' };
             const isStat = source === 'statistical';
             return `
           <div style="margin-bottom:12px;">
@@ -9938,13 +9875,13 @@ function renderExamStats() {
     ${discStats.length ? `
     <section class="stats-analysis-card">
       <div class="stats-analysis-heading">
-        <h3>Discrimination Index</h3>
+        <div><span class="stats-card-kicker">Quality check</span><h3>Discrimination Index</h3><p>Top and bottom performer comparison</p></div>
         ${discFlagged ? `<span class="stats-status-chip tone-danger">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span class="stats-status-chip tone-positive">All questions discriminate well</span>`}
       </div>
       <div class="stats-analysis-body">
       <div class="stats-analysis-description">
         How well each question separates high performers from low performers (top 27% vs bottom 27% by total score). Higher is better; <strong>negative</strong> means high scorers did <em>worse</em> — usually a miskeyed or confusing question.
-        ${!discReliable ? `<br/><strong style="color:var(--warning-fg);">Only ${ranked.length} submission${ranked.length===1?'':'s'}</strong> — treat these values as provisional until at least ${DISCRIMINATION_MIN_SAMPLE}.` : ''}
+        ${!discReliable ? `<br/><strong style="color:#d97706;">Only ${ranked.length} submission${ranked.length===1?'':'s'}</strong> — treat these values as provisional until at least ${DISCRIMINATION_MIN_SAMPLE}.` : ''}
       </div>
       <div class="stats-analysis-list">
         ${discStats.map(({qi,q,d})=>{
@@ -9955,7 +9892,7 @@ function renderExamStats() {
               <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Q${qi+1}: ${escHtml(q.content.substring(0,55))}${q.content.length>55?'…':''}</span>
               <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
                 <span style="font-weight:800;font-variant-numeric:tabular-nums;color:${meta.color};">${d>0?'+':''}${d.toFixed(2)}</span>
-                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};border:1px solid ${meta.bd};">${meta.label}</span>
+                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};">${meta.label}</span>
               </span>
             </div>
             ${discriminationBar(d, meta.color)}
@@ -9964,72 +9901,6 @@ function renderExamStats() {
       </div>
       </div>
     </section>` : ''}
-
-    <!-- Evaluation Trends across exams in this course -->
-    ${trendExams.length >= 2 ? `
-    <section class="stats-analysis-card">
-      <div class="stats-analysis-heading">
-        <h3>Evaluation Trends</h3>
-        <span style="font-size:12px;font-weight:800;color:${trendMeta.color};">${trendMeta.arrow} ${trendMeta.label}${trendDelta !== 0 ? ` (${trendDelta > 0 ? '+' : ''}${trendDelta} pts)` : ''}</span>
-      </div>
-      <div class="stats-analysis-body">
-      <div class="stats-analysis-description">
-        Class average across every exam in this course, oldest → newest. The highlighted bar is the exam you're viewing.
-      </div>
-      <div class="stats-trend-chart">
-        ${trendExams.map(t => {
-          const isCurrent = t.id === examId;
-          const mm = masteryMeta(t.avg);
-          const barGrow = Math.max(t.avg, 3);
-          const spacerGrow = Math.max(0, 100 - t.avg);
-          return `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;min-width:0;" title="${escHtml(t.title)} · ${t.avg}% · ${t.count} submission${t.count===1?'':'s'}">
-            <div style="flex:${spacerGrow} 0 0;width:100%;"></div>
-            <div style="font-size:12px;font-weight:800;color:${isCurrent ? 'var(--primary)' : mm.color};">${t.avg}%</div>
-            <div style="flex:${barGrow} 0 0;width:100%;background:${mm.color};opacity:${isCurrent ? 1 : 0.55};border-radius:5px 5px 0 0;${isCurrent ? 'outline:2px solid var(--primary);outline-offset:1px;' : ''}"></div>
-            <div style="font-size:9px;color:var(--text-muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;${isCurrent ? 'font-weight:800;color:var(--text);' : ''}">${escHtml(t.title.substring(0,14))}${t.title.length>14?'…':''}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      </div>
-    </section>` : ''}
-
-    <!-- Student Mastery by cognitive level -->
-    ${masteryStats.length ? `
-    <section class="stats-analysis-card">
-      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
-      <div class="stats-analysis-body">
-      <div class="stats-analysis-description">
-        Class average score on each Bloom's Taxonomy level in this exam. Reveals whether students handle higher-order thinking (analyze / evaluate / create) as well as basic recall.
-      </div>
-      <div class="stats-analysis-list">
-        ${masteryStats.map(({level, pct, questionCount})=>{
-          const bm = BLOOM_META[level];
-          const mm = masteryMeta(pct);
-          return `
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:5px;">
-              <span style="display:flex;align-items:center;gap:8px;min-width:0;">
-                ${bloomBadge(level)}
-                <span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">${questionCount} question${questionCount===1?'':'s'}</span>
-              </span>
-              <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                <span style="font-weight:800;color:${mm.color};font-variant-numeric:tabular-nums;">${pct}%</span>
-                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${mm.color};background:${mm.color}1f;">${mm.label}</span>
-              </span>
-            </div>
-            <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
-              <div style="width:${pct}%;height:100%;background:${mm.color};border-radius:99px;"></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-      </div>
-    </section>` : (taggedCount === 0 ? `
-    <section class="stats-analysis-card stats-empty-analysis-card">
-      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
-      <div class="stats-analysis-body"><div class="stats-analysis-description">No questions in this exam are tagged with a Bloom's level yet. Generate questions with AI (auto-tagged) or set the <strong>Bloom</strong> level on each question in the editor to unlock this analysis.</div></div>
-    </section>` : '')}
 
     ${randomForestCardShell()}</div>`;
   loadRandomForestPrediction(examId);
@@ -12498,7 +12369,7 @@ function renderAIPreview(questions) {
       const count = questions.filter(x => x.type === q.type).length;
       html += `<div style="display:flex;align-items:center;gap:10px;margin:${lastType ? '14px' : '4px'} 0 6px;">
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:${sectionColors[q.type] || '#6b7280'};letter-spacing:0.05em;">${typeLabel[q.type] || q.type}</span>
-        <span style="font-size:11px;color:var(--text-muted-2);">(${count})</span>
+        <span style="font-size:11px;color:#9ca3af;">(${count})</span>
         <div style="flex:1;height:1px;background:#e5e7eb;"></div>
       </div>`;
       lastType = q.type;
@@ -12518,7 +12389,7 @@ function renderAIPreview(questions) {
             <span>${groupNum[q.type]}. ${escHtml(q.content)}</span>
             <span style="flex-shrink:0;display:flex;gap:5px;">${BLOOM_LEVELS.includes(q.bloom) ? bloomBadge(q.bloom) : ''}${['easy','medium','hard'].includes(q.difficulty) ? difficultyBadge(q.difficulty) : ''}</span>
           </div>
-          ${q.type === 'mcq' ? `<div style="font-size:12px;color:var(--text-muted-2);margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
+          ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
           <div class="ai-q-correct">✓ ${escHtml(q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : q.correctAnswer)}</div>
         </div>
       </label>

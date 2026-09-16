@@ -58,12 +58,13 @@ Risk levels are `normal` below 0.50, `needs_monitoring` from 0.50 through 0.79,
 and `suspicious` from 0.80. Every value is statistical review support, not
 proof of academic dishonesty.
 
-Every completed session receives a percentage. Recorded browser and webcam
-features are always retained. If an individual signal was not captured, the
-runtime fills only that signal with the versioned non-suspicious training
-median stored in the model metadata and adds a limited-data note to the result.
-This prevents missing camera telemetry from being mistaken for observed
-face absence while still allowing recorded browser behavior to affect risk.
+Every completed session receives a percentage through the `rule-logs-v2`
+runtime policy. Only persisted, non-dismissed in-exam rule violations may move
+features away from the versioned non-suspicious training medians. A session
+with no qualifying violations is deterministically `0%` and `normal`. Timing,
+timeout submission, browser start/end, connectivity, calibration, consent, and
+passed pre-exam checks are excluded so normal lifecycle records cannot raise
+risk.
 
 ## Tests
 

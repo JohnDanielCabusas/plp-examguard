@@ -324,11 +324,14 @@ try {
   if (
     !statisticsThemeState.wrapper
     || statisticsThemeState.overviewCount !== 4
-    || statisticsThemeState.analysisCount < 3
-    || statisticsThemeState.overviewRadius !== statisticsThemeState.rfRadius
-    || statisticsThemeState.analysisRadius !== statisticsThemeState.rfRadius
+    || statisticsThemeState.analysisCount !== 2
+    || statisticsThemeState.overviewRadius !== '18px'
+    || statisticsThemeState.analysisRadius !== '18px'
+    || statisticsThemeState.rfRadius !== '14px'
     || !statisticsThemeState.headings.includes('Score Distribution')
     || !statisticsThemeState.headings.includes('Question Difficulty')
+    || statisticsThemeState.headings.includes('Evaluation Trends')
+    || statisticsThemeState.headings.some(heading => heading.includes('Student Mastery'))
   ) {
     throw new Error(`Statistics cards do not share the system card theme: ${JSON.stringify(statisticsThemeState)}`);
   }

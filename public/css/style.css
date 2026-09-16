@@ -16,7 +16,7 @@
   --bg-sidebar: #0f2d1a;
   --white: #ffffff;
   --text: #1a1a1a;
-  --text-muted: #515a55;
+  --text-muted: #6b7280;
   --border: #d1d5db;
   --radius: 10px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
@@ -54,7 +54,7 @@
   --bg-sidebar: #0a150e;    /* Sidebar — subtle dark green (not the saturated light-mode green) */
   --white: #171d22;
   --text: #f1f5f4;          /* Text Primary */
-  --text-muted: #a9b5b1;    /* Text Secondary -- was #94a3a0 (6:1), now 8.2:1 */
+  --text-muted: #94a3a0;    /* Text Secondary */
   --border: #29333a;        /* Border */
   --surface: #171d22;       /* Card */
   --surface-2: #1c242a;     /* Card Hover */
@@ -113,17 +113,22 @@
 [data-theme="dark"] .stat-card .stat-value { color: var(--text) !important; }
 [data-theme="dark"] .stat-card .stat-label { color: var(--text-muted) !important; }
 [data-theme="dark"] .stat-card .stat-icon { box-shadow: none !important; }
-/* KPI icon tiles are neutral in both themes now; the role tokens
-   (--surface-fill / --text-muted-2) already remap for dark. */
+[data-theme="dark"] .stat-card .stat-icon.blue   { background: rgba(59,130,246,0.14) !important; color: #3b82f6 !important; }
+[data-theme="dark"] .stat-card .stat-icon.green  { background: rgba(34,197,94,0.14) !important;  color: #22c55e !important; }
+[data-theme="dark"] .stat-card .stat-icon.orange { background: rgba(245,158,11,0.14) !important; color: #f59e0b !important; }
+[data-theme="dark"] .stat-card .stat-icon.red    { background: rgba(239,68,68,0.14) !important;  color: #ef4444 !important; }
+[data-theme="dark"] .stat-card .stat-icon.purple { background: rgba(139,92,246,0.14) !important; color: #8b5cf6 !important; }
 /* Flat cards (no neumorphic light/dark dual shadow) */
-/* The dark overrides that lived here are gone: the base rule above now
-   reads from role tokens that remap themselves. */
+[data-theme="dark"] .dashboard-panels-grid .card { background: var(--surface) !important; border: 1px solid var(--border) !important; box-shadow: none !important; }
+[data-theme="dark"] .dashboard-panels-grid .card:hover { transform: translateY(-2px); box-shadow: none !important; border-color: rgba(148,163,160,0.3) !important; }
 
 /* Course & exam cards */
 [data-theme="dark"] .course-card { background: var(--surface) !important; border: 1px solid var(--border) !important; box-shadow: none !important; }
 [data-theme="dark"] .course-card:hover { box-shadow: none !important; border-color: rgba(148,163,160,0.3) !important; }
 [data-theme="dark"] .course-card-body { background: var(--surface) !important; }
+[data-theme="dark"] .course-card-stats { background: var(--surface-2) !important; box-shadow: none !important; border-color: var(--border) !important; }
 [data-theme="dark"] .course-stat-num,
+[data-theme="dark"] .course-card-name,
 [data-theme="dark"] .course-enroll-label { color: #f0f6fc !important; }
 [data-theme="dark"] .course-stat-lab { color: var(--text-muted) !important; }
 [data-theme="dark"] .exam-card { background: var(--surface) !important; border: 1px solid var(--border) !important; box-shadow: none !important; }
@@ -450,9 +455,11 @@
   color: #e5e7eb !important;
 }
 [data-theme="dark"] .dash-quick-card-title,
+[data-theme="dark"] .course-card-name,
 [data-theme="dark"] .dash-greeting-text {
   color: #e5e7eb !important;
 }
+[data-theme="dark"] .course-card-code-label,
 [data-theme="dark"] .course-card-meta,
 [data-theme="dark"] .dash-greeting-sub {
   color: #94a3b8 !important;
@@ -571,7 +578,7 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: var(--brand-900);
+  color: #fff;
   flex-shrink: 0;
 }
 
@@ -1550,7 +1557,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
    UTILITIES
    ============================================================ */
 .hidden { display: none !important; }
-.text-muted { color: var(--text-muted-2); }
+.text-muted { color: var(--text-muted); }
 .text-danger { color: var(--danger); }
 .text-center { text-align: center; }
 .mb-8 { margin-bottom: 8px; }
@@ -1757,7 +1764,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-muted-2);
+  color: var(--text-muted);
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
@@ -1768,7 +1775,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 
 .tab-btn.active {
   background: #0f2d1a;
-  color: var(--on-accent);
+  color: var(--white);
   font-weight: 600;
   box-shadow: 0 2px 10px rgba(15,45,26,0.35), 0 1px 3px rgba(0,0,0,0.2);
   transform: scale(1.01);
@@ -1778,7 +1785,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
    itself, so they'd vanish once their tab goes active — lighten them then. */
 .tab-btn.active .exam-q-badge {
   background: rgba(255,255,255,0.25) !important;
-  color: var(--on-accent) !important;
+  color: var(--white) !important;
 }
 
 /* Tab Content — grid overlap for smooth cross-fade + slide */
@@ -1861,7 +1868,7 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 
 /* Login form group staggered entrance — only on initial load (handled by card-in) */
 
-.form-control::placeholder { color: var(--text-muted-2); }
+.form-control::placeholder { color: #9ca3af; }
 
 select.form-control {
   cursor: pointer;
@@ -1886,7 +1893,7 @@ textarea.form-control {
 .char-counter {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-muted-2);
+  color: #9ca3af;
   text-align: right;
   margin-top: 4px;
 }
@@ -1943,7 +1950,7 @@ textarea.form-control {
 .qe-required-label {
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   user-select: none;
@@ -2039,7 +2046,7 @@ textarea.form-control {
 .qbreak-choice-row.muted .qbreak-choice-label { color: var(--text-muted); font-style: italic; }
 .qbreak-correct-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -2074,7 +2081,7 @@ textarea.form-control {
 }
 .qbreak-pct {
   font-weight: 500;
-  color: var(--text-muted);
+  color: #64748b;
   font-size: 11px;
 }
 [data-theme="dark"] .qbreak-bar-wrap {
@@ -2126,7 +2133,7 @@ textarea.form-control {
 
 .btn-primary {
   background: linear-gradient(135deg, #0f2d1a 0%, #1a4d2a 100%);
-  color: var(--on-accent);
+  color: var(--white);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   letter-spacing: 0.03em;
   box-shadow: 0 8px 20px rgba(15,45,26,0.22);
@@ -2140,21 +2147,19 @@ textarea.form-control {
 
 .btn-success {
   background: var(--success);
-  color: var(--on-accent);
+  color: var(--white);
 }
 .btn-success:hover { background: #1a3d27; }
 
 .btn-danger {
   background: var(--danger);
-  color: var(--on-accent);
+  color: var(--white);
 }
 .btn-danger:hover { background: #b91c1c; }
 
 .btn-warning {
-  /* white on #d97706 is 3.19:1; this darker amber reads 5.9:1 and,
-     unlike --warning-fg, does not invert for dark mode */
-  background: var(--fill-warning);
-  color: var(--on-accent);
+  background: var(--warning);
+  color: var(--white);
 }
 .btn-warning:hover { background: #b45309; }
 
@@ -2172,7 +2177,7 @@ textarea.form-control {
 }
 .btn-outline:hover {
   background: var(--primary);
-  color: var(--on-accent);
+  color: var(--white);
 }
 
 .btn-sm { padding: 5px 12px; font-size: 12px; }
@@ -2251,7 +2256,7 @@ textarea.form-control {
 .sidebar-brand-text h2 {
   font-size: 15px;
   font-weight: 700;
-  color: var(--on-accent);
+  color: var(--white);
   line-height: 1.2;
 }
 
@@ -2297,12 +2302,12 @@ textarea.form-control {
 
 .nav-item:hover {
   background: rgba(255,255,255,0.12);
-  color: var(--on-accent);
+  color: var(--white);
 }
 
 .nav-item.active {
   background: rgba(255,255,255,0.2);
-  color: var(--on-accent);
+  color: var(--white);
   font-weight: 600;
   border-left-color: var(--accent);
 }
@@ -2430,7 +2435,7 @@ textarea.form-control {
   justify-content: center;
   font-size: 15px;
   font-weight: 700;
-  color: var(--brand-900);
+  color: var(--white);
   flex-shrink: 0;
 }
 
@@ -2441,7 +2446,7 @@ textarea.form-control {
 .sidebar-user-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--on-accent);
+  color: var(--white);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2537,94 +2542,72 @@ textarea.form-control {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-  gap: var(--card-gap);
+  gap: 24px;
   margin-bottom: 28px;
-  /* the old 8px 4px bleed existed to give the accent bar room to sit
-     flush against the card top edge. The bar is gone. */
-  padding: 0;
+  padding: 8px 4px;
 }
 
-/* One card system, shared with .analytics-card below: same padding,
-   radius, border, label position and number weight. The five accent
-   bars and five tinted icon tiles are gone -- a count of courses is
-   not blue and a count of submissions is not purple, so the colour
-   carried no information and only made the row read as five
-   unrelated widgets. */
 .stat-card {
   position: relative;
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--card-radius);
-  padding: var(--card-pad);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  box-shadow: none;
-}
-
-/* Label and icon share the top line so the label sits in the same
-   place here as it does on the analytics cards. */
-.stat-card .stat-card-head {
+  overflow: hidden;
+  background: var(--white);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
-/* Lifted out of the header row and pinned to the corner. In-flow it made
-   the row 32px tall against an 18px label, so the label sat ~7px below
-   where the card padding implied and the card read top-heavy: 28px of air
-   above the label versus 21px below the value. Out of flow, the header
-   row is the label height and the two ends match. */
-.stat-card .stat-icon {
+.stat-card::before {
+  content: '';
   position: absolute;
-  top: 18px;
-  right: 20px;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: var(--surface-fill);
-  color: var(--text-muted-2);
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--stat-accent, var(--primary));
+}
+
+.stat-card:has(.stat-icon.blue)   { --stat-accent: #1e40af; }
+.stat-card:has(.stat-icon.green)  { --stat-accent: #0f2d1a; }
+.stat-card:has(.stat-icon.orange) { --stat-accent: #d97706; }
+.stat-card:has(.stat-icon.red)    { --stat-accent: #dc2626; }
+.stat-card:has(.stat-icon.purple) { --stat-accent: #7c3aed; }
+
+.stat-card .stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(2,83,10,0.1);
+  color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 20px;
   flex-shrink: 0;
 }
-.stat-card .stat-icon svg { width: 17px; height: 17px; }
+
+.stat-card .stat-icon.blue { background: rgba(30,64,175,0.1); color: #1e40af; }
+.stat-card .stat-icon.green { background: rgba(15,45,26,0.1); color: #0f2d1a; }
+.stat-card .stat-icon.orange { background: rgba(217,119,6,0.1); color: #d97706; }
+.stat-card .stat-icon.red { background: rgba(220,38,38,0.1); color: #dc2626; }
+.stat-card .stat-icon.purple { background: rgba(124,58,237,0.1); color: #7c3aed; }
 
 .stat-card .stat-value {
-  font-size: var(--card-value-size);
-  font-weight: var(--card-value-weight);
-  letter-spacing: -0.02em;
-  color: var(--text-strong);
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text, var(--primary));
   line-height: 1;
-  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
 }
 
 .stat-card .stat-label {
-  color: var(--text-muted-2);
-  font-size: var(--card-label-size);
+  color: var(--text-muted);
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: var(--card-label-tracking);
-}
-
-/* The single KPI that carries live state. Colour appears here because
-   an exam is running right now -- not to tell one card from another.
-   At a count of 0 the card is as neutral as its neighbours. */
-.stat-card[data-state="live"] .stat-icon {
-  background: var(--success-bg);
-  color: var(--success-fg);
-}
-.stat-card[data-state="live"] .stat-label { color: var(--success-fg); }
-.stat-card .stat-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success-fg);
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
+  letter-spacing: 0.6px;
 }
 
 /* ============================================================
@@ -3664,7 +3647,7 @@ tr:hover td { background: #F8FDF8; }
 .empty-state {
   text-align: center;
   padding: 48px 24px;
-  color: var(--text-muted-2);
+  color: var(--text-muted);
 }
 
 .empty-icon {
@@ -3932,7 +3915,7 @@ tr:hover td { background: #F8FDF8; }
 .monitor-log-student {
   font-weight: 500;
   font-size: 12px;
-  color: var(--text-muted);
+  color: #94a3b8;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3952,7 +3935,7 @@ tr:hover td { background: #F8FDF8; }
 .monitor-table-shell thead th {
   background: rgba(248, 250, 252, 0.96);
   border-bottom: 1px solid rgba(226, 232, 240, 0.95);
-  color: var(--text-muted);
+  color: #6b7280;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -4007,7 +3990,7 @@ tr:hover td { background: #F8FDF8; }
   margin-bottom: 8px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #94a3b8;
   letter-spacing: 0.02em;
 }
 
@@ -4051,7 +4034,7 @@ tr:hover td { background: #F8FDF8; }
 .activity-log-student-meta {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: #6b7280;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4124,7 +4107,7 @@ tr:hover td { background: #F8FDF8; }
   margin-bottom: 6px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #94a3b8;
 }
 
 .activity-log-empty {
@@ -4133,7 +4116,7 @@ tr:hover td { background: #F8FDF8; }
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: var(--text-muted);
+  color: #94a3b8;
 }
 
 .monitor-export-btn {
@@ -4228,7 +4211,7 @@ tr:hover td { background: #F8FDF8; }
 }
 
 .log-time {
-  color: var(--text-muted-2);
+  color: #9ca3af;
   font-size: 10.5px;
 }
 
@@ -4707,7 +4690,7 @@ tr:hover td { background: #F8FDF8; }
   justify-content: center;
   gap: 10px;
   text-align: center;
-  color: var(--text-muted);
+  color: #6b7280;
   font-size: 11px;
   font-weight: 600;
 }
@@ -4935,7 +4918,7 @@ body.exam-page {
 
 .exam-topbar {
   background: var(--primary);
-  color: var(--on-accent);
+  color: var(--white);
   padding: 0 24px;
   height: 64px;
   display: flex;
@@ -4964,7 +4947,7 @@ body.exam-page {
 .exam-topbar .exam-title {
   font-weight: 700;
   font-size: 15px;
-  color: var(--on-accent);
+  color: var(--white);
 }
 
 .exam-topbar .exam-timer {
@@ -4986,7 +4969,7 @@ body.exam-page {
 
 .exam-topbar .warning-badge {
   background: rgba(220,38,38,0.9);
-  color: var(--on-accent);
+  color: var(--white);
   border-radius: 20px;
   padding: 4px 12px;
   font-size: 13px;
@@ -5649,7 +5632,7 @@ body.exam-page {
   color: #98a2b3;
 }
 .review-answer-value.is-hidden {
-  color: var(--text-muted);
+  color: #64748b;
 }
 .review-answer-value.is-neutral {
   color: #344256;
@@ -5749,7 +5732,7 @@ body.exam-page {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: #64748b;
   opacity: 0.8;
 }
 .review-matching-student {
@@ -6284,7 +6267,7 @@ body.exam-page {
    ============================================================ */
 .exam-header {
   background: linear-gradient(135deg, #0a1f12 0%, #0f2d1a 60%, #1a4d2a 100%);
-  color: var(--on-accent);
+  color: var(--white);
   padding: 0 24px;
   height: 64px;
   display: flex;
@@ -6308,7 +6291,7 @@ body.exam-page {
 .exam-title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--on-accent);
+  color: var(--white);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6622,7 +6605,7 @@ body.exam-page {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #6b7280;
   background: #f0f2f5;
   padding: 3px 9px;
   border-radius: 99px;
@@ -6635,7 +6618,7 @@ body.exam-page {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--text-muted-2);
+  color: #9ca3af;
   padding: 8px 22px 10px;
 }
 
@@ -6677,7 +6660,7 @@ body.exam-page {
   height: 28px;
   border-radius: 8px;
   background: #f0f1f5;
-  color: var(--text-muted);
+  color: #6b7280;
   font-weight: 700;
   font-size: 12px;
   display: flex;
@@ -6772,7 +6755,7 @@ body.exam-page {
 }
 
 /* TRUE */
-.tf-true .tf-icon { color: var(--text-muted); }
+.tf-true .tf-icon { color: #6b7280; }
 .tf-true:hover {
   border-color: #0f2d1a;
   background: #f5f7f5;
@@ -6797,7 +6780,7 @@ body.exam-page {
 }
 
 /* FALSE */
-.tf-false .tf-icon { color: var(--text-muted); }
+.tf-false .tf-icon { color: #6b7280; }
 .tf-false:hover {
   border-color: #fca5a5;
   background: #fef2f2;
@@ -6883,7 +6866,7 @@ body.exam-page {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--on-accent);
+  color: var(--white);
   text-align: center;
   padding: 24px;
   backdrop-filter: blur(4px);
@@ -7408,187 +7391,6 @@ body.exam-page {
    ============================================================ */
 :root { --sidebar-w: 260px; --sidebar-w-collapsed: 72px; --topbar-h: 60px; }
 
-/* ============================================================
-   SEMANTIC PALETTE  (dashboard card + chart system)
-   Derived from the two colors already in the product: the
-   sidebar green (#0f2d1a) and the gold accent (#C8A217).
-
-   Additive by design. --border/--text-muted/--primary and the
-   bare --success/--warning/--danger are load-bearing across the
-   sidebar, header and tables, so nothing here redefines them.
-   Components below reference the ROLE tokens, never the raw
-   ramp steps, so dark mode remaps nine values instead of many.
-   ============================================================ */
-:root {
-  /* ── Brand ─────────────────────────────────────────────
-     --brand-800 is the sidebar itself; the rest of the ramp
-     is built from it. 800/900 read as black on a white card,
-     so 600/500 are the steps that actually carry color on
-     light surfaces. */
-  --brand-900: #0a1f12;
-  --brand-800: #0f2d1a;
-  --brand-700: #1a3d27;
-  --brand-600: #2f6043;
-  --brand-500: #4a8461;
-  --brand-100: #e4ede7;
-  --brand-050: #f1f6f2;
-  --gold-600: #C8A217;
-  --gold-100: #f7edcd;
-
-  /* ── Neutrals ──────────────────────────────────────────
-     Hue-matched to the brand green (~150deg) at 2-6% sat so
-     surfaces read as related to the brand rather than as a
-     generic grey borrowed from another design system. */
-  --neutral-000: #ffffff;
-  --neutral-025: #fbfcfb;
-  --neutral-050: #f4f6f4;
-  --neutral-100: #ecefed;
-  --neutral-200: #dfe4e0;
-  --neutral-300: #c6cec9;
-  --neutral-400: #9aa39d;
-  --neutral-500: #6f7973;
-  --neutral-600: #515a55;
-  --neutral-700: #3a423d;
-  --neutral-900: #1b241f;
-
-  /* ── Roles ─────────────────────────────────────────────
-     The indirection layer. Components speak in these. */
-  --surface-card: var(--neutral-000);
-  --surface-sunken: var(--neutral-050);
-  --surface-fill: var(--neutral-100);
-  --border-subtle: var(--neutral-200);
-  --border-strong: var(--neutral-300);
-  --text-strong: var(--neutral-900);
-  --text-body: var(--neutral-700);
-  /* --neutral-500 clears 4.5:1 on white but only 3.9:1 once it sits on
-     the --surface-fill tint, so muted text is one step darker: 7.1:1 on
-     white, 6.2:1 on the tint. */
-  --text-muted-2: var(--neutral-600);
-  /* The faintest step that is still text-legal (4.5:1 on white).
-     --neutral-400 is a border weight and must not carry text. */
-  --text-faint: #5f6a63;
-
-  /* ── Primary, used sparingly ───────────────────────────
-     Earns its place twice on this screen: the trend line and
-     the distribution bars. Nowhere else. */
-  --primary-ink: var(--brand-700);
-  --primary-fill: var(--brand-050);
-
-  /* Ink for text sitting ON a saturated fill (danger/primary buttons,
-     status pills, badges). Deliberately theme-INVARIANT: a red button is
-     red in both themes, so its label is white in both themes.
-     This exists because --white is remapped to #171d22 under
-     [data-theme="dark"] -- it names a colour but was doing duty as a
-     surface role, so every `color: var(--on-accent)` rendered near-black on
-     its coloured button in dark mode. Backgrounds keep using --white. */
-  --on-accent: #ffffff;
-
-  /* Theme-invariant fills for solid buttons. A destructive button is the
-     same red in light and dark, so its fill must not follow the theme --
-     the semantic --*-fg tokens invert for dark and would flip a solid
-     button's label to unreadable. Paired with --on-accent above. */
-  --fill-danger: #dc2626;
-  --fill-warning: #b54708;
-
-  /* ── Semantic states ───────────────────────────────────
-     Four states, three tokens each (text / tint / hairline)
-     so a badge never has to invent its own background.
-     --info-* is defined but deliberately unused on this
-     screen: nothing here is informational. */
-  --danger-fg: #b42318;
-  --danger-bg: #fef3f2;
-  --danger-border: #fecdca;
-  --warning-fg: #b54708;
-  --warning-bg: #fffaeb;
-  --warning-border: #fedf89;
-  --success-fg: #067647;
-  --success-bg: #ecfdf3;
-  --success-border: #abefc6;
-  --info-fg: #175cd3;
-  --info-bg: #eff8ff;
-  --info-border: #b2ddff;
-
-  /* ── Chart ─────────────────────────────────────────────
-     Aliases, not values. The area/bar ramps are color-mix off
-     the same series token, so no chart introduces a second
-     green that answers to nothing in the palette. */
-  --chart-series-1: var(--brand-600);
-  --chart-series-1-strong: var(--brand-700);
-  --chart-series-1-fill-top: color-mix(in srgb, var(--brand-600) 22%, transparent);
-  --chart-series-1-fill-bottom: color-mix(in srgb, var(--brand-600) 0%, transparent);
-  --chart-bar: color-mix(in srgb, var(--brand-600) 85%, transparent);
-  --chart-bar-empty: var(--neutral-100);
-  --chart-track: var(--neutral-100);
-  --chart-grid: var(--neutral-200);
-  --chart-axis: var(--neutral-600);
-  --chart-point: var(--brand-700);
-  /* No emission in light mode -- the glow rules below become no-ops. */
-  --chart-glow: 0 0 0 transparent;
-  --chart-glow-strong: 0 0 0 transparent;
-
-  /* ── Card system ───────────────────────────────────────
-     One geometry contract for both dashboard rows. */
-  --card-pad: 20px 22px;
-  --card-radius: 14px;
-  --card-gap: 16px;
-  --card-label-size: 11px;
-  --card-label-tracking: 0.8px;
-  --card-value-size: 32px;
-  --card-value-weight: 700;
-  --card-sub-size: 12px;
-}
-
-/* Dark mode remaps the role tokens only. The brand ramp and
-   the semantic hues keep their identity; what changes is which
-   end of the neutral ramp counts as "surface" vs "text". */
-:root[data-theme="dark"] {
-  --surface-card: #171d22;
-  --surface-sunken: #10151a;
-  --surface-fill: #212a30;
-  --border-subtle: #2a343b;
-  --border-strong: #3a464f;
-  --text-strong: #eef2f0;
-  --text-body: #c3ccc7;
-  --text-muted-2: #a9b5b1;
-  --text-faint: #6b756f;
-
-  --primary-ink: var(--brand-500);
-  --primary-fill: color-mix(in srgb, var(--brand-500) 14%, transparent);
-
-  --danger-fg: #fda29b;
-  --danger-bg: color-mix(in srgb, #f97066 14%, transparent);
-  --danger-border: color-mix(in srgb, #f97066 32%, transparent);
-  --warning-fg: #fec84b;
-  --warning-bg: color-mix(in srgb, #fdb022 14%, transparent);
-  --warning-border: color-mix(in srgb, #fdb022 32%, transparent);
-  --success-fg: #75e0a7;
-  --success-bg: color-mix(in srgb, #47cd89 14%, transparent);
-  --success-border: color-mix(in srgb, #47cd89 32%, transparent);
-  --info-fg: #84caff;
-  --info-bg: color-mix(in srgb, #53b1fd 14%, transparent);
-  --info-border: color-mix(in srgb, #53b1fd 32%, transparent);
-
-  /* On the near-black card the sage --brand-500 reads as grey-green and
-     the charts died next to the UI greens. Dark mode runs the series at
-     the same #22c55e the primary buttons use, plus an emission glow --
-     the one place the data is allowed to be the brightest thing on the
-     screen. Light mode keeps the solid brand green and no glow: a bloom
-     on a white card turns to haze rather than light. */
-  --chart-series-1: #22c55e;
-  --chart-series-1-strong: #4ade80;
-  --chart-series-1-fill-top: color-mix(in srgb, #22c55e 32%, transparent);
-  --chart-series-1-fill-bottom: color-mix(in srgb, #22c55e 0%, transparent);
-  --chart-bar: #22c55e;
-  --chart-glow: 0 0 7px color-mix(in srgb, #22c55e 65%, transparent);
-  --chart-glow-strong: 0 0 11px color-mix(in srgb, #22c55e 80%, transparent);
-  --chart-bar-empty: #212a30;
-  --chart-track: #212a30;
-  --chart-grid: #2a343b;
-  --chart-axis: #8b958f;
-  --chart-point: #4ade80;
-}
-
-
 .student-portal {
   display: flex;
   min-height: 100vh;
@@ -7688,7 +7490,7 @@ body.exam-page {
 .portal-sidebar.collapsed .portal-logo-img { opacity: 1; }
 
 .portal-logo-text {
-  font-size: 15px; font-weight: 800; color: var(--on-accent);
+  font-size: 15px; font-weight: 800; color: var(--white);
   line-height: 1.2;
   letter-spacing: -0.2px;
 }
@@ -7807,7 +7609,7 @@ body.exam-page {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 15px; color: var(--brand-900); flex-shrink: 0;
+  font-weight: 800; font-size: 15px; color: #fff; flex-shrink: 0;
 }
 
 .portal-footer-info { overflow: hidden; transition: opacity 0.2s; }
@@ -7888,11 +7690,11 @@ body.exam-page {
 /* ── Greeting ─────────────────────────────────────────── */
 .dash-greeting { margin-bottom: 18px; }
 .dash-greeting-text { font-size: 22px; font-weight: 800; color: #111827; margin-bottom: 2px; }
-.dash-greeting-sub  { font-size: 13px; color: var(--text-muted-2); }
+.dash-greeting-sub  { font-size: 13px; color: #9ca3af; }
 
 /* ── Section label ────────────────────────────────────── */
 .dash-section-label {
-  font-size: 11px; font-weight: 700; color: var(--text-muted-2);
+  font-size: 11px; font-weight: 700; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 1px;
   margin-bottom: 10px; padding-left: 2px;
 }
@@ -7917,7 +7719,7 @@ body.exam-page {
   border-top: 3px solid var(--primary);
 }
 .dash-quick-card-title {
-  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  font-size: 11px; font-weight: 700; color: #6b7280;
   text-transform: uppercase; letter-spacing: 0.8px;
   margin-bottom: 10px;
   display: flex; align-items: center; gap: 6px;
@@ -8059,7 +7861,7 @@ body.exam-page {
 .dash-exam-row:hover { background: #fafbfc; }
 .dash-exam-title { font-size: 13px; font-weight: 600; color: #1f2937; flex: 1; min-width: 0; }
 .dash-exam-meta  {
-  font-size: 11px; color: var(--text-muted-2); margin-top: 2px;
+  font-size: 11px; color: #9ca3af; margin-top: 2px;
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .dash-exam-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
@@ -8088,7 +7890,7 @@ body.exam-page {
 }
 
 .dash-no-exams {
-  padding: 16px 18px; font-size: 13px; color: var(--text-muted-2);
+  padding: 16px 18px; font-size: 13px; color: #9ca3af;
   display: flex; align-items: center; gap: 8px; font-style: italic;
 }
 
@@ -8098,9 +7900,9 @@ body.exam-page {
   background: #fff; border-radius: 14px; margin-bottom: 14px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.07);
 }
-.dash-empty-icon  { font-size: 42px; margin-bottom: 12px; color: var(--text-muted-2); }
-.dash-empty-title { font-size: 16px; font-weight: 700; color: var(--text-strong); margin-bottom: 5px; }
-.dash-empty-sub   { font-size: 13px; color: var(--text-muted-2); }
+.dash-empty-icon  { font-size: 42px; margin-bottom: 12px; color: #9ca3af; }
+.dash-empty-title { font-size: 16px; font-weight: 700; color: #374151; margin-bottom: 5px; }
+.dash-empty-sub   { font-size: 13px; color: #9ca3af; }
 
 /* ── Question builder redesign ───────────────────────── */
 .btn-qtype {
@@ -8225,7 +8027,7 @@ body.exam-page {
 }
 .course-tab-btn {
   padding: 11px 22px; border: none; background: none; cursor: pointer;
-  font-size: 14px; font-weight: 600; color: var(--text-muted-2);
+  font-size: 14px; font-weight: 600; color: #9ca3af;
   border-bottom: 2.5px solid transparent; margin-bottom: -1.5px;
   border-radius: 6px 6px 0 0;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
@@ -8254,7 +8056,7 @@ body.exam-page {
   margin-bottom: 10px;
 }
 .course-group-label-text {
-  font-size: 11px; font-weight: 700; color: var(--text-muted-2);
+  font-size: 11px; font-weight: 700; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 1px;
 }
 .course-group-label-line {
@@ -8324,7 +8126,7 @@ body.exam-page {
   border-radius: 999px;
   background: #eef8ef;
   color: #78a66d;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 1.1px;
   text-transform: uppercase;
@@ -8339,7 +8141,7 @@ body.exam-page {
 }
 .course-exam-meta  {
   font-size: 12px;
-  color: var(--text-muted);
+  color: #64748b;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -8412,7 +8214,7 @@ body.exam-page {
 .course-exam-panel-note {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--text-muted);
+  color: #64748b;
 }
 .course-exam-result-card {
   width: 100%;
@@ -8515,7 +8317,7 @@ body.exam-page {
   border-color: rgba(106,168,99,0.18);
 }
 .course-exam-state.state-closed {
-  color: var(--text-muted);
+  color: #6b7280;
   background: rgba(148,163,184,0.1);
   border-color: rgba(148,163,184,0.14);
 }
@@ -8616,9 +8418,9 @@ body.exam-page {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 .people-name { font-size: 13px; font-weight: 700; color: #111827; }
-.people-meta { font-size: 11px; color: var(--text-muted-2); margin-top: 2px; }
+.people-meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 .people-you-badge {
-  font-size: 10px; background: #e6ede8; color: #0f2d1a;
+  font-size: 9px; background: #e6ede8; color: #0f2d1a;
   padding: 1px 7px; border-radius: 10px; font-weight: 700;
   vertical-align: middle; margin-left: 6px; letter-spacing: 0.3px;
 }
@@ -8640,7 +8442,7 @@ body.exam-page {
 .topbar-breadcrumb { display: flex; align-items: center; gap: 6px; }
 .topbar-breadcrumb-link {
   background: none; border: none; cursor: pointer;
-  font-size: 14px; color: var(--text-muted-2); padding: 0;
+  font-size: 14px; color: #9ca3af; padding: 0;
   font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600;
   transition: color 0.15s;
 }
@@ -8658,7 +8460,7 @@ body.exam-page {
 }
 .settings-field       { margin-bottom: 14px; }
 .settings-field-label {
-  font-size: 11px; font-weight: 700; color: var(--text-muted-2);
+  font-size: 11px; font-weight: 700; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
 }
 .settings-field-readonly {
@@ -8672,7 +8474,7 @@ body.exam-page {
   text-transform: uppercase;
 }
 .settings-readonly-badge {
-  font-size: 10px; background: #f3f4f6; color: var(--text-muted);
+  font-size: 10px; background: #f3f4f6; color: #6b7280;
   padding: 1px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap;
 }
 .settings-actions {
@@ -8724,7 +8526,7 @@ body.exam-page {
 .analytics-section-heading {
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-muted-2);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 1.2px;
   margin-bottom: 16px;
@@ -8748,112 +8550,24 @@ body.exam-page {
 }
 
 /* Neumorphic style for Recent Exams / Active Sessions panel cards */
-/* These two panels were a third card system on one screen: neumorphic,
-   #e8ecef, 28px radius and a 12px double shadow, sitting directly under
-   nine flat white cards. The mismatch was doing more to make the page
-   feel incoherent than any lack of colour. Same contract as everything
-   else now -- and the dark-mode block below already said as much, which
-   is why the two themes disagreed about what these panels were. */
 .dashboard-panels-grid .card {
-  background: var(--surface-card) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-radius: var(--card-radius) !important;
-  box-shadow: none !important;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
+  background: #e8ecef !important;
+  border: none !important;
+  border-radius: 28px !important;
+  box-shadow: 12px 12px 24px #c8cdd1, -12px -12px 24px #ffffff !important;
+  transition: box-shadow 0.3s ease, transform 0.2s ease !important;
   overflow: hidden;
 }
 .dashboard-panels-grid .card:hover {
   transform: translateY(-2px);
-  border-color: var(--border-strong) !important;
-  box-shadow: 0 6px 20px rgba(15, 45, 26, 0.07) !important;
+  box-shadow: 14px 14px 28px #c0c5c9, -14px -14px 28px #ffffff !important;
 }
 .dashboard-panels-grid .card .card-header {
   background: transparent !important;
-  border-bottom: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.06) !important;
 }
 .dashboard-panels-grid .card .card-title {
-  color: var(--text-strong) !important;
-}
-/* Every column centred, with the two edge columns inset equally from the
-   card borders. The trick is that both edge columns shrink to fit their
-   own content: a column that hugs its content puts the centred text one
-   cell-padding (16px) from its outer edge, and since that edge IS the
-   card edge, both sides land on the same number. Equal-width columns
-   cannot do this -- a 140px title and an 18px number centred in equal
-   columns give wildly different edge gaps. The middle column absorbs
-   whatever width is left over. */
-.dashboard-panels-grid .card table th,
-.dashboard-panels-grid .card table td {
-  text-align: center;
-}
-/* The table block is inset from both card edges by the same amount, so
-   the left and right margins are equal by construction and the columns
-   stay centred inside it. Anchoring the edge columns would also equalise
-   the borders, but only by giving up the centring -- this keeps both.
-   The header band is inset with the rows so the block reads as one
-   object rather than a full-bleed strip over indented content. */
-.dashboard-panels-grid .card .card-body {
-  padding: 0 22px 6px;
-}
-
-/* ── Panel row list ───────────────────────────────────────
-   Replaces the 3-column table. A grid with one prose column and
-   two token columns cannot be centred without looking ragged --
-   each row's text is a different length, so each row starts at a
-   different x. Anchoring a name to the left and a meta cluster to
-   the right gives every row the same two edges, whatever it holds. */
-.dashboard-panels-grid .panel-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.dashboard-panels-grid .panel-list-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.dashboard-panels-grid .panel-list-row:last-child { border-bottom: none; }
-.dashboard-panels-grid .panel-list-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-strong);
-  font-weight: 600;
-  font-size: 13.5px;
-}
-.dashboard-panels-grid .panel-list-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-/* Fixed slot with the pill centred inside it. The badges are different
-   widths (closed ~58px, archived ~72px); right-anchored they share a
-   right edge but start at different x, which reads as one pill sitting
-   out of line. Centring them on a common axis lines up their middles. */
-.dashboard-panels-grid .panel-list-status {
-  min-width: 76px;
-  display: flex;
-  justify-content: center;
-}
-/* Fixed width so the counts stack into a clean right-hand column
-   instead of shifting with the number of digits. */
-.dashboard-panels-grid .panel-list-count {
-  min-width: 40px;
-  text-align: right;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.dashboard-panels-grid .panel-list-count abbr {
-  text-decoration: none;
-  margin-left: 3px;
-  opacity: 0.75;
+  color: #1f2937 !important;
 }
 [data-theme="dark"] .dashboard-panels-grid .card .card-header {
   border-bottom-color: var(--border) !important;
@@ -8905,108 +8619,90 @@ body.exam-page {
 }
 /* ── Dark Analytics Cards (green palette) ─────────────── */
 
-/* Same contract as .stat-card above -- identical padding, radius,
-   border and label position, so the two dashboard rows read as one
-   system rather than a light row stacked on a dark row. */
 .analytics-card.ac-dark {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--card-radius);
-  padding: var(--card-pad);
-  box-shadow: none;
+  background: linear-gradient(145deg, #132b1c 0%, #0f2419 60%, #0a1a10 100%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.07);
   display: flex; flex-direction: column;
   position: relative; overflow: hidden;
 }
-/* The red/teal/amber top borders said nothing about the data beneath
-   them -- at-risk was red, distribution teal, forecast amber, chosen
-   arbitrarily. Flattened to the shared hairline. */
-.analytics-card.ac-dark-red,
-.analytics-card.ac-dark-teal,
-.analytics-card.ac-dark-amber { border-top: 1px solid var(--border-subtle); }
-/* The per-theme repaint layer that used to live here is gone. It existed
-   only because .analytics-card.ac-dark was a dark-green gradient tile that
-   had to be clawed back to a flat surface in light mode and flattened
-   again in dark. The base rule now reads from the role tokens
-   (--surface-card / --border-subtle / --text-*), which remap themselves,
-   so there is nothing left to compensate for. Several of those rules also
-   carried !important and would have beaten the semantic state colours. */
+.analytics-card.ac-dark-red  { border-top: 2px solid rgba(248,113,113,0.6); }
+.analytics-card.ac-dark-teal { border-top: 2px solid rgba(52,211,153,0.6); }
+.analytics-card.ac-dark-amber { border-top: 2px solid rgba(251,191,36,0.6); }
+/* Light analytics use the same surface as the surrounding dashboard cards. */
+:root:not([data-theme="dark"]) #dash-analytics .analytics-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-dark-value, .risk-name-dark, .frd-value) { color: var(--text); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-dark-label, .ac-dark-sub, .risk-score-dark, .frd-label, .ac-trend-flat) { color: var(--text-muted); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.risk-item-dark, .forecast-row-dark) { border-color: var(--border); }
+:root:not([data-theme="dark"]) #dash-analytics .ac-trend-flat { background: var(--surface-2); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-trend-up, .frd-good) { color: var(--chip-ok-text) !important; }
+:root:not([data-theme="dark"]) #dash-analytics :is(.ac-trend-down, .frd-bad, .risk-badge-high) { color: var(--chip-deny-text) !important; }
+:root:not([data-theme="dark"]) #dash-analytics .risk-badge-medium { color: var(--chip-warn-text); }
+:root:not([data-theme="dark"]) #dash-analytics :is(.risk-list-dark, .sparkline-wrap) > div[style] { color: var(--text-muted) !important; }
+:root:not([data-theme="dark"]) #dash-analytics svg text[fill^="rgba(255"] { fill: var(--text-muted); }
+/* In dark mode the predictive-analytics cards use the same flat card surface
+   (#171D22) and border as every other card — no gradient, no green tint. */
+[data-theme="dark"] .analytics-card.ac-dark {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+}
+/* Neutralise the coloured top-borders so analytics cards read flat like the mockup */
+[data-theme="dark"] .analytics-card.ac-dark-red,
+[data-theme="dark"] .analytics-card.ac-dark-teal,
+[data-theme="dark"] .analytics-card.ac-dark-amber { border-top: 1px solid var(--border) !important; }
 
 .ac-dark-label {
-  font-size: var(--card-label-size); font-weight: 700;
-  letter-spacing: var(--card-label-tracking);
-  color: var(--text-muted-2); text-transform: uppercase;
-  margin-bottom: 14px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  color: rgba(255,255,255,0.35); text-transform: uppercase;
+  margin-bottom: 8px;
 }
 .ac-dark-value {
-  font-size: var(--card-value-size); font-weight: var(--card-value-weight);
-  color: var(--text-strong);
-  line-height: 1; letter-spacing: -0.02em; margin-bottom: 4px;
-  font-variant-numeric: tabular-nums;
+  font-size: 42px; font-weight: 800; color: #fff;
+  line-height: 1; letter-spacing: -1.5px; margin-bottom: 4px;
 }
 .ac-dark-sub {
-  font-size: var(--card-sub-size); color: var(--text-muted-2); margin-bottom: 14px;
+  font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 14px;
 }
 .ac-trend-badge {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 11px; font-weight: 700; padding: 3px 9px;
   border-radius: 20px; margin-bottom: 8px; width: fit-content;
 }
-.ac-trend-up   { background: var(--success-bg); color: var(--success-fg); }
-.ac-trend-down { background: var(--danger-bg);  color: var(--danger-fg); }
-.ac-trend-flat { background: var(--surface-fill); color: var(--text-muted-2); }
+.ac-trend-up   { background: rgba(74,222,128,0.15); color: #4ade80; }
+.ac-trend-down { background: rgba(248,113,113,0.15); color: #f87171; }
+.ac-trend-flat { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); }
 
 /* Sparkline on dark */
-/* The chart wells now take the space the card actually has. A 70px
-   sparkline inside a 291px card was reading as an afterthought; letting
-   it fill turns the same data into the thing the card is about. */
-.ac-dark .sparkline-wrap {
-  flex: 1;
-  min-height: 90px;
-  display: flex;
-  align-items: stretch;
-}
-.ac-dark .sparkline-svg { width: 100%; height: 100%; }
-.ac-dark .sd-wrap {
-  flex: 1;
-  min-height: 90px;
-  display: flex;
-  align-items: flex-end;
-}
-.ac-dark .sd-svg { width: 100%; }
+.ac-dark .sparkline-wrap { flex: 1; }
+.ac-dark .sparkline-svg { height: 70px; }
 
 /* At-risk dark */
 .risk-list-dark { display: flex; flex-direction: column; gap: 0; }
 .risk-item-dark {
   display: flex; align-items: center; gap: 9px;
-  padding: 8px 0; border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
   font-size: 12.5px;
 }
 .risk-item-dark:last-child { border-bottom: none; }
 .risk-avatar-dark {
   width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
-  background: var(--surface-fill);
-  color: var(--text-body);
-  border: 1px solid var(--border-subtle);
+  font-size: 11px; font-weight: 800;
 }
-/* The avatars used to cycle a five-colour rainbow keyed to list
-   position, so the same student changed colour whenever the ordering
-   changed. Colour now states the risk level and nothing else. */
-.risk-item-dark[data-risk="high"] .risk-avatar-dark {
-  background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border);
-}
-.risk-item-dark[data-risk="medium"] .risk-avatar-dark {
-  background: var(--warning-bg); color: var(--warning-fg); border-color: var(--warning-border);
-}
-.risk-name-dark { flex: 1; color: var(--text-body); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.risk-score-dark { font-size: 11px; color: var(--text-muted-2); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.risk-name-dark { flex: 1; color: rgba(255,255,255,0.85); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.risk-score-dark { font-size: 11px; color: rgba(255,255,255,0.35); flex-shrink: 0; }
 .risk-badge-dark {
   font-size: 10px; font-weight: 700; padding: 2px 8px;
   border-radius: 20px; flex-shrink: 0; white-space: nowrap;
 }
-.risk-badge-dark.risk-badge-high { background: var(--danger-bg); color: var(--danger-fg); }
-.risk-badge-dark.risk-badge-medium { background: var(--warning-bg); color: var(--warning-fg); }
+.risk-badge-dark.risk-badge-high { background: rgba(248,113,113,0.18); color: #f87171; }
+.risk-badge-dark.risk-badge-medium { background: rgba(251,191,36,0.18); color: #fbbf24; }
 
 /* Dot grid */
 .dist-dot-grid {
@@ -9019,7 +8715,7 @@ body.exam-page {
   transition: box-shadow 0.2s;
 }
 .dist-dot-label {
-  font-size: 10px; color: rgba(255,255,255,0.3);
+  font-size: 7.5px; color: rgba(255,255,255,0.3);
   text-align: center; white-space: nowrap; margin-top: 4px;
 }
 
@@ -9027,20 +8723,20 @@ body.exam-page {
 .forecast-rows-dark { display: flex; flex-direction: column; gap: 0; margin-top: 2px; }
 .forecast-row-dark {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 0; border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
   font-size: 12.5px;
 }
 .forecast-row-dark:last-child { border-bottom: none; }
-.frd-label { color: var(--text-muted-2); }
-.frd-value { font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; }
-.frd-good  { color: var(--success-fg) !important; }
-.frd-bad   { color: var(--danger-fg) !important; }
+.frd-label { color: rgba(255,255,255,0.45); }
+.frd-value { font-weight: 700; color: rgba(255,255,255,0.85); }
+.frd-good  { color: #4ade80 !important; }
+.frd-bad   { color: #f87171 !important; }
 
 /* Keep old classes for compat */
 .analytics-card { border-radius: 14px; }
-.analytics-card-title { font-size: var(--card-label-size); font-weight: 700; color: var(--text-muted-2); text-transform: uppercase; letter-spacing: var(--card-label-tracking); margin-bottom: 6px; }
-.analytics-card-value { font-size: var(--card-value-size); font-weight: var(--card-value-weight); color: var(--text-strong); line-height: 1.1; margin-bottom: 2px; }
-.analytics-card-sub { font-size: var(--card-sub-size); color: var(--text-muted-2); margin-bottom: 14px; }
+.analytics-card-title { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+.analytics-card-value { font-size: 30px; font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 2px; }
+.analytics-card-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 14px; }
 .ac-header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .ac-icon-wrap { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .ac-title-group { flex: 1; min-width: 0; }
@@ -9058,7 +8754,7 @@ body.exam-page {
 }
 .trend-chip.up   { background: #dcfce7; color: #15803d; }
 .trend-chip.down { background: #fee2e2; color: #b91c1c; }
-.trend-chip.flat { background: #f3f4f6; color: var(--text-muted); }
+.trend-chip.flat { background: #f3f4f6; color: #6b7280; }
 
 /* sparkline chart */
 .sparkline-wrap { margin-top: 8px; }
@@ -9078,7 +8774,7 @@ body.exam-page {
   font-size: 11px; font-weight: 800; color: #fff;
 }
 .risk-item-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1f2937; }
-.risk-score { font-size: 11px; font-weight: 700; color: var(--text-muted-2); flex-shrink: 0; }
+.risk-score { font-size: 11px; font-weight: 700; color: #9ca3af; flex-shrink: 0; }
 .risk-badge {
   font-size: 10px; font-weight: 700;
   padding: 2px 8px; border-radius: 20px;
@@ -9101,7 +8797,7 @@ body.exam-page {
   width: 100%; border-radius: 4px 4px 0 0; min-height: 4px;
   transition: opacity 0.2s;
 }
-.dist-label { font-size: 10px; color: var(--chart-axis); text-align: center; line-height: 1; white-space: nowrap; }
+.dist-label { font-size: 8.5px; color: #9ca3af; text-align: center; line-height: 1; white-space: nowrap; }
 .dist-count { font-size: 10px; font-weight: 800; color: #374151; min-height: 14px; }
 
 /* forecast table */
@@ -9115,7 +8811,7 @@ body.exam-page {
 .forecast-row-value { font-weight: 700; }
 .fc-up   { color: #15803d; }
 .fc-down { color: #b91c1c; }
-.fc-flat { color: var(--text-muted); }
+.fc-flat { color: #6b7280; }
 
 /* ============================================================
    CAMERA / REMOTE EXAM
@@ -9277,7 +8973,7 @@ body.exam-page {
   border-radius: 6px;
   background: rgba(17, 24, 39, 0.82);
   color: #e5e7eb;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1.2;
   text-align: right;
@@ -9539,7 +9235,7 @@ body.exam-page {
 .enroll-status.info {
   background: rgba(107,114,128,0.08);
   border-color: rgba(107,114,128,0.22);
-  border-left-color: var(--text-muted);
+  border-left-color: #6b7280;
   color: #4b5563;
 }
 .enroll-status.success {
@@ -9587,8 +9283,8 @@ body.exam-page {
 /* ============================================================
    UI POLISH - General enhancements
    ============================================================ */
-.stat-card { transition: border-color 0.2s ease; }
-.stat-card:hover { border-color: var(--border-strong); }
+.stat-card { transition: transform 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
 
 .admin-section:not(.hidden) { animation: secIn 0.18s ease both; }
 @keyframes secIn {
@@ -9828,7 +9524,7 @@ input[type="password"]::-ms-clear {
 }
 .monitor-exam-timer > svg { width: 20px; height: 20px; flex-shrink: 0; filter: drop-shadow(0 0 5px rgba(74, 222, 128, 0.22)); }
 .monitor-exam-timer-copy { display: flex; flex-direction: column; gap: 1px; }
-.monitor-exam-timer-copy > span { color: var(--text-muted-2); font-size: 10px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.75px; white-space: nowrap; }
+.monitor-exam-timer-copy > span { color: #64748b; font-size: 8px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.75px; white-space: nowrap; }
 .monitor-exam-timer-copy > strong { color: #163020; font-size: 20px; line-height: 1.05; letter-spacing: 0.6px; font-variant-numeric: tabular-nums; }
 .monitor-exam-timer.is-urgent { color: #dc2626; border-color: rgba(220, 38, 38, 0.34); background: linear-gradient(145deg, #fff, #fff7f7); box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 5px 14px rgba(127, 29, 29, 0.07); }
 .monitor-exam-timer.is-urgent > svg { filter: drop-shadow(0 0 5px rgba(248, 113, 113, 0.22)); }
@@ -9843,7 +9539,7 @@ input[type="password"]::-ms-clear {
   border: 1px solid #d1d9d3;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-muted);
+  color: #64748b;
   cursor: pointer;
   flex-shrink: 0;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
@@ -9860,7 +9556,7 @@ input[type="password"]::-ms-clear {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
-  background: var(--info-bg); color: var(--info-fg); border: 1px solid var(--info-border);
+  background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
   padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
 }
 
@@ -9894,14 +9590,16 @@ input[type="password"]::-ms-clear {
   font-size: 12px;
   font-weight: 700;
   background: transparent;
-  color: var(--text-muted-2);
+  color: #6b7280;
   transition: background 0.15s, color 0.15s;
   font-family: inherit;
 }
 .monitor-view-btn.active { background: #1a4d2a; color: #fff; }
 [data-theme="dark"] .monitor-view-btn { color: var(--text-muted) !important; }
 [data-theme="dark"] .monitor-view-btn.active { background: #22c55e !important; color: #04150a !important; }
-
+[data-theme="dark"] .stat-card .stat-icon.green {
+  color: #22c55e !important;
+}
 .monitor-session-row {
   transition: background 0.18s ease, box-shadow 0.18s ease;
 }
@@ -9923,7 +9621,7 @@ input[type="password"]::-ms-clear {
 }
 .monitor-student-meta {
   font-size: 11px;
-  color: var(--text-muted-2);
+  color: #9ca3af;
 }
 [data-theme="dark"] .monitor-session-row.monitor-session-row-alert td {
   background: rgba(248, 113, 113, 0.08) !important;
@@ -9983,7 +9681,7 @@ input[type="password"]::-ms-clear {
 }
 .msc-body { min-width: 0; }
 .msc-value { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; }
-.msc-label { font-size: 10px; font-weight: 700; color: var(--text-muted-2); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+.msc-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
 
 /* Better student row in monitoring */
 .monitor-student-row {
@@ -10013,7 +9711,7 @@ input[type="password"]::-ms-clear {
 .ms-badge-amber { background: #fef3c7; color: #92400e; }
 .ms-badge-green { background: #dcfce7; color: #166534; }
 .ms-badge-blue  { background: #dbeafe; color: #1e40af; }
-.ms-badge-muted { background: #f1f5f9; color: var(--text-muted); }
+.ms-badge-muted { background: #f1f5f9; color: #64748b; }
 [data-theme="dark"] .ms-badge-amber { background: rgba(245,158,11,0.18) !important; color: #fcd34d !important; }
 [data-theme="dark"] .ms-badge-green { background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important; }
 [data-theme="dark"] .ms-badge-blue  { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; }
@@ -10055,7 +9753,7 @@ input[type="password"]::-ms-clear {
   color: #166534;   /* green = actively viewing */
 }
 .ms-eye-closed {
-  color: var(--text-muted);   /* visible medium gray = not viewing */
+  color: #6b7280;   /* visible medium gray = not viewing */
 }
 .ms-log-btn:hover .ms-eye { transform: scale(1.15); }
 
@@ -10067,7 +9765,7 @@ input[type="password"]::-ms-clear {
   width: 100%; height: 5px; background: #f3f4f6; border-radius: 99px; overflow: hidden; margin-bottom: 4px;
 }
 .monitor-progress-fill { height: 100%; border-radius: 99px; background: #0f2d1a; }
-.monitor-progress-label { font-size: 11px; color: var(--text-muted-2); font-weight: 600; text-align: center; }
+.monitor-progress-label { font-size: 10px; color: #9ca3af; font-weight: 600; text-align: center; }
 
 /* Activity log event type colors */
 .log-type.no_person      { color: #dc2626; }
@@ -10133,7 +9831,7 @@ input[type="password"]::-ms-clear {
   font-size: 11px;
   line-height: 1.35;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
@@ -10145,7 +9843,7 @@ input[type="password"]::-ms-clear {
 
 /* ── Section headers ───────────────────────────────────── */
 .section-title { display: none !important; } /* already shown in topbar */
-.section-subtitle { font-size: 13px !important; color: var(--text-muted-2) !important; font-weight: 500 !important; }
+.section-subtitle { font-size: 13px !important; color: #9ca3af !important; font-weight: 500 !important; }
 
 #courses-department-title {
   font-size: 30px !important;
@@ -10176,7 +9874,7 @@ th {
   background: #f9fafb !important;
   font-size: 10.5px !important;
   letter-spacing: 0.8px !important;
-  color: var(--text-muted) !important;
+  color: #6b7280 !important;
   padding: 11px 16px !important;
 }
 td { font-size: 13.5px !important; }
@@ -10224,7 +9922,7 @@ tr:hover td { background: #fafbfc !important; }
   font-size: 12px !important;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--text-muted) !important;
+  color: #6b7280 !important;
   margin-bottom: 5px !important;
 }
 .form-control {
@@ -10279,24 +9977,13 @@ tr:hover td { background: #fafbfc !important; }
 
 /* Colored header */
 .course-card-header {
-  /* Fixed, not min-: the title clamps to 2 lines and the description to
-     1, so the tallest possible content is code + a 2-line title + a
-     1-line description + 36px padding = 114. As a min-height this grew to
-     114 only on the cards that had a description, dropping their stats
-     and enroll rows 6px out of line with the rest of the grid. 114 is the
-     worst case, so every header matches with no empty band above the
-     text -- 124 left 29px of bare gradient on short-titled cards. */
-  height: 114px;
+  min-height: 108px;
   position: relative;
   overflow: hidden;
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  /* Top-aligned, not bottom-: with flex-end a card carrying a description
-     pushed its code label and title 19px above a card without one, so the
-     labels never lined up across the row. From the top they always do,
-     and the description follows underneath where there is room. */
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 .course-card-header::before {
   content: '';
@@ -10346,24 +10033,20 @@ tr:hover td { background: #fafbfc !important; }
   text-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 .course-card-desc {
-  font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,0.85);
+  font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,0.78);
   line-height: 1.3; overflow: hidden; margin-top: 4px;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   white-space: normal; position: relative; z-index: 1;
   text-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* Card body */
 .course-card-body {
-  /* Same 20px side gutter as .course-card-header, so every line of
-     content in the card shares one left edge. Previously the header sat
-     at 20px, the stats wrapper at 18px and this at 18px, which is why
-     nothing quite lined up vertically. */
-  padding: 0 20px 16px;
+  padding: 14px 18px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* Meta pills row */
@@ -10389,67 +10072,31 @@ tr:hover td { background: #fafbfc !important; }
 /* Stats strip — inset neumorphic */
 .course-card-stats {
   display: flex;
-  background: transparent;
+  background: #e8ecef;
   border: none;
-  border-radius: 0;
-  box-shadow: none;
-  /* one hairline instead of a container: separates the figures from the
-     enrolment block without boxing them */
-  border-bottom: 1px solid var(--border-subtle);
-  padding-bottom: 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: inset 4px 4px 8px #c8cdd1, inset -4px -4px 8px #ffffff;
 }
-/* Label above, value below -- the same shape .stat-card and
-   .stats-overview-card use for a labelled number, so the app has one
-   pattern for this rather than three. Side by side, a 24px figure next
-   to an 11px caption on a shared baseline made the caption look like it
-   had fallen off the number. */
 .course-stat-cell {
-  flex: 1;
-  text-align: center;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  flex: 1; text-align: center; padding: 10px 6px;
+  border-right: 1px solid rgba(0,0,0,0.06);
 }
-/* The rule between the two figures is a hairline, not a shaded edge, and
-   it uses the border token so it survives a theme switch. */
-.course-stat-cell { padding-inline: 8px; }
-.course-stat-cell + .course-stat-cell {
-  border-left: 1px solid var(--border-subtle);
-}
-.course-stat-num {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-strong);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.course-stat-lab {
-  font-size: var(--card-label-size);
-  color: var(--text-muted-2);
-  text-transform: uppercase;
-  letter-spacing: var(--card-label-tracking);
-  font-weight: 700;
-  margin-top: 0;
-  line-height: 1;
-}
+.course-stat-cell:last-child { border-right: none; }
+.course-stat-num { font-size: 20px; font-weight: 800; color: #111827; line-height: 1; }
+.course-stat-lab { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
 
 /* Enroll row */
 .course-card-enroll {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  font-size: 12px; color: var(--text-muted-2);
-  /* The flex gap on .course-card-body supplies the rhythm now, so this
-     row carries no padding of its own. */
-  padding: 0;
+  font-size: 12px; color: #6b7280;
+  padding: 2px 2px 10px;
 }
 .course-card-enroll-group {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 14px;
   min-width: 0;
 }
-.course-enroll-label { font-weight: 600; color: var(--text-muted-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.course-enroll-label { font-weight: 600; color: #9ca3af; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
 .course-enroll-divider {
   width: 1px; height: 32px; background: #e5e7eb; flex: 0 0 auto;
 }
@@ -10478,33 +10125,8 @@ tr:hover td { background: #fafbfc !important; }
 }
 
 /* Actions */
-/* No divider: the gap between the enroll row and the buttons already
-   separates them, and the rule was costing a further 14px of padding on
-   top of its own line. Padding trimmed to 10px since it no longer has to
-   clear a border. */
-.course-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
-/* Both buttons share the row equally so the pair spans the same gutter
-   as the figures and the enrol code above them. */
-.course-card-actions > * {
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 12px;
-  padding: 8px 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-/* Icons return to the flow so they centre with the label instead of
-   being pinned to the right edge with padding reserved for them. */
-.course-card-actions > * svg {
-  position: static;
-  inset: auto;
-  margin: 0;
-  transform: none;
-  opacity: 1;
-  flex-shrink: 0;
-}
+.course-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid #eef2f7; justify-content: center; }
+.course-card-actions .btn { flex: 1; font-size: 12px; padding: 7px 12px; }
 
 /* Color palette button on card header */
 .course-color-btn {
@@ -10541,9 +10163,9 @@ tr:hover td { background: #fafbfc !important; }
   grid-column: 1 / -1;
   text-align: center;
   padding: 60px 24px;
-  color: var(--text-muted-2);
+  color: #9ca3af;
 }
-.course-empty-icon { font-size: 48px; margin-bottom: 14px; color: var(--text-muted-2); }
+.course-empty-icon { font-size: 48px; margin-bottom: 14px; color: #9ca3af; }
 .course-empty-title { font-size: 16px; font-weight: 700; color: #374151; margin-bottom: 6px; }
 .course-empty-sub { font-size: 13px; }
 
@@ -10700,7 +10322,7 @@ tr:hover td { background: #fafbfc !important; }
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: var(--brand-900);
+  color: #fff;
   flex-shrink: 0;
 }
 
@@ -10808,7 +10430,7 @@ tr:hover td { background: #fafbfc !important; }
   margin-top: 4px;
   font-size: 13px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #64748b;
 }
 
 .sa-stat-card {
@@ -10863,21 +10485,9 @@ tr:hover td { background: #fafbfc !important; }
   justify-content: center;
   font-size: 13px;
   font-weight: 700;
-  color: var(--brand-900);
+  color: #fff;
   flex-shrink: 0;
 }
-
-/* The avatar initial sits inside a table cell, so the blanket rule
-   [data-theme="dark"] .table-wrapper td { color: #c9d1d9 !important }
-   repaints it light grey on the brightened gold -- 1.05:1, invisible.
-   Restated here rather than weakening that blanket rule, which other
-   table content depends on. */
-[data-theme="dark"] .sa-person-avatar,
-[data-theme="dark"] .sa-user-avatar,
-[data-theme="dark"] .portal-user-avatar,
-[data-theme="dark"] .sidebar-avatar,
-[data-theme="dark"] .portal-avatar,
-[data-theme="dark"] #topbar-avatar { color: var(--brand-900) !important; }
 
 .sa-person-cell span:last-child {
   min-width: 0;
@@ -11194,13 +10804,10 @@ tr:hover td { background: #fafbfc !important; }
    EXAM INLINE EDITOR (Google Forms style)
    ============================================================ */
 
-/* The section is zeroed so the full-bleed editor views can sit flush,
-   and the list views used to re-add 28px. But .content-area already pads
-   every section by 28px, so these two sections carried it twice and sat
-   28px further from the topbar than Dashboard, which has no inner
-   wrapper. Dropping the duplicate lines all sections on the same inset. */
 #section-exams { padding: 0 !important; }
+#exams-list-view { padding: 28px; }
 #section-subjects { padding: 0 !important; }
+#courses-list-view { padding: 28px; }
 
 /* Topbar */
 .exam-editor-topbar {
@@ -11373,19 +10980,19 @@ tr:hover td { background: #fafbfc !important; }
   color: #fff !important; display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 700;
 }
-.exam-paper-sub { font-size: 12.5px; color: var(--text-muted) !important; margin-bottom: 24px; text-align: center; }
+.exam-paper-sub { font-size: 12.5px; color: #6b7280 !important; margin-bottom: 24px; text-align: center; }
 .exam-paper-hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0 26px; }
 .exam-paper-q { margin-bottom: 22px; }
 .exam-paper-q-row { display: flex; gap: 8px; font-size: 14px; font-weight: 700; color: #111827 !important; }
 .exam-paper-q-num { flex-shrink: 0; }
-.exam-paper-q-pts { font-weight: 500; color: var(--text-muted-2) !important; font-size: 12px; margin-left: 6px; }
+.exam-paper-q-pts { font-weight: 500; color: #9ca3af !important; font-size: 12px; margin-left: 6px; }
 .exam-paper-q-img { display: block; max-width: 100%; max-height: 220px; margin: 10px 0 4px 24px; border-radius: 6px; }
 .exam-paper-opts { list-style: none; margin: 10px 0 0 24px; padding: 0; }
 .exam-paper-opts li { font-size: 13.5px; color: #374151 !important; margin-bottom: 6px; }
 .exam-paper-opt-letter { font-weight: 700; margin-right: 6px; }
 .exam-paper-opt-empty { color: #b91c1c !important; font-style: italic; }
 .exam-paper-answer-line { margin: 12px 0 0 24px; font-size: 13.5px; color: #374151 !important; border-bottom: 1px solid #9ca3af; width: 320px; padding-bottom: 4px; }
-.exam-paper-instructions { margin: 8px 0 0 24px; font-size: 12px; font-style: italic; color: var(--text-muted) !important; }
+.exam-paper-instructions { margin: 8px 0 0 24px; font-size: 12px; font-style: italic; color: #6b7280 !important; }
 .exam-paper-match-cols { display: flex; gap: 32px; margin: 10px 0 0 24px; }
 .exam-paper-match-col { font-size: 13.5px; color: #374151 !important; }
 .exam-paper-match-col div { margin-bottom: 6px; }
@@ -11550,7 +11157,7 @@ tr:hover td { background: #fafbfc !important; }
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--text-muted-2) transparent;
+  scrollbar-color: #9ca3af transparent;
   overscroll-behavior: contain;
   padding-right: 3px;
 }
@@ -11591,7 +11198,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-outline-item:hover { background: #f3f4f6; }
 .exam-outline-item.active { color: #1a6b35; background: #ecfdf3; }
-.exam-outline-item-sub { padding-left: 22px; font-weight: 500; font-size: 12px; color: var(--text-muted); }
+.exam-outline-item-sub { padding-left: 22px; font-weight: 500; font-size: 12px; color: #6b7280; }
 .exam-outline-add-question {
   display: flex;
   align-items: center;
@@ -11684,7 +11291,7 @@ tr:hover td { background: #fafbfc !important; }
 .exam-policies-subtitle {
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-muted);
+  color: #64748b;
 }
 [data-theme="dark"] .exam-policies-subtitle {
   color: #94a3b8;
@@ -11744,7 +11351,7 @@ tr:hover td { background: #fafbfc !important; }
   margin-bottom: 14px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-muted);
+  color: #64748b;
 }
 [data-theme="dark"] .exam-policies-empty-copy {
   color: #94a3b8;
@@ -11810,7 +11417,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-policy-icon-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: var(--text-muted);
+  border-color: #94a3b8;
   background: #f8fafc;
   color: #0f172a;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
@@ -12081,7 +11688,7 @@ tr:hover td { background: #fafbfc !important; }
   color: rgba(0,0,0,0.2); cursor: grab; user-select: none;
   transition: color 0.15s, background 0.15s; flex-shrink: 0;
 }
-.q-drag-handle:hover { color: var(--text-muted); background: rgba(0,0,0,0.06); }
+.q-drag-handle:hover { color: #6b7280; background: rgba(0,0,0,0.06); }
 .q-drag-handle:active { cursor: grabbing; }
 [data-theme="dark"] .q-drag-handle { color: #94a3b8 !important; }
 [data-theme="dark"] .q-drag-handle:hover { color: #e2e8f0 !important; background: rgba(255,255,255,0.06) !important; }
@@ -12100,7 +11707,7 @@ tr:hover td { background: #fafbfc !important; }
 /* Required toggle */
 .q-required-toggle {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; font-weight: 500; color: var(--text-muted);
+  font-size: 12px; font-weight: 500; color: #6b7280;
   cursor: pointer; user-select: none;
 }
 .q-required-toggle input[type="checkbox"] { accent-color: #1a6b35; width: 14px; height: 14px; cursor: pointer; }
@@ -12110,7 +11717,7 @@ tr:hover td { background: #fafbfc !important; }
 
 /* Points */
 .q-points-wrap { display: flex; align-items: center; gap: 5px; }
-.q-points-label { font-size: 11px; color: var(--text-muted-2); font-weight: 600; letter-spacing: 0.3px; }
+.q-points-label { font-size: 11px; color: #9ca3af; font-weight: 600; letter-spacing: 0.3px; }
 .q-points-input {
   width: 50px; padding: 4px 6px;
   border: 1.5px solid #d1d5db; border-radius: 7px;
@@ -12179,12 +11786,12 @@ tr:hover td { background: #fafbfc !important; }
 .q-image-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .q-upload-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 600; color: var(--text-muted-2);
+  font-size: 11px; font-weight: 600; color: #9ca3af;
   padding: 4px 10px; border-radius: 6px;
   border: 1px dashed #d1d5db; background: none;
   cursor: pointer; transition: all 0.15s; font-family: inherit;
 }
-.q-upload-btn:hover { border-color: var(--text-muted); color: #374151; background: #f9fafb; }
+.q-upload-btn:hover { border-color: #6b7280; color: #374151; background: #f9fafb; }
 .q-remove-img-btn { font-size: 11px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
 [data-theme="dark"] .q-upload-btn {
   color: #9ca3af !important;
@@ -12242,7 +11849,7 @@ tr:hover td { background: #fafbfc !important; }
 #exam-editor-view .option-correct {
   width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
   border: 1.5px solid #d1d5db; background: #f9fafb;
-  cursor: pointer; color: var(--text-muted-2);
+  cursor: pointer; color: #9ca3af;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 700; transition: all 0.15s;
 }
@@ -12283,12 +11890,12 @@ tr:hover td { background: #fafbfc !important; }
 
 #exam-editor-view .add-option-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--text-muted); background: none;
+  font-size: 12px; color: #6b7280; background: none;
   border: 1.5px dashed #d1d5db; padding: 7px 16px;
   border-radius: 8px; cursor: pointer; font-weight: 600;
   font-family: inherit; transition: all 0.15s; margin-top: 2px;
 }
-#exam-editor-view .add-option-btn:hover { border-color: var(--text-muted); color: #374151; background: #f9fafb; }
+#exam-editor-view .add-option-btn:hover { border-color: #6b7280; color: #374151; background: #f9fafb; }
 [data-theme="dark"] #exam-editor-view .add-option-btn {
   color: #94a3b8 !important;
   border-color: #374151 !important;
@@ -12385,7 +11992,7 @@ tr:hover td { background: #fafbfc !important; }
 }
 .exam-stat-cell:last-child { border-right: none; }
 .exam-stat-num { font-size: 20px; font-weight: 800; color: #111827; line-height: 1; }
-.exam-stat-lab { font-size: 11px; color: var(--text-muted-2); text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
+.exam-stat-lab { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700; margin-top: 2px; }
 
 .exam-card-body {
   padding: 14px 18px 10px;
@@ -12446,7 +12053,7 @@ tr:hover td { background: #fafbfc !important; }
 
 .exam-card-subject {
   font-size: 13px;
-  color: var(--text-muted);
+  color: #6b7280;
   margin-bottom: 10px;
 }
 
@@ -12465,10 +12072,10 @@ tr:hover td { background: #fafbfc !important; }
   align-items: center;
   gap: 5px;
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: #6b7280;
   font-weight: 500;
 }
-.exam-stat svg { color: var(--text-muted-2); flex-shrink: 0; }
+.exam-stat svg { color: #9ca3af; flex-shrink: 0; }
 
 .exam-card-date {
   font-size: 10px;
@@ -12538,7 +12145,7 @@ table { border-collapse: separate; border-spacing: 0; }
 
 th {
   background: #f8faf8 !important;
-  color: var(--text-muted) !important;
+  color: #6b7280 !important;
   font-size: 11px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
@@ -12631,7 +12238,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 /* Email cell */
 .email-cell {
   font-size: 13px !important;
-  color: var(--text-muted) !important;
+  color: #6b7280 !important;
 }
 
 /* Modern action buttons */
@@ -12706,7 +12313,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   justify-content: flex-start;
   gap: 0 !important;
   background: #fff;
-  color: var(--danger-fg);
+  color: #dc2626;
   border: 1.5px solid #e5e7eb !important;
   padding: 0 36px 0 14px;
   height: 34px;
@@ -13144,12 +12751,11 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 .exam-dd-meta-code {
   font-weight: 700;
-  color: var(--text-muted);
+  color: #64748b;
 }
 .exam-dd-meta-sep {
   flex-shrink: 0;
-  /* was #cbd5e1 -- 1.48:1 on white, effectively invisible */
-  color: var(--text-muted-2);
+  color: #cbd5e1;
 }
 .exam-dd-status {
   flex-shrink: 0;
@@ -13160,8 +12766,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   border-radius: 999px;
   background: #eef2f7;
   border: 1px solid #d8e0ea;
-  /* was #64748b -- 4.34:1 against this chip background */
-  color: var(--text-body);
+  color: #64748b;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -13193,7 +12798,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .exam-dd-status-archived {
   background: #f8fafc;
   border-color: #dbe3ee;
-  color: var(--text-muted);
+  color: #64748b;
 }
 .exam-dd-placeholder {
   display: block;
@@ -13252,17 +12857,11 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 .sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-opt .exam-dd-copy {
   width: 100%;
 }
-/* This rule (specificity 0-4-1) deliberately flattens every status chip
-   inside the dropdown list, overriding the -active/-closed modifiers
-   (0-1-0) so the list reads as one column rather than a colour parade.
-   Kept as-is; only the grey changed -- #64748b on #f1f5f9 was 4.34:1,
-   and the literal pair had no dark-mode counterpart, so the same chip
-   stayed light-on-light there. The role tokens remap for both themes. */
 .sys-dd.exam-context-dd .qtd-opt.exam-context-opt .exam-dd-status,
 .sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-opt .exam-dd-status {
-  background: var(--surface-fill);
-  border-color: var(--border-subtle);
-  color: var(--text-body);
+  background: #f1f5f9;
+  border-color: #dbe3ee;
+  color: #64748b;
 }
 .sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-title,
 .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active .exam-dd-title {
@@ -13351,7 +12950,7 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 }
 
 .qtd-chevron {
-  color: var(--text-muted-2); flex-shrink: 0;
+  color: #9ca3af; flex-shrink: 0;
   transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), color 0.18s;
 }
 .qe-type-dd.open .qtd-chevron { transform: rotate(180deg); color: #166534; }
@@ -13386,7 +12985,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qtd-opt:last-child { border-bottom: none; }
 .qtd-opt:hover { background: #f0fdf4; color: #166534; }
 .qtd-active { color: #166534; font-weight: 700; background: #f0fdf4; }
-.qe-pts-label { font-size: 12px; font-weight: 600; color: var(--text-muted-2); }
+.qe-pts-label { font-size: 12px; font-weight: 600; color: #9ca3af; }
 .qe-diff-group { display: inline-flex; align-items: center; gap: 6px; }
 .qe-diff-select {
   padding: 5px 7px; border: 1.5px solid #e5e7eb; border-radius: 7px;
@@ -13414,11 +13013,11 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .qe-dup-btn {
   width: 30px; height: 30px; border-radius: 8px;
-  border: 1px solid #d1d5db; background: #fff; color: var(--text-muted);
+  border: 1px solid #d1d5db; background: #fff; color: #6b7280;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s; flex-shrink: 0;
 }
-.qe-dup-btn:hover { background: #f3f4f6; color: #374151; border-color: var(--text-muted-2); }
+.qe-dup-btn:hover { background: #f3f4f6; color: #374151; border-color: #9ca3af; }
 .qe-del-btn:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
 .qe-required-star {
   color: #dc2626;
@@ -13461,11 +13060,11 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qe-img-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .qe-img-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; font-weight: 600; color: var(--text-muted-2);
+  font-size: 11.5px; font-weight: 600; color: #9ca3af;
   padding: 4px 10px; border-radius: 6px; border: 1px dashed #d1d5db;
   cursor: pointer; font-family: inherit; transition: all 0.15s;
 }
-.qe-img-btn:hover { border-color: var(--text-muted); color: #374151; background: #f9fafb; }
+.qe-img-btn:hover { border-color: #6b7280; color: #374151; background: #f9fafb; }
 .qe-img-remove { font-size: 11px; color: #dc2626; background: none; border: none; cursor: pointer; font-family: inherit; }
 
 /* MCQ option rows — full width box style */
@@ -13502,24 +13101,24 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .qe-opt-input::placeholder { color: #adb5bd; }
 .qe-opt-del {
   width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
-  border: none; background: transparent; color: var(--text-muted-2);
+  border: none; background: transparent; color: #9ca3af;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: color 0.15s, background 0.15s;
 }
 .qe-opt-del:hover { background: #fee2e2; color: #dc2626; }
 .qe-add-opt {
-  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  font-size: 13px; font-weight: 600; color: #6b7280;
   background: none; border: none; cursor: pointer; font-family: inherit;
   padding: 6px 0; transition: color 0.15s;
 }
 .qe-add-opt:hover { color: #1a6b35; }
-.qe-hint { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted-2); margin-top: 10px; }
+.qe-hint { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #9ca3af; margin-top: 10px; }
 .qe-cb-icon { flex-shrink: 0; transition: opacity 0.15s; }
 .qe-cb-on { filter: drop-shadow(0 0 4px rgba(26,107,53,0.3)); }
 
 /* True/False animated radio group */
 .tf-group { margin-bottom: 12px; }
-.tf-label { font-size: 11px; font-weight: 700; color: var(--text-muted-2); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
+.tf-label { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; }
 .tf-options { display: flex; gap: 10px; }
 .tf-option {
   display: flex; align-items: center; gap: 10px;
@@ -13563,7 +13162,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .examv2-topbar-left { display: flex; align-items: center; gap: 10px; flex: 1; }
 .examv2-title { font-size: 14px; font-weight: 700; color: #0f2d1a; }
-.examv2-subject { font-size: 11px; color: var(--text-muted); }
+.examv2-subject { font-size: 11px; color: #6b7280; }
 .examv2-timer {
   display: flex; align-items: center; gap: 6px;
   font-size: 20px; font-weight: 800; color: #1a4d2a;
@@ -13614,10 +13213,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .examv2-stat:first-child { padding-left: 0; }
 .examv2-stat-num { font-size: 18px; font-weight: 800; color: #1a4d2a; }
-.examv2-stat-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.examv2-stat-label { font-size: 11px; color: #6b7280; font-weight: 600; }
 .examv2-stat.answered .examv2-stat-num { color: #1a4d2a; }
 .examv2-stat.review .examv2-stat-num { color: #f59e0b; }
-.examv2-stat.skipped .examv2-stat-num { color: var(--text-muted-2); }
+.examv2-stat.skipped .examv2-stat-num { color: #9ca3af; }
 
 /* Main layout */
 .examv2-layout {
@@ -13633,7 +13232,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   overflow: hidden; padding: 16px 12px 72px 16px;
 }
 .examv2-nav-header {
-  font-size: 12px; font-weight: 800; color: var(--text-muted-2);
+  font-size: 12px; font-weight: 800; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 0.08em;
   margin-bottom: 14px;
 }
@@ -13657,7 +13256,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .nav-q-btn {
   width: 44px; height: 44px; border-radius: 50%;
   border: 1.5px solid #d1d5db; background: #fff;
-  font-size: 16px; font-weight: 700; color: var(--text-muted);
+  font-size: 16px; font-weight: 700; color: #6b7280;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
@@ -13718,7 +13317,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 
 /* ── Coding question (exam v2) ── */
 .coding-expected-wrap { margin-bottom: 16px; }
-.coding-section-label { font-size: 11px; font-weight: 800; color: var(--text-muted-2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.coding-section-label { font-size: 11px; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
 .coding-expected-pre {
   background: #f8fafc;
   color: #0f172a;
@@ -13757,7 +13356,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   border-radius: 20px;
   border: 1px solid rgba(37, 99, 235, 0.22);
 }
-.coding-editor-hint { font-size: 11px; color: var(--text-muted); }
+.coding-editor-hint { font-size: 11px; color: #64748b; }
 .coding-cm-wrap .CodeMirror {
   height: 260px;
   font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
@@ -13777,7 +13376,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   width: 44px;
   padding: 0 8px 0 0;
   text-align: right;
-  color: var(--text-muted);
+  color: #94a3b8;
 }
 .coding-cm-wrap .CodeMirror-lines {
   padding: 12px 0 12px 8px;
@@ -13906,7 +13505,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   white-space: nowrap; flex-shrink: 0;
 }
 .examv2-question-wrap .question-type-label {
-  font-size: 11px; font-weight: 700; color: var(--text-muted-2);
+  font-size: 11px; font-weight: 700; color: #9ca3af;
   text-transform: uppercase; letter-spacing: 0.08em;
   margin-bottom: 16px;
 }
@@ -13927,7 +13526,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   width: 28px; height: 28px; border-radius: 50%;
   border: 1.5px solid #d1d5db; background: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: var(--text-muted);
+  font-size: 11px; font-weight: 800; color: #6b7280;
   flex-shrink: 0; transition: all 0.15s;
 }
 .examv2-question-wrap .mcq-option.selected .mcq-option-letter { background: #1a4d2a; border-color: #1a4d2a; color: #fff; }
@@ -14057,8 +13656,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .review-score-chip { width: fit-content; min-width: 0; max-width: 145px; padding: 8px 14px; gap: 10px; flex: 0 0 auto; }
   .review-score-status-icon { display: none; }
   .review-score-chip-stats { font-size: 14px; gap: 8px; }
-  .review-score-chip-label { max-width: 125px; font-size: 10px; line-height: 1.35; }
-  .review-score-chip-pending .review-score-chip-label { font-size: 10px; }
+  .review-score-chip-label { max-width: 125px; font-size: 9px; line-height: 1.35; }
+  .review-score-chip-pending .review-score-chip-label { font-size: 9px; }
   .review-body { width: 100%; padding: 28px 14px 82px; }
   .review-content-header { display: block; margin-bottom: 22px; }
   .review-content-heading { margin-bottom: 18px; }
@@ -14072,7 +13671,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   .review-question-number.is-unanswered { width: 44px; height: 46px; font-size: 14px; }
   .review-question-main { padding-right: 4px; }
   .review-question-title { font-size: 14px; }
-  .review-question-type { min-width: 40px; min-height: 28px; padding: 0 6px; font-size: 10px; }
+  .review-question-type { min-width: 40px; min-height: 28px; padding: 0 6px; font-size: 9px; }
   .review-matching-item { grid-template-columns: 1fr; }
   .review-matching-arrow { justify-content: flex-start; }
   .review-footer { min-height: 58px; padding: 0 16px; }
@@ -14174,7 +13773,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .ms-action-cell { position: relative; display: flex; align-items: center; justify-content: flex-end; width: 100%; min-height: 34px; padding-right: 44px; }
 .ms-action-main { width: 100%; display: flex; align-items: center; justify-content: center; }
 .ms-chat-btn.ms-chat-btn { position: absolute; right: 0; top: 50%; margin-left: 0; transform: translateY(-50%); }
-.ms-action-status { font-size: 12px; color: var(--text-muted-2); text-align: center; }
+.ms-action-status { font-size: 12px; color: #9ca3af; text-align: center; }
 /* Unread-message count on the Monitoring sidebar item */
 .nav-item { position: relative; }
 .nav-msg-badge { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface, #0f2d1a); }
@@ -14223,7 +13822,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .topbar-bell-wrap { position: relative; }
 .topbar-bell { position: relative; width: 40px; height: 40px; border: none; border-radius: 50%; background: transparent; color: var(--text-muted, #6b7280); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
 .topbar-bell:hover { background: var(--surface-2, #eef0ee); color: var(--text, #1a1a1a); }
-.topbar-bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #b42318; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff); }
+.topbar-bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff); }
 .topbar-sound-btn {
   border: 1px solid var(--border, #d1d5db);
   background: var(--surface, #fff);
@@ -14266,7 +13865,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .notif-item.unseen { background: rgba(15,45,26,0.05); }
 .notif-item.unseen:hover { background: rgba(15,45,26,0.09); }
 .notif-item-top { display: flex; align-items: center; justify-content: space-between; }
-.notif-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--primary, #0f2d1a); background: rgba(15,45,26,0.1); padding: 2px 7px; border-radius: 99px; }
+.notif-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--primary, #0f2d1a); background: rgba(15,45,26,0.1); padding: 2px 7px; border-radius: 99px; }
 .notif-tag-violation { color: #b91c1c; background: rgba(239,68,68,0.14); }
 .notif-tag-report { color: #b45309; background: rgba(217,119,6,0.14); }
 .notif-tag-share { color: #1d4ed8; background: rgba(59,130,246,0.14); }
@@ -14532,10 +14131,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   background: var(--surface-2, #1f2937) !important;
   border-color: var(--border, #374151) !important;
 }
-/* was #ef4444: lightening it pushed the white initial to 3.76:1.
-   The base #b91c1c reads 6.4:1 and works on the dark card too. */
 [data-theme="dark"] .violation-alert-avatar {
-  background: #b91c1c !important;
+  background: #ef4444 !important;
 }
 [data-theme="dark"] .violation-alert-flag {
   background: rgba(248, 113, 113, 0.1) !important;
@@ -14616,7 +14213,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   padding: 0 5px;
   border-radius: 999px;
   background: #f59e0b;
-  color: var(--brand-900);
+  color: #fff;
   font-size: 10px;
   font-weight: 800;
   display: inline-flex;
@@ -14809,74 +14406,93 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 /* Statistics workspace — shared card language */
 .stats-analytics-stack {
   display: grid;
-  gap: 20px;
+  gap: 22px;
 }
 .stats-overview-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--card-gap);
+  gap: 14px;
 }
-/* Same contract as .stat-card on the dashboard: label top, value below,
-   shared padding/radius/border. The 10px tone bar is gone -- it was the
-   same decorative device as the KPI accent bars, and worse here, because
-   the tone was keyed to WHICH card it was rather than to the number in
-   it: the Flagged card rendered red while reading 0. Tone is now derived
-   from the value (see renderStatistics) and arrives as data-tone. */
 .stats-overview-card {
+  --stats-tone: var(--text);
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
   min-width: 0;
-  padding: var(--card-pad);
+  min-height: 126px;
+  padding: 18px;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--card-radius);
-  background: var(--surface-card);
-  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--stats-tone) 5%, var(--surface)) 0%, var(--surface) 66%);
+  box-shadow: 0 8px 22px rgba(15, 45, 26, 0.06);
+}
+.stats-overview-card::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--stats-tone);
+  opacity: .78;
+  content: '';
+}
+.stats-overview-card.tone-positive { --stats-tone: #15803d; }
+.stats-overview-card.tone-warning { --stats-tone: #b45309; }
+.stats-overview-card.tone-danger { --stats-tone: #b91c1c; }
+.stats-overview-card.tone-neutral { --stats-tone: var(--primary); }
+.stats-overview-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--stats-tone) 22%, var(--border));
+  border-radius: 13px;
+  place-items: center;
+  color: var(--stats-tone);
+  background: color-mix(in srgb, var(--stats-tone) 10%, var(--surface));
+}
+.stats-overview-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 .stats-overview-copy {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   min-width: 0;
 }
 .stats-overview-copy > span {
   overflow: hidden;
-  color: var(--text-muted-2);
-  font-size: var(--card-label-size);
-  font-weight: 700;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
   line-height: 1.35;
-  letter-spacing: var(--card-label-tracking);
+  letter-spacing: .055em;
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
 }
 .stats-overview-copy > strong {
-  margin-top: 0;
-  color: var(--text-strong);
-  font-size: var(--card-value-size);
-  font-weight: var(--card-value-weight);
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 800;
   line-height: 1;
-  letter-spacing: -.02em;
+  letter-spacing: -.035em;
   font-variant-numeric: tabular-nums;
 }
-/* Colour only when the number is in a state worth looking at. A count of
-   0 flagged students is not a red condition. Same dot device as the
-   dashboard Active Exams card. */
-.stats-tone-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
+.stats-overview-copy > small {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.45;
 }
-.stats-overview-card[data-tone="danger"] .stats-tone-dot { background: var(--danger-fg); }
-.stats-overview-card[data-tone="danger"] .stats-overview-copy > span { color: var(--danger-fg); }
-.stats-overview-card[data-tone="warning"] .stats-tone-dot { background: var(--warning-fg); }
-.stats-overview-card[data-tone="warning"] .stats-overview-copy > span { color: var(--warning-fg); }
-.stats-overview-card[data-tone="success"] .stats-tone-dot { background: var(--success-fg); }
-.stats-overview-card[data-tone="success"] .stats-overview-copy > span { color: var(--success-fg); }
 .stats-analysis-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -14886,29 +14502,59 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .stats-analysis-card {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--card-radius);
-  background: var(--surface-card);
-  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(15, 45, 26, 0.055);
 }
 .stats-analysis-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 53px;
-  padding: 13px 20px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-card);
+  min-height: 74px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 3%, var(--surface)), var(--surface));
+}
+.stats-analysis-heading > div { min-width: 0; }
+.stats-analysis-heading .stats-card-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .105em;
+  text-transform: uppercase;
 }
 .stats-analysis-heading h3 {
   margin: 0;
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -.1px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.2px;
 }
-.stats-analysis-body { padding: 18px 20px 20px; }
+.stats-analysis-heading p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 550;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-heading-metric {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  font-size: 10px;
+  font-weight: 750;
+}
+.stats-analysis-body { padding: 20px 22px 22px; }
 .stats-chart-body {
   display: flex;
   min-height: 266px;
@@ -14920,8 +14566,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   width: 100%;
   min-height: 210px;
   padding: 4px 4px 0;
-  border-bottom: 1px solid var(--chart-grid);
-  background: linear-gradient(to bottom, transparent 49.5%, var(--chart-grid) 50%, transparent 50.5%);
+  border-bottom: 1px solid var(--border);
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), color-mix(in srgb, var(--border) 48%, transparent) 25%);
 }
 .stats-question-body {
   max-height: 266px;
@@ -14930,18 +14576,18 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .stats-analysis-callout {
   margin-bottom: 15px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--surface-sunken);
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface-2));
 }
 .stats-analysis-description {
   margin-bottom: 17px;
-  color: var(--text-muted-2);
+  color: var(--text-muted);
   font-size: 11px;
   line-height: 1.6;
 }
-.stats-analysis-description strong { color: var(--text-strong); }
+.stats-analysis-description strong { color: var(--text); }
 .stats-analysis-list {
   display: flex;
   flex-direction: column;
@@ -14953,7 +14599,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   gap: 10px;
   min-height: 170px;
   padding: 2px 4px 0;
-  border-bottom: 1px solid var(--chart-grid);
+  border-bottom: 1px solid var(--border);
 }
 .stats-status-chip {
   display: inline-flex;
@@ -14965,18 +14611,15 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   font-weight: 700;
   white-space: nowrap;
 }
-.stats-status-chip.tone-positive { color: var(--success-fg); background: var(--success-bg); border: 1px solid var(--success-border); }
-.stats-status-chip.tone-danger { color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-border); }
-/* Discrimination band chips: five bands, three states. The five-way
-   distinction stays in the label text (Excellent/Good/Fair/Poor/Review);
-   colour only says good / watch / bad, which is all colour can carry. */
-.stats-status-chip.tone-warning { color: var(--warning-fg); background: var(--warning-bg); border: 1px solid var(--warning-border); }
-.stats-status-chip.tone-neutral { color: var(--text-muted-2); background: var(--surface-fill); border: 1px solid var(--border-subtle); }
+.stats-status-chip.tone-positive { color:#15803d; background:rgba(34,197,94,.12); }
+.stats-status-chip.tone-danger { color:#b91c1c; background:rgba(239,68,68,.13); }
 .stats-empty-analysis-card .stats-analysis-body { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .stats-empty-analysis-card .stats-analysis-description { max-width: 82ch; margin-bottom: 0; font-size: 12px; }
-/* The per-theme tone overrides that lived here are gone: the semantic
-   --success-fg / --warning-fg / --danger-fg tokens already remap for
-   dark, so there is one definition instead of two. */
+[data-theme="dark"] .stats-overview-card.tone-positive,
+[data-theme="dark"] .stats-status-chip.tone-positive { --stats-tone:#4ade80; color:#4ade80; }
+[data-theme="dark"] .stats-overview-card.tone-warning { --stats-tone:#fbbf24; }
+[data-theme="dark"] .stats-overview-card.tone-danger,
+[data-theme="dark"] .stats-status-chip.tone-danger { --stats-tone:#f87171; color:#f87171; }
 @media (max-width: 1040px) {
   .stats-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -14986,7 +14629,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 @media (max-width: 520px) {
   .stats-analytics-stack { gap: 14px; }
   .stats-overview-grid { grid-template-columns: 1fr; }
-  .stats-overview-card { min-height: 78px; }
+  .stats-overview-card { min-height: 112px; }
   .stats-analysis-heading { min-height: 56px; padding: 14px 16px; }
   .stats-analysis-body { padding: 15px 16px 17px; }
   .stats-analysis-heading h3 { font-size: 15px; }
@@ -14995,12 +14638,12 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 
 /* Random Forest statistics summary */
 .rf-prediction-card {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--card-radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 0;
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
 }
 .rf-prediction-heading {
   display: flex;
@@ -15114,7 +14757,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .rf-student-row { display:grid; grid-template-columns:minmax(210px,1.05fr) minmax(280px,1.45fr) minmax(210px,.9fr); align-items:center; gap:24px; min-width:0; padding:14px 16px; border-bottom:1px solid var(--border); }
 .rf-student-row:last-child { border-bottom:0; }
 .rf-student-row:not(.rf-student-header):hover { background:color-mix(in srgb, var(--surface-2) 65%, transparent); }
-.rf-student-header { position:sticky; top:0; z-index:1; padding-top:10px; padding-bottom:10px; background:var(--surface); color:var(--text-muted); font-size: 10px; font-weight:800; text-transform:uppercase; letter-spacing:.075em; }
+.rf-student-header { position:sticky; top:0; z-index:1; padding-top:10px; padding-bottom:10px; background:var(--surface); color:var(--text-muted); font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.075em; }
 .rf-student-person { min-width:0; display:flex; flex-direction:column; gap:4px; }
 .rf-student-person strong { overflow:hidden; color:var(--text); font-size:13px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
 .rf-student-person span { overflow:hidden; color:var(--text-muted); font-size:10px; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; }
@@ -15122,10 +14765,10 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .rf-student-result small { max-width:64ch; color:var(--text-muted); font-size:10.5px; line-height:1.5; }
 .rf-risk-badge { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:700; white-space:nowrap; }
 .rf-risk-badge i { width:7px; height:7px; flex-shrink:0; border-radius:50%; background:currentColor; }
-.rf-risk-badge.tone-normal { color:var(--success-fg); background:var(--success-bg); border:1px solid var(--success-border); }
-.rf-risk-badge.tone-monitoring { color:var(--warning-fg); background:var(--warning-bg); border:1px solid var(--warning-border); }
-.rf-risk-badge.tone-suspicious { color:var(--danger-fg); background:var(--danger-bg); border:1px solid var(--danger-border); }
-.rf-risk-badge.tone-pending { color:var(--info-fg); background:var(--info-bg); border:1px solid var(--info-border); }
+.rf-risk-badge.tone-normal { color:#15803d; background:rgba(34,197,94,.12); }
+.rf-risk-badge.tone-monitoring { color:#b45309; background:rgba(245,158,11,.14); }
+.rf-risk-badge.tone-suspicious { color:#b91c1c; background:rgba(239,68,68,.13); }
+.rf-risk-badge.tone-pending { color:#1d4ed8; background:rgba(59,130,246,.12); }
 .rf-risk-badge.tone-unavailable,
 .rf-risk-badge.tone-failed { color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border); }
 .rf-student-probability { display:flex; align-items:center; gap:12px; min-width:0; }
@@ -15731,221 +15374,4 @@ label.theme-switch,
     text-overflow: ellipsis;
     vertical-align: bottom;
   }
-}
-
-
-/* ============================================================
-   DASHBOARD CHART PAINT
-   Every colour below is an alias onto the palette. The chart
-   builders in admin.js emit geometry and class names only --
-   no hex, no rgba -- so retuning the palette retunes the charts.
-   ============================================================ */
-.sparkline-svg .spark-area { fill: url(#spark-grad); }
-.sparkline-svg .spark-stop-top { stop-color: var(--chart-series-1); stop-opacity: 0.22; }
-.sparkline-svg .spark-stop-bottom { stop-color: var(--chart-series-1); stop-opacity: 0; }
-.sparkline-svg .spark-line {
-  fill: none;
-  stroke: var(--chart-series-1);
-  filter: drop-shadow(var(--chart-glow-strong));
-  stroke-width: 2.25;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-.sparkline-svg .spark-point { fill: var(--chart-point); filter: drop-shadow(var(--chart-glow-strong)); }
-.sparkline-svg .spark-point-halo { fill: var(--chart-point); opacity: 0.18; }
-
-/* Namespaced sd-* rather than dist-*: .dist-bar already exists at
-   style.css:8958 as a div-based bar carrying width:100%, and in SVG2 the
-   CSS width property beats the rect width attribute, so every bar was
-   painting at the full viewBox width. */
-.sd-svg .sd-bar { fill: var(--chart-bar); filter: drop-shadow(var(--chart-glow)); }
-.sd-svg .sd-bar-empty { fill: var(--chart-bar-empty); }
-/* The well each bar fills. Makes the relative scale visible: a full-height
-   bar means "busiest bucket", not "large number". */
-.sd-svg .sd-track { fill: var(--chart-track); opacity: 0.55; }
-.sd-svg .sd-count {
-  fill: var(--text-strong);
-  font-size: 10px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.sd-svg .sd-axis { fill: var(--chart-axis); font-size: 10px; }
-
-/* Empty-state copy inside the chart wells */
-.chart-empty { font-size: 12px; color: var(--text-muted-2); padding: 12px 0; }
-.risk-empty { font-size: 12px; color: var(--text-muted-2); padding: 12px 0; text-align: center; }
-
-/* ============================================================
-   TABLE EDGE BALANCE
-   table-layout is auto, so surplus width went to the last column.
-   With an Actions column that meant 480px of column for 300px of
-   buttons at a 1600px-wide card, leaving rows visibly left-heavy:
-   a 17px inset before the first cell against 97px after the last
-   button. Shrink-to-fit returns the surplus to the text columns,
-   which is where extra room is actually useful, and lands the two
-   edge insets on the same value.
-   Scoped via :has() so it only touches action columns, never a
-   table whose final column carries real content.
-   ============================================================ */
-@media (min-width: 769px) {
-  td:has(> .table-actions) {
-    width: 1%;
-    white-space: nowrap;
-  }
-  /* Shrink-to-fit removes the slack the buttons were wrapping into, so
-     the row has to be told not to wrap -- otherwise the column collapses
-     to one button wide and they stack. */
-  td:has(> .table-actions) > .table-actions {
-    flex-wrap: nowrap;
-  }
-  /* Same reasoning at the other end of the row. The Students table centres
-     its ID column, and the column was far wider than the badge in it, so
-     the first cell sat 46px in against the last cell 16px. Shrink-to-fit
-     keeps the centring but removes the dead width, and hands it to the
-     name/email columns where it is useful. */
-  td:has(> .student-id-badge) {
-    width: 1%;
-    white-space: nowrap;
-  }
-}
-
-/* ============================================================
-   DASHBOARD PRESENCE
-   The analytics cards were 291px tall with up to 80px of dead
-   space under their content. Rather than shrink the cards (the
-   row would go ragged) the space now carries a footnote, the
-   charts fill their wells, and the row animates in so the
-   screen has a moment of life on load.
-   ============================================================ */
-.ac-footnote {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 11px;
-  color: var(--text-muted-2);
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ac-footnote strong {
-  color: var(--text-body);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Numbers carry the card, so give them presence and let them sit on the
-   optical grid: tighter tracking, tabular figures already set. */
-.stat-card .stat-value { font-size: 34px; letter-spacing: -0.03em; }
-.ac-dark-value { font-size: 36px; letter-spacing: -0.03em; }
-
-/* Cards respond to the pointer. Depth is a 1px border shift plus a soft
-   shadow -- enough to feel live, not enough to become decoration. */
-.stat-card,
-#dash-analytics .analytics-card {
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-.stat-card:hover,
-#dash-analytics .analytics-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: 0 6px 20px rgba(15, 45, 26, 0.07);
-  transform: translateY(-2px);
-}
-[data-theme="dark"] .stat-card:hover,
-[data-theme="dark"] #dash-analytics .analytics-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-}
-
-/* Entrance: a short staggered rise. Runs once on render, costs nothing
-   after, and is fully removed under prefers-reduced-motion. */
-@keyframes dash-rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
-}
-/* Gated on .dash-animate, which admin.js sets only on the first paint.
-   The dashboard re-renders every 5s from the live poll and that replaces
-   these nodes, which would otherwise restart the animation on every tick
-   and read as the page flickering. */
-#dash-stats.dash-animate > *,
-#dash-analytics.dash-animate > * {
-  animation: dash-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-#dash-stats.dash-animate > *:nth-child(1), #dash-analytics.dash-animate > *:nth-child(1) { animation-delay: 0ms; }
-#dash-stats.dash-animate > *:nth-child(2), #dash-analytics.dash-animate > *:nth-child(2) { animation-delay: 45ms; }
-#dash-stats.dash-animate > *:nth-child(3), #dash-analytics.dash-animate > *:nth-child(3) { animation-delay: 90ms; }
-#dash-stats.dash-animate > *:nth-child(4), #dash-analytics.dash-animate > *:nth-child(4) { animation-delay: 135ms; }
-#dash-stats.dash-animate > *:nth-child(5) { animation-delay: 180ms; }
-
-@media (prefers-reduced-motion: reduce) {
-  #dash-stats.dash-animate > *,
-  #dash-analytics.dash-animate > * { animation: none; }
-  .stat-card:hover,
-  #dash-analytics .analytics-card:hover { transform: none; }
-}
-
-/* The live KPI gets a hairline of the success colour along its top edge.
-   This is the one place colour is added back, and only when an exam is
-   actually running -- the card is plain the rest of the time. */
-.stat-card[data-state="live"] {
-  box-shadow: inset 0 2px 0 var(--success-fg);
-}
-
-/* Section heading earns its place instead of whispering. */
-.analytics-section-heading {
-  font-size: 12px;
-  letter-spacing: 1.4px;
-  color: var(--text-body);
-}
-
-/* ============================================================
-   COURSE CARD ACTION BUTTONS
-   Follows the .exam-card-footer pattern: the icon stays absolutely
-   positioned and slides from the right edge to the centre on hover
-   while the label fades out -- a label-for-icon swap. An earlier
-   pass moved these icons into the flow, which killed the slide
-   because the right offset no longer applied to them.
-   What differs from the exam footer: those buttons are sized to
-   their content and left-align their labels, while these stretch
-   to fill the card, so a left-aligned label floated oddly in a
-   155px button. Both labels are centred at rest here; the icon
-   still parks at the right edge and still slides to the middle.
-   ============================================================ */
-/* Sized to their content and centred as a pair, exactly like
-   .exam-card-footer. Stretching them to fill the card left a short
-   label marooned in the middle of a 155px button with its icon out at
-   the edge -- the two stopped reading as one control. The left padding
-   holds the label, the right padding is the room the icon slides
-   through, so the button is only ever as wide as it needs to be. */
-.course-card .course-card-actions {
-  justify-content: center;
-}
-.course-card .course-card-actions > * {
-  flex: 0 0 auto;
-  min-width: 0;
-  height: 34px;
-  padding: 0 32px 0 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  position: relative;
-  font-size: 12px;
-}
-.course-card .course-card-actions > * svg,
-.course-card .course-card-actions > * svg.edit-icon,
-.course-card .course-card-actions > * svg.archive-icon,
-.course-card .course-card-actions > * svg.share-icon {
-  position: absolute;
-  right: 12px;
-  left: auto;
-  margin: 0;
-  transform: none;
-  transition: right 0.3s, transform 0.3s, stroke 0.3s, fill 0.3s;
-}
-.course-card .course-card-actions > *:hover svg,
-.course-card .course-card-actions > *:hover svg.edit-icon,
-.course-card .course-card-actions > *:hover svg.archive-icon,
-.course-card .course-card-actions > *:hover svg.share-icon {
-  right: 50%;
-  transform: translateX(50%);
 }

@@ -7,6 +7,7 @@ const {
   PredictionUnavailableError,
   aggregateSessionFeatureSnapshot,
   aggregateSessionFeatures,
+  aggregateViolationFeatureSnapshot,
 } = require('../server/random-forest-aggregation.cjs');
 
 const mlRoot = path.resolve(__dirname, '..', 'ml', 'random_forest');
@@ -114,5 +115,30 @@ assert.throws(
   () => aggregateSessionFeatures({ ...session, submitted: false }),
   (error) => error instanceof PredictionUnavailableError && error.code === 'SESSION_NOT_COMPLETED',
 );
+
+const timeoutOnly = aggregateViolationFeatureSnapshot({
+  ...session,
+  start_time: '2026-09-08T01:00:00.000Z',
+  end_time: '2026-09-08T02:30:00.000Z',
+  activities: [
+    { type: 'browser_exam_start' },
+    { type: 'brightness_check_passed' },
+    { type: 'browser_exam_end', metadata: { trigger: 'timeout' } },
+    { type: 'timeout' },
+  ],
+});
+assert.equal(timeoutOnly.violationCount, 0, 'Timeout and pre-exam checks are not rule violations.');
+assert.deepEqual(timeoutOnly.features, NEUTRAL_FEATURE_DEFAULTS, 'Lifecycle records must leave every model feature neutral.');
+
+const recordedRuleViolations = aggregateViolationFeatureSnapshot(session, [
+  { violation_type: 'tab_switch', warning_count: 1, dismissed: false },
+  { violation_type: 'screenshot', warning_count: 2, dismissed: false },
+  { violation_type: 'no_person', warning_count: 3, dismissed: true },
+]);
+assert.equal(recordedRuleViolations.violationCount, 2, 'Dismissed violations must not contribute.');
+assert.equal(recordedRuleViolations.features.browser_tab_switched_count, 1);
+assert.equal(recordedRuleViolations.features.browser_screenshot_count, 1);
+assert.equal(recordedRuleViolations.features.browser_exam_duration_minutes, NEUTRAL_FEATURE_DEFAULTS.browser_exam_duration_minutes);
+assert.equal(recordedRuleViolations.features.webcam_face_present, NEUTRAL_FEATURE_DEFAULTS.webcam_face_present);
 
 console.log('Random Forest aggregation tests passed.');

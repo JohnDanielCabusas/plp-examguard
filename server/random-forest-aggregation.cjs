@@ -16,6 +16,35 @@ const FEATURE_COLUMNS = Object.freeze([
 const FEATURE_CONTRACT_VERSION = 'rf-session-summary-v1';
 const DEG_TO_RAD = Math.PI / 180;
 
+// Only events that are raised by the in-exam rule engine belong in a
+// suspicion calculation. Session lifecycle records (start/end, timeout,
+// pre-exam calibration, consent, connectivity, etc.) are deliberately absent.
+const RULE_VIOLATION_TYPES = Object.freeze(new Set([
+  'window_blur',
+  'tab_switch',
+  'fullscreen_exit',
+  'screenshot',
+  'no_person',
+  'multiple_people',
+  'look_down',
+  'low_brightness',
+  'camera_off',
+  'restricted_phone',
+  'secondary_computer',
+  'restricted_book',
+  'FACE_ABSENT',
+  'FACE_PARTIALLY_VISIBLE',
+  'FACE_TOO_CLOSE',
+  'FACE_TOO_FAR',
+  'FACE_NEAR_FRAME_EDGE',
+  'SUSTAINED_HEAD_TURN',
+  'SUSTAINED_LOOKING_DOWN',
+  'REPEATED_LOOKING_AWAY',
+  'FACE_OCCLUDED',
+  'FACE_TRACKING_UNSTABLE',
+  'PHONE_NEAR_OR_COVERING_FACE',
+]));
+
 // Missing sensors must not make an otherwise completed examination impossible to
 // classify. These are medians from the non-suspicious class in the version 1.0.0
 // training set. They represent an ordinary observation, while every feature that
@@ -64,6 +93,64 @@ function countActivities(activities, type) {
 
 function roundFeature(value) {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function isRuleViolationEvent(event) {
+  if (!event || event.dismissed === true || event.reviewStatus === 'dismissed') return false;
+  const type = String(event.violation_type || event.violationType || event.type || '').trim();
+  const metadata = event.detection_metadata || event.detectionMetadata || event.metadata || {};
+  return RULE_VIOLATION_TYPES.has(type) || metadata.countsAsWarning === true;
+}
+
+function collectRuleViolationEvents(session, recordedEvents = []) {
+  const databaseEvents = Array.isArray(recordedEvents) ? recordedEvents : [];
+  // Once the append-only violation feed contains rows for the session it is
+  // authoritative, including professor dismissals. Activities are retained as
+  // a fallback for older/offline attempts whose live event could not sync.
+  const source = databaseEvents.length
+    ? databaseEvents
+    : (Array.isArray(session?.activities) ? session.activities : []);
+  return source.filter(isRuleViolationEvent);
+}
+
+// Build the legacy model's fixed feature shape from confirmed rule records.
+// Neutral training medians fill every non-violation field, meaning elapsed
+// time, normal start/end checks, and raw pre-exam sensor checks cannot move the
+// probability. Only a persisted, non-dismissed rule event changes a feature.
+function aggregateViolationFeatureSnapshot(session, recordedEvents = [], configuredDefaults = NEUTRAL_FEATURE_DEFAULTS) {
+  if (!session || session.submitted !== true) {
+    throw new PredictionUnavailableError('The examination session is not completed.', 'SESSION_NOT_COMPLETED');
+  }
+  const defaults = { ...NEUTRAL_FEATURE_DEFAULTS, ...(configuredDefaults || {}) };
+  FEATURE_COLUMNS.forEach((column) => finiteNumber(defaults[column], `Neutral default for ${column}`));
+
+  const violations = collectRuleViolationEvents(session, recordedEvents);
+  const types = violations.map(event => String(event.violation_type || event.violationType || event.type || '').trim());
+  const typeCount = type => types.filter(value => value === type).length;
+  const countAny = candidates => types.filter(value => candidates.has(value)).length;
+  const focusTypes = new Set(['window_blur', 'tab_switch', 'fullscreen_exit']);
+  const noFaceTypes = new Set(['no_person', 'camera_off', 'FACE_ABSENT', 'FACE_OCCLUDED']);
+  const multiFaceTypes = new Set(['multiple_people']);
+  const pitchTypes = new Set(['look_down', 'SUSTAINED_LOOKING_DOWN']);
+  const yawTypes = new Set(['SUSTAINED_HEAD_TURN', 'REPEATED_LOOKING_AWAY']);
+  const handOrObjectTypes = new Set(['restricted_phone', 'secondary_computer', 'restricted_book', 'PHONE_NEAR_OR_COVERING_FACE']);
+
+  const features = { ...defaults };
+  features.browser_tab_switched_count = Math.min(5, countAny(focusTypes));
+  features.browser_screenshot_count = Math.min(1, typeCount('screenshot'));
+  if (countAny(noFaceTypes) > 0) {
+    features.webcam_face_present = 0;
+    features.webcam_no_of_face = 0;
+    features.webcam_face_conf = 0;
+  }
+  if (countAny(multiFaceTypes) > 0) features.webcam_no_of_face = 2;
+  if (countAny(pitchTypes) > 0) features.webcam_head_pitch = 0.30996;
+  if (countAny(yawTypes) > 0) features.webcam_head_yaw = 0.74048;
+  if (countAny(handOrObjectTypes) > 0) features.webcam_hand_count = 3;
+
+  const ordered = {};
+  FEATURE_COLUMNS.forEach(column => { ordered[column] = roundFeature(Number(features[column])); });
+  return { features: ordered, violations, violationCount: violations.length };
 }
 
 function aggregateSessionFeatureSnapshot(session, configuredDefaults = NEUTRAL_FEATURE_DEFAULTS) {
@@ -159,7 +246,11 @@ module.exports = {
   FEATURE_COLUMNS,
   FEATURE_CONTRACT_VERSION,
   NEUTRAL_FEATURE_DEFAULTS,
+  RULE_VIOLATION_TYPES,
   PredictionUnavailableError,
   aggregateSessionFeatureSnapshot,
   aggregateSessionFeatures,
+  aggregateViolationFeatureSnapshot,
+  collectRuleViolationEvents,
+  isRuleViolationEvent,
 };

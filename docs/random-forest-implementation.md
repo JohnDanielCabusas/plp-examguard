@@ -5,25 +5,25 @@ for completed sessions. The exact order, units, and sources are defined in
 `ml/random_forest/feature_contract.json` and repeated in the signed model
 metadata.
 
-Browser starts, browser endings, tab switches, screenshot attempts, and elapsed
-minutes come from the session record. The current FaceMesh branch contributes
-final face presence, maximum face count, mean tracking confidence, maximum hand
-count, and mean calibrated head pose. Confidence is converted from 0–1 to
-0–100 and pose is converted from degrees to radians only in the centralized
-server aggregator.
+The Statistics integration applies the `rule-logs-v2` policy before inference.
+Only persisted in-exam rule violations can change the model input. Tab/window/
+fullscreen violations, screenshot warnings, and recorded webcam/object rule
+violations are mapped into the existing twelve-feature contract. Normal browser
+start/end records, elapsed minutes, timeout submission, consent, calibration,
+connectivity, and passed pre-exam checks stay at the non-suspicious training
+baseline and cannot raise the displayed probability.
 
 The browser performs FaceMesh and hand landmark inference locally. Random
-Forest receives only the twelve numeric summary values—never images, video,
-landmarks, names, student numbers, email addresses, course information, scores,
-or grades. YOLO detections, fullscreen exits, and clipboard events remain
-separate professor-review evidence.
+Forest receives only the twelve numeric summary values derived from qualifying
+rule records—never images, video, landmarks, names, student numbers, email
+addresses, course information, scores, or grades.
 
-Every completed session is analyzed, including historical and degraded
-sessions. Recorded values take priority feature by feature. A missing value is
-filled with the versioned non-suspicious training median from model metadata,
-and the professor sees a limited-data note on that result. This avoids treating
-an unavailable sensor as observed suspicious behavior; it also preserves any
-browser or webcam signals that were captured by the other monitoring channel.
+Every completed session receives a result. A session with no qualifying rule
+violations is deterministically `0%` and `normal` without invoking the model.
+Dismissed violation evidence is excluded. For legacy/offline attempts with no
+append-only violation feed, the same strict allowlist is applied to recorded
+session activities. The professor sees how many rule records supported each
+result.
 
 ## API
 
