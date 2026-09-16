@@ -9477,8 +9477,7 @@ function discriminationBar(d, color) {
 // BLOOM'S TAXONOMY  (cognitive level per question)
 // ============================================================
 // Six cognitive levels, low-order (recall) → high-order (creation). Tagged by
-// AI at generation and overridable by the professor. Drives the Student Mastery
-// analysis below — mastery is measured per cognitive level.
+// AI at generation and overridable by the professor in the question editor.
 const BLOOM_LEVELS = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
 const BLOOM_META = {
   remember:   { label: 'Remember',   order: 1, color: '#2563eb', bg: 'rgba(37,99,235,0.12)',  hint: 'Recall facts & basic concepts' },
@@ -9505,40 +9504,6 @@ function setQuestionBloom(idx, level) {
   DB.updateExam(currentQBuilderExamId, { questions });
 }
 
-// ============================================================
-// STUDENT MASTERY  (class performance grouped by cognitive level)
-// ============================================================
-// For each Bloom level present in the exam, the mean proportion of points
-// students earned on questions of that level (0–100%). Answers "which cognitive
-// skills has the class mastered vs struggled with?".
-const MASTERY_MASTERED = 75; // pct >= this → mastered
-const MASTERY_STRUGGLING = 50; // pct <  this → struggling
-
-function masteryMeta(pct) {
-  if (pct >= MASTERY_MASTERED)   return { label: 'Mastered',   color: '#15803d' };
-  if (pct >= MASTERY_STRUGGLING) return { label: 'Developing', color: '#d97706' };
-  return { label: 'Struggling', color: '#dc2626' };
-}
-
-// Returns [{ level, pct, questionCount }] ordered by Bloom order, for every
-// cognitive level that has at least one tagged, auto-graded question.
-function computeMasteryByBloom(exam, sessions) {
-  const graded = (sessions || []).filter(s => s && s.submitted);
-  return BLOOM_LEVELS.map(level => {
-    const qs = (exam.questions || []).filter(q => q.bloom === level && isAutoGradedType(q.type) && (Number(q.points) || 0) > 0);
-    if (!qs.length || !graded.length) return null;
-    let sum = 0, n = 0;
-    graded.forEach(s => {
-      qs.forEach(q => {
-        sum += scoreQuestionEarned(q, (s.answers || {})[q.id], getSessionQuestionGrades(s)) / (Number(q.points) || 1);
-        n++;
-      });
-    });
-    return { level, pct: n ? Math.round((sum / n) * 100) : 0, questionCount: qs.length };
-  }).filter(Boolean);
-}
-
-// ============================================================
 // ============================================================
 // STATISTICS (full page per exam)
 // ============================================================
@@ -9752,7 +9717,15 @@ function renderExamStats() {
   }
 
   const exam = DB.getExam(examId);
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sessions = DB.getSessionsByExam(examId)
+    .filter(s => s.submitted)
+    .map(session => {
+      // Rebuild each result from the recorded answers and persisted professor
+      // overrides so stale cached score fields cannot skew Statistics.
+      const result = calculateSessionScoreBreakdown(exam, session);
+      const pct = result.max > 0 ? Math.round((result.earned / result.max) * 10000) / 100 : 0;
+      return { ...session, _statsEarned: result.earned, _statsMax: result.max, _statsPct: pct };
+    });
 
 
   if (!sessions.length) {
@@ -9761,15 +9734,17 @@ function renderExamStats() {
     return;
   }
 
-  const scores = sessions.map(s => s.maxScore ? Math.round(s.score / s.maxScore * 100) : 0);
-  const passing = sessions.filter(s => s.maxScore && s.score/s.maxScore >= 0.75).length;
-  const autoSub = sessions.filter(s => s.autoSubmitted).length;
-  const flagged = sessions.filter(s => s.warnings >= 2).length;
+  const scores = sessions.map(s => Math.max(0, Math.min(100, Math.round(s._statsPct))));
+  const passing = sessions.filter(s => s._statsMax > 0 && s._statsPct >= 75).length;
+  const averageScore = sessions.length
+    ? Math.round(sessions.reduce((sum, session) => sum + session._statsPct, 0) / sessions.length)
+    : 0;
+  const flagged = sessions.filter(s => Number(s.warnings || 0) > 0).length;
   const overviewCards = [
-    {label:'Pass Rate (>=75%)',value:Math.round(passing/sessions.length*100)+'%',tone:'positive'},
-    {label:'Auto-Submitted',value:autoSub,tone:'warning'},
-    {label:'Flagged (>=2 warn)',value:flagged,tone:'danger'},
-    {label:'Total Submitted',value:sessions.length,tone:'neutral'},
+    {label:'Pass rate',value:Math.round(passing/sessions.length*100)+'%',detail:`${passing} of ${sessions.length} scored 75% or higher`,tone:'positive',icon:'check'},
+    {label:'Average score',value:averageScore+'%',detail:'From recorded answers and score overrides',tone:'neutral',icon:'chart'},
+    {label:'With violations',value:flagged,detail:`${sessions.length - flagged} submitted with no warnings`,tone:flagged ? 'danger' : 'positive',icon:'shield'},
+    {label:'Submissions',value:sessions.length,detail:'Completed student records',tone:'neutral',icon:'users'},
   ];
 
   // Score distribution
@@ -9813,7 +9788,7 @@ function renderExamStats() {
   const avgDiffPct = statQs.length ? Math.round(statQs.reduce((a, d) => a + d.pct, 0) / statQs.length) : null;
 
   // Top & bottom performers
-  const ranked = [...sessions].sort((a,b)=>(b.score||0)-(a.score||0));
+  const ranked = [...sessions].sort((a,b)=>b._statsPct-a._statsPct);
 
   // Discrimination Index per auto-graded question (top-27% vs bottom-27%).
   const discStats = exam.questions.map((q, qi) => {
@@ -9823,36 +9798,21 @@ function renderExamStats() {
   const discReliable = ranked.length >= DISCRIMINATION_MIN_SAMPLE;
   const discFlagged = discStats.filter(x => x.d < 0.20).length; // poor + negative — worth reviewing
 
-  // Student Mastery by Bloom's cognitive level.
-  const masteryStats = computeMasteryByBloom(exam, sessions);
-  const taggedCount = (exam.questions || []).filter(q => BLOOM_LEVELS.includes(q.bloom)).length;
-
-  // Evaluation Trends: class average across all exams in this subject over time.
-  const trendExams = DB.getExams()
-    .filter(e => e.subjectId === exam.subjectId && ['active', 'closed', 'archived'].includes(e.status))
-    .map(e => {
-      const es = DB.getSessionsByExam(e.id).filter(s => s.submitted && s.maxScore > 0);
-      if (!es.length) return null;
-      const avg = Math.round(es.reduce((sum, s) => sum + (s.score / s.maxScore) * 100, 0) / es.length);
-      return { id: e.id, title: e.title || 'Untitled', avg, count: es.length, date: e.closedAt || e.createdAt || 0 };
-    })
-    .filter(Boolean)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-  const trendDelta = trendExams.length >= 2 ? trendExams[trendExams.length - 1].avg - trendExams[0].avg : 0;
-  const trendMeta = trendDelta > 2
-    ? { arrow: '↑', label: 'Improving', color: '#15803d' }
-    : trendDelta < -2
-      ? { arrow: '↓', label: 'Declining', color: '#dc2626' }
-      : { arrow: '→', label: 'Steady', color: '#6b7280' };
-
   content.innerHTML = `<div class="stats-analytics-stack">
     <!-- Overview Strip -->
     <div class="stats-overview-grid">
       ${overviewCards.map(c=>`<article class="stats-overview-card tone-${c.tone}">
-        <span class="stats-overview-indicator" aria-hidden="true"></span>
+        <span class="stats-overview-icon" aria-hidden="true">${c.icon === 'check'
+          ? '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>'
+          : c.icon === 'chart'
+            ? '<svg viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>'
+            : c.icon === 'shield'
+              ? '<svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.2 8 7.5 9.8 4.3-1.8 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v4m0 3h.01"/></svg>'
+              : '<svg viewBox="0 0 24 24"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7" r="4"/><path d="M17 11a3 3 0 1 0 0-6m3 15v-1.5a4.5 4.5 0 0 0-2.5-4"/></svg>'}</span>
         <div class="stats-overview-copy">
           <span>${c.label}</span>
           <strong>${c.value}</strong>
+          <small>${c.detail}</small>
         </div>
       </article>`).join('')}
     </div>
@@ -9861,14 +9821,14 @@ function renderExamStats() {
     <div class="stats-analysis-grid">
       <!-- Score Distribution -->
       <section class="stats-analysis-card">
-        <div class="stats-analysis-heading"><h3>Score Distribution</h3></div>
+        <div class="stats-analysis-heading"><div><span class="stats-card-kicker">Performance</span><h3>Score Distribution</h3><p>Recorded submissions grouped by percentage score</p></div><span class="stats-heading-metric">${sessions.length} records</span></div>
         <div class="stats-analysis-body stats-chart-body"><div class="stats-bar-chart">${distBars}</div></div>
       </section>
 
       <!-- Question Difficulty -->
       <section class="stats-analysis-card stats-question-card">
         <div class="stats-analysis-heading">
-          <h3>Question Difficulty</h3>
+          <div><span class="stats-card-kicker">Item analysis</span><h3>Question Difficulty</h3><p>Correct-response rate from submitted answers</p></div>
           ${qStats.length ? `<button class="qbreak-expand-btn" onclick="viewQuestionBreakdown('${examId}')" title="View full question and answer breakdown">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg> Expand
           </button>` : ''}
@@ -9915,7 +9875,7 @@ function renderExamStats() {
     ${discStats.length ? `
     <section class="stats-analysis-card">
       <div class="stats-analysis-heading">
-        <h3>Discrimination Index</h3>
+        <div><span class="stats-card-kicker">Quality check</span><h3>Discrimination Index</h3><p>Top and bottom performer comparison</p></div>
         ${discFlagged ? `<span class="stats-status-chip tone-danger">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span class="stats-status-chip tone-positive">All questions discriminate well</span>`}
       </div>
       <div class="stats-analysis-body">
@@ -9941,72 +9901,6 @@ function renderExamStats() {
       </div>
       </div>
     </section>` : ''}
-
-    <!-- Evaluation Trends across exams in this course -->
-    ${trendExams.length >= 2 ? `
-    <section class="stats-analysis-card">
-      <div class="stats-analysis-heading">
-        <h3>Evaluation Trends</h3>
-        <span style="font-size:12px;font-weight:800;color:${trendMeta.color};">${trendMeta.arrow} ${trendMeta.label}${trendDelta !== 0 ? ` (${trendDelta > 0 ? '+' : ''}${trendDelta} pts)` : ''}</span>
-      </div>
-      <div class="stats-analysis-body">
-      <div class="stats-analysis-description">
-        Class average across every exam in this course, oldest → newest. The highlighted bar is the exam you're viewing.
-      </div>
-      <div class="stats-trend-chart">
-        ${trendExams.map(t => {
-          const isCurrent = t.id === examId;
-          const mm = masteryMeta(t.avg);
-          const barGrow = Math.max(t.avg, 3);
-          const spacerGrow = Math.max(0, 100 - t.avg);
-          return `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;min-width:0;" title="${escHtml(t.title)} · ${t.avg}% · ${t.count} submission${t.count===1?'':'s'}">
-            <div style="flex:${spacerGrow} 0 0;width:100%;"></div>
-            <div style="font-size:12px;font-weight:800;color:${isCurrent ? 'var(--primary)' : mm.color};">${t.avg}%</div>
-            <div style="flex:${barGrow} 0 0;width:100%;background:${mm.color};opacity:${isCurrent ? 1 : 0.55};border-radius:5px 5px 0 0;${isCurrent ? 'outline:2px solid var(--primary);outline-offset:1px;' : ''}"></div>
-            <div style="font-size:9px;color:var(--text-muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;${isCurrent ? 'font-weight:800;color:var(--text);' : ''}">${escHtml(t.title.substring(0,14))}${t.title.length>14?'…':''}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      </div>
-    </section>` : ''}
-
-    <!-- Student Mastery by cognitive level -->
-    ${masteryStats.length ? `
-    <section class="stats-analysis-card">
-      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
-      <div class="stats-analysis-body">
-      <div class="stats-analysis-description">
-        Class average score on each Bloom's Taxonomy level in this exam. Reveals whether students handle higher-order thinking (analyze / evaluate / create) as well as basic recall.
-      </div>
-      <div class="stats-analysis-list">
-        ${masteryStats.map(({level, pct, questionCount})=>{
-          const bm = BLOOM_META[level];
-          const mm = masteryMeta(pct);
-          return `
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:5px;">
-              <span style="display:flex;align-items:center;gap:8px;min-width:0;">
-                ${bloomBadge(level)}
-                <span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">${questionCount} question${questionCount===1?'':'s'}</span>
-              </span>
-              <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                <span style="font-weight:800;color:${mm.color};font-variant-numeric:tabular-nums;">${pct}%</span>
-                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${mm.color};background:${mm.color}1f;">${mm.label}</span>
-              </span>
-            </div>
-            <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden;">
-              <div style="width:${pct}%;height:100%;background:${mm.color};border-radius:99px;"></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-      </div>
-    </section>` : (taggedCount === 0 ? `
-    <section class="stats-analysis-card stats-empty-analysis-card">
-      <div class="stats-analysis-heading"><h3>Student Mastery — by Cognitive Level</h3></div>
-      <div class="stats-analysis-body"><div class="stats-analysis-description">No questions in this exam are tagged with a Bloom's level yet. Generate questions with AI (auto-tagged) or set the <strong>Bloom</strong> level on each question in the editor to unlock this analysis.</div></div>
-    </section>` : '')}
 
     ${randomForestCardShell()}</div>`;
   loadRandomForestPrediction(examId);

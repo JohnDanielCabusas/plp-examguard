@@ -9,6 +9,12 @@ const workerPath = require.resolve(path.join(serverRoot, 'random-forest-worker.c
 
 let currentAdmin = { id: 'professor-a' };
 let forcedDatabaseError = null;
+let violationRows = [{
+  violation_type: 'tab_switch',
+  detection_metadata: {},
+  warning_count: 1,
+  dismissed: false,
+}];
 const executedSql = [];
 const completeSession = {
   id: 'session-a',
@@ -56,6 +62,9 @@ require.cache[dbPath] = {
             ? [{ id: 'exam-a', course_id: 'course-a', owner_admin_id: 'professor-a' }]
             : [],
         };
+      }
+      if (/from public\.violation_events ve/i.test(sql) && /ve\.session_id = \$1/i.test(sql)) {
+        return { rows: violationRows };
       }
       if (/count\(\*\)::integer as total_sessions/i.test(sql)) {
         return {
@@ -196,23 +205,23 @@ async function run() {
   assert.ok(executedSql.some(entry => /on conflict \(exam_session_id, model_version\)/i.test(entry.sql)));
   assert.ok(executedSql.every(entry => !/update\s+public\.sessions/i.test(entry.sql)), 'Prediction must not update grades or session state.');
 
-  const originalActivities = completeSession.activities;
-  const originalDetections = completeSession.ai_detections;
-  completeSession.activities = [];
-  completeSession.ai_detections = {};
+  const originalViolationRows = violationRows;
+  violationRows = [];
   const limitedData = responseCapture();
   await handleRandomForestRoute({
     method: 'POST',
     url: '/api/exam-sessions/session-a/random-forest-prediction',
     headers: { host: 'localhost' },
   }, limitedData);
-  completeSession.activities = originalActivities;
-  completeSession.ai_detections = originalDetections;
+  violationRows = originalViolationRows;
   assert.equal(limitedData.status, 200);
-  assert.equal(limitedData.body.prediction.status, 'completed', 'A submitted partial record must still receive a prediction.');
+  assert.equal(limitedData.body.prediction.status, 'completed', 'A submitted record with no rule violations must still receive a normal result.');
+  assert.equal(limitedData.body.prediction.suspiciousProbability, 0, 'Lifecycle data alone must never raise suspicion.');
+  assert.equal(limitedData.body.prediction.riskLevel, 'normal');
   const limitedInsert = executedSql.filter(entry => /insert into public\.random_forest_predictions/i.test(entry.sql)).at(-1);
-  assert.equal(Object.keys(JSON.parse(limitedInsert.values[11])).length, 12);
-  assert.match(limitedInsert.values[12], /neutral baseline values.*webcam/i);
+  assert.equal(JSON.parse(limitedInsert.values[11]).rule_violation_count, 0);
+  assert.match(limitedInsert.values[12], /No recorded rule violations/i);
+  assert.match(limitedInsert.values[10], /rule-logs-v2$/);
 
   const summary = responseCapture();
   await handleRandomForestRoute({
