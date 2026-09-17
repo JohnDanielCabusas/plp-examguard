@@ -12867,6 +12867,16 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   border-color: #dbe3ee;
   color: #64748b;
 }
+.sys-dd.exam-context-dd .qtd-opt.exam-context-active .exam-dd-status,
+.sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-active .exam-dd-status {
+  background: #e8f7ee;
+  border-color: #b7e3c7;
+  color: #15803d;
+}
+.sys-dd.exam-context-dd .qtd-opt.exam-context-active,
+.sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-active {
+  border-left: 3px solid #22c55e;
+}
 .sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-title,
 .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active .exam-dd-title {
   color: #166534;
@@ -12894,6 +12904,12 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   color: #cbd5e1;
 }
 [data-theme="dark"] .exam-dd-status-active {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(74, 222, 128, 0.2);
+  color: #86efac;
+}
+[data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt.exam-context-active .exam-dd-status,
+[data-theme="dark"] .sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-active .exam-dd-status {
   background: rgba(34, 197, 94, 0.14);
   border-color: rgba(74, 222, 128, 0.2);
   color: #86efac;

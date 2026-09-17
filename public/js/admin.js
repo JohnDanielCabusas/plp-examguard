@@ -1486,7 +1486,8 @@ function makeCustomDropdown(sel) {
       const div = document.createElement('div');
       div.className = 'qtd-opt'
         + (sel.selectedIndex === i ? ' qtd-active' : '')
-        + (isExamContext && opt.value ? ' exam-context-opt' : '');
+        + (isExamContext && opt.value ? ' exam-context-opt' : '')
+        + (isExamContext && opt.dataset.statusTone === 'active' ? ' exam-context-active' : '');
       if (isExamContext) {
         div.innerHTML = renderExamContextMarkup(opt);
       } else {
@@ -1581,6 +1582,10 @@ function buildExamContextOption(exam, selected = false) {
     data-code="${escHtml(parts?.code || '')}"
     data-status-tone="${escHtml(parts?.statusTone || '')}"
     data-status="${escHtml(parts?.status || '')}">${escHtml(fallbackText)}</option>`;
+}
+
+function sortActiveExamsFirst(exams) {
+  return [...exams].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active'));
 }
 
 function startSectionPoll(name) {
@@ -3341,6 +3346,9 @@ function getStudentExamHistory(student) {
 }
 
 function openStudentHistoryReview(sessionId) {
+  if (!DB.getSession(sessionId)) return;
+  const reviewModal = document.getElementById('modal-student-answers');
+  if (reviewModal) reviewModal.dataset.returnToStudentHistory = 'true';
   closeModal('modal-student-history');
   requestAnimationFrame(() => viewStudentAnswers(sessionId, 'reports'));
 }
@@ -3361,7 +3369,6 @@ function groupStudentHistoryByCourse(history) {
 
 function renderStudentExamHistoryRow(entry) {
   const { exam, session, violationCount, scorePercent, statusText } = entry;
-  const activities = Array.isArray(session?.activities) ? session.activities : [];
 
   const scoreTone = scorePercent === null ? 'var(--text-muted)' : scorePercent >= 60 ? 'var(--success)' : 'var(--danger)';
   const scoreBig = session?.submitted
@@ -3370,24 +3377,6 @@ function renderStudentExamHistoryRow(entry) {
   const scoreSub = session?.submitted
     ? `${session.score ?? 0}/${session.maxScore ?? 0} pts`
     : 'In Progress';
-
-  const violationsHtml = activities.length ? `
-    <details style="margin-top:10px;">
-      <summary class="btn-action" style="cursor:pointer;font-size:13px;font-weight:700;color:var(--text);background:var(--surface-2);border:1px solid var(--border);padding:9px 16px;border-radius:8px;display:inline-flex;align-items:center;gap:8px;">
-        Violation log (${activities.length})
-        ${historyChevronIcon(14)}
-      </summary>
-      <div style="margin-top:8px;display:grid;gap:6px;">
-        ${activities.map(activity => `
-          <div class="log-item" style="margin-bottom:0;">
-            <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
-            <div class="log-detail">${escHtml(activity.detail || 'Violation recorded')}</div>
-            <div class="log-time">${formatDateTime(activity.timestamp)}</div>
-          </div>
-        `).join('')}
-      </div>
-    </details>
-  ` : '';
 
   return `
     <div style="border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px 14px;display:flex;align-items:flex-start;gap:14px;">
@@ -3400,7 +3389,6 @@ function renderStudentExamHistoryRow(entry) {
         <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
           ${escHtml(statusText)} • ${violationCount} violation${violationCount !== 1 ? 's' : ''}
         </div>
-        ${violationsHtml}
       </div>
       ${session?.submitted ? `<button class="btn-action btn-action-ghost" style="flex-shrink:0;" onclick="openStudentHistoryReview('${session.id}')">Review${icEyeFill}</button>` : ''}
     </div>
@@ -3674,7 +3662,7 @@ async function unenrollStudentFromCourse(studentId, subjectId) {
 // EXAMS
 // ============================================================
 function renderExams() {
-  const exams = DB.getExams();
+  const exams = sortActiveExamsFirst(DB.getExams());
   const subjects = DB.getSubjects();
   const container = document.getElementById('exams-grid');
   if (!container) return;
@@ -7866,7 +7854,7 @@ function loadMonitoringExams() {
   // Monitoring is for exams that students can enter or are taking now.
   // Completed exams remain available from Reports, not the live selector.
   const getStatus = exam => String(exam?.status || '').toLowerCase();
-  const exams = getMonitorableExams(DB.getExams());
+  const exams = sortActiveExamsFirst(getMonitorableExams(DB.getExams()));
   const sel = document.getElementById('monitor-exam-select');
   if (!sel) return;
 
@@ -9722,7 +9710,7 @@ async function loadRandomForestPrediction(examId, forceRefresh = false) {
 }
 
 function loadStatsExams() {
-  const exams = DB.getExams().filter(e => ['active','closed'].includes(e.status));
+  const exams = sortActiveExamsFirst(DB.getExams().filter(e => ['active','closed'].includes(e.status)));
   const sel = document.getElementById('stats-exam-select');
   if (!sel) return;
   const cur = sel.value;
@@ -9938,10 +9926,9 @@ function renderExamStats() {
 // REPORTS
 // ============================================================
 function loadReportExams() {
-  const exams = DB.getExams()
+  const exams = sortActiveExamsFirst(DB.getExams()
     .filter(e => ['ready', 'active', 'closed'].includes(e.status))
-    .sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active')
-      || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+    .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)));
   const sel = document.getElementById('report-exam-select');
   const cur = sel.value;
   sel.innerHTML = '<option value="">Select an exam to review results</option>' +
@@ -11042,6 +11029,10 @@ function closeModal(id) {
   if (!modal) return;
   if (!modal.classList.contains('hidden')) unlockBodyScroll();
   modal.classList.add('hidden');
+  if (id === 'modal-student-answers' && modal.dataset.returnToStudentHistory === 'true') {
+    delete modal.dataset.returnToStudentHistory;
+    openModal('modal-student-history');
+  }
   if (id === 'modal-violation-review') {
     const video = document.getElementById('violation-review-video');
     if (video) {
@@ -11058,8 +11049,11 @@ document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
   backdrop.addEventListener('click', function(e) {
     if (e.target === this && !this.classList.contains('hidden')) {
       if (this.dataset.noBackdropClose === 'true') return;
-      unlockBodyScroll();
-      this.classList.add('hidden');
+      if (this.id === 'modal-student-answers') closeModal(this.id);
+      else {
+        unlockBodyScroll();
+        this.classList.add('hidden');
+      }
     }
   });
 });
@@ -12436,7 +12430,13 @@ function renderAIPreview(questions) {
   if (qPreview) qPreview.innerHTML = html;
   _aiSD('ai-preview', 'flex'); _aiSD('ai-gen-btn', 'none');
   _aiSD('ai-import-btn', 'inline-flex'); _aiSD('ai-status', 'none');
-  scrollAIChat();
+  requestAnimationFrame(() => {
+    const body = document.getElementById('ai-chat-body');
+    const preview = document.getElementById('ai-preview');
+    if (body && preview) {
+      body.scrollTop += preview.getBoundingClientRect().top - body.getBoundingClientRect().top;
+    }
+  });
 }
 
 function toggleAllAIQuestions(checked) {

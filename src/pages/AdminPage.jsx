@@ -1660,7 +1660,7 @@ export default function AdminPage() {
                       Select All
                     </label>
                   </div>
-                  <div id="ai-questions-preview" style={{ display:'flex', flexDirection:'column', gap:'8px', maxHeight:'260px', overflowY:'auto', paddingRight:'4px' }} />
+                  <div id="ai-questions-preview" style={{ display:'flex', flexDirection:'column', gap:'8px', paddingRight:'4px' }} />
                 </div>
               </div>
 
