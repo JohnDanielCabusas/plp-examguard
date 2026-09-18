@@ -395,13 +395,13 @@ export default function AdminPage() {
 
               {/* Notifications bell */}
               <div className="topbar-bell-wrap">
-                <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" aria-label="Notifications" onClick={() => window.toggleNotifDropdown?.()}>
+                <button type="button" className="topbar-bell" id="topbar-bell" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-dropdown" onClick={() => window.toggleNotifDropdown?.()}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                   <span className="topbar-bell-badge" id="topbar-bell-badge" style={{ display: 'none' }}>0</span>
                 </button>
-                <div className="notif-dropdown hidden" id="notif-dropdown">
+                <div className="notif-dropdown" id="notif-dropdown" role="dialog" aria-label="Notifications" aria-hidden="true">
                   <div className="notif-dropdown-head">
-                    <span>Notifications</span>
+                    <span className="notif-dropdown-title">Notifications</span>
                     <button type="button" id="notif-clear" onClick={() => window.clearNotifs?.()}>Clear</button>
                   </div>
                   <div className="notif-dropdown-list" id="notif-dropdown-list"></div>
@@ -750,9 +750,14 @@ export default function AdminPage() {
                           {label}
                         </button>
                       ))}
-                      <button className="add-q-btn add-q-ai" onClick={() => window.openAIGen()}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                        AI Generate
+                      <button className="ai-gen-btn" onClick={() => window.openAIGen()}>
+                        <span className="ai-gen-btn-dots" aria-hidden="true"></span>
+                        <svg className="ai-gen-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path className="ai-gen-btn-path" d="M12 2L2 7l10 5 10-5-10-5z"/>
+                          <path className="ai-gen-btn-path" d="M2 17l10 5 10-5"/>
+                          <path className="ai-gen-btn-path" d="M2 12l10 5 10-5"/>
+                        </svg>
+                        <span className="ai-gen-btn-text">AI Generate</span>
                       </button>
                     </div>
                   </div>
@@ -913,7 +918,30 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div className="reports-toolbar-actions">
-                  <button className="btn btn-secondary" onClick={() => window.exportExamReportPdf()} id="btn-generate-pdf">Export PDF</button>
+                  <div className="export-fan" id="export-fan" role="group" aria-label="Export report">
+                    <div className="export-fan-back" aria-hidden="true"></div>
+                    <button type="button" className="export-fan-card export-fan-word" id="btn-export-word" title="Export as Word" aria-label="Export as Word" onClick={() => window.chooseExportFormat('word')}>
+                      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><text x="12" y="18" textAnchor="middle" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">W</text></svg>
+                      <span className="export-fan-label">Word</span>
+                    </button>
+                    <button type="button" className="export-fan-card export-fan-pdf" id="btn-export-pdf" title="Export as PDF" aria-label="Export as PDF" onClick={() => window.chooseExportFormat('pdf')}>
+                      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><text x="12" y="18" textAnchor="middle" fontSize="6" fontWeight="700" fill="currentColor" stroke="none">PDF</text></svg>
+                      <span className="export-fan-label">PDF</span>
+                    </button>
+                    <button type="button" className="export-fan-card export-fan-excel" id="btn-export-excel" title="Export results as Excel" aria-label="Export results as Excel" onClick={() => window.chooseExportFormat('excel')}>
+                      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><text x="12" y="18" textAnchor="middle" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">X</text></svg>
+                      <span className="export-fan-label">Excel</span>
+                    </button>
+                    <span className="export-fan-text" aria-hidden="true">EXPORT</span>
+
+                    <div className="export-scope-pop" id="export-scope-pop" role="dialog" aria-label="Choose what to export">
+                      <span className="export-scope-title">Export as <strong id="export-scope-format">Word</strong></span>
+                      <button type="button" className="export-scope-btn" onClick={() => window.runChosenExport('results')}>Exam results &amp; analytics</button>
+                      <button type="button" className="export-scope-btn" onClick={() => window.runChosenExport('answers')}>Student answers</button>
+                      <button type="button" className="export-scope-btn" onClick={() => window.runChosenExport('both')}>Both</button>
+                      <p className="export-scope-note" id="export-menu-note" role="status" />
+                    </div>
+                  </div>
                   <button className="btn btn-success" onClick={() => window.releaseScores()} id="btn-release-scores" disabled>Release Scores to Students</button>
                 </div>
               </div>
@@ -936,17 +964,79 @@ export default function AdminPage() {
                       <span id="report-sort-btn-label">Last name A-Z</span>
                     </button>
                     <div id="report-summary" className="report-summary hidden">
+                      <span className="report-selected-count" id="report-selected-count" hidden />
                       <span className="badge badge-info" id="report-submitted-count" />
                       <span className="badge badge-danger hidden" id="report-absent-count" />
                       <span className="badge badge-success" id="report-avg-score" />
                     </div>
                   </div>
                 </div>
+                <div className="report-filter-bar">
+                  <div className="report-filter-search">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                      type="search"
+                      id="report-filter-search"
+                      placeholder="Search name or student ID"
+                      aria-label="Search results by student name or ID"
+                      onInput={(e) => window.setReportFilter('search', e.target.value)}
+                    />
+                  </div>
+                  <select
+                    id="report-filter-year-section"
+                    className="form-control filter-select"
+                    aria-label="Filter by year and section"
+                    onChange={(e) => window.setReportFilter('yearSection', e.target.value)}
+                  >
+                    <option value="">All sections</option>
+                  </select>
+                  <select
+                    id="report-filter-status"
+                    className="form-control filter-select"
+                    aria-label="Filter by submission status"
+                    onChange={(e) => window.setReportFilter('status', e.target.value)}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="submitted">Submitted normally</option>
+                    <option value="auto">Auto-submitted</option>
+                    <option value="force">Force-submitted</option>
+                    <option value="absent">Absent only</option>
+                  </select>
+                  <select
+                    id="report-filter-warnings"
+                    className="form-control filter-select"
+                    aria-label="Filter by warnings"
+                    onChange={(e) => window.setReportFilter('warnings', e.target.value)}
+                  >
+                    <option value="">Any warnings</option>
+                    <option value="none">No warnings</option>
+                    <option value="any">Has warnings</option>
+                  </select>
+                  <button
+                    type="button"
+                    id="report-filter-clear"
+                    className="report-filter-clear"
+                    onClick={() => window.clearReportFilters()}
+                    hidden
+                  >
+                    Clear filters
+                  </button>
+                </div>
                 <div className="card-body" style={{ padding: 0 }}>
                   <div className="table-wrapper">
                     <table>
                       <thead>
                         <tr>
+                          <th scope="col" className="report-check-cell">
+                            <input
+                              type="checkbox"
+                              id="report-select-all"
+                              aria-label="Select all students in view"
+                              onChange={(e) => window.toggleReportSelectAll(e.target.checked)}
+                            />
+                          </th>
                           <th scope="col">Rank</th>
                           <th scope="col">Name</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Student ID</th>
@@ -971,8 +1061,8 @@ export default function AdminPage() {
                             </span>
                           </th>
                           <th scope="col" style={{ textAlign: 'center' }}>Warnings</th>
-                          <th scope="col" style={{ textAlign: 'center' }}>Time</th>
-                          <th scope="col" style={{ textAlign: 'center' }}>Submitted</th>
+                          <th scope="col" className="report-session-cell" style={{ textAlign: 'center' }}>Time</th>
+                          <th scope="col" className="report-status-cell" style={{ textAlign: 'center' }}>Submitted</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Actions</th>
                         </tr>
                       </thead>

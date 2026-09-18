@@ -880,8 +880,29 @@ const ExamApp = {
     if (this._fullscreenVerifyTimer) clearTimeout(this._fullscreenVerifyTimer);
     this._fullscreenVerifyTimer = setTimeout(() => {
       this._fullscreenVerifyTimer = null;
-      if (!this._isFullscreenActive()) this._showFullscreenLock();
+      if (!this._examRuntimeStarted) return;
+      if (this._isFullscreenActive()) return;
+
+      // The strike overlay doubles as the recovery screen, so stacking the
+      // generic lock on top of it would bury the warning. Skip this pass and
+      // let the re-arm below raise the lock once that overlay goes away.
+      const warningOverlay = document.getElementById('warning-overlay');
+      const warningVisible = !!warningOverlay
+        && window.getComputedStyle(warningOverlay).display !== 'none';
+      if (!warningVisible) this._showFullscreenLock();
+
+      // A single check at exam start cannot keep fullscreen required for the
+      // rest of the exam. Keep re-arming while the exam runs so returning from
+      // another application always lands back in fullscreen.
+      this._scheduleFullscreenEnforcement(1000);
     }, delayMs);
+  },
+
+  _stopFullscreenEnforcement() {
+    if (this._fullscreenVerifyTimer) {
+      clearTimeout(this._fullscreenVerifyTimer);
+      this._fullscreenVerifyTimer = null;
+    }
   },
 
   _portalIcon(name, options = {}) {
@@ -945,6 +966,17 @@ const ExamApp = {
   _isEditableTarget(target) {
     if (!target || typeof target.matches !== 'function') return false;
     return target.matches('input, textarea, [contenteditable="true"], [contenteditable=""], .essay-textarea');
+  },
+
+  // An answer field is any control the student types a graded response into.
+  // The professor chat box is deliberately excluded: reporting a problem must
+  // never cost the student a violation.
+  _isAnswerFieldTarget(target) {
+    if (!target || typeof target.closest !== 'function') return false;
+    if (target.closest('#exam-chat-input, .exam-chat-panel')) return false;
+    return !!target.closest(
+      '.essay-textarea, .id-input, .coding-cm-wrap, .coding-cm-source, .exam-answer-input'
+    );
   },
 
   _markClipboardShortcut(type) {
@@ -3959,6 +3991,10 @@ const ExamApp = {
     const focusHandler = () => {
       if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
       this.cancelCountdown(); // keep any read notice inside the original 10s deadline
+      // Coming back from another application must land the student back in
+      // fullscreen. Without this, leaving fullscreen and tabbing away left the
+      // exam running in a plain window with nothing asking for it back.
+      this._scheduleFullscreenEnforcement();
     };
     window.addEventListener('focus', focusHandler);
 
@@ -3981,6 +4017,7 @@ const ExamApp = {
       } else {
         if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
         this.cancelCountdown(); // student returned; do not extend the warning deadline
+        this._scheduleFullscreenEnforcement();
       }
     };
     document.addEventListener('visibilitychange', visHandler);
@@ -3992,7 +4029,14 @@ const ExamApp = {
       const viaShortcut = this._consumeRecentClipboardShortcut(action);
 
       if (!editable) e.preventDefault();
-      if (!viaShortcut) {
+
+      // Lifting question text off the page is the copy vector that matters, so
+      // it is a violation rather than a silent log entry. Copying inside an
+      // answer field is the student rearranging their own words — still logged,
+      // but never penalised.
+      if (!editable) {
+        this.issueWarning('copy_attempt', `Copy/cut action detected (${action})`);
+      } else if (!viaShortcut) {
         this._recordActivity('copy_attempt', `Copy/cut action attempt detected (${action})`);
       }
     };
@@ -4002,11 +4046,18 @@ const ExamApp = {
     // ── Paste & selection blocked silently ──────────────────────
     const pasteHandler = e => {
       const editable = this._isEditableTarget(e.target);
+      const intoAnswer = this._isAnswerFieldTarget(e.target);
       const viaShortcut = this._consumeRecentClipboardShortcut('paste');
-      if (!editable) {
+
+      // Dropping a prepared answer into a question field is the whole point of
+      // this rule, so block the insert and warn. Ctrl+V used to suppress the
+      // record entirely, which is why a pasted essay raised nothing at all.
+      if (!editable || intoAnswer) {
         e.preventDefault();
       }
-      if (!viaShortcut) {
+      if (intoAnswer) {
+        this.issueWarning('paste_attempt', 'Pasted content into an answer field');
+      } else if (!viaShortcut) {
         this._recordActivity('paste_attempt', 'Paste attempt detected');
       }
     };
@@ -4036,7 +4087,12 @@ const ExamApp = {
           // The strike overlay is also the recovery screen. Do not place the
           // generic fullscreen lock above it or the warning becomes invisible.
           this._hideFullscreenLock();
-          this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
+          const warned = this.issueWarning('fullscreen_exit', 'Fullscreen mode exited');
+          // issueWarning declines once the strike cap is reached or while the
+          // 1.5s debounce is open. With no strike overlay to double as the
+          // recovery screen, the exam would otherwise carry on in a normal
+          // window, so fall back to the standing fullscreen lock.
+          if (!warned) this._scheduleFullscreenEnforcement();
         }, 500);
       } else {
         if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
@@ -4077,6 +4133,23 @@ const ExamApp = {
           e.preventDefault();
         }
       }
+      // Screen capture and recording hotkeys. The OS owns these combinations,
+      // so the keydown is the only signal the page ever gets and it does not
+      // always arrive. This catches the casual attempt; it cannot see an
+      // external recorder such as OBS, because no browser API reports that the
+      // screen is being captured.
+      const pressed = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      if (e.metaKey && ((e.altKey && pressed === 'r') || pressed === 'g')) {
+        e.preventDefault();
+        this.issueWarning('screen_record', 'Screen recording shortcut detected');
+        return;
+      }
+      if (e.metaKey && e.shiftKey && ['s', '3', '4', '5'].includes(pressed)) {
+        e.preventDefault();
+        this.issueWarning('screenshot', 'Screen capture shortcut detected');
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(e.key.toLowerCase())) {
         const key = e.key.toLowerCase();
         const editable = this._isEditableTarget(e.target);
@@ -6756,6 +6829,9 @@ const ExamApp = {
       clearTimeout(this._pendingFullscreenRecovery);
       this._pendingFullscreenRecovery = null;
     }
+    // The enforcement watchdog re-arms itself, so every teardown path has to
+    // stop it or the lock can surface on the submitted screen.
+    this._stopFullscreenEnforcement();
     this._fullscreenInteractionGraceUntil = 0;
     this._intentionalFullscreenExit = false;
     this.cancelCountdown(false);
@@ -7028,8 +7104,10 @@ const ExamApp = {
       tab_switch:      'You switched to another tab or window.',
       window_blur:     'Another application was detected in front of the exam.',
       copy_attempt:    'Copying or cutting content is not allowed.',
+      paste_attempt:   'Pasting content into an answer is not allowed.',
       fullscreen_exit: 'You exited fullscreen mode.',
       screenshot:      'Screenshot attempt detected.',
+      screen_record:   'Screen recording is not allowed during the exam.',
       no_person:       'No person detected in the camera frame.',
       multiple_people: 'Another visible face/person was detected in the camera frame.',
       look_down:       'Looking down away from the screen/camera for too long was detected.',
@@ -8215,6 +8293,12 @@ const ExamApp = {
     const exam = this.exam;
     if (!sess || !exam) return;
     const scoreReleased = !!sess.scoreReleased;
+    // Guard the screen itself, not just the button that opens it: the exam is
+    // the questionnaire, so withheld scores must keep it closed.
+    if (!scoreReleased || !exam.allowReview) {
+      this._showToast('Your professor has not released this exam for review yet.', 'error');
+      return;
+    }
 
     this.showState('review');
     const titleEl = document.getElementById('review-exam-title');
@@ -8799,7 +8883,11 @@ const ExamApp = {
     const reviewBtn = document.getElementById('btn-review-answers');
     if (reviewBtn) {
       const examObj = this.exam || (session ? DB.getExam(session.examId) : null);
-      reviewBtn.style.display = (examObj && examObj.allowReview) ? '' : 'none';
+      // Hiding the scores has to hide the questionnaire with them. While scores
+      // are withheld the review screen is the one place the full question set
+      // is still readable, which is how questions reach other sections.
+      const canReview = !!(examObj && examObj.allowReview) && !!session?.scoreReleased;
+      reviewBtn.style.display = canReview ? '' : 'none';
     }
   },
 

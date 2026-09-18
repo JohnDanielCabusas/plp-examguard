@@ -374,6 +374,7 @@ const BEHAVIOR_LABELS = {
   paste_attempt: 'Paste Attempt',
   ctrl_c_attempt: 'Ctrl+C Attempt',
   ctrl_v_attempt: 'Ctrl+V Attempt',
+  screen_record: 'Screen Recording',
   camera_denied: 'Camera Denied',
   auto_submit: 'Auto-Submitted',
   force_submit: 'Force Submitted',
@@ -417,6 +418,7 @@ const VIOLATION_ALERTABLE_TYPES = new Set([
   'paste_attempt',
   'ctrl_c_attempt',
   'ctrl_v_attempt',
+  'screen_record',
   'camera_denied',
   'screenshot',
   'brightness_check_failed',
@@ -430,6 +432,7 @@ const CRITICAL_VIOLATION_TYPES = new Set([
   'fullscreen_exit',
   'camera_denied',
   'screenshot',
+  'screen_record',
   'restricted_phone',
 ]);
 const VIOLATION_SOUND_PREF_KEY = 'acs_violation_sound_muted';
@@ -628,7 +631,7 @@ function getActivityTone(type) {
   if (['brightness_check_passed', 'camera_restored', 'connection_restored'].includes(type)) return 'success';
   if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
-  if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
+  if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'screen_record', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
   return 'neutral';
 }
 
@@ -1459,16 +1462,21 @@ function makeCustomDropdown(sel) {
     const statusTone = escHtml((opt.dataset.statusTone || '').toLowerCase());
     const course = escHtml(opt.dataset.course || '');
     const code = escHtml(opt.dataset.code || '');
-    return `<span class="exam-dd-copy">
-      <span class="exam-dd-title">${title}</span>
-      <span class="exam-dd-meta-row">
-        <span class="exam-dd-meta">
-          ${course ? `<span class="exam-dd-meta-text">${course}</span>` : ''}
-          ${course && code ? `<span class="exam-dd-meta-sep" aria-hidden="true">&middot;</span>` : ''}
-          ${code ? `<span class="exam-dd-meta-code">${code}</span>` : ''}
+    // The status sits beside the title/meta block rather than inside the meta
+    // line, so it can centre against the full height of the row instead of
+    // hanging off the end of the course text.
+    return `<span class="exam-dd-row">
+      <span class="exam-dd-copy">
+        <span class="exam-dd-title">${title}</span>
+        <span class="exam-dd-meta-row">
+          <span class="exam-dd-meta">
+            ${course ? `<span class="exam-dd-meta-text">${course}</span>` : ''}
+            ${course && code ? `<span class="exam-dd-meta-sep" aria-hidden="true">&middot;</span>` : ''}
+            ${code ? `<span class="exam-dd-meta-code">${code}</span>` : ''}
+          </span>
         </span>
-        ${status ? `<span class="exam-dd-status exam-dd-status-${statusTone}">${status}</span>` : ''}
       </span>
+      ${status ? `<span class="exam-dd-status exam-dd-status-${statusTone}">${status}</span>` : ''}
     </span>`;
   };
 
@@ -1544,6 +1552,9 @@ function renderMonitoringSectionLive() {
   renderMonitoringTable(monitorExamId);
   setMonitorView(monitorExamId ? _monitorView : 'table');
   updateExamDeadlineDisplays();
+  // Re-checked on every poll so the badge clears the moment an exam closes,
+  // rather than waiting for the professor to change the selection.
+  syncMonitorLiveBadge();
 }
 
 function renderReportsSectionLive() {
@@ -1692,15 +1703,33 @@ function renderBell() {
     list.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
     return;
   }
+  // Spans throughout, not divs: these rows are <button>s, and block-level
+  // children inside a button are invalid markup.
   list.innerHTML = _bellNotifs.map(n => {
     const t = n.at ? new Date(n.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     const tag = getBellTagHtml(n.kind);
-    return `<button type="button" class="notif-item${n.seen ? '' : ' unseen'}" onclick="openNotif('${escHtml(n.id)}')">
-      <div class="notif-item-top">${tag}<span class="notif-item-time">${t}</span></div>
-      <div class="notif-item-who">${escHtml(n.who || 'Notification')}</div>
-      <div class="notif-item-body">${escHtml(n.body || '')}</div>
+    const kind = getBellKindClass(n.kind);
+    const body = String(n.body || '');
+    return `<button type="button" class="notif-item ${kind}${n.seen ? '' : ' unseen'}" onclick="openNotif('${escHtml(n.id)}')">
+      <span class="notif-item-rail" aria-hidden="true"></span>
+      <span class="notif-item-main">
+        <span class="notif-item-top">${tag}<span class="notif-item-time">${t}</span></span>
+        <span class="notif-item-who">${escHtml(n.who || 'Notification')}</span>
+        ${body ? `<span class="notif-item-body">${escHtml(body)}</span>` : ''}
+      </span>
     </button>`;
   }).join('');
+}
+
+// Drives the coloured rail down the left of each row, so the list can be
+// scanned by type without reading every tag.
+function getBellKindClass(kind) {
+  if (kind === 'violation') return 'notif-kind-violation';
+  if (kind === 'report') return 'notif-kind-report';
+  if (kind === 'share-request') return 'notif-kind-share';
+  if (kind === 'share-accepted') return 'notif-kind-success';
+  if (kind === 'share-declined') return 'notif-kind-danger';
+  return 'notif-kind-message';
 }
 
 function getBellTagHtml(kind) {
@@ -1715,8 +1744,13 @@ function getBellTagHtml(kind) {
 function toggleNotifDropdown(force) {
   const dd = document.getElementById('notif-dropdown');
   if (!dd) return;
-  const open = typeof force === 'boolean' ? force : dd.classList.contains('hidden');
-  dd.classList.toggle('hidden', !open);
+  // An `is-open` class rather than `.hidden`: display:none cannot be
+  // transitioned, which is why this panel used to appear and vanish instantly
+  // while the rest of the app's menus ease in.
+  const open = typeof force === 'boolean' ? force : !dd.classList.contains('is-open');
+  dd.classList.toggle('is-open', open);
+  dd.setAttribute('aria-hidden', open ? 'false' : 'true');
+  document.getElementById('topbar-bell')?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (open) {
     _bellNotifs.forEach(n => { n.seen = true; }); // reading the list clears the badge
     renderBell();
@@ -1781,9 +1815,18 @@ function openNotif(notificationId) {
 // Close the dropdown when clicking outside it.
 document.addEventListener('click', (e) => {
   const dd = document.getElementById('notif-dropdown');
-  if (!dd || dd.classList.contains('hidden')) return;
+  if (!dd || !dd.classList.contains('is-open')) return;
   if (e.target.closest('#notif-dropdown') || e.target.closest('#topbar-bell')) return;
-  dd.classList.add('hidden');
+  toggleNotifDropdown(false);
+});
+
+// Escape closes it and returns focus to the bell, matching the app's modals.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd || !dd.classList.contains('is-open')) return;
+  toggleNotifDropdown(false);
+  document.getElementById('topbar-bell')?.focus();
 });
 
 // Top-right popup that slides in and auto-dismisses after 3 seconds.
@@ -6099,9 +6142,11 @@ function renderQuestionsList(examId) {
     container.innerHTML = `<div class="empty-state" style="padding:20px;"><p>No questions yet. Use the buttons below to add questions.</p></div>`;
   } else {
     container.innerHTML = exam.questions.map((q, idx) => buildQuestionBlock(q, idx)).join('');
-    // Auto-size all textareas after render
+    // Auto-size all textareas after render. The question field grows on input,
+    // but nothing fires on first paint — so a long question loaded from a saved
+    // exam stayed at its 46px min-height with the rest clipped by overflow.
     requestAnimationFrame(() => {
-      container.querySelectorAll('.q-textarea').forEach(ta => {
+      container.querySelectorAll('.q-textarea, .qe-q-textarea').forEach(ta => {
         ta.style.height = 'auto';
         ta.style.height = ta.scrollHeight + 'px';
       });
@@ -6656,15 +6701,20 @@ function buildQuestionBlock(q, idx) {
     optionsHtml = `
       <div class="form-group">
         <label>Accepted Answers <span class="text-muted" style="font-weight:400;">(any one is marked correct; case-insensitive)</span></label>
-        <div style="display:flex;flex-direction:column;gap:6px;">
+        <div class="ident-answer-list">
           ${acceptedAnswers.map((answer, answerIdx) => `
             <div class="identification-answer-row">
-              <span style="font-size:12px;color:#9ca3af;font-weight:700;min-width:22px;">${answerIdx + 1}.</span>
+              <span class="ident-answer-num">${answerIdx + 1}</span>
               <input type="text" class="form-control" value="${escHtml(answer)}" aria-label="Accepted answer ${answerIdx + 1}" placeholder="Accepted answer ${answerIdx + 1}" onchange="updateIdentificationAnswer(${idx},${answerIdx},this.value)" />
-              <button type="button" class="btn btn-danger btn-sm identification-answer-remove" aria-label="Remove accepted answer ${answerIdx + 1}" title="Remove answer" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>&times;</button>
+              <button type="button" class="identification-answer-remove" aria-label="Remove accepted answer ${answerIdx + 1}" title="Remove answer" onclick="removeIdentificationAnswer(${idx},${answerIdx})" ${acceptedAnswers.length <= 1 ? 'disabled' : ''}>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>`).join('')}
+          <button type="button" class="ident-add-answer" onclick="addIdentificationAnswer(${idx})">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add another answer
+          </button>
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addIdentificationAnswer(${idx})">Add other answer</button>
       </div>`;
   }
 
@@ -7492,6 +7542,203 @@ function sanitizeStudentAnswersHtml(html) {
     .replace(/Correct:\s+[^\x00-\x7F]{2,}<\/div>/g, 'Correct: -</div>');
 }
 
+// ── Student answer sheet ─────────────────────────
+// The exam paper with the student's own answers written in and every question
+// marked. Built from the same grading helpers the Reports screen uses, so a
+// printed sheet can never disagree with the score on screen.
+
+function formatAnswerSheetValue(value) {
+  const text = String(value ?? '').trim();
+  return text ? escHtml(text) : '<span class="as-empty">(no answer)</span>';
+}
+
+// Turns a stored answer into what the student actually wrote, per question type.
+function getStudentAnswerDisplay(question, rawAnswer) {
+  if (rawAnswer === null || typeof rawAnswer === 'undefined' || rawAnswer === '') return '';
+  if (question.type === 'checkbox') {
+    let given = [];
+    try { given = JSON.parse(rawAnswer || '[]') || []; } catch (_) {}
+    if (!Array.isArray(given) || !given.length) return '';
+    return given
+      .map(i => `${String.fromCharCode(65 + Number(i))}. ${(question.options || [])[i] || ''}`)
+      .join('; ');
+  }
+  if (question.type === 'matching') {
+    let given = {};
+    try { given = JSON.parse(rawAnswer || '{}') || {}; } catch (_) {}
+    const pairs = Array.isArray(question.pairs) ? question.pairs : [];
+    return pairs
+      .map((pair, i) => `${i + 1}. ${pair?.term || ''} → ${given?.[i] || '—'}`)
+      .join('\n');
+  }
+  return String(rawAnswer);
+}
+
+// The answer key, in the same shape as the student's answer above it.
+function getCorrectAnswerDisplay(question) {
+  if (question.type === 'essay') return '';
+  if (question.type === 'coding') return String(question.correctAnswer || '');
+  if (question.type === 'checkbox') {
+    return (question.correctAnswerIndices || [])
+      .map(i => `${String.fromCharCode(65 + Number(i))}. ${(question.options || [])[i] || ''}`)
+      .join('; ');
+  }
+  if (question.type === 'matching') {
+    return (question.pairs || [])
+      .map((pair, i) => `${i + 1}. ${pair?.term || ''} → ${pair?.match || ''}`)
+      .join('\n');
+  }
+  if (question.type === 'enumeration') {
+    return (question.answers || []).filter(Boolean).join('\n');
+  }
+  if (question.type === 'identification') {
+    return getIdentificationAcceptedAnswers(question).join(' / ');
+  }
+  return String(question.correctAnswer || '');
+}
+
+// One verdict for a question, used by both the printable sheet and the Excel
+// grid so the two can never disagree about whether an answer was right.
+function getAnswerSheetVerdict(question, rawAnswer, earned, graded) {
+  const maxPoints = Number(question.points) || 0;
+  const answered = !(rawAnswer === null || typeof rawAnswer === 'undefined' || String(rawAnswer).trim() === '');
+  // An essay carries no automatic key, so an ungraded one is pending rather
+  // than wrong — calling it wrong on a sheet handed to a student would be a lie.
+  if (question.type === 'essay' && !graded) return { label: 'Pending review', cls: 'as-pending' };
+  if (!answered) return { label: 'No answer', cls: 'as-blank' };
+  // A question carrying no points can never reach "Correct" on a points
+  // comparison, and marking it Incorrect would be wrong.
+  if (maxPoints <= 0) return { label: 'Not scored', cls: 'as-blank' };
+  if (earned >= maxPoints) return { label: 'Correct', cls: 'as-correct' };
+  if (earned > 0) return { label: 'Partial credit', cls: 'as-partial' };
+  return { label: 'Incorrect', cls: 'as-wrong' };
+}
+
+function buildAnswerSheetHtml(exam, session) {
+  const subject = DB.getSubject(exam.subjectId);
+  const settings = DB.getSettings();
+  const breakdown = calculateSessionScoreBreakdown(exam, session);
+  const grades = getSessionQuestionGrades(session);
+  const pct = breakdown.max ? Math.round((breakdown.earned / breakdown.max) * 100) : 0;
+  const answers = session.answers || {};
+
+  const infoRow = (a, b, c, d) =>
+    `<tr><td class="k">${escHtml(a)}</td><td class="v">${escHtml(b)}</td>`
+    + `<td class="k">${escHtml(c)}</td><td class="v">${escHtml(d)}</td></tr>`;
+
+  const questionsHtml = exam.questions.map((q, idx) => {
+    const raw = answers[q.id];
+    const maxPoints = Number(q.points) || 0;
+    const earned = breakdown.byQuestion[q.id] || 0;
+    const graded = Object.prototype.hasOwnProperty.call(grades, q.id);
+
+    const { label: verdict, cls: verdictClass } = getAnswerSheetVerdict(q, raw, earned, graded);
+
+    const studentAnswer = getStudentAnswerDisplay(q, raw);
+    const correctAnswer = getCorrectAnswerDisplay(q);
+    const isChoice = q.type === 'mcq' || q.type === 'tf' || q.type === 'checkbox';
+
+    // For choice questions the options themselves carry the marking, so the
+    // student can see which one they picked against which one was right.
+    let optionsHtml = '';
+    if (isChoice) {
+      const opts = q.type === 'tf' ? ['True', 'False'] : (q.options || []);
+      let chosen = [];
+      if (q.type === 'checkbox') {
+        try { chosen = JSON.parse(raw || '[]') || []; } catch (_) { chosen = []; }
+        chosen = chosen.map(Number);
+      }
+      optionsHtml = opts.map((text, i) => {
+        const letter = String.fromCharCode(65 + i);
+        const isChosen = q.type === 'checkbox'
+          ? chosen.includes(i)
+          : String(raw || '').trim().toUpperCase() === String(text).trim().toUpperCase();
+        const isKey = q.type === 'checkbox'
+          ? (q.correctAnswerIndices || []).map(Number).includes(i)
+          : String(q.correctAnswer || '').trim().toUpperCase() === String(text).trim().toUpperCase();
+        const marks = [];
+        if (isChosen) marks.push('<span class="as-mark as-mark-chosen">your answer</span>');
+        if (isKey) marks.push('<span class="as-mark as-mark-key">correct</span>');
+        const rowClass = isKey ? ' as-opt-key' : isChosen ? ' as-opt-wrong' : '';
+        return `<div class="as-opt${rowClass}"><span class="as-opt-letter">${letter}.</span>${escHtml(text || '')} ${marks.join(' ')}</div>`;
+      }).join('');
+    }
+
+    const answerBlock = isChoice ? '' : `
+      <div class="as-answer">
+        <div class="as-answer-label">Student answer</div>
+        <div class="as-answer-body">${formatAnswerSheetValue(studentAnswer)}</div>
+      </div>
+      ${correctAnswer ? `
+      <div class="as-answer as-answer-key">
+        <div class="as-answer-label">Correct answer</div>
+        <div class="as-answer-body">${escHtml(correctAnswer)}</div>
+      </div>` : ''}`;
+
+    return `
+      <div class="as-q">
+        <div class="as-q-head">
+          <span class="as-q-num">${idx + 1}.</span>
+          <span class="as-q-text">${escHtml(q.content || '')}</span>
+          <span class="as-q-score">${formatPointsValue(earned)}/${formatPointsValue(maxPoints)} pts</span>
+        </div>
+        <div class="as-verdict ${verdictClass}">${verdict}</div>
+        ${optionsHtml}
+        ${answerBlock}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="as-header">
+      <div class="as-title">Examination Answer Sheet</div>
+      <div class="as-exam">${escHtml(exam.title || '')}</div>
+    </div>
+    <table class="as-info" width="100%" cellspacing="0" cellpadding="0" border="0">
+      ${infoRow('Student', session.studentName || '', 'Student ID', session.studentId || '')}
+      ${infoRow('Course', subject?.name || 'N/A', 'Year / Section', getStudentYearSectionSummary(session, ' / ') || 'N/A')}
+      ${infoRow('School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Generated', formatReportDateTime(new Date()))}
+      ${infoRow('Status', getSubmissionStatusText(session), 'Warnings', String(session.warnings || 0))}
+    </table>
+    <div class="as-score">Total score: <strong>${formatPointsValue(breakdown.earned)} / ${formatPointsValue(breakdown.max)}</strong> (${pct}%)</div>
+    ${questionsHtml || '<p>This exam has no questions.</p>'}
+  `;
+}
+
+const ANSWER_SHEET_STYLES = `
+  body { font-family: Calibri, Arial, sans-serif; color:#1a1a1a; margin:24px; }
+  .as-header { text-align:center; margin-bottom:6pt; }
+  .as-title { font-size:17pt; font-weight:bold; }
+  .as-exam { font-size:12pt; color:#4b5563; margin-top:2pt; }
+  .as-info { border-collapse:collapse; width:100%; margin:12pt 0; font-size:10pt; }
+  .as-info td { padding:3pt 6pt; border:none; }
+  .as-info .k { font-weight:bold; width:16%; color:#374151; }
+  .as-info .v { width:34%; }
+  .as-score { font-size:11pt; padding:6pt 10pt; background:#f1f5f9; border:1px solid #d1d5db; margin-bottom:14pt; }
+  .as-q { margin-bottom:14pt; padding-bottom:10pt; border-bottom:1px solid #e5e7eb; page-break-inside:avoid; }
+  .as-q-head { font-size:11.5pt; font-weight:bold; margin-bottom:4pt; }
+  .as-q-num { margin-right:5pt; }
+  .as-q-score { float:right; font-weight:normal; color:#6b7280; font-size:10pt; }
+  .as-verdict { display:inline-block; font-size:9pt; font-weight:bold; padding:2pt 7pt; border:1px solid #d1d5db; border-radius:9pt; margin-bottom:6pt; }
+  .as-correct { background:#e8f7ee; border-color:#b7e3c7; color:#15803d; }
+  .as-wrong   { background:#fdecec; border-color:#f5c2c2; color:#b91c1c; }
+  .as-partial { background:#fff7e6; border-color:#fcd9a3; color:#b45309; }
+  .as-pending { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
+  .as-blank   { background:#f3f4f6; border-color:#d1d5db; color:#6b7280; }
+  .as-opt { font-size:10.5pt; margin:3pt 0 0 20pt; padding:2pt 5pt; }
+  .as-opt-letter { font-weight:bold; margin-right:4pt; }
+  .as-opt-key { background:#e8f7ee; }
+  .as-opt-wrong { background:#fdecec; }
+  .as-mark { font-size:8pt; font-weight:bold; text-transform:uppercase; padding:1pt 5pt; border-radius:8pt; margin-left:5pt; }
+  .as-mark-chosen { background:#e0e7ff; color:#3730a3; }
+  .as-mark-key { background:#dcfce7; color:#15803d; }
+  .as-answer { margin:5pt 0 0 20pt; }
+  .as-answer-label { font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#6b7280; }
+  .as-answer-body { font-size:10.5pt; white-space:pre-wrap; padding:4pt 6pt; border-left:3px solid #d1d5db; background:#fafafa; }
+  .as-answer-key .as-answer-body { border-left-color:#86efac; background:#f2fbf5; }
+  .as-empty { color:#b91c1c; font-style:italic; }
+`;
+
+
 function viewStudentAnswers(sessionId, source = currentSection) {
   const mode = source === 'reports' ? 'reports' : 'statistics';
   const session = DB.getSession(sessionId);
@@ -8070,6 +8317,16 @@ function renderCameraGrid(examId) {
   }).join('');
 }
 
+// LIVE describes the exam being monitored, not the polling loop. The poller
+// runs the whole time this section is open, so with no exam chosen — or a
+// closed one — the badge would otherwise claim an exam was under way.
+function syncMonitorLiveBadge() {
+  const badge = document.getElementById('monitor-live-badge');
+  if (!badge) return;
+  const exam = monitorExamId ? DB.getExam(monitorExamId) : null;
+  badge.classList.toggle('hidden', exam?.status !== 'active');
+}
+
 function onMonitorExamChange() {
   monitorExamId = document.getElementById('monitor-exam-select').value;
   floatingTimerDismissedExamId = null;
@@ -8080,6 +8337,7 @@ function onMonitorExamChange() {
   refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true }).catch(() => {});
   renderMonitoringTable(monitorExamId);
   updateExamDeadlineDisplays();
+  syncMonitorLiveBadge();
   // With no selected exam, keep the compact sessions layout visible.
   setMonitorView(monitorExamId ? _monitorView : 'table');
 }
@@ -8125,7 +8383,7 @@ function startMonitoring() {
   // Realtime session pushes drive the live monitoring UX. Keep a slow silent
   // fallback refresh in case the app server route becomes temporarily unavailable.
   monitorInterval = setInterval(refresh, 45000);
-  document.getElementById('monitor-live-badge').classList.remove('hidden');
+  syncMonitorLiveBadge();
 }
 
 function stopMonitoring() {
@@ -8199,6 +8457,7 @@ function normalizeMonitorSessionRow(row) {
     essayGrades: row.essay_grades || {},
     aiDetections: row.ai_detections || {},
     cameraSnapshots: Array.isArray(row.camera_snapshots) ? row.camera_snapshots : [],
+    attemptHistory: Array.isArray(row.attempt_history) ? row.attempt_history : [],
     ownerAdminId: row.owner_admin_id || '',
     createdAt: row.created_at || null,
   };
@@ -9122,7 +9381,7 @@ async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase)
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'screenshot'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'paste_attempt', 'screenshot', 'screen_record'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
@@ -9976,7 +10235,10 @@ function startReports() {
   };
   refresh();
   reportInterval = setInterval(refresh, 3000);
-  document.getElementById('report-live-badge')?.classList.remove('hidden');
+  // Do not force the badge on here — renderReportTable sets it from the
+  // selected exam's status.
+  const selectedId = document.getElementById('report-exam-select')?.value;
+  syncReportLiveBadge(selectedId ? DB.getExam(selectedId) : null);
 }
 
 function stopReports() {
@@ -10095,12 +10357,13 @@ function getExamAbsentStudents(exam) {
 function renderReportAbsentRows(absentStudents) {
   if (!absentStudents.length) return '';
   const header = `<tr class="report-absent-divider">
-    <td colspan="9" data-label="">
+    <td colspan="10" data-label="">
       <span class="report-absent-divider-badge">Marked Absent</span>
       <span class="report-absent-divider-note">${absentStudents.length} student${absentStudents.length === 1 ? ' was' : 's were'} not marked present and could not take this exam</span>
     </td>
   </tr>`;
   const rows = absentStudents.map(student => `<tr class="report-row-absent">
+    <td data-label="" class="report-check-cell"></td>
     <td data-label="Rank"><span class="report-rank-absent">&mdash;</span></td>
     <td data-label="Name"><strong>${escHtml(student.studentName || student.name)}</strong></td>
     <td data-label="Student ID">${escHtml(student.studentId)}</td>
@@ -10114,11 +10377,661 @@ function renderReportAbsentRows(absentStudents) {
   return header + rows;
 }
 
-function getOrderedSubmittedReportSessions(examId) {
-  if (!examId) return [];
-  return DB.getSessionsByExam(examId)
+// ── Export ───────────────────────────────────────
+// Format first, from the animated fan. Word and PDF then ask what to put in
+// the document, because both can carry either the results tables or the
+// per-student answer sheets. Excel is a data grid, so it goes straight to the
+// results workbook.
+let _pendingExportFormat = null;
+
+function syncExportMenuNote() {
+  const note = document.getElementById('export-menu-note');
+  if (!note) return;
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  if (!examId) { note.textContent = 'Select an exam first.'; return; }
+  const visible = getOrderedSubmittedReportSessions(examId);
+  const chosen = getSelectedReportSessions(examId);
+  note.textContent = reportSelectedIds.size
+    ? `${chosen.length} selected student${chosen.length === 1 ? '' : 's'}.`
+    : `All ${visible.length} student${visible.length === 1 ? '' : 's'} in the current view.`;
+}
+window.syncExportMenuNote = syncExportMenuNote;
+
+function closeExportScope() {
+  _pendingExportFormat = null;
+  document.getElementById('export-fan')?.classList.remove('is-choosing');
+}
+window.closeExportScope = closeExportScope;
+
+function chooseExportFormat(format) {
+  if (format === 'excel') {
+    closeExportScope();
+    runReportExport('excel', 'results');
+    return;
+  }
+  _pendingExportFormat = format;
+  const label = document.getElementById('export-scope-format');
+  if (label) label.textContent = format === 'pdf' ? 'PDF' : 'Word';
+  syncExportMenuNote();
+  document.getElementById('export-fan')?.classList.add('is-choosing');
+}
+window.chooseExportFormat = chooseExportFormat;
+
+function runChosenExport(scope) {
+  const format = _pendingExportFormat;
+  closeExportScope();
+  if (!format) return;
+  runReportExport(format, scope);
+}
+window.runChosenExport = runChosenExport;
+
+document.addEventListener('click', (e) => {
+  const fan = document.getElementById('export-fan');
+  if (!fan || !fan.classList.contains('is-choosing')) return;
+  if (e.target.closest('#export-fan')) return;
+  closeExportScope();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const fan = document.getElementById('export-fan');
+  if (!fan || !fan.classList.contains('is-choosing')) return;
+  closeExportScope();
+  document.getElementById('btn-export-word')?.focus();
+});
+
+// ── Answer sheets as a real PDF ──────────────────
+// Drawn with jsPDF rather than handed to the browser's print dialog, so PDF
+// downloads a file exactly like the results export does.
+const ANSWER_PDF_TONES = {
+  'as-correct': [21, 128, 61],
+  'as-wrong':   [185, 28, 28],
+  'as-partial': [180, 83, 9],
+  'as-pending': [67, 56, 202],
+  'as-blank':   [107, 114, 128],
+};
+
+function drawAnswerSheetsIntoPdf(doc, exam, sessions, settings, headerImage, { startOnNewPage = false } = {}) {
+  const M = 14;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const usable = pageW - M * 2;
+  const BOTTOM = pageH - 18;
+  let y = 0;
+
+  const startPage = (fresh) => {
+    if (fresh) doc.addPage();
+    y = drawPdfPageHeader(doc, exam.title, headerImage) + 8;
+    drawPdfPageFooter(doc, settings);
+  };
+  // Keeps a block whole: if it will not fit, move it to the next page rather
+  // than splitting a question across the fold.
+  const ensure = (height) => { if (y + height > BOTTOM) startPage(true); };
+
+  const writeBlock = (label, value, tint) => {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    const lines = doc.splitTextToSize(String(value || '—'), usable - 8);
+    ensure(lines.length * 4.4 + 8);
+    doc.text(label.toUpperCase(), M + 4, y);
+    y += 3.6;
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(31, 41, 55);
+    // A tinted rule marks the answer key apart from what the student wrote.
+    doc.setDrawColor(...(tint || [209, 213, 219]));
+    doc.setLineWidth(0.8);
+    doc.line(M + 2, y - 2.6, M + 2, y + lines.length * 4.4 - 1.4);
+    doc.text(lines, M + 5, y);
+    y += lines.length * 4.4 + 2.5;
+  };
+
+  sessions.forEach((session, idx) => {
+    startPage(idx > 0 || startOnNewPage);
+
+    const breakdown = calculateSessionScoreBreakdown(exam, session);
+    const grades = getSessionQuestionGrades(session);
+    const pct = breakdown.max ? Math.round((breakdown.earned / breakdown.max) * 100) : 0;
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Examination Answer Sheet', pageW / 2, y, { align: 'center' });
+    y += 6.5;
+
+    doc.setFont('times', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      `${session.studentName || ''}  ·  ${session.studentId || ''}  ·  ${getStudentYearSectionSummary(session, ' / ') || 'N/A'}`,
+      pageW / 2, y, { align: 'center' },
+    );
+    y += 4.8;
+    doc.text(
+      `${getSubmissionStatusText(session)}  ·  Warnings: ${session.warnings || 0}`,
+      pageW / 2, y, { align: 'center' },
+    );
+    y += 7;
+
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.2);
+    doc.line(M, y - 3, pageW - M, y - 3);
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(
+      `Total score: ${formatPointsValue(breakdown.earned)} / ${formatPointsValue(breakdown.max)} (${pct}%)`,
+      M, y + 2,
+    );
+    y += 9;
+
+    exam.questions.forEach((q, qi) => {
+      const raw = (session.answers || {})[q.id];
+      const earned = breakdown.byQuestion[q.id] || 0;
+      const graded = Object.prototype.hasOwnProperty.call(grades, q.id);
+      const verdict = getAnswerSheetVerdict(q, raw, earned, graded);
+
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10.5);
+      const qLines = doc.splitTextToSize(`${qi + 1}. ${q.content || ''}`, usable - 24);
+      ensure(qLines.length * 5 + 14);
+      doc.setTextColor(17, 24, 39);
+      doc.text(qLines, M, y);
+      doc.setFont('times', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(107, 114, 128);
+      doc.text(
+        `${formatPointsValue(earned)}/${formatPointsValue(Number(q.points) || 0)} pts`,
+        pageW - M, y, { align: 'right' },
+      );
+      y += qLines.length * 5 + 1;
+
+      doc.setFont('times', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...(ANSWER_PDF_TONES[verdict.cls] || ANSWER_PDF_TONES['as-blank']));
+      doc.text(verdict.label.toUpperCase(), M, y);
+      y += 5;
+
+      const isChoice = q.type === 'mcq' || q.type === 'tf' || q.type === 'checkbox';
+      if (isChoice) {
+        const opts = q.type === 'tf' ? ['True', 'False'] : (q.options || []);
+        let chosen = [];
+        if (q.type === 'checkbox') {
+          try { chosen = (JSON.parse(raw || '[]') || []).map(Number); } catch (_) { chosen = []; }
+        }
+        opts.forEach((text, i) => {
+          const letter = String.fromCharCode(65 + i);
+          const isChosen = q.type === 'checkbox'
+            ? chosen.includes(i)
+            : String(raw || '').trim().toUpperCase() === String(text).trim().toUpperCase();
+          const isKey = q.type === 'checkbox'
+            ? (q.correctAnswerIndices || []).map(Number).includes(i)
+            : String(q.correctAnswer || '').trim().toUpperCase() === String(text).trim().toUpperCase();
+          const marks = [isChosen ? 'your answer' : '', isKey ? 'correct' : ''].filter(Boolean).join(' · ');
+          const line = `${letter}. ${text || ''}${marks ? `   [${marks}]` : ''}`;
+          const lines = doc.splitTextToSize(line, usable - 10);
+          ensure(lines.length * 4.6 + 2);
+          doc.setFont('times', isKey || isChosen ? 'bold' : 'normal');
+          doc.setFontSize(9.5);
+          if (isKey) doc.setTextColor(21, 128, 61);
+          else if (isChosen) doc.setTextColor(185, 28, 28);
+          else doc.setTextColor(55, 65, 81);
+          doc.text(lines, M + 6, y);
+          y += lines.length * 4.6;
+        });
+        y += 3;
+      } else {
+        writeBlock('Student answer', getStudentAnswerDisplay(q, raw) || '(no answer)', [156, 163, 175]);
+        const key = getCorrectAnswerDisplay(q);
+        if (key) writeBlock('Correct answer', key, [134, 239, 172]);
+        y += 1.5;
+      }
+
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.15);
+      ensure(4);
+      doc.line(M, y, pageW - M, y);
+      y += 5;
+    });
+  });
+}
+
+async function exportAnswerSheetsPdf(exam, sessions, { includeResults = false } = {}) {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) { showToast('PDF library not loaded. Check internet connection.', 'error'); return; }
+
+  const settings = DB.getSettings();
+  const headerImage = await getReportHeaderImage();
+  let doc;
+
+  if (includeResults) {
+    // Draw the results report first, then continue into the sheets, so "Both"
+    // is one downloaded file rather than two.
+    const built = await exportExamReportPdf({ returnDoc: true });
+    if (!built) return;
+    doc = built.doc;
+    drawAnswerSheetsIntoPdf(doc, exam, sessions, settings, headerImage, { startOnNewPage: true });
+  } else {
+    doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    drawAnswerSheetsIntoPdf(doc, exam, sessions, settings, headerImage);
+  }
+
+  const suffix = includeResults ? '_report_and_answers' : '_answers';
+  doc.save(`${slugifyReportName(exam.title)}${suffix}.pdf`);
+  showToast(`Exported ${sessions.length} answer sheet${sessions.length === 1 ? '' : 's'} as PDF.`, 'success');
+}
+
+// ── Answer sheets in bulk ────────────────────────
+function getAnswerSheetSessions() {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  if (!examId) { showToast('Select an exam before exporting.', 'warning'); return null; }
+  const exam = DB.getExam(examId);
+  if (!exam) return null;
+  const sessions = getSelectedReportSessions(examId);
+  if (!sessions.length) {
+    showToast('No students match the current filters or selection.', 'warning');
+    return null;
+  }
+  return { exam, sessions };
+}
+
+function buildAnswerSheetsBody(exam, sessions, forWord = false) {
+  // Each student starts a fresh page so a printed stack can be handed out.
+  return sessions
+    .map((session, i) => {
+      const brk = i === 0 ? '' : (forWord ? WORD_PAGE_BREAK : '<div style="page-break-before:always;"></div>');
+      return `${brk}<div class="as-sheet">${buildAnswerSheetHtml(exam, session)}</div>`;
+    })
+    .join('');
+}
+
+// Word's HTML importer ignores a bare page-break div and has no default page
+// geometry, which is why the exported document ran together and sat against
+// the paper edge. This is the standard recipe: declare a WordSection with an
+// @page size and margins, and break pages with a <br> Word actually honours.
+const WORD_PAGE_STYLES = `
+  @page WordSection1 { size: 8.5in 11.0in; margin: 0.8in 0.7in 0.8in 0.7in; }
+  div.WordSection1 { page: WordSection1; }
+  body { margin: 0; }
+  /* Word lays tables out from attributes as much as CSS, so keep them simple
+     and let the width attribute in the markup do the work. */
+  table { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  h1, h2 { page-break-after: avoid; }
+`;
+
+const WORD_PAGE_BREAK = '<br clear="all" style="mso-special-character:line-break;page-break-before:always" />';
+
+function wrapWordDocument(title, styles, body) {
+  return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8" />
+<meta name="ProgId" content="Word.Document" />
+<meta name="Generator" content="Microsoft Word" />
+<title>${escHtml(title)}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>${styles}${WORD_PAGE_STYLES}</style>
+</head>
+<body><div class="WordSection1">${body}</div></body></html>`;
+}
+
+function getAnswerSheetsDocument(exam, sessions, { forWord = false, resultsHtml = '' } = {}) {
+  const answers = buildAnswerSheetsBody(exam, sessions, forWord);
+  const body = resultsHtml ? `${resultsHtml}${forWord ? WORD_PAGE_BREAK : '<div style="page-break-before:always;"></div>'}${answers}` : answers;
+  // The results tables and the answer sheets each bring their own rules, and
+  // the sheet's own selectors are more specific, so order is enough to keep
+  // them apart.
+  const styles = `${REPORT_DOC_STYLES}${ANSWER_SHEET_STYLES}`;
+  if (forWord) return wrapWordDocument(exam.title || 'Exam', styles, body);
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>${escHtml(exam.title || 'Exam')}</title>
+<style>${styles}</style></head>
+<body>${body}</body></html>`;
+}
+
+function downloadDocument(html, filename, mime) {
+  const blob = new Blob(['﻿', html], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Flat rows for the Excel answer sheet: one line per question per student, so
+// the whole cohort can be filtered and pivoted in one grid.
+function buildAnswerExcelRows(exam, sessions) {
+  const rows = [];
+  sessions.forEach((session) => {
+    const breakdown = calculateSessionScoreBreakdown(exam, session);
+    const grades = getSessionQuestionGrades(session);
+    exam.questions.forEach((q, idx) => {
+      const raw = (session.answers || {})[q.id];
+      const earned = breakdown.byQuestion[q.id] || 0;
+      const graded = Object.prototype.hasOwnProperty.call(grades, q.id);
+      const verdict = getAnswerSheetVerdict(q, raw, earned, graded);
+      rows.push([
+        session.studentName || '',
+        session.studentId || '',
+        idx + 1,
+        q.content || '',
+        q.type || '',
+        getStudentAnswerDisplay(q, raw),
+        getCorrectAnswerDisplay(q),
+        earned,
+        Number(q.points) || 0,
+        verdict.label,
+      ]);
+    });
+  });
+  return rows;
+}
+
+async function appendAnswersSheet(workbook, exam, sessions) {
+  const HEADER_FILL = 'FF1A4D2A';
+  const EDGE = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+  const border = { top: EDGE, left: EDGE, bottom: EDGE, right: EDGE };
+  const sheet = workbook.addWorksheet('Answers');
+  const headers = ['Student', 'Student ID', 'Q#', 'Question', 'Type', 'Student answer', 'Correct answer', 'Earned', 'Points', 'Result'];
+  [24, 14, 6, 46, 14, 40, 40, 9, 9, 15].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+  headers.forEach((label, i) => {
+    const cell = sheet.getCell(1, i + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = border;
+  });
+  sheet.getRow(1).height = 24;
+  buildAnswerExcelRows(exam, sessions).forEach((values, r) => {
+    values.forEach((value, c) => {
+      const cell = sheet.getCell(r + 2, c + 1);
+      cell.value = value;
+      cell.border = border;
+      cell.alignment = { vertical: 'top', wrapText: c === 3 || c === 5 || c === 6 };
+    });
+  });
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+}
+
+// ── Dispatch ─────────────────────────────────────
+async function runReportExport(format, scope = 'results') {
+  const wantsResults = scope === 'results' || scope === 'both';
+  const wantsAnswers = scope === 'answers' || scope === 'both';
+
+  if (scope === 'results') {
+    if (format === 'word') return exportExamReportWord();
+    if (format === 'excel') return exportExamReportExcel();
+    return exportExamReportPdf();
+  }
+
+  const target = getAnswerSheetSessions();
+  if (!target) return;
+  const { exam, sessions } = target;
+  const base = `${slugifyReportName(exam.title)}_${scope}`;
+
+  if (format === 'pdf') {
+    await exportAnswerSheetsPdf(exam, sessions, { includeResults: wantsResults });
+    return;
+  }
+
+  if (format === 'word') {
+    const resultsModel = wantsResults ? buildExamReportModel(exam.id) : null;
+    const resultsHtml = resultsModel ? buildReportDocumentBody(resultsModel) : '';
+    const html = getAnswerSheetsDocument(exam, sessions, { forWord: true, resultsHtml });
+    downloadDocument(html, `${base}.doc`, 'application/msword');
+    showToast(`Exported ${sessions.length} answer sheet${sessions.length === 1 ? '' : 's'} as Word.`, 'success');
+    return;
+  }
+
+  // Excel
+  const ExcelJSLib = window.ExcelJS;
+  if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
+  if (wantsResults) {
+    // Reuse the full results workbook, then add the answers sheet to it.
+    await exportExamReportExcel({ extraSheets: wb => appendAnswersSheet(wb, exam, sessions), filenameSuffix: '_both' });
+    return;
+  }
+  const workbook = new ExcelJSLib.Workbook();
+  workbook.creator = 'PLP ExamGuard';
+  workbook.created = new Date();
+  await appendAnswersSheet(workbook, exam, sessions);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${base}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Answers exported as Excel workbook.', 'success');
+}
+window.runReportExport = runReportExport;
+
+// ── Report row selection ─────────────────────────
+// Ticking students narrows what the Export panel produces. Empty means "every
+// row currently in the table", so exporting without touching the checkboxes
+// still gives the whole filtered view.
+const reportSelectedIds = new Set();
+
+function getSelectedReportSessions(examId) {
+  const rows = getOrderedSubmittedReportSessions(examId);
+  if (!reportSelectedIds.size) return rows;
+  const scoped = rows.filter(session => reportSelectedIds.has(session.id));
+  // A selection that no longer matches the filters must not silently export
+  // everything instead.
+  return scoped;
+}
+
+function syncReportSelectionUI() {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  const visible = getOrderedSubmittedReportSessions(examId);
+  const visibleIds = visible.map(s => s.id);
+  const selectedVisible = visibleIds.filter(id => reportSelectedIds.has(id));
+
+  const all = document.getElementById('report-select-all');
+  if (all) {
+    all.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    all.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    all.disabled = visibleIds.length === 0;
+  }
+
+  const count = document.getElementById('report-selected-count');
+  if (count) {
+    count.hidden = selectedVisible.length === 0;
+    count.textContent = `${selectedVisible.length} selected`;
+  }
+}
+
+function toggleReportRowSelection(sessionId, checked) {
+  if (checked) reportSelectedIds.add(sessionId);
+  else reportSelectedIds.delete(sessionId);
+  syncReportSelectionUI();
+}
+window.toggleReportRowSelection = toggleReportRowSelection;
+
+function toggleReportSelectAll(checked) {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  getOrderedSubmittedReportSessions(examId).forEach((session) => {
+    if (checked) reportSelectedIds.add(session.id);
+    else reportSelectedIds.delete(session.id);
+  });
+  document.querySelectorAll('.report-row-check').forEach((box) => { box.checked = checked; });
+  syncReportSelectionUI();
+}
+window.toggleReportSelectAll = toggleReportSelectAll;
+
+function clearReportSelection() {
+  reportSelectedIds.clear();
+  document.querySelectorAll('.report-row-check').forEach((box) => { box.checked = false; });
+  syncReportSelectionUI();
+}
+window.clearReportSelection = clearReportSelection;
+
+// ── Report filters ───────────────────────────────
+// One filter state, read by both the table and the PDF/Word/Excel exports, so
+// what a professor exports is always exactly what they are looking at.
+const reportFilters = {
+  search: '',
+  yearSection: '',
+  status: '',
+  warnings: '',
+};
+
+function getReportFilterState() {
+  return { ...reportFilters };
+}
+
+function isReportFilterActive() {
+  return Boolean(
+    reportFilters.search
+    || reportFilters.yearSection
+    || reportFilters.status
+    || reportFilters.warnings,
+  );
+}
+
+// Absentees have no session, so they are matched on the student record instead.
+function reportRowMatchesSearch(name, studentId, term) {
+  if (!term) return true;
+  const haystack = `${name || ''} ${studentId || ''}`.toLowerCase();
+  return haystack.includes(term);
+}
+
+function getSubmissionStatusFilterKey(session) {
+  const text = getSubmissionStatusText(session);
+  if (text === 'Submitted') return 'submitted';
+  if (text.startsWith('Force-Submitted')) return 'force';
+  if (text.startsWith('Auto-Submitted')) return 'auto';
+  return 'other';
+}
+
+function filterReportSessions(sessions) {
+  const term = reportFilters.search.trim().toLowerCase();
+  return (sessions || []).filter((session) => {
+    if (!reportRowMatchesSearch(session.studentName, session.studentId, term)) return false;
+
+    if (reportFilters.yearSection) {
+      const value = getStudentYearSectionSummary(session, ' / ') || '';
+      if (value !== reportFilters.yearSection) return false;
+    }
+
+    if (reportFilters.status) {
+      // "absent" is a row type rather than a session state, so no submitted
+      // session can satisfy it.
+      if (reportFilters.status === 'absent') return false;
+      if (getSubmissionStatusFilterKey(session) !== reportFilters.status) return false;
+    }
+
+    if (reportFilters.warnings) {
+      const count = getEffectiveSessionWarningCount(session);
+      if (reportFilters.warnings === 'none' && count > 0) return false;
+      if (reportFilters.warnings === 'any' && count < 1) return false;
+    }
+
+    return true;
+  });
+}
+
+function filterReportAbsentStudents(students) {
+  const term = reportFilters.search.trim().toLowerCase();
+  return (students || []).filter((student) => {
+    const name = student.studentName || student.name;
+    if (!reportRowMatchesSearch(name, student.studentId, term)) return false;
+
+    if (reportFilters.yearSection) {
+      const value = getStudentYearSectionSummary(student, ' / ') || '';
+      if (value !== reportFilters.yearSection) return false;
+    }
+
+    // An absentee has no submission and no warnings, so any status filter other
+    // than "absent" and any warning filter other than "none" excludes them.
+    if (reportFilters.status && reportFilters.status !== 'absent') return false;
+    if (reportFilters.warnings === 'any') return false;
+
+    return true;
+  });
+}
+
+// The Year & Section options come from the exam's own roster so the dropdown
+// never offers a combination that would return nothing.
+function getReportYearSectionOptions(examId, exam) {
+  const values = new Set();
+  DB.getSessionsByExam(examId)
     .filter(session => session.submitted)
-    .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
+    .forEach((session) => {
+      const value = getStudentYearSectionSummary(session, ' / ');
+      if (value) values.add(value);
+    });
+  getExamAbsentStudents(exam).forEach((student) => {
+    const value = getStudentYearSectionSummary(student, ' / ');
+    if (value) values.add(value);
+  });
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
+function syncReportFilterControls(examId, exam) {
+  const select = document.getElementById('report-filter-year-section');
+  if (select) {
+    const options = getReportYearSectionOptions(examId, exam);
+    // Drop a stale selection when switching to an exam that has no such section.
+    if (reportFilters.yearSection && !options.includes(reportFilters.yearSection)) {
+      reportFilters.yearSection = '';
+    }
+    select.innerHTML = `<option value="">All sections</option>`
+      + options.map(value => `<option value="${escHtml(value)}">${escHtml(value)}</option>`).join('');
+    select.value = reportFilters.yearSection;
+  }
+
+  const searchInput = document.getElementById('report-filter-search');
+  if (searchInput && searchInput.value !== reportFilters.search) searchInput.value = reportFilters.search;
+
+  const statusSelect = document.getElementById('report-filter-status');
+  if (statusSelect) statusSelect.value = reportFilters.status;
+
+  const warningSelect = document.getElementById('report-filter-warnings');
+  if (warningSelect) warningSelect.value = reportFilters.warnings;
+
+  const clearBtn = document.getElementById('report-filter-clear');
+  if (clearBtn) clearBtn.hidden = !isReportFilterActive();
+}
+
+function setReportFilter(key, value) {
+  if (!(key in reportFilters)) return;
+  reportFilters[key] = String(value || '');
+  renderReportTable();
+}
+window.setReportFilter = setReportFilter;
+
+function clearReportFilters() {
+  reportFilters.search = '';
+  reportFilters.yearSection = '';
+  reportFilters.status = '';
+  reportFilters.warnings = '';
+  renderReportTable();
+}
+window.clearReportFilters = clearReportFilters;
+
+// The Reports poller runs the whole time this section is open, so the badge has
+// to be driven by the selected exam's status instead of by the poller.
+function syncReportLiveBadge(exam) {
+  const badge = document.getElementById('report-live-badge');
+  if (!badge) return;
+  badge.classList.toggle('hidden', exam?.status !== 'active');
+}
+
+function getOrderedSubmittedReportSessions(examId, { applyFilters = true } = {}) {
+  if (!examId) return [];
+  const submitted = DB.getSessionsByExam(examId).filter(session => session.submitted);
+  const scoped = applyFilters ? filterReportSessions(submitted) : submitted;
+  return scoped.sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 }
 
 let reportCopyFeedbackTimer = null;
@@ -10174,14 +11087,16 @@ window.copyReportScores = copyReportScores;
 function renderReportTable() {
   syncReportSortButton();
   const examId = document.getElementById('report-exam-select').value;
-  const pdfBtn = document.getElementById('btn-generate-pdf');
   const copyScoresBtn = document.getElementById('btn-copy-report-scores');
   const releaseBtn = document.getElementById('btn-release-scores');
-  pdfBtn.disabled = false;
   // Keep this control clickable. The handler provides a specific message when
   // no exam or score rows are available instead of silently swallowing clicks.
   if (copyScoresBtn) copyScoresBtn.disabled = false;
   releaseBtn.disabled = !examId;
+
+  // LIVE describes the exam, not the poller. Showing it for a closed exam read
+  // as though students were still sitting it.
+  syncReportLiveBadge(null);
 
   if (!examId) {
     document.getElementById('report-exam-title').textContent = 'Choose an exam to load results and rankings';
@@ -10196,6 +11111,7 @@ function renderReportTable() {
 
   const exam = DB.getExam(examId);
   if (!exam) return;
+  syncReportLiveBadge(exam);
   document.getElementById('report-exam-title').textContent = exam.title;
   releaseBtn.disabled = !['active', 'closed'].includes(exam.status);
 
@@ -10214,11 +11130,14 @@ function renderReportTable() {
     releaseBtn.onclick = releaseScores;
   }
 
+  syncReportFilterControls(examId, exam);
+
   const sorted = getOrderedSubmittedReportSessions(examId);
   const sessions = sorted;
 
-  const absentStudents = getExamAbsentStudents(exam);
+  const absentStudents = filterReportAbsentStudents(getExamAbsentStudents(exam));
   const absentRowsHtml = renderReportAbsentRows(absentStudents);
+
 
   const summaryEl = document.getElementById('report-summary');
   summaryEl.classList.remove('hidden');
@@ -10237,16 +11156,28 @@ function renderReportTable() {
   if (!sorted.length) {
     // Still list the absentees — an exam with no submissions but a full absentee
     // list is exactly the case a professor needs to see explained.
+    const emptyMessage = isReportFilterActive()
+      ? 'No results match the current filters.'
+      : 'No submissions yet.';
     document.getElementById('report-tbody').innerHTML =
-      `<tr><td colspan="9"><div class="empty-state"><p>No submissions yet.</p></div></td></tr>${absentRowsHtml}`;
+      `<tr><td colspan="10"><div class="empty-state"><p>${emptyMessage}</p></div></td></tr>${absentRowsHtml}`;
     return;
   }
+
+  // Rows are rebuilt on every poll, so re-sync the header checkbox and count
+  // against whatever survived the current filters.
+  requestAnimationFrame(syncReportSelectionUI);
 
   document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
     const warningCount = getEffectiveSessionWarningCount(s);
     const submissionStatus = getSubmissionStatusBadge(s);
     const sessionTimeHtml = renderReportSessionTime(s);
     return `<tr>
+      <td data-label="" class="report-check-cell">
+        <input type="checkbox" class="report-row-check" aria-label="Select ${escAttr(s.studentName || s.studentId || 'student')}"
+          ${reportSelectedIds.has(s.id) ? 'checked' : ''}
+          onchange="toggleReportRowSelection('${s.id}', this.checked)" />
+      </td>
       <td data-label="Rank"><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
       <td data-label="Name"><strong>${escHtml(s.studentName)}</strong></td>
       <td data-label="Student ID">${escHtml(s.studentId)}</td>
@@ -10572,14 +11503,288 @@ function drawPdfInfoBlock(doc, y, rows) {
   return y + totalHeight;
 }
 
-async function exportExamReportPdf() {
+// ── Report export: Word ──────────────────────────
+// Word opens HTML served with the msword MIME type, which is how the exam
+// paper already exports. Same approach here so the report keeps its table.
+// The results document body on its own, so the Word export and the combined
+// "results + answers" file render exactly the same thing.
+function buildReportDocumentBody(model) {
+  const { exam, subject, settings, sorted, absentStudents, summary, generatedBy } = model;
+  const reportStamp = formatReportDateTime(new Date());
+  const infoRow = (a, b, c, d) =>
+    `<tr><td class="k">${escHtml(a)}</td><td class="v">${escHtml(b)}</td>`
+    + `<td class="k">${escHtml(c)}</td><td class="v">${escHtml(d)}</td></tr>`;
+
+  const bodyRows = [
+    ...model.submittedRows.map(r => `<tr>${r.map(c => `<td>${escHtml(String(c))}</td>`).join('')}</tr>`),
+    ...model.absentRows.map(r => `<tr class="absent">${r.map(c => `<td>${escHtml(String(c))}</td>`).join('')}</tr>`),
+  ].join('');
+
+  const emptyRow = `<tr><td colspan="${model.columns.length}">No submissions have been recorded for this examination.</td></tr>`;
+
+  return `
+  <h1>Examination Results Report</h1>
+  <div class="sub">${escHtml(exam.title || '')}</div>
+
+  <h2>Examination Information</h2>
+  <table class="info" width="100%" cellspacing="0" cellpadding="0" border="0">
+    ${infoRow('Examination', exam.title || '', 'Course', subject?.name || 'N/A')}
+    ${infoRow('School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Time Limit', `${exam.timeLimit || 0} minute${Number(exam.timeLimit) === 1 ? '' : 's'}`)}
+    ${infoRow('Prepared By', generatedBy, 'Date Generated', reportStamp)}
+  </table>
+
+  <h2>Summary</h2>
+  <table class="info" width="100%" cellspacing="0" cellpadding="0" border="0">
+    ${infoRow('Submitted Records', String(sorted.length), 'Highest Mark', summary.highestMark)}
+    ${infoRow('Average Score', `${summary.averagePercent}%`, 'Passing Students', String(summary.passCount))}
+    ${infoRow('Needs Review', String(summary.needsReviewCount), 'Absent Students', String(absentStudents.length))}
+  </table>
+
+  <h2>Results</h2>
+  <table width="100%" cellspacing="0" cellpadding="0" border="1">
+    <tr>${model.columns.map(c => `<th>${escHtml(c)}</th>`).join('')}</tr>
+    ${bodyRows || emptyRow}
+  </table>
+`;
+}
+
+const REPORT_DOC_STYLES = `  body { font-family: Calibri, Arial, sans-serif; color:#1a1a1a; }
+  h1 { font-size:18pt; text-align:center; margin-bottom:2pt; }
+  h2 { font-size:12pt; margin:14pt 0 6pt; border-bottom:1px solid #ccc; padding-bottom:3pt; }
+  .sub { text-align:center; font-size:11pt; color:#4b5563; margin-bottom:12pt; }
+  table { border-collapse:collapse; width:100%; font-size:9pt; }
+  th, td { border:1px solid #d1d5db; padding:5pt 6pt; }
+  th { background:#0f2d1a; color:#fff; font-weight:bold; text-align:center; }
+  .info td { border:none; padding:3pt 6pt; font-size:10pt; }
+  .info .k { font-weight:bold; width:18%; color:#374151; }
+  .info .v { width:32%; }
+  tr.absent td { background:#fdf2e8; color:#7c2d12; }
+`;
+
+function exportExamReportWord() {
+  const examId = document.getElementById('report-exam-select').value;
+  if (!examId) {
+    showToast('Select an exam before exporting the report.', 'warning');
+    return;
+  }
+  const model = buildExamReportModel(examId);
+  if (!model) return;
+
+  const html = wrapWordDocument(
+    `${model.exam.title || 'Exam'} Report`,
+    REPORT_DOC_STYLES,
+    buildReportDocumentBody(model),
+  );
+
+  const blob = new Blob(['﻿', html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugifyReportName(model.exam.title)}_report.doc`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Report exported as Word document.', 'success');
+}
+window.exportExamReportWord = exportExamReportWord;
+
+// ── Report export: Excel ─────────────────────────
+async function exportExamReportExcel({ extraSheets = null, filenameSuffix = '' } = {}) {
+  const examId = document.getElementById('report-exam-select').value;
+  if (!examId) {
+    showToast('Select an exam before exporting the report.', 'warning');
+    return;
+  }
+  const ExcelJSLib = window.ExcelJS;
+  if (!ExcelJSLib) {
+    showToast('Excel library not loaded. Check internet connection.', 'error');
+    return;
+  }
+  const model = buildExamReportModel(examId);
+  if (!model) return;
+
+  const { exam, subject, settings, sorted, absentStudents, summary, generatedBy } = model;
+
+  const HEADER_FILL = 'FF1A4D2A';
+  const BRAND = 'FF0F2D1A';
+  const BRAND_LIGHT = 'FFE8F0EA';
+  const ABSENT_FILL = 'FFFDF2E8';
+  const EDGE = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+  const cellBorder = { top: EDGE, left: EDGE, bottom: EDGE, right: EDGE };
+  const colCount = model.columns.length;
+
+  const workbook = new ExcelJSLib.Workbook();
+  workbook.creator = 'PLP ExamGuard';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Exam Report');
+  [8, 26, 14, 18, 12, 13, 26, 18].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+
+  let row = 1;
+  const banner = (label) => {
+    sheet.mergeCells(row, 1, row, colCount);
+    const cell = sheet.getCell(row, 1);
+    cell.value = label;
+    cell.font = { bold: true, size: 11, color: { argb: BRAND } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_LIGHT } };
+    cell.alignment = { vertical: 'middle' };
+    sheet.getRow(row).height = 20;
+    row += 1;
+  };
+  const pair = (a, b, c, d) => {
+    sheet.getCell(row, 1).value = a;
+    sheet.getCell(row, 2).value = b;
+    sheet.getCell(row, 4).value = c;
+    sheet.getCell(row, 5).value = d;
+    sheet.getCell(row, 1).font = { bold: true };
+    sheet.getCell(row, 4).font = { bold: true };
+    row += 1;
+  };
+
+  sheet.mergeCells(row, 1, row, colCount);
+  const title = sheet.getCell(row, 1);
+  title.value = 'Examination Results Report';
+  title.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
+  title.alignment = { vertical: 'middle', horizontal: 'center' };
+  sheet.getRow(row).height = 26;
+  row += 2;
+
+  banner('Examination Information');
+  pair('Examination', exam.title || '', 'Course', subject?.name || 'N/A');
+  pair('School', settings.schoolName || 'Pamantasan ng Lungsod ng Pasig', 'Time Limit', `${exam.timeLimit || 0} minute${Number(exam.timeLimit) === 1 ? '' : 's'}`);
+  pair('Prepared By', generatedBy, 'Date Generated', formatReportDateTime(new Date()));
+  row += 1;
+
+  banner('Summary');
+  pair('Submitted Records', sorted.length, 'Highest Mark', summary.highestMark);
+  pair('Average Score', `${summary.averagePercent}%`, 'Passing Students', summary.passCount);
+  pair('Needs Review', summary.needsReviewCount, 'Absent Students', absentStudents.length);
+  row += 1;
+
+  banner('Results');
+  model.columns.forEach((label, i) => {
+    const cell = sheet.getCell(row, i + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = cellBorder;
+  });
+  sheet.getRow(row).height = 24;
+  row += 1;
+
+  const writeRow = (values, absent) => {
+    values.forEach((value, i) => {
+      const cell = sheet.getCell(row, i + 1);
+      cell.value = value;
+      cell.border = cellBorder;
+      cell.alignment = { vertical: 'middle', horizontal: i === 1 ? 'left' : 'center' };
+      // Absentees trail the ranked rows; tint them so they never read as a
+      // zero-scoring submission.
+      if (absent) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ABSENT_FILL } };
+        cell.font = { color: { argb: 'FF7C2D12' } };
+      }
+    });
+    row += 1;
+  };
+  model.submittedRows.forEach(r => writeRow(r, false));
+  model.absentRows.forEach(r => writeRow(r, true));
+
+  // The "both" scope adds an Answers sheet to this same workbook rather than
+  // handing the professor two separate files.
+  if (typeof extraSheets === 'function') await extraSheets(workbook);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugifyReportName(exam.title)}_report${filenameSuffix}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Report exported as Excel workbook.', 'success');
+}
+window.exportExamReportExcel = exportExamReportExcel;
+
+// One source of truth for the exam report, so the PDF, Word and Excel exports
+// can never drift apart on scores, ranking or who counts as absent.
+function buildExamReportModel(examId) {
+  const exam = examId ? DB.getExam(examId) : null;
+  if (!exam) return null;
+
+  // Exports follow the on-screen filters: a professor who narrows the table to
+  // one section expects the exported report to match what they are looking at.
+  const sorted = filterReportSessions(DB.getSessionsByExam(examId).filter(s => s.submitted))
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+  const absentStudents = filterReportAbsentStudents(getExamAbsentStudents(exam));
+  const settings = DB.getSettings();
+  const subject = DB.getSubject(exam.subjectId);
+  const adminSession = Auth.getAdminSession();
+
+  const averagePercent = sorted.length
+    ? Math.round(sorted.reduce((sum, session) => sum + (session.maxScore ? (session.score / session.maxScore) * 100 : 0), 0) / sorted.length)
+    : 0;
+  const passCount = sorted.filter(session => session.maxScore && (session.score / session.maxScore) >= 0.75).length;
+  const topPerformer = sorted[0] || null;
+  const highestMark = topPerformer
+    ? `${topPerformer.maxScore ? Math.round((topPerformer.score / topPerformer.maxScore) * 100) : 0}%`
+    : 'N/A';
+  const needsReviewCount = Math.max(sorted.length - passCount, 0);
+
+  const columns = ['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Time', 'Status'];
+
+  const submittedRows = sorted.map((s, i) => {
+    const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
+    return [
+      i + 1,
+      s.studentName,
+      s.studentId,
+      getStudentYearSectionSummary(s, ' / ') || 'N/A',
+      `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
+      `${pct}%`,
+      formatReportSessionTimeRange(s),
+      getSubmissionStatusText(s),
+    ];
+  });
+
+  const absentRows = absentStudents.map(student => [
+    '—',
+    student.studentName || student.name,
+    student.studentId,
+    getStudentYearSectionSummary(student, ' / ') || 'N/A',
+    '—',
+    '—',
+    '—',
+    'Absent',
+  ]);
+
+  return {
+    exam,
+    subject,
+    settings,
+    sorted,
+    absentStudents,
+    columns,
+    submittedRows,
+    absentRows,
+    generatedBy: adminSession?.name || 'Professor',
+    summary: { averagePercent, passCount, topPerformer, highestMark, needsReviewCount },
+  };
+}
+
+async function exportExamReportPdf({ returnDoc = false } = {}) {
   const examId = document.getElementById('report-exam-select').value;
   if (!examId) {
     window.alert('Please select an exam before exporting the PDF report.');
     return;
   }
-  const exam = DB.getExam(examId);
-  if (!exam) return;
+  const model = buildExamReportModel(examId);
+  if (!model) return;
+  const { exam, subject, settings, sorted, absentStudents } = model;
 
   const { jsPDF } = window.jspdf;
   if (!jsPDF) {
@@ -10587,28 +11792,14 @@ async function exportExamReportPdf() {
     return;
   }
 
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
-  const sorted = [...sessions].sort((a, b) => (b.score || 0) - (a.score || 0));
-  const absentStudents = getExamAbsentStudents(exam);
-  const settings = DB.getSettings();
-  const adminSession = Auth.getAdminSession();
-  const subject = DB.getSubject(exam.subjectId);
   const now = new Date();
   const headerImage = await getReportHeaderImage();
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  const averagePercent = sorted.length
-    ? Math.round(sorted.reduce((sum, session) => sum + (session.maxScore ? (session.score / session.maxScore) * 100 : 0), 0) / sorted.length)
-    : 0;
-  const passCount = sorted.filter(session => session.maxScore && (session.score / session.maxScore) >= 0.75).length;
-  const topPerformer = sorted[0] || null;
-  const generatedBy = adminSession?.name || 'Professor';
+  const { averagePercent, passCount, highestMark, needsReviewCount } = model.summary;
+  const generatedBy = model.generatedBy;
   const reportStamp = formatReportDateTime(now);
   const pageHeaderBottomY = drawPdfPageHeader(doc, exam.title, headerImage);
-  const highestMark = topPerformer
-    ? `${topPerformer.maxScore ? Math.round((topPerformer.score / topPerformer.maxScore) * 100) : 0}%`
-    : 'N/A';
-  const needsReviewCount = Math.max(sorted.length - passCount, 0);
 
   doc.setFont('times', 'bold');
   doc.setFontSize(18);
@@ -10644,40 +11835,19 @@ async function exportExamReportPdf() {
     doc.setTextColor(71, 85, 105);
     doc.text('No submissions have been recorded for this examination as of the report date.', 14, tableStartY);
     drawPdfPageFooter(doc, settings);
+    if (returnDoc) return { doc, exam, settings, headerImage };
     doc.save(`${slugifyReportName(exam.title)}_report.pdf`);
     showToast('PDF exported.', 'success');
-    return;
+    return null;
   }
 
-  const absentTableData = absentStudents.map(student => [
-    '—',
-    student.studentName || student.name,
-    student.studentId,
-    getStudentYearSectionSummary(student, ' / ') || 'N/A',
-    '—',
-    '—',
-    '—',
-    'Absent',
-  ]);
-
-  const tableData = sorted.map((s, i) => {
-    const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
-    return [
-      i + 1,
-      s.studentName,
-      s.studentId,
-      getStudentYearSectionSummary(s, ' / ') || 'N/A',
-      `${s.score !== null ? s.score : '—'}/${s.maxScore}`,
-      `${pct}%`,
-      formatReportSessionTimeRange(s),
-      getSubmissionStatusText(s),
-    ];
-  });
+  const absentTableData = model.absentRows;
+  const tableData = model.submittedRows;
 
   doc.autoTable({
     startY: tableStartY,
     margin: { top: 52, right: 14, bottom: 20, left: 14 },
-    head: [['Rank', 'Student Name', 'Student ID', 'Year / Section', 'Score', 'Percentage', 'Time', 'Status']],
+    head: [model.columns],
     body: [...tableData, ...absentTableData],
     styles: {
       font: 'times',
@@ -10727,8 +11897,11 @@ async function exportExamReportPdf() {
     },
   });
 
+  if (returnDoc) return { doc, exam, settings, headerImage };
+
   doc.save(`${slugifyReportName(exam.title)}_report.pdf`);
   showToast('PDF exported successfully.', 'success');
+  return null;
 }
 
 async function releaseScores() {
@@ -10757,12 +11930,49 @@ async function hideScores() {
   renderReportTable();
 }
 
+// Snapshot an attempt exactly as it stands so authorising a retake never
+// destroys the answers, score, warnings or camera evidence behind it. The
+// professor's decision rides along with the attempt because attempt_history is
+// what actually persists to the database.
+function buildArchivedAttempt(session, attemptNumber, authorizedBy) {
+  const now = new Date().toISOString();
+  const reason = session.submitted ? 'SUBMITTED' : 'ABSENT';
+  return {
+    attempt:         attemptNumber,
+    type:            attemptNumber === 1 ? 'ORIGINAL' : 'RETAKE',
+    reason,
+    submitted:       !!session.submitted,
+    autoSubmitted:   !!session.autoSubmitted,
+    submitReason:    session.submitReason || null,
+    startTime:       session.startTime || null,
+    endTime:         session.endTime || null,
+    score:           session.score ?? null,
+    maxScore:        session.maxScore ?? null,
+    answers:         session.answers || {},
+    essayGrades:     session.essayGrades || {},
+    aiDetections:    session.aiDetections || {},
+    warnings:        session.warnings || 0,
+    activities:      Array.isArray(session.activities) ? session.activities : [],
+    cameraSnapshots: Array.isArray(session.cameraSnapshots) ? session.cameraSnapshots : [],
+    archivedAt:      now,
+    retakeAuthorization: {
+      attempt:      attemptNumber + 1,
+      reason,
+      status:       'AUTHORIZED',
+      authorizedBy: authorizedBy || 'Professor',
+      authorizedAt: now,
+    },
+  };
+}
+
 async function allowStudentRetake(sessionId) {
   const session = DB.getSession(sessionId);
   if (!session) return;
   const exam = DB.getExam(session.examId);
+  const priorAttempts = Array.isArray(session.attemptHistory) ? session.attemptHistory : [];
+  const attemptNumber = priorAttempts.length + 1;
   const ok = await showConfirm(
-    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nTheir previous submission, answers, and score will be cleared.`
+    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nAttempt #${attemptNumber} is kept for your records. The retake is saved as attempt #${attemptNumber + 1}.`
   );
   if (!ok) return;
   let retakeExam = exam;
@@ -10782,6 +11992,13 @@ async function allowStudentRetake(sessionId) {
       renderProfCameraRow();
     }
   }
+  const grantingAdmin = Auth.getAdminSession?.() || {};
+  const archivedAttempt = buildArchivedAttempt(
+    session,
+    attemptNumber,
+    grantingAdmin.name || grantingAdmin.username || 'Professor',
+  );
+
   DB.updateSession(sessionId, {
     submitted:     false,
     autoSubmitted: false,
@@ -10795,6 +12012,7 @@ async function allowStudentRetake(sessionId) {
     warnings:      0,
     activities:    [],
     cameraSnapshots: [],
+    attemptHistory: [...priorAttempts, archivedAttempt],
   });
   clearViolationAlertsForSession(sessionId);
   showToast(`Retake granted for ${session.studentName}.`, 'success');

@@ -3126,15 +3126,47 @@ tr:hover td { background: #F8FDF8; }
   opacity: 0.45;
 }
 
-#report-card th:nth-child(7),
-#report-card td:nth-child(7) {
+/* Sized by class, not by column position: adding the selection checkbox
+   shifted every nth-child by one, which handed Time's width to Warnings and
+   left Submitted with none, so its badge wrapped to three lines. */
+#report-card th.report-session-cell,
+#report-card td.report-session-cell {
   width: 220px;
 }
 
-#report-card th:nth-child(8),
-#report-card td:nth-child(8) {
+#report-card th.report-status-cell,
+#report-card td.report-status-cell {
   width: 170px;
 }
+
+/* The body cells were relying on column position too, so they stopped lining
+   up under their own headings. */
+#report-card td[data-label="Student ID"],
+#report-card td[data-label="Year & Section"],
+#report-card td[data-label="Score"],
+#report-card td[data-label="Warnings"],
+#report-card td[data-label="Time"],
+#report-card td[data-label="Submitted"],
+#report-card td[data-label="Actions"] {
+  text-align: center;
+}
+
+/* Student names must break between words, never mid-word. */
+#report-card td[data-label="Name"] {
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+
+/* Break the status between words rather than mid-word. */
+#report-card td.report-status-cell .badge {
+  display: inline-block;
+  max-width: 100%;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  line-height: 1.3;
+}
+
 
 .report-session-cell {
   white-space: normal;
@@ -7274,10 +7306,10 @@ body.exam-page {
     min-width: 0;
   }
 
-  #report-card th:nth-child(7),
-  #report-card td:nth-child(7),
-  #report-card th:nth-child(8),
-  #report-card td:nth-child(8) {
+  #report-card th.report-session-cell,
+  #report-card td.report-session-cell,
+  #report-card th.report-status-cell,
+  #report-card td.report-status-cell {
     width: auto;
   }
 
@@ -11622,6 +11654,496 @@ tr:hover td { background: #fafbfc !important; }
   color: #fff !important;
 }
 
+/* ── Export report fan ─────────────────────────────
+   Collapsed it reads as one EXPORT block; on hover (or keyboard focus) the
+   three format cards separate and their icons fade in. Word and PDF then open
+   the scope popover below, since either can carry results or answer sheets. */
+.export-fan {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  width: 156px;
+  height: 46px;
+  cursor: pointer;
+}
+
+.export-fan-back {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: #0f2d1a;
+  box-shadow: 0 2px 8px rgba(15, 45, 26, 0.28);
+  transition: opacity 0.4s ease-in-out;
+  z-index: 0;
+}
+
+.export-fan-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 52px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    0.4s ease-in-out,
+    0.2s background-color ease-in-out,
+    0.2s color ease-in-out;
+}
+.export-fan-card:first-of-type {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+.export-fan-card:last-of-type {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.export-fan-card svg,
+.export-fan-label {
+  opacity: 0;
+  transition: 0.2s ease-in-out;
+}
+.export-fan-label {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The collapsed caption, matched to .btn so it reads as the same control
+   family as the button beside it. */
+.export-fan-text {
+  position: absolute;
+  z-index: 3;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  transition: 0.4s ease-in-out;
+}
+
+/* Keyboard users get the same reveal as pointer users, and the fan stays open
+   while the scope popover is up so the cards do not collapse underneath it. */
+.export-fan:hover .export-fan-back,
+.export-fan:focus-within .export-fan-back,
+.export-fan.is-choosing .export-fan-back { opacity: 0; }
+
+.export-fan:hover .export-fan-text,
+.export-fan:focus-within .export-fan-text,
+.export-fan.is-choosing .export-fan-text { opacity: 0; z-index: -3; }
+
+.export-fan:hover .export-fan-card,
+.export-fan:focus-within .export-fan-card,
+.export-fan.is-choosing .export-fan-card {
+  margin: 0 3px;
+  border-radius: 10px;
+  border-color: #d7dee3;
+  background: #fff;
+  color: #334155;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.export-fan:hover .export-fan-card svg,
+.export-fan:hover .export-fan-card .export-fan-label,
+.export-fan:focus-within .export-fan-card svg,
+.export-fan:focus-within .export-fan-card .export-fan-label,
+.export-fan.is-choosing .export-fan-card svg,
+.export-fan.is-choosing .export-fan-card .export-fan-label { opacity: 1; }
+
+/* Each format keeps its own accent so the three stay distinguishable at a
+   glance. Scoped through the open group: the rule that paints the expanded
+   card is two classes deep, so a bare .export-fan-word:hover would lose. */
+.export-fan:hover .export-fan-word:hover,
+.export-fan:focus-within .export-fan-word:focus-visible,
+[data-theme="dark"] .export-fan:hover .export-fan-word:hover,
+[data-theme="dark"] .export-fan:focus-within .export-fan-word:focus-visible {
+  background: #2b579a; border-color: #2b579a; color: #fff;
+}
+.export-fan:hover .export-fan-pdf:hover,
+.export-fan:focus-within .export-fan-pdf:focus-visible,
+[data-theme="dark"] .export-fan:hover .export-fan-pdf:hover,
+[data-theme="dark"] .export-fan:focus-within .export-fan-pdf:focus-visible {
+  background: #c0392b; border-color: #c0392b; color: #fff;
+}
+.export-fan:hover .export-fan-excel:hover,
+.export-fan:focus-within .export-fan-excel:focus-visible,
+[data-theme="dark"] .export-fan:hover .export-fan-excel:hover,
+[data-theme="dark"] .export-fan:focus-within .export-fan-excel:focus-visible {
+  background: #217346; border-color: #217346; color: #fff;
+}
+
+.export-fan-card:focus-visible { outline: 2px solid #16a34a; outline-offset: 2px; }
+
+/* ── Scope popover (Word / PDF only) ─────────────── */
+.export-scope-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 9000;
+  width: 236px;
+  padding: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  text-align: left;
+  cursor: default;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.18s;
+}
+.export-fan.is-choosing .export-scope-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+}
+
+.export-scope-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+.export-scope-title strong { color: var(--text, #111827); }
+
+.export-scope-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border: 1.5px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text, #374151);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.export-scope-btn:hover {
+  background: rgba(22, 101, 52, 0.08);
+  border-color: #1a6b35;
+  color: #15803d;
+}
+.export-scope-btn:focus-visible { outline: 2px solid #16a34a; outline-offset: 1px; }
+
+.export-scope-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted, #6b7280);
+}
+
+[data-theme="dark"] .export-fan-back {
+  background: #22c55e;
+  box-shadow:
+    0 0 10px hsl(142 85% 55% / 0.55),
+    0 0 26px hsl(142 85% 50% / 0.35);
+}
+[data-theme="dark"] .export-fan:hover .export-fan-back,
+[data-theme="dark"] .export-fan:focus-within .export-fan-back {
+  box-shadow:
+    0 0 16px hsl(142 90% 62% / 0.75),
+    0 0 40px hsl(142 90% 55% / 0.5);
+}
+/* 6.97:1 on the green above; white would be 2.28:1. */
+[data-theme="dark"] .export-fan-text { color: #062814; }
+[data-theme="dark"] .export-fan:hover .export-fan-card,
+[data-theme="dark"] .export-fan:focus-within .export-fan-card,
+[data-theme="dark"] .export-fan.is-choosing .export-fan-card {
+  background: var(--surface-2, #1e293b);
+  border-color: var(--border, #334155);
+  color: var(--text, #e2e8f0);
+}
+[data-theme="dark"] .export-scope-pop {
+  background: var(--surface-2, #111827);
+  border-color: var(--border, #334155);
+}
+[data-theme="dark"] .export-scope-btn {
+  border-color: var(--border, #334155);
+  color: var(--text, #e2e8f0);
+}
+[data-theme="dark"] .export-scope-btn:hover {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: #4ade80;
+  color: #86efac;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-fan-back,
+  .export-fan-card,
+  .export-fan-card svg,
+  .export-fan-label,
+  .export-fan-text,
+  .export-scope-pop { transition: none; }
+}
+
+/* ── Row selection ─────────────────────────────── */
+.report-check-cell {
+  width: 38px;
+  text-align: center;
+  padding-right: 0 !important;
+}
+.report-check-cell input {
+  width: 15px;
+  height: 15px;
+  accent-color: #16a34a;
+  cursor: pointer;
+  margin: 0;
+}
+.report-selected-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.12);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.report-selected-count[hidden] { display: none; }
+[data-theme="dark"] .report-selected-count { color: #86efac; background: rgba(34, 197, 94, 0.16); }
+
+/* ── AI Generate button ───────────────────────────
+   Animated pill: rotating rim light, gradient wash on hover and a staggered
+   pulse across the three layer strokes. Recoloured onto the PLP greens and
+   sized to sit level with the plain "add question" pills beside it. */
+.ai-gen-btn {
+  --ai-radius: 9999px;
+  --ai-transition: 0.3s ease-in-out;
+  --ai-surface: #0f2d1a;          /* matches --primary */
+  --ai-rim: hsl(142 88% 66%);
+  --ai-glow: 142 66% 40%;
+
+  position: relative;
+  /* Contain the rim light: the surrounding bar paints a solid background, so
+     without its own stacking context the rim would disappear behind it. */
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 6px 16px;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--ai-radius);
+  font-family: inherit;
+  cursor: pointer;
+  transform-origin: center;
+  transform: scale(calc(1 + (var(--active, 0) * 0.06)));
+  transition: transform var(--ai-transition);
+}
+
+.ai-gen-btn::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  background-color: var(--ai-surface);
+  border-radius: var(--ai-radius);
+  box-shadow:
+    inset 0 0.5px hsl(0 0% 100% / 0.45),
+    inset 0 -1px 2px 0 hsl(0 0% 0% / 0.55),
+    0 3px 8px -3px hsla(0 0% 0% / calc(1 - var(--active, 0))),
+    0 0 0 calc(var(--active, 0) * 0.25rem) hsl(var(--ai-glow) / 0.4);
+  transition: all var(--ai-transition);
+  z-index: 1;
+}
+
+.ai-gen-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  background-color: hsl(142 58% 26%);
+  background-image:
+    radial-gradient(at 51% 89%, hsl(142 48% 44%) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsl(156 44% 34%) 0px, transparent 50%),
+    radial-gradient(at 22% 91%, hsl(128 42% 38%) 0px, transparent 50%);
+  background-position: top;
+  opacity: var(--active, 0);
+  border-radius: var(--ai-radius);
+  transition: opacity var(--ai-transition);
+  z-index: 2;
+}
+
+.ai-gen-btn:is(:hover, :focus-visible) { --active: 1; }
+.ai-gen-btn:active { transform: scale(1); }
+
+.ai-gen-btn-dots {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* 5px wider than the face. The extra band is what the sweep's glow spills
+     into — at the original 2px there was nowhere for it to show. */
+  width: calc(100% + 5px);
+  height: calc(100% + 5px);
+  overflow: hidden;
+  background-color: transparent;
+  border-radius: var(--ai-radius);
+  /* Applied after the overflow clip, so the trimmed arc still throws light
+     outward past the button edge instead of being cut flat. */
+  filter: drop-shadow(0 0 3px hsl(142 90% 55% / 0.85))
+          drop-shadow(0 0 7px hsl(142 90% 50% / 0.5));
+  z-index: 0;
+}
+
+.ai-gen-btn-dots::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* A square comfortably wider than the pill's diagonal, pivoting on the exact
+     centre. The reference swept a 2rem-tall bar hinged at 30% height, which on
+     a button this short was a slab filling the whole box and swinging
+     off-centre — it never read as a line travelling the border. A conic sweep
+     traces the rim evenly whatever the label length. */
+  width: 200%;
+  aspect-ratio: 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    var(--ai-rim) 348deg,
+    var(--ai-rim) 352deg,
+    transparent 360deg
+  );
+  transform: translate(-50%, -50%) rotate(0deg);
+  animation: aiGenRimSweep 2s linear infinite;
+}
+
+@keyframes aiGenRimSweep {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.ai-gen-btn-icon {
+  position: relative;
+  z-index: 10;
+  width: 15px;
+  height: 15px;
+  color: #fff;
+}
+
+.ai-gen-btn-path {
+  fill: none;
+  stroke: currentColor;
+  transform-origin: center;
+}
+
+.ai-gen-btn:is(:hover, :focus) .ai-gen-btn-path {
+  animation: aiGenPathPulse 1.5s linear 0.5s infinite;
+}
+
+.ai-gen-btn-path:nth-child(1) { --ai-scale-1: 1.2; }
+.ai-gen-btn-path:nth-child(2) { --ai-scale-2: 1.2; }
+.ai-gen-btn-path:nth-child(3) { --ai-scale-3: 1.2; }
+
+@keyframes aiGenPathPulse {
+  0%, 34%, 71%, 100% { transform: scale(1); }
+  17% { transform: scale(var(--ai-scale-1, 1)); }
+  49% { transform: scale(var(--ai-scale-2, 1)); }
+  83% { transform: scale(var(--ai-scale-3, 1)); }
+}
+
+.ai-gen-btn-text {
+  position: relative;
+  z-index: 10;
+  /* Solid white, not the gradient-to-transparent the reference used: that
+     faded the tail of the label out and read as washed-out grey. */
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* Dark mode lights the pill up: a brighter green face plus a soft outer bloom,
+   so it reads as emitting light rather than sitting flat on the panel. */
+[data-theme="dark"] .ai-gen-btn {
+  --ai-surface: #15803d;
+  --ai-rim: hsl(142 88% 78%);
+  --ai-glow: 142 85% 55%;
+}
+
+[data-theme="dark"] .ai-gen-btn::before {
+  background-image: linear-gradient(160deg, #22c55e 0%, #16a34a 55%, #15803d 100%);
+  box-shadow:
+    inset 0 0.5px hsl(0 0% 100% / 0.55),
+    inset 0 -1px 2px 0 hsl(140 55% 10% / 0.5),
+    0 0 10px hsl(142 85% 55% / 0.55),
+    0 0 26px hsl(142 85% 50% / 0.35),
+    0 0 0 calc(var(--active, 0) * 0.25rem) hsl(142 85% 50% / 0.35);
+}
+
+[data-theme="dark"] .ai-gen-btn:is(:hover, :focus-visible)::before {
+  box-shadow:
+    inset 0 0.5px hsl(0 0% 100% / 0.65),
+    inset 0 -1px 2px 0 hsl(140 55% 10% / 0.45),
+    0 0 16px hsl(142 90% 62% / 0.75),
+    0 0 40px hsl(142 90% 55% / 0.5),
+    0 0 0 0.25rem hsl(142 85% 50% / 0.32);
+}
+
+/* The hover wash is tuned for the light theme's deep green face. Left alone it
+   would darken the lit pill instead of brightening it. */
+[data-theme="dark"] .ai-gen-btn::after {
+  background-color: hsl(142 62% 40%);
+  background-image:
+    radial-gradient(at 51% 89%, hsl(142 80% 58%) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsl(156 70% 48%) 0px, transparent 50%),
+    radial-gradient(at 22% 91%, hsl(128 72% 52%) 0px, transparent 50%);
+}
+
+/* Match the label and icon to the glow so they read as part of the same lit
+   surface rather than flat white sitting on top of it. */
+[data-theme="dark"] .ai-gen-btn-text {
+  color: #fff;
+  text-shadow: 0 0 7px hsl(142 90% 80% / 0.55);
+}
+
+[data-theme="dark"] .ai-gen-btn-icon {
+  color: #fff;
+  filter: drop-shadow(0 0 5px hsl(142 90% 80% / 0.6));
+}
+
+/* The rim sweep and the stroke pulse are decorative; drop them when the
+   student or professor has asked the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-gen-btn,
+  .ai-gen-btn::before,
+  .ai-gen-btn::after { transition: none; }
+  .ai-gen-btn-dots::before,
+  .ai-gen-btn:is(:hover, :focus) .ai-gen-btn-path { animation: none; }
+  .ai-gen-btn { transform: none; }
+}
+
 /* ── Question blocks ─────────────────────────── */
 @keyframes qEnter {
   from { opacity: 0; transform: translateY(-8px); }
@@ -12737,6 +13259,26 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Title/meta on the left, status pinned right and centred against the full
+   height of both lines. Keeping the chip inside the meta line left a gutter
+   that varied with the course name — 48px on a long one, 182px on a short one
+   — so the chips never lined up. */
+.exam-dd-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.exam-dd-row .exam-dd-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.exam-dd-row .exam-dd-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .exam-dd-meta-code {
   font-weight: 700;
   color: #64748b;
@@ -12857,6 +13399,91 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
   border-color: #b7e3c7;
   color: #15803d;
 }
+
+/* ── Exam context dropdown polish ─────────────────
+   The panel lists whole records, not one-word options, so it needs more
+   structure than a plain option list: a slim scrollbar, a placeholder that
+   does not pose as an exam, and a selected row marked by an edge rather than
+   a full green wash. */
+.sys-dd.exam-context-dd .sys-dd-panel,
+.sys-dd.exam-context-dd.filter-dd .sys-dd-panel {
+  padding: 5px;
+  border-radius: 12px;
+  /* Deliberately lands part-way through a row: the clipped record is the cue
+     that the list scrolls, which a flush edge hides. */
+  max-height: 318px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  overscroll-behavior: contain;
+}
+.sys-dd.exam-context-dd .sys-dd-panel::-webkit-scrollbar {
+  width: 8px;
+}
+.sys-dd.exam-context-dd .sys-dd-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sys-dd.exam-context-dd .sys-dd-panel::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+.sys-dd.exam-context-dd .sys-dd-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+  background-clip: content-box;
+}
+
+.sys-dd.exam-context-dd .qtd-opt,
+.sys-dd.exam-context-dd.filter-dd .qtd-opt {
+  padding: 10px 12px;
+  border-radius: 9px;
+  /* The rail the selected row fills in. Reserved on every row so selecting one
+     never nudges the text sideways. */
+  border-left: 3px solid transparent;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+/* The prompt row is not an exam. Set it back so the real records read as the
+   list and it reads as the instruction above them. */
+.sys-dd.exam-context-dd .qtd-opt:not(.exam-context-opt) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  border-radius: 0;
+}
+
+/* Selected: a tinted edge and a faint wash, instead of the solid green block
+   that made the row look pressed rather than current. */
+.sys-dd.exam-context-dd .qtd-opt.qtd-active,
+.sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active {
+  background: rgba(22, 163, 74, 0.08);
+  border-left-color: #16a34a;
+}
+.sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-title {
+  color: #15803d;
+}
+
+.sys-dd.exam-context-dd .qtd-opt.exam-context-opt + .qtd-opt.exam-context-opt {
+  margin-top: 1px;
+}
+
+[data-theme="dark"] .sys-dd.exam-context-dd .sys-dd-panel {
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+[data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt:not(.exam-context-opt) {
+  border-bottom-color: var(--border, #334155);
+}
+[data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt.qtd-active,
+[data-theme="dark"] .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active {
+  background: rgba(34, 197, 94, 0.13);
+  border-left-color: #4ade80;
+}
+[data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-title {
+  color: #86efac;
+}
 .sys-dd.exam-context-dd .qtd-opt.exam-context-active,
 .sys-dd.exam-context-dd.filter-dd .qtd-opt.exam-context-active {
   border-left: 3px solid #22c55e;
@@ -12930,10 +13557,22 @@ tr:hover td { background: #f9fbf9 !important; transition: background 0.12s; }
 [data-theme="dark"] .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active .exam-dd-meta-code {
   color: #ecfdf5;
 }
+/* The selected row sits on a green wash, where the old near-black chip fell to
+   1.6:1 against it and stopped reading as a chip at all — the status of the
+   exam you are actually looking at was the hardest in the list to see. Every
+   other row renders a solid light pill, so this matches them. */
 [data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-status,
 [data-theme="dark"] .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active .exam-dd-status {
-  background: rgba(15, 23, 42, 0.35);
-  border-color: rgba(167, 243, 208, 0.22);
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+/* An active exam keeps its green chip even while selected. */
+[data-theme="dark"] .sys-dd.exam-context-dd .qtd-opt.qtd-active .exam-dd-status-active,
+[data-theme="dark"] .sys-dd.exam-context-dd.filter-dd .qtd-opt.qtd-active .exam-dd-status-active {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #15803d;
 }
 
 /* Custom animated question-type dropdown */
@@ -13549,22 +14188,218 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .examv2-question-wrap .tf-btn.selected { border-color: #1a4d2a; background: #e8f5ec; color: #0f2d1a; }
 
 /* Identification / Essay / Enumeration / Matching inputs */
-.identification-answer-row {
+/* The report card clips to keep its rounded corners, which also truncated the
+   filter dropdown panels. Lift the clip only while one is open. */
+#report-card:has(.report-filter-bar .sys-dd.open) {
+  overflow: visible;
+}
+
+/* Export actions sit opposite Close so the primary dismissal stays where it
+   has always been. */
+.answers-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.answers-modal-exports {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
-.identification-answer-row .form-control { flex: 1; min-width: 0; }
-.identification-answer-row .identification-answer-remove {
+
+/* ── Report filter bar ────────────────────────────
+   Sits between the card header and the table. Every control here also narrows
+   the PDF/Word/Excel exports, which the note below the row states outright. */
+.report-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fafbfa;
+}
+
+.report-filter-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.report-filter-search svg {
+  position: absolute;
+  left: 10px;
+  color: #9aa3ae;
+  pointer-events: none;
+}
+.report-filter-search input {
+  width: 100%;
+  padding: 7px 10px 7px 30px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  color: #111827;
+}
+.report-filter-search input::placeholder { color: #adb5bd; }
+.report-filter-search input:focus {
+  outline: none;
+  border-color: #1a6b35;
+  box-shadow: 0 0 0 3px rgba(26, 107, 53, 0.1);
+}
+
+.report-filter-clear {
+  padding: 7px 12px;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #b91c1c;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.report-filter-clear:hover { background: #fef2f2; border-color: #fecaca; }
+.report-filter-clear[hidden] { display: none; }
+
+[data-theme="dark"] .report-filter-bar {
+  background: var(--surface-2, #111827);
+  border-bottom-color: var(--border, #334155);
+}
+[data-theme="dark"] .report-filter-search input {
+  background: var(--surface, #0f172a);
+  border-color: var(--border, #334155);
+  color: var(--text, #e2e8f0);
+}
+[data-theme="dark"] .report-filter-search input:focus {
+  border-color: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.16);
+}
+[data-theme="dark"] .report-filter-clear { color: #f87171; }
+[data-theme="dark"] .report-filter-clear:hover {
+  background: rgba(220, 38, 38, 0.14);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+@media (max-width: 640px) {
+  .report-filter-bar { gap: 6px; padding: 10px 12px; }
+}
+
+/* ── Identification accepted answers ──────────────
+   One grid for the whole block, so the numbers, the inputs and the add button
+   share columns. The add button previously sat loose under the number gutter,
+   which is what made it read as detached from the list it belongs to. */
+.ident-answer-list {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.identification-answer-row {
+  display: contents;
+}
+
+.ident-answer-num {
+  justify-self: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #9aa3ae;
+  font-variant-numeric: tabular-nums;
+}
+
+.identification-answer-row .form-control {
+  min-width: 0;
+  width: 100%;
+}
+
+/* A quiet icon button that only commits to red on hover: three filled red
+   squares down the side competed with the inputs for attention. */
+.identification-answer-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  line-height: 1;
-  font-size: 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa3ae;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.identification-answer-remove:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+.identification-answer-remove:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 1px;
+}
+.identification-answer-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Sits in the input column so it lines up with the fields above it, and reads
+   as the next empty slot rather than a detached action. */
+.ident-add-answer {
+  grid-column: 2 / 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 10px;
+  background: transparent;
+  color: #5b6573;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.ident-add-answer:hover {
+  border-color: var(--q-accent, #1a6b35);
+  color: var(--q-accent, #1a6b35);
+  background: rgba(26, 107, 53, 0.05);
+}
+.ident-add-answer:focus-visible {
+  outline: 2px solid var(--q-accent, #1a6b35);
+  outline-offset: 2px;
+}
+
+[data-theme="dark"] .ident-answer-num { color: #7c8794; }
+
+[data-theme="dark"] .identification-answer-remove { color: #8b95a1; }
+[data-theme="dark"] .identification-answer-remove:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.14);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #f87171;
+}
+
+[data-theme="dark"] .ident-add-answer {
+  border-color: var(--border, #334155);
+  color: var(--text-muted, #94a3b8);
+}
+[data-theme="dark"] .ident-add-answer:hover {
+  border-color: #4ade80;
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+@media (max-width: 640px) {
+  .ident-answer-list { grid-template-columns: 20px minmax(0, 1fr) 30px; gap: 6px; }
 }
 .examv2-question-wrap .id-input,
 .examv2-question-wrap .essay-textarea {
@@ -13855,26 +14690,209 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .topbar-sound-btn-label {
   white-space: nowrap;
 }
-.notif-dropdown { position: absolute; top: 50px; right: 0; width: 330px; max-height: 420px; overflow-y: auto; background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.22); z-index: 9000; }
-.notif-dropdown.hidden { display: none; }
-.notif-dropdown-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid var(--border, #e5e7eb); font-weight: 800; font-size: 13px; color: var(--text, #1a1a1a); position: sticky; top: 0; background: var(--surface, #fff); }
-.notif-dropdown-head button { border: none; background: none; color: var(--primary, #0f2d1a); font-size: 12px; font-weight: 700; cursor: pointer; }
+/* ── Notifications dropdown ───────────────────────
+   Opens with a short fade-and-rise. It cannot use .hidden/display:none, which
+   is not animatable — visibility is what keeps it out of the tab order while
+   closed. */
+.notif-dropdown {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: 352px;
+  max-height: 440px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  z-index: 9000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.985);
+  transform-origin: top right;
+  transition:
+    opacity 0.16s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0.18s;
+}
+.notif-dropdown.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.16s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+
+.notif-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface, #fff);
+}
+.notif-dropdown-title {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text, #1a1a1a);
+}
+.notif-dropdown-head button {
+  border: none;
+  background: none;
+  color: var(--primary, #0f2d1a);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.notif-dropdown-head button:hover { background: rgba(15, 45, 26, 0.08); }
+.notif-dropdown-head button:focus-visible {
+  outline: 2px solid var(--primary, #0f2d1a);
+  outline-offset: 1px;
+}
+
 .notif-dropdown-list { display: flex; flex-direction: column; }
-.notif-empty { padding: 26px 16px; text-align: center; color: var(--text-muted, #9ca3af); font-size: 13px; }
-.notif-item { text-align: left; border: none; background: none; padding: 11px 15px; border-bottom: 1px solid var(--border, #f1f3f1); cursor: pointer; display: flex; flex-direction: column; gap: 3px; transition: background .12s ease; }
+.notif-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted, #9ca3af);
+  font-size: 13px;
+}
+
+/* A rail column and a content column, so the tag, name and body all share one
+   left edge instead of each row starting at a different place. */
+.notif-item {
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr);
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  font-family: inherit;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border, #f1f3f1);
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+.notif-item:last-child { border-bottom: none; }
 .notif-item:hover { background: var(--surface-2, #f6f8f6); }
-.notif-item.unseen { background: rgba(15,45,26,0.05); }
-.notif-item.unseen:hover { background: rgba(15,45,26,0.09); }
-.notif-item-top { display: flex; align-items: center; justify-content: space-between; }
-.notif-tag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--primary, #0f2d1a); background: rgba(15,45,26,0.1); padding: 2px 7px; border-radius: 999px; }
-.notif-tag-violation { color: #b91c1c; background: rgba(239,68,68,0.14); }
-.notif-tag-report { color: #b45309; background: rgba(217,119,6,0.14); }
-.notif-tag-share { color: #1d4ed8; background: rgba(59,130,246,0.14); }
-.notif-tag-share-success { color: #15803d; background: rgba(34,197,94,0.16); }
-.notif-tag-share-danger { color: #b91c1c; background: rgba(239,68,68,0.14); }
-.notif-item-time { font-size: 12px; color: var(--text-muted, #9ca3af); }
-.notif-item-who { font-size: 13px; font-weight: 700; color: var(--text, #1a1a1a); }
-.notif-item-body { font-size: 12px; color: var(--text-muted, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif-item:focus-visible {
+  outline: 2px solid var(--primary, #0f2d1a);
+  outline-offset: -2px;
+}
+
+.notif-item-rail {
+  align-self: stretch;
+  border-radius: 999px;
+  background: var(--notif-accent, #9ca3af);
+}
+.notif-kind-message   { --notif-accent: #16a34a; }
+.notif-kind-report    { --notif-accent: #d97706; }
+.notif-kind-violation { --notif-accent: #dc2626; }
+.notif-kind-share     { --notif-accent: #2563eb; }
+.notif-kind-success   { --notif-accent: #16a34a; }
+.notif-kind-danger    { --notif-accent: #dc2626; }
+
+.notif-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.notif-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Unread is a tinted rail plus a dot, not a full-row wash: the old tint was
+   easy to miss against the panel and made the row look selected. */
+.notif-item.unseen { background: rgba(15, 45, 26, 0.045); }
+.notif-item.unseen:hover { background: rgba(15, 45, 26, 0.08); }
+.notif-item.unseen .notif-item-who::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 7px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--notif-accent, #16a34a);
+}
+
+.notif-tag {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--primary, #0f2d1a);
+  background: rgba(15, 45, 26, 0.1);
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.notif-tag-violation { color: #b91c1c; background: rgba(239, 68, 68, 0.14); }
+.notif-tag-report { color: #b45309; background: rgba(217, 119, 6, 0.14); }
+.notif-tag-share { color: #1d4ed8; background: rgba(59, 130, 246, 0.14); }
+.notif-tag-share-success { color: #15803d; background: rgba(34, 197, 94, 0.16); }
+.notif-tag-share-danger { color: #b91c1c; background: rgba(239, 68, 68, 0.14); }
+
+.notif-item-time {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, #9ca3af);
+  white-space: nowrap;
+}
+.notif-item-who {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #1a1a1a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Two lines rather than one hard-truncated line: most of these messages were
+   being cut before they said anything useful. */
+.notif-item-body {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted, #6b7280);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .notif-item:hover { background: rgba(255, 255, 255, 0.04); }
+[data-theme="dark"] .notif-item.unseen { background: rgba(34, 197, 94, 0.07); }
+[data-theme="dark"] .notif-item.unseen:hover { background: rgba(34, 197, 94, 0.11); }
+[data-theme="dark"] .notif-dropdown-head button { color: #4ade80; }
+[data-theme="dark"] .notif-dropdown-head button:hover { background: rgba(74, 222, 128, 0.12); }
+[data-theme="dark"] .notif-tag { color: #86efac; background: rgba(34, 197, 94, 0.16); }
+/* Restate the variants for dark. The base rule above is two classes deep, so
+   without these it would repaint every tag green and the list would lose the
+   type colour it is meant to be scanned by. */
+[data-theme="dark"] .notif-tag-violation { color: #fca5a5; background: rgba(239, 68, 68, 0.18); }
+[data-theme="dark"] .notif-tag-report { color: #fcd34d; background: rgba(217, 119, 6, 0.2); }
+[data-theme="dark"] .notif-tag-share { color: #93c5fd; background: rgba(59, 130, 246, 0.2); }
+[data-theme="dark"] .notif-tag-share-success { color: #86efac; background: rgba(34, 197, 94, 0.18); }
+[data-theme="dark"] .notif-tag-share-danger { color: #fca5a5; background: rgba(239, 68, 68, 0.18); }
+
+@media (prefers-reduced-motion: reduce) {
+  .notif-dropdown, .notif-dropdown.is-open { transition: opacity 0.01s, visibility 0s; transform: none; }
+}
 [data-theme="dark"] .topbar-bell:hover { background: var(--surface-2) !important; }
 [data-theme="dark"] .topbar-sound-btn {
   background: var(--surface, #111827) !important;
@@ -16528,8 +17546,11 @@ body {
 .btn-outline:hover {
   color: var(--on-accent);
 }
-[data-theme="dark"] .btn-primary,
-[data-theme="dark"] .btn-success,
+/* Dark mode fills .btn-primary and .btn-success with a bright green
+   (#4ade80 -> #22c55e) and sets #062814 text for it. White on those measures
+   1.74:1 and 2.28:1 — far under the 4.5:1 floor — so they are deliberately
+   left out here and keep their own dark ink. Danger and warning keep solid
+   dark fills where white is still the readable choice. */
 [data-theme="dark"] .btn-danger,
 [data-theme="dark"] .btn-warning {
   color: var(--on-accent) !important;

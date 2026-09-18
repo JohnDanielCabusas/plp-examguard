@@ -74,6 +74,9 @@ alter table if exists public.superadmin alter column email drop not null;
 alter table if exists public.sessions add column if not exists essay_grades jsonb not null default '{}'::jsonb;
 alter table if exists public.sessions add column if not exists ai_detections jsonb not null default '{}'::jsonb;
 alter table if exists public.sessions add column if not exists camera_snapshots jsonb not null default '[]'::jsonb;
+-- Prior attempts kept verbatim when a retake is authorised, so granting a
+-- retake never destroys the original answers, score, warnings or evidence.
+alter table if exists public.sessions add column if not exists attempt_history jsonb not null default '[]'::jsonb;
 alter table if exists public.sessions add column if not exists submit_reason text;
 alter table if exists public.sessions drop constraint if exists sessions_submit_reason_check;
 alter table if exists public.sessions add constraint sessions_submit_reason_check

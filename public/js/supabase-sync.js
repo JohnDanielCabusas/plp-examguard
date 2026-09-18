@@ -16,6 +16,7 @@ const SupabaseSync = {
   _sessionEssayGradesSupported: true,
   _sessionAiDetectionsSupported: true,
   _sessionCameraSnapshotsSupported: true,
+  _sessionAttemptHistorySupported: true,
   _examPoliciesSupported: true,
   _examCameraExemptSupported: true,
   _examObjectMonitoringSupported: true,
@@ -596,6 +597,13 @@ const SupabaseSync = {
             if (!error) break;
             continue;
           }
+          if (this._isMissingSessionAttemptHistoryError(table, error) && this._sessionAttemptHistorySupported !== false) {
+            this._sessionAttemptHistorySupported = false;
+            rows = rows.map(row => this._withoutSessionAttemptHistory(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
           if (this._isMissingExamCameraExemptError(table, error) && this._examCameraExemptSupported !== false) {
             this._examCameraExemptSupported = false;
             rows = rows.map(row => this._withoutExamCameraExempt(row));
@@ -1025,6 +1033,13 @@ const SupabaseSync = {
             if (!retryError) return;
             continue;
           }
+          if (this._isMissingSessionAttemptHistoryError(table, retryError) && this._sessionAttemptHistorySupported !== false) {
+            this._sessionAttemptHistorySupported = false;
+            retryRow = this._withoutSessionAttemptHistory(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           if (this._isMissingExamCameraExemptError(table, retryError) && this._examCameraExemptSupported !== false) {
             this._examCameraExemptSupported = false;
             retryRow = this._withoutExamCameraExempt(retryRow);
@@ -1272,6 +1287,9 @@ const SupabaseSync = {
     }
     if (this._sessionAiDetectionsSupported !== false) {
       row.ai_detections = d.aiDetections || {};
+    }
+    if (this._sessionAttemptHistorySupported !== false) {
+      row.attempt_history = Array.isArray(d.attemptHistory) ? d.attemptHistory : [];
     }
     return row;
   },
@@ -1522,6 +1540,7 @@ const SupabaseSync = {
       essayGrades,
       aiDetections: r.ai_detections || {},
       cameraSnapshots: Array.isArray(r.camera_snapshots) ? r.camera_snapshots : [],
+      attemptHistory: Array.isArray(r.attempt_history) ? r.attempt_history : [],
       ownerAdminId: r.owner_admin_id || '',
       createdAt: r.created_at || null,
     };
@@ -1586,6 +1605,17 @@ const SupabaseSync = {
   _withoutSessionAiDetections(row) {
     const next = { ...row };
     delete next.ai_detections;
+    return next;
+  },
+
+  _isMissingSessionAttemptHistoryError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'sessions' && message.includes(`Could not find the 'attempt_history' column`);
+  },
+
+  _withoutSessionAttemptHistory(row) {
+    const next = { ...row };
+    delete next.attempt_history;
     return next;
   },
 
