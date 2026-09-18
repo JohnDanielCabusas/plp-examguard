@@ -970,7 +970,7 @@ export default function AdminPage() {
                               </button>
                             </span>
                           </th>
-                          <th scope="col" style={{ textAlign: 'center' }}>Percentage</th>
+                          <th scope="col" style={{ textAlign: 'center' }}>Warnings</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Time</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Submitted</th>
                           <th scope="col" style={{ textAlign: 'center' }}>Actions</th>

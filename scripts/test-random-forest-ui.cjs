@@ -11,7 +11,7 @@ const statisticsBlock = admin.slice(statsStart, reportsStart);
 
 assert.ok(statsStart >= 0 && reportsStart > statsStart, 'Statistics renderer must be present.');
 assert.match(statisticsBlock, /Suspicion Probability/);
-assert.match(statisticsBlock, />Student results</);
+assert.match(statisticsBlock, />Flagged student results</);
 assert.match(statisticsBlock, /Suspicion probability/);
 assert.match(statisticsBlock, /Analysis coverage/);
 assert.match(statisticsBlock, /Needs monitoring/);
@@ -44,5 +44,7 @@ assert.match(css, /\.stats-analysis-card/);
 assert.match(css, /\.stats-overview-icon/);
 assert.match(css, /\.stats-card-kicker/);
 assert.match(css, /@media \(max-width: 520px\)/);
+assert.doesNotMatch(admin, /nav-msg-badge|updateMonitoringNavBadge/);
+assert.doesNotMatch(css, /nav-msg-badge/);
 
 console.log('Random Forest per-student Statistics-card contract tests passed.');

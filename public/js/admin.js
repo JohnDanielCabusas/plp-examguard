@@ -1378,7 +1378,7 @@ document.addEventListener('dbReady', function init() {
   requestAnimationFrame(() => {
     showSection(readAdminSectionFromUrl());
     startExamDeadlineClock();
-    refreshMessageNotifications();       // seed backlog + set the Monitoring badge
+    refreshMessageNotifications();       // seed the message backlog
     startMessageNotificationPolling();   // catch new messages even if realtime misses
     refreshExamShareNotifications();
     startExamShareNotificationPolling();
@@ -1627,22 +1627,10 @@ document.addEventListener('acsDataChanged', (e) => {
 // ── Professor notifications for incoming student messages ──────────────
 // A student's chat message / problem report should surface to the professor
 // no matter which section they're on. We toast for messages that arrive AFTER
-// login (never the pre-existing backlog) and keep a live unread count on the
-// Monitoring nav item. Fires off the same realtime 'acsDataChanged' push.
+// login (never the pre-existing backlog). Fires off the same realtime
+// 'acsDataChanged' push.
 const _notifiedMsgIds = new Set();
 let _msgNotifySeeded = false; // once true, any NEW unread student message pops
-
-function updateMonitoringNavBadge(count) {
-  const nav = document.getElementById('nav-monitoring');
-  if (!nav) return;
-  let badge = nav.querySelector('.nav-msg-badge');
-  if (count > 0) {
-    if (!badge) { badge = document.createElement('span'); badge.className = 'nav-msg-badge'; nav.appendChild(badge); }
-    badge.textContent = count > 9 ? '9+' : String(count);
-  } else if (badge) {
-    badge.remove();
-  }
-}
 
 // ── Notification bell (topbar) ─────────────────────────────────────────
 // A running log of notifications, with an unread badge. Opening the dropdown
@@ -1852,7 +1840,6 @@ function notifyForStudentMessages(list) {
 function refreshMessageNotifications() {
   if (typeof DB?.getMessages !== 'function') return;
   const unread = DB.getMessages().filter(m => m.senderRole === 'student' && !m.readAt);
-  updateMonitoringNavBadge(unread.length);
   if (!_msgNotifySeeded) {
     // First pass after login: remember the existing backlog so we only pop
     // genuinely NEW messages afterward. Log them to the bell as already-seen
@@ -8590,6 +8577,12 @@ let _profChatCtx = null; // { examId, studentId, sessionId, studentName }
 let _profChatPollTimer = null;
 const _profCameraTogglePending = new Set();
 
+document.addEventListener('acsDataChanged', event => {
+  if (event.detail?.table !== 'exams' || !_profChatCtx) return;
+  renderProfCameraRow();
+  renderProfChatMessages();
+});
+
 function refreshProfChatFromSync() {
   const adminId = (typeof Auth !== 'undefined' && Auth.getAdminSession) ? Auth.getAdminSession()?.id : null;
   if (!adminId || !_profChatCtx || !window.SupabaseSync?._pullMessages) return Promise.resolve();
@@ -8612,6 +8605,7 @@ function refreshProfCameraFromSync() {
     .then(() => {
       if (!_profChatCtx || `${_profChatCtx.examId}:${_profChatCtx.studentId}` !== activeKey) return;
       renderProfCameraRow();
+      renderProfChatMessages();
     })
     .catch(() => {});
 }
@@ -8798,15 +8792,36 @@ function getProfChatWebcamDecisionForRequest(messages, requestMessage) {
   return decisions[decisions.length - 1] || null;
 }
 
-function respondToWebcamRequest(requestMessageId, decision) {
+async function respondToWebcamRequest(requestMessageId, decision) {
   if (!_profChatCtx || !['allow', 'deny'].includes(decision)) return;
   const { examId, studentId, sessionId, studentName } = _profChatCtx;
+  if (!DB.getExam(examId)?.requireCamera) {
+    showToast('This exam does not require a webcam.', 'info');
+    renderProfChatMessages();
+    return;
+  }
   const messages = DB.getMessagesForExamStudent(examId, studentId);
   const requestMessage = messages.find(message => message.id === requestMessageId);
   if (!isProfChatWebcamRequestMessage(requestMessage)) return;
   if (getProfChatWebcamDecisionForRequest(messages, requestMessage)) {
     showToast('This webcam request has already been resolved.', 'info');
     return;
+  }
+
+  if (decision === 'deny') {
+    const confirmed = await showConfirm({
+      title: 'Deny webcam request?',
+      message: `Deny ${studentName}'s request to continue without webcam monitoring? They will still need a webcam to continue the exam.`,
+      confirmLabel: 'Deny request',
+      confirmClass: 'btn btn-danger',
+    });
+    if (!confirmed) return;
+    if (!_profChatCtx || _profChatCtx.examId !== examId || _profChatCtx.studentId !== studentId) return;
+    if (!DB.getExam(examId)?.requireCamera) return;
+    const currentMessages = DB.getMessagesForExamStudent(examId, studentId);
+    const currentRequest = currentMessages.find(message => message.id === requestMessageId);
+    if (!isProfChatWebcamRequestMessage(currentRequest)
+      || getProfChatWebcamDecisionForRequest(currentMessages, currentRequest)) return;
   }
 
   DB.setStudentCameraExempt(examId, studentId, decision === 'allow');
@@ -8840,6 +8855,7 @@ function renderProfChatMessages() {
   if (!body || !_profChatCtx) return;
   const { examId, studentId } = _profChatCtx;
   const messages = DB.getMessagesForExamStudent(examId, studentId);
+  const webcamRequired = !!DB.getExam(examId)?.requireCamera;
   if (!messages.length) {
     body.innerHTML = `<div class="prof-chat-empty">No messages yet from this student.</div>`;
     return;
@@ -8864,7 +8880,7 @@ function renderProfChatMessages() {
     if (m.type === 'report') {
       const decision = getProfChatWebcamDecisionForRequest(messages, m);
       const webcamRequest = isProfChatWebcamRequestMessage(m);
-      const webcamRequestActions = isProfChatWebcamRequestMessage(m)
+      const webcamRequestActions = webcamRequest && webcamRequired
         ? (decision
           ? `<div class="prof-chat-report-status is-${decision.reportCategory}">
               <span class="prof-chat-report-status-icon">${decision.reportCategory === 'allow'
@@ -9561,6 +9577,15 @@ function formatRandomForestUnavailableReason(reason) {
 
 function renderRandomForestStudentRows(predictions) {
   const rows = (Array.isArray(predictions) ? predictions : [])
+    .filter(prediction => {
+      const meta = getRandomForestResultMeta(prediction);
+      const probability = Number(prediction?.suspiciousProbability);
+      return ['monitoring', 'suspicious'].includes(meta.tone)
+        && prediction?.suspiciousProbability !== null
+        && prediction?.suspiciousProbability !== undefined
+        && Number.isFinite(probability)
+        && probability > 0;
+    })
     .slice()
     .sort((a, b) => {
       const metaA = getRandomForestResultMeta(a);
@@ -9571,7 +9596,7 @@ function renderRandomForestStudentRows(predictions) {
       return String(a?.studentName || a?.studentId || '').localeCompare(String(b?.studentName || b?.studentId || ''), undefined, { sensitivity: 'base' });
     });
 
-  if (!rows.length) return '<div class="rf-student-empty">No student predictions are available.</div>';
+  if (!rows.length) return '<div class="rf-student-empty">No students have a flagged suspicion probability.</div>';
 
   return rows.map(prediction => {
     const meta = getRandomForestResultMeta(prediction);
@@ -9664,7 +9689,7 @@ function renderRandomForestPredictionState(examId, payload) {
     <div class="rf-students">
       <div class="rf-students-heading">
         <div>
-          <h4>Student results</h4>
+          <h4>Flagged student results</h4>
           <span>Sorted by highest probability</span>
         </div>
       </div>
@@ -10081,7 +10106,7 @@ function renderReportAbsentRows(absentStudents) {
     <td data-label="Student ID">${escHtml(student.studentId)}</td>
     <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(student))}</td>
     <td data-label="Score"><span class="text-muted">&mdash;</span></td>
-    <td data-label="Percentage"><span class="text-muted">&mdash;</span></td>
+    <td data-label="Warnings"><span class="text-muted">&mdash;</span></td>
     <td data-label="Time" class="report-session-cell"><span class="report-session-empty">-</span></td>
     <td data-label="Submitted" class="report-status-cell"><span class="badge badge-danger">Absent</span></td>
     <td data-label="Actions"><span class="report-absent-hint">Marked absent &mdash; exam not taken</span></td>
@@ -10122,7 +10147,7 @@ async function copyReportScores() {
 
   // Read the raw earned-score value attached to each currently rendered Score
   // cell. This guarantees the clipboard follows the exact visible row order
-  // without copying names, totals, percentages, rank, or any other column.
+  // without copying names, totals, warnings, rank, or any other column.
   const scoreCells = [...document.querySelectorAll('#report-tbody td[data-report-score]')];
   if (!scoreCells.length) {
     showToast('There are no submitted scores to copy yet.', 'info');
@@ -10218,7 +10243,7 @@ function renderReportTable() {
   }
 
   document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
-    const pct = s.maxScore ? Math.round((s.score / s.maxScore) * 100) : 0;
+    const warningCount = getEffectiveSessionWarningCount(s);
     const submissionStatus = getSubmissionStatusBadge(s);
     const sessionTimeHtml = renderReportSessionTime(s);
     return `<tr>
@@ -10227,12 +10252,9 @@ function renderReportTable() {
       <td data-label="Student ID">${escHtml(s.studentId)}</td>
       <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(s))}</td>
       <td data-label="Score" data-report-score="${s.score !== null && s.score !== undefined ? escAttr(String(s.score)) : ''}">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span>${s.score !== null ? s.score : '—'}/${s.maxScore}</span>
-          <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${pct}%;"></div></div>
-        </div>
+        <span>${s.score != null ? s.score : '—'}/${s.maxScore}</span>
       </td>
-      <td data-label="Percentage">${pct}%</td>
+      <td data-label="Warnings">${Number.isFinite(warningCount) ? warningCount : 0}</td>
       <td data-label="Time" class="report-session-cell">${sessionTimeHtml}</td>
       <td data-label="Submitted" class="report-status-cell">${submissionStatus}</td>
       <td data-label="Actions">

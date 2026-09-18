@@ -3447,8 +3447,35 @@ const ExamApp = {
     { key: 'other',    label: 'Other issue',       body: "I'm having a technical problem during the exam." },
   ],
 
+  _webcamReportAvailable() {
+    const exam = this.exam?.id ? (DB.getExam?.(this.exam.id) || this.exam) : null;
+    return !!exam?.requireCamera
+      && !(this.session && DB.isStudentCameraExempt(this.exam.id, this.session.studentId));
+  },
+
+  _renderChatReportOptions() {
+    const reportsWrap = document.getElementById('exam-chat-reports');
+    if (!reportsWrap) return;
+    if (!this._webcamReportAvailable() && this._pendingReport?.key === 'webcam') {
+      const input = document.getElementById('exam-chat-input');
+      if (input?.value === this._pendingReport.body) input.value = '';
+      this._pendingReport = null;
+    }
+    reportsWrap.innerHTML = `<div class="exam-chat-reports-label">Report a problem</div>`
+      + this._CHAT_REPORTS
+        .filter(report => report.key !== 'webcam' || this._webcamReportAvailable())
+        .map(report => `<button type="button" class="exam-chat-report-btn examv2-interactive" data-exam-control="true" data-report="${report.key}">${_esc(report.label)}</button>`)
+        .join('');
+    reportsWrap.querySelectorAll('.exam-chat-report-btn').forEach(button => {
+      button.onclick = () => this._stageReport(button.dataset.report);
+    });
+  },
+
   _ensureChatUI() {
-    if (document.getElementById('exam-chat-fab')) return;
+    if (document.getElementById('exam-chat-fab')) {
+      this._renderChatReportOptions();
+      return;
+    }
 
     const fab = document.createElement('button');
     fab.id = 'exam-chat-fab';
@@ -3497,14 +3524,7 @@ const ExamApp = {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._sendChatMessage(); }
     });
 
-    const reportsWrap = panel.querySelector('#exam-chat-reports');
-    reportsWrap.innerHTML = `<div class="exam-chat-reports-label">Report a problem</div>`
-      + this._CHAT_REPORTS.map(r =>
-          `<button type="button" class="exam-chat-report-btn examv2-interactive" data-exam-control="true" data-report="${r.key}">${_esc(r.label)}</button>`
-        ).join('');
-    reportsWrap.querySelectorAll('.exam-chat-report-btn').forEach(btn => {
-      btn.onclick = () => this._stageReport(btn.dataset.report);
-    });
+    this._renderChatReportOptions();
   },
 
   _toggleChat(force) {
@@ -3519,6 +3539,7 @@ const ExamApp = {
     const inner = fab.querySelector('.exam-chat-fab-inner');
     if (inner) { fab.classList.remove('bounce'); void fab.offsetWidth; fab.classList.add('bounce'); }
     if (open) {
+      this._renderChatReportOptions();
       this._rememberTrustedInteraction(1500);
       this._renderChatMessages();
       this._refreshChatMessagesFromSync();
@@ -3580,6 +3601,7 @@ const ExamApp = {
   },
 
   _handleIncomingWebcamDecision() {
+    if (!this._webcamReportAvailable()) return;
     const messages = this._chatMessages();
     const latestRequest = [...messages].reverse().find(message => this._isWebcamDeclineRequestMessage(message));
     if (!latestRequest) return;
@@ -3692,6 +3714,13 @@ const ExamApp = {
     // send it as a categorised report; otherwise it's a plain message.
     const pending = this._pendingReport;
     const asReport = pending && pending.body === text;
+    if (asReport && pending.key === 'webcam' && !this._webcamReportAvailable()) {
+      this._pendingReport = null;
+      input.value = '';
+      this._renderChatReportOptions();
+      this._showToast('Webcam reporting is unavailable because this exam does not require a webcam.', 'info');
+      return;
+    }
     DB.addMessage({
       ownerAdminId: this.exam.ownerAdminId || null,
       professorId: this.exam.ownerAdminId || null,
@@ -3714,6 +3743,7 @@ const ExamApp = {
   // Clicking a "Report a problem" chip DOES NOT send — it drops the report text
   // into the composer so the student can review/edit, then send it themselves.
   _stageReport(key) {
+    if (key === 'webcam' && !this._webcamReportAvailable()) return;
     const report = this._CHAT_REPORTS.find(r => r.key === key);
     const input = document.getElementById('exam-chat-input');
     if (!report || !input) return;
@@ -3752,6 +3782,7 @@ const ExamApp = {
     if (!this.exam || !this.session) return;
     const liveExam = DB.getExam(this.exam.id);
     if (liveExam) this.exam = liveExam;
+    this._renderChatReportOptions();
     const liveSession = this._getLiveSession();
     if (this.exam.status !== 'closed' || liveSession?.submitted) return;
 
@@ -4157,6 +4188,14 @@ const ExamApp = {
   },
 
   sendWebcamReport() {
+    if (!this._webcamReportAvailable()) {
+      const staleModal = document.getElementById('webcam-decline-reason-modal');
+      if (staleModal && !staleModal.classList.contains('hidden')) unlockBodyScroll();
+      staleModal?.classList.add('hidden');
+      this._hideWebcamWaitOverlay();
+      if (!this._examRuntimeStarted) this._continueExamLaunch();
+      return;
+    }
     const textarea = document.getElementById('webcam-decline-reason-input');
     const text = (textarea?.value || '').trim();
     if (!text) {

@@ -93,12 +93,22 @@ try {
     || !states.studentRows?.[0]?.includes('Risk Student')
     || !states.studentRows?.[0]?.includes('91.2%')
     || !states.studentRows?.some(row => row.includes('Review Student') && row.includes('Needs monitoring'))
-    || !states.studentRows?.some(row => row.includes('Normal Student') && row.includes('neutral baseline values'))
-    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Unavailable'))
-    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('Not calculated'))
-    || !states.studentRows?.some(row => row.includes('Legacy Student') && row.includes('exam start or end record is missing'))
+    || states.studentRows?.length !== 2
+    || states.studentRows?.some(row => /Normal Student|Pending Student|Legacy Student/.test(row))
   ) {
     throw new Error(`Unexpected populated Random Forest card: ${JSON.stringify(states)}`);
+  }
+
+  const noFlaggedStudents = await page.evaluate(() => {
+    renderRandomForestPredictionState('exam-a', {
+      success: true,
+      summary: { totalSessions: 1, analyzedSessions: 1, normalCount: 1 },
+      predictions: [{ studentName: 'Normal Student', status: 'completed', riskLevel: 'normal', suspiciousProbability: 0 }],
+    });
+    return document.querySelector('.rf-student-empty')?.textContent;
+  });
+  if (!noFlaggedStudents?.includes('No students have a flagged suspicion probability')) {
+    throw new Error(`Normal-only result should leave the student table empty: ${noFlaggedStudents}`);
   }
 
   await page.setViewportSize({ width: 360, height: 740 });
@@ -325,7 +335,7 @@ try {
     !statisticsThemeState.wrapper
     || statisticsThemeState.overviewCount !== 4
     || statisticsThemeState.analysisCount !== 2
-    || statisticsThemeState.overviewRadius !== '18px'
+    || statisticsThemeState.overviewRadius !== '14px'
     || statisticsThemeState.analysisRadius !== '18px'
     || statisticsThemeState.rfRadius !== '14px'
     || !statisticsThemeState.headings.includes('Score Distribution')

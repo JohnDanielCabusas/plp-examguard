@@ -17,10 +17,14 @@ const {
 
 const MAX_REFRESH_SESSIONS = 250;
 const MAX_REFRESH_CONCURRENCY = 4;
-const RULE_LOG_POLICY_VERSION = 'rule-logs-v2';
+const RULE_LOG_POLICY_VERSION = 'rule-logs-v3';
 
-function getPredictionModelVersion(metadata) {
-  return `${metadata.model_version}+${RULE_LOG_POLICY_VERSION}`;
+function getPredictionProfile(cameraEnabled) {
+  return cameraEnabled === true ? 'full' : 'browser';
+}
+
+function getPredictionModelVersion(metadata, profile) {
+  return `${metadata.model_version}+${RULE_LOG_POLICY_VERSION}-${profile}`;
 }
 
 function badRequest(res, message) {
@@ -70,6 +74,7 @@ async function loadOwnedSession(professorId, sessionId) {
   const { rows } = await query(
     `select s.*,
             e.subject_id as course_id,
+            e.require_camera as exam_require_camera,
             coalesce(s.owner_admin_id, e.owner_admin_id) as resolved_owner_admin_id
        from public.sessions s
        join public.exams e on e.id = s.exam_id
@@ -152,28 +157,32 @@ async function loadSessionViolationEvents(session) {
 }
 
 async function generateSessionPrediction(session) {
-  const metadata = getModelMetadata();
-  const modelVersion = getPredictionModelVersion(metadata);
+  const cameraEnabled = session.exam_require_camera === true;
+  const profile = getPredictionProfile(cameraEnabled);
+  const metadata = getModelMetadata(profile);
+  const modelVersion = getPredictionModelVersion(metadata, profile);
   try {
     const recordedEvents = await loadSessionViolationEvents(session);
     const { features, violations, violationCount } = aggregateViolationFeatureSnapshot(
       session,
       recordedEvents,
       metadata.missing_feature_defaults,
+      { cameraEnabled },
     );
     // No rule violation means no suspicion. In particular, timeout, elapsed
     // duration, normal browser start/end records, consent, and calibration do
     // not enter the model or raise the displayed probability.
     const result = violationCount > 0
-      ? await predict(features)
+      ? await predict(features, profile)
       : {
           suspiciousProbability: 0,
           riskLevel: 'normal',
           requiresProfessorReview: false,
         };
+    const scopeNote = cameraEnabled ? '' : ' Webcam behavior was excluded because Motion Detection was off.';
     const dataNote = violationCount > 0
-      ? `Based on ${violationCount} recorded rule violation${violationCount === 1 ? '' : 's'}; session timing and pre-exam checks were excluded.`
-      : 'No recorded rule violations. Session timing and pre-exam checks were excluded.';
+      ? `Based on ${violationCount} recorded rule violation${violationCount === 1 ? '' : 's'}; session timing and pre-exam checks were excluded.${scopeNote}`
+      : `No recorded rule violations. Session timing and pre-exam checks were excluded.${scopeNote}`;
     return savePredictionRecord(session, modelVersion, {
       ...result,
       status: 'completed',
@@ -201,7 +210,7 @@ async function generateSessionPrediction(session) {
 
 async function getOwnedExam(professorId, examId) {
   const { rows } = await query(
-    `select e.id, e.subject_id as course_id, e.owner_admin_id
+    `select e.id, e.subject_id as course_id, e.owner_admin_id, e.require_camera
        from public.exams e
       where e.id = $1 and e.owner_admin_id = $2
       limit 1`,
@@ -211,8 +220,9 @@ async function getOwnedExam(professorId, examId) {
 }
 
 async function buildStatisticsSummary(professorId, exam) {
-  const metadata = getModelMetadata();
-  const modelVersion = getPredictionModelVersion(metadata);
+  const profile = getPredictionProfile(exam.require_camera);
+  const metadata = getModelMetadata(profile);
+  const modelVersion = getPredictionModelVersion(metadata, profile);
   const { rows } = await query(
     `select count(*)::integer as total_sessions,
             count(*) filter (where p.status = 'completed')::integer as analyzed_sessions,
@@ -320,11 +330,13 @@ async function handleRefresh(req, res, url) {
   if (!examId) return badRequest(res, 'Exam ID is required.');
   const exam = await getOwnedExam(admin.id, examId);
   if (!exam) return jsonResponse(res, 404, { success: false, message: 'Exam not found.' });
-  const metadata = getModelMetadata();
-  const modelVersion = getPredictionModelVersion(metadata);
+  const profile = getPredictionProfile(exam.require_camera);
+  const metadata = getModelMetadata(profile);
+  const modelVersion = getPredictionModelVersion(metadata, profile);
   const { rows } = await query(
     `select s.*,
             e.subject_id as course_id,
+            e.require_camera as exam_require_camera,
             coalesce(s.owner_admin_id, e.owner_admin_id) as resolved_owner_admin_id
        from public.sessions s
        join public.exams e on e.id = s.exam_id

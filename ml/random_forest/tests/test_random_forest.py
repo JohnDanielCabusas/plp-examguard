@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from predictor import RandomForestPredictor, risk_level  # noqa: E402
 from train_random_forest import (  # noqa: E402
+    BROWSER_FEATURE_COLUMNS,
     CLASS_NAMES,
     FEATURE_COLUMNS,
     TARGET_COLUMN,
@@ -52,6 +53,10 @@ class PredictorTests(unittest.TestCase):
             artifact_dir / "random_forest_metadata.json",
         )
         cls.metadata = json.loads((artifact_dir / "random_forest_metadata.json").read_text(encoding="utf-8"))
+        cls.browser_predictor = RandomForestPredictor(
+            artifact_dir / "random_forest_browser_model.joblib",
+            artifact_dir / "random_forest_browser_metadata.json",
+        )
 
     def valid_features(self):
         return {column: 0.0 for column in FEATURE_COLUMNS}
@@ -87,6 +92,21 @@ class PredictorTests(unittest.TestCase):
             with self.subTest(features=features):
                 with self.assertRaises(ValueError):
                     self.predictor.predict(features)
+
+    def test_browser_model_uses_only_recorded_browser_violation_features(self):
+        self.assertEqual(self.browser_predictor.feature_columns, BROWSER_FEATURE_COLUMNS)
+        self.assertTrue(all(not name.startswith("webcam_") for name in BROWSER_FEATURE_COLUMNS))
+        result = self.browser_predictor.predict({
+            "browser_tab_switched_count": 1,
+            "browser_screenshot_count": 0,
+        })
+        self.assertGreater(result["suspiciousProbability"], 0)
+        with self.assertRaises(ValueError):
+            self.browser_predictor.predict({
+                "browser_tab_switched_count": 1,
+                "browser_screenshot_count": 0,
+                "webcam_face_present": 0,
+            })
 
 
 if __name__ == "__main__":

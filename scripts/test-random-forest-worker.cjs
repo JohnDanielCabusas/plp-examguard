@@ -27,10 +27,16 @@ async function run() {
     worker.resolveMetadataPath(),
     path.join(projectRoot, 'ml', 'random_forest', 'artifacts', 'random_forest_metadata.json'),
   );
+  assert.equal(
+    worker.resolveModelPath('browser'),
+    path.join(projectRoot, 'ml', 'random_forest', 'artifacts', 'random_forest_browser_model.joblib'),
+  );
   assert.notEqual(worker.resolvePythonPath(), 'undefined');
 
   const metadata = worker.getModelMetadata();
   assert.equal(metadata.feature_contract_version, 'rf-session-summary-v1');
+  const browserMetadata = worker.getModelMetadata('browser');
+  assert.deepEqual(browserMetadata.feature_columns, ['browser_tab_switched_count', 'browser_screenshot_count']);
 
   const ordinaryBehavior = {
     browser_start_count: 1,
@@ -79,6 +85,10 @@ async function run() {
   assert.ok(suspiciousPrediction.suspiciousProbability > ordinaryPrediction.suspiciousProbability, 'Webcam anomalies must affect the suspicious percentage.');
   assert.equal(ordinaryPrediction.modelVersion, metadata.model_version);
   assert.ok(ordinaryPrediction.predictedAt);
+
+  const browserOnlyPrediction = await worker.predict({ browser_tab_switched_count: 1, browser_screenshot_count: 0 }, 'browser');
+  assert.ok(browserOnlyPrediction.suspiciousProbability > 0);
+  assert.equal(browserOnlyPrediction.modelVersion, browserMetadata.model_version);
 
   const missingSensorSnapshot = aggregateSessionFeatureSnapshot({
     submitted: true,

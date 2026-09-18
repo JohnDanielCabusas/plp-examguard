@@ -1,0 +1,61 @@
+{
+  "model_name": "tuklas_random_forest_browser",
+  "model_version": "1.0.0-browser",
+  "feature_contract_version": "rf-browser-rule-logs-v1",
+  "target": "suspicion_label",
+  "positive_class": "suspicious",
+  "positive_class_encoded": 1,
+  "feature_columns": [
+    "browser_tab_switched_count",
+    "browser_screenshot_count"
+  ],
+  "class_names": [
+    "non_suspicious",
+    "suspicious"
+  ],
+  "model_classes": [
+    0,
+    1
+  ],
+  "thresholds": {
+    "monitoring": 0.5,
+    "suspicious": 0.8
+  },
+  "missing_feature_policy": "non_suspicious_training_median",
+  "missing_feature_defaults": {
+    "browser_tab_switched_count": 0.0,
+    "browser_screenshot_count": 0.0
+  },
+  "random_seed": 42,
+  "model_parameters": {
+    "n_estimators": 500,
+    "random_state": 42,
+    "class_weight": "balanced",
+    "min_samples_leaf": 2,
+    "n_jobs": -1
+  },
+  "trained_at": "2026-09-18T08:19:12.675107Z",
+  "python_version": "3.11.9",
+  "numpy_version": "2.4.6",
+  "pandas_version": "3.0.5",
+  "joblib_version": "1.5.3",
+  "scikit_learn_version": "1.9.0",
+  "dataset_sha256": "f541b64d8e23b2a2bfab981e85d93215a4a6dd42cbcb4ac7d4121f3594bdaf59",
+  "model_sha256": "46cffcf7bdb054473b0042c55bf8286c32be9d6c746552e2838d64db2c4fc522",
+  "feature_ranges": {
+    "browser_tab_switched_count": {
+      "min": 0.0,
+      "max": 5.0
+    },
+    "browser_screenshot_count": {
+      "min": 0.0,
+      "max": 1.0
+    }
+  },
+  "limitations": [
+    "The source dataset has no anonymized student or session grouping identifier.",
+    "This baseline uses a stratified row-level split and requires grouped validation on consent-based TUKLAS pilot data.",
+    "Predictions are review support and do not establish academic dishonesty.",
+    "Browser-only labels still include camera-based suspicious cases; validate and calibrate on real camera-off exams before use."
+  ]
+}

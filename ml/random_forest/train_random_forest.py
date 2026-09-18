@@ -40,6 +40,7 @@ FEATURE_COLUMNS = [
     "webcam_head_yaw",
     "webcam_head_roll",
 ]
+BROWSER_FEATURE_COLUMNS = ["browser_tab_switched_count", "browser_screenshot_count"]
 TARGET_COLUMN = "suspicion_label"
 CLASS_NAMES = ["non_suspicious", "suspicious"]
 LABEL_ENCODING = {"non_suspicious": 0, "suspicious": 1}
@@ -100,12 +101,14 @@ def validate_training_frame(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     return normalized, before - len(normalized)
 
 
-def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[str, Any]:
+def train(dataset_path: Path, artifact_dir: Path, model_version: str, profile: str = 'full') -> dict[str, Any]:
     if not dataset_path.is_file():
         raise FileNotFoundError(f"Training dataset not found: {dataset_path}")
 
     frame, duplicates_removed = validate_training_frame(pd.read_csv(dataset_path))
-    features = frame[FEATURE_COLUMNS]
+    feature_columns = BROWSER_FEATURE_COLUMNS if profile == 'browser' else FEATURE_COLUMNS
+    artifact_name = 'random_forest_browser' if profile == 'browser' else 'random_forest'
+    features = frame[feature_columns]
     labels = frame[TARGET_COLUMN].map(LABEL_ENCODING).astype(int)
     x_train, x_test, y_train, y_test = train_test_split(
         features,
@@ -149,17 +152,17 @@ def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[st
 
     trained_at = utc_now()
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    model_path = artifact_dir / "random_forest_model.joblib"
+    model_path = artifact_dir / f"{artifact_name}_model.joblib"
     joblib.dump(model, model_path, compress=3)
 
     class_distribution = frame[TARGET_COLUMN].value_counts().to_dict()
     neutral_feature_defaults = (
-        frame.loc[frame[TARGET_COLUMN] == "non_suspicious", FEATURE_COLUMNS]
+        frame.loc[frame[TARGET_COLUMN] == "non_suspicious", feature_columns]
         .median()
         .to_dict()
     )
     metrics = {
-        "model_name": "tuklas_random_forest",
+        "model_name": f"tuklas_{artifact_name}",
         "model_version": model_version,
         "evaluated_at": trained_at,
         "test": {
@@ -179,18 +182,18 @@ def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[st
         "class_distribution": class_distribution,
         "feature_importances": {
             column: float(importance)
-            for column, importance in zip(FEATURE_COLUMNS, model.feature_importances_)
+            for column, importance in zip(feature_columns, model.feature_importances_)
         },
     }
 
     metadata = {
-        "model_name": "tuklas_random_forest",
+        "model_name": f"tuklas_{artifact_name}",
         "model_version": model_version,
-        "feature_contract_version": "rf-session-summary-v1",
+        "feature_contract_version": "rf-browser-rule-logs-v1" if profile == 'browser' else "rf-session-summary-v1",
         "target": TARGET_COLUMN,
         "positive_class": "suspicious",
         "positive_class_encoded": 1,
-        "feature_columns": FEATURE_COLUMNS,
+        "feature_columns": feature_columns,
         "class_names": CLASS_NAMES,
         "model_classes": json_value(model.classes_),
         "thresholds": {"monitoring": 0.50, "suspicious": 0.80},
@@ -211,19 +214,21 @@ def train(dataset_path: Path, artifact_dir: Path, model_version: str) -> dict[st
                 "min": float(frame[column].min()),
                 "max": float(frame[column].max()),
             }
-            for column in FEATURE_COLUMNS
+            for column in feature_columns
         },
         "limitations": [
             "The source dataset has no anonymized student or session grouping identifier.",
             "This baseline uses a stratified row-level split and requires grouped validation on consent-based TUKLAS pilot data.",
-            "Predictions are review support and do not establish academic dishonesty."
-        ],
+            "Predictions are review support and do not establish academic dishonesty.",
+        ] + ([
+            "Browser-only labels still include camera-based suspicious cases; validate and calibrate on real camera-off exams before use."
+        ] if profile == "browser" else []),
     }
 
-    (artifact_dir / "random_forest_metrics.json").write_text(
+    (artifact_dir / f"{artifact_name}_metrics.json").write_text(
         json.dumps(json_value(metrics), indent=2) + "\n", encoding="utf-8"
     )
-    (artifact_dir / "random_forest_metadata.json").write_text(
+    (artifact_dir / f"{artifact_name}_metadata.json").write_text(
         json.dumps(json_value(metadata), indent=2) + "\n", encoding="utf-8"
     )
     return {"metrics": metrics, "metadata": metadata, "model_path": str(model_path)}
@@ -239,10 +244,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--artifacts", type=Path, default=root / "artifacts")
     parser.add_argument("--model-version", default=DEFAULT_MODEL_VERSION)
+    parser.add_argument("--profile", choices=("full", "browser"), default="full")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     arguments = parse_args()
-    result = train(arguments.dataset.resolve(), arguments.artifacts.resolve(), arguments.model_version)
+    result = train(arguments.dataset.resolve(), arguments.artifacts.resolve(), arguments.model_version, arguments.profile)
     print(json.dumps(json_value(result["metrics"]), indent=2))

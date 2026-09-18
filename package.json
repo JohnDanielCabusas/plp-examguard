@@ -16,6 +16,7 @@
     "test:random-forest:browser": "node scripts/smoke-test-random-forest-ui.mjs",
     "train:random-forest": ".\\.venv\\Scripts\\python.exe ml/random_forest/train_random_forest.py",
     "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
+    "test:webcam-requests": "node scripts/smoke-test-webcam-requests.mjs",
     "test:exam-timer": "node scripts/test-exam-timer.cjs",
     "test:identification": "node scripts/test-identification-answers.cjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",

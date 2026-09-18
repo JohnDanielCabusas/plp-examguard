@@ -15,18 +15,26 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, default=root / "artifacts" / "random_forest_model.joblib")
     parser.add_argument("--metadata", type=Path, default=root / "artifacts" / "random_forest_metadata.json")
+    parser.add_argument("--browser-model", type=Path, default=root / "artifacts" / "random_forest_browser_model.joblib")
+    parser.add_argument("--browser-metadata", type=Path, default=root / "artifacts" / "random_forest_browser_metadata.json")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    predictor = RandomForestPredictor(args.model.resolve(), args.metadata.resolve())
+    predictors = {
+        "full": RandomForestPredictor(args.model.resolve(), args.metadata.resolve()),
+        "browser": RandomForestPredictor(args.browser_model.resolve(), args.browser_metadata.resolve()),
+    }
     for line in sys.stdin:
         request_id = None
         try:
             request = json.loads(line)
             request_id = request.get("id")
-            result = predictor.predict(request.get("features"))
+            profile = request.get("profile", "full")
+            if profile not in predictors:
+                raise ValueError("Unknown Random Forest prediction profile.")
+            result = predictors[profile].predict(request.get("features"))
             response = {"id": request_id, "success": True, "prediction": result}
         except Exception as error:  # Worker errors are returned, never printed with feature data.
             response = {"id": request_id, "success": False, "message": str(error)}

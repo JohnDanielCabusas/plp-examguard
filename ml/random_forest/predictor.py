@@ -44,7 +44,7 @@ class RandomForestPredictor:
             raise ValueError("Random Forest model checksum does not match its metadata.")
         self.model = joblib.load(self.model_path)
         self.feature_columns = list(self.metadata.get("feature_columns") or [])
-        if len(self.feature_columns) != 12 or len(set(self.feature_columns)) != 12:
+        if not self.feature_columns or len(set(self.feature_columns)) != len(self.feature_columns):
             raise ValueError("Random Forest metadata has an invalid feature schema.")
         model_feature_names = list(getattr(self.model, "feature_names_in_", []))
         if model_feature_names and model_feature_names != self.feature_columns:

@@ -15,6 +15,8 @@ let violationRows = [{
   warning_count: 1,
   dismissed: false,
 }];
+let examRequiresCamera = true;
+const predictionsRequested = [];
 const executedSql = [];
 const completeSession = {
   id: 'session-a',
@@ -24,6 +26,7 @@ const completeSession = {
   course_id: 'course-a',
   resolved_owner_admin_id: 'professor-a',
   owner_admin_id: 'professor-a',
+  exam_require_camera: true,
   start_time: '2026-09-08T01:00:00.000Z',
   end_time: '2026-09-08T01:20:00.000Z',
   activities: [{ type: 'browser_exam_start' }, { type: 'browser_exam_end' }],
@@ -59,7 +62,7 @@ require.cache[dbPath] = {
       if (/select e\.id, e\.subject_id as course_id/i.test(sql)) {
         return {
           rows: values[1] === 'professor-a'
-            ? [{ id: 'exam-a', course_id: 'course-a', owner_admin_id: 'professor-a' }]
+            ? [{ id: 'exam-a', course_id: 'course-a', owner_admin_id: 'professor-a', require_camera: examRequiresCamera }]
             : [],
         };
       }
@@ -171,13 +174,16 @@ require.cache[workerPath] = {
   loaded: true,
   exports: {
     getModelMetadata: () => ({ model_version: '1.0.0' }),
-    predict: async () => ({
-      suspiciousProbability: 0.73,
-      riskLevel: 'needs_monitoring',
-      requiresProfessorReview: true,
-      modelVersion: '1.0.0',
-      predictedAt: '2026-09-08T02:00:00.000Z',
-    }),
+    predict: async (features, profile) => {
+      predictionsRequested.push({ features, profile });
+      return {
+        suspiciousProbability: 0.73,
+        riskLevel: 'needs_monitoring',
+        requiresProfessorReview: true,
+        modelVersion: '1.0.0',
+        predictedAt: '2026-09-08T02:00:00.000Z',
+      };
+    },
   },
 };
 
@@ -221,7 +227,51 @@ async function run() {
   const limitedInsert = executedSql.filter(entry => /insert into public\.random_forest_predictions/i.test(entry.sql)).at(-1);
   assert.equal(JSON.parse(limitedInsert.values[11]).rule_violation_count, 0);
   assert.match(limitedInsert.values[12], /No recorded rule violations/i);
-  assert.match(limitedInsert.values[10], /rule-logs-v2$/);
+  assert.match(limitedInsert.values[10], /rule-logs-v3-full$/);
+
+  examRequiresCamera = false;
+  completeSession.exam_require_camera = false;
+  violationRows = [{ violation_type: 'no_person', detection_metadata: {}, dismissed: false }];
+  const cameraOnly = responseCapture();
+  await handleRandomForestRoute({
+    method: 'POST',
+    url: '/api/exam-sessions/session-a/random-forest-prediction',
+    headers: { host: 'localhost' },
+  }, cameraOnly);
+  assert.equal(cameraOnly.body.prediction.suspiciousProbability, 0);
+  assert.equal(cameraOnly.body.prediction.riskLevel, 'normal');
+  assert.equal(predictionsRequested.length, 1, 'Camera-only events must not invoke the browser model.');
+  const cameraOnlyInsert = executedSql.filter(entry => /insert into public\.random_forest_predictions/i.test(entry.sql)).at(-1);
+  assert.deepEqual(Object.keys(JSON.parse(cameraOnlyInsert.values[11])).filter(key => key.startsWith('webcam_')), []);
+  assert.match(cameraOnlyInsert.values[10], /rule-logs-v3-browser$/);
+
+  violationRows = [
+    { violation_type: 'tab_switch', detection_metadata: {}, dismissed: false },
+    { violation_type: 'no_person', detection_metadata: {}, dismissed: false },
+  ];
+  const browserOnly = responseCapture();
+  await handleRandomForestRoute({
+    method: 'POST',
+    url: '/api/exam-sessions/session-a/random-forest-prediction',
+    headers: { host: 'localhost' },
+  }, browserOnly);
+  assert.equal(browserOnly.body.prediction.suspiciousProbability, 0.73);
+  assert.deepEqual(predictionsRequested.at(-1), {
+    features: { browser_tab_switched_count: 1, browser_screenshot_count: 0 },
+    profile: 'browser',
+  });
+  const browserSummary = responseCapture();
+  await handleRandomForestRoute({
+    method: 'GET',
+    url: '/api/statistics/random-forest?examId=exam-a',
+    headers: { host: 'localhost' },
+  }, browserSummary);
+  assert.equal(browserSummary.status, 200);
+  const browserSummaryQuery = executedSql.filter(entry => /count\(\*\)::integer as total_sessions/i.test(entry.sql)).at(-1);
+  assert.match(browserSummaryQuery.values[2], /rule-logs-v3-browser$/);
+  violationRows = originalViolationRows;
+  examRequiresCamera = true;
+  completeSession.exam_require_camera = true;
 
   const summary = responseCapture();
   await handleRandomForestRoute({

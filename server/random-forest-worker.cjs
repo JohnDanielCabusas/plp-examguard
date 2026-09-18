@@ -6,7 +6,9 @@ const { spawn } = require('child_process');
 const { optionalEnvironmentValue } = require('./environment.cjs');
 const {
   FEATURE_COLUMNS,
+  BROWSER_FEATURE_COLUMNS,
   FEATURE_CONTRACT_VERSION,
+  BROWSER_FEATURE_CONTRACT_VERSION,
 } = require('./random-forest-aggregation.cjs');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -26,30 +28,41 @@ function resolvePythonPath() {
   return fs.existsSync(local) ? local : (process.platform === 'win32' ? 'python' : 'python3');
 }
 
-function resolveModelPath() {
+function resolveModelPath(profile = 'full') {
+  if (profile === 'browser') {
+    return path.resolve(optionalEnvironmentValue('RF_BROWSER_MODEL_PATH')
+      || path.join(ML_ROOT, 'artifacts', 'random_forest_browser_model.joblib'));
+  }
   return path.resolve(
     optionalEnvironmentValue('RF_MODEL_PATH')
       || path.join(ML_ROOT, 'artifacts', 'random_forest_model.joblib'),
   );
 }
 
-function resolveMetadataPath() {
+function resolveMetadataPath(profile = 'full') {
+  if (profile === 'browser') {
+    return path.resolve(optionalEnvironmentValue('RF_BROWSER_METADATA_PATH')
+      || path.join(ML_ROOT, 'artifacts', 'random_forest_browser_metadata.json'));
+  }
   return path.resolve(
     optionalEnvironmentValue('RF_METADATA_PATH')
       || path.join(ML_ROOT, 'artifacts', 'random_forest_metadata.json'),
   );
 }
 
-function getModelMetadata() {
-  const metadata = JSON.parse(fs.readFileSync(resolveMetadataPath(), 'utf8'));
+function getModelMetadata(profile = 'full') {
+  if (profile !== 'full' && profile !== 'browser') throw new Error('Unknown Random Forest prediction profile.');
+  const expectedColumns = profile === 'browser' ? BROWSER_FEATURE_COLUMNS : FEATURE_COLUMNS;
+  const expectedContract = profile === 'browser' ? BROWSER_FEATURE_CONTRACT_VERSION : FEATURE_CONTRACT_VERSION;
+  const metadata = JSON.parse(fs.readFileSync(resolveMetadataPath(profile), 'utf8'));
   const columnsMatch = Array.isArray(metadata.feature_columns)
-    && metadata.feature_columns.length === FEATURE_COLUMNS.length
-    && metadata.feature_columns.every((column, index) => column === FEATURE_COLUMNS[index]);
+    && metadata.feature_columns.length === expectedColumns.length
+    && metadata.feature_columns.every((column, index) => column === expectedColumns[index]);
   const missingDefaultsMatch = metadata.missing_feature_defaults
-    && FEATURE_COLUMNS.every(column => Number.isFinite(Number(metadata.missing_feature_defaults[column])));
+    && expectedColumns.every(column => Number.isFinite(Number(metadata.missing_feature_defaults[column])));
   if (
     !metadata.model_version
-    || metadata.feature_contract_version !== FEATURE_CONTRACT_VERSION
+    || metadata.feature_contract_version !== expectedContract
     || !columnsMatch
     || !missingDefaultsMatch
   ) {
@@ -92,10 +105,13 @@ function stopWorker() {
 function ensureWorker() {
   if (worker && !worker.killed && worker.exitCode === null) return worker;
   getModelMetadata();
+  getModelMetadata('browser');
   const activeWorker = spawn(resolvePythonPath(), [
     WORKER_PATH,
     '--model', resolveModelPath(),
     '--metadata', resolveMetadataPath(),
+    '--browser-model', resolveModelPath('browser'),
+    '--browser-metadata', resolveMetadataPath('browser'),
   ], {
     cwd: PROJECT_ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -142,7 +158,7 @@ function ensureWorker() {
   return activeWorker;
 }
 
-function predictOnce(features) {
+function predictOnce(features, profile) {
   const activeWorker = ensureWorker();
   const id = crypto.randomUUID();
   return new Promise((resolve, reject) => {
@@ -154,7 +170,7 @@ function predictOnce(features) {
       );
     }, REQUEST_TIMEOUT_MS);
     pending.set(id, { resolve, reject, timeout, worker: activeWorker });
-    activeWorker.stdin.write(`${JSON.stringify({ id, features })}\n`, (error) => {
+    activeWorker.stdin.write(`${JSON.stringify({ id, features, profile })}\n`, (error) => {
       if (!error) return;
       const request = pending.get(id);
       if (!request || request.worker !== activeWorker) return;
@@ -166,11 +182,12 @@ function predictOnce(features) {
   });
 }
 
-async function predict(features) {
+async function predict(features, profile = 'full') {
+  if (profile !== 'full' && profile !== 'browser') throw new Error('Unknown Random Forest prediction profile.');
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await predictOnce(features);
+      return await predictOnce(features, profile);
     } catch (error) {
       lastError = error;
       if (error?.randomForestWorkerFailure !== true || attempt > 0) throw error;

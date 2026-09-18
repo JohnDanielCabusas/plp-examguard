@@ -5,7 +5,7 @@ for completed sessions. The exact order, units, and sources are defined in
 `ml/random_forest/feature_contract.json` and repeated in the signed model
 metadata.
 
-The Statistics integration applies the `rule-logs-v2` policy before inference.
+The Statistics integration applies the `rule-logs-v3` policy before inference.
 Only persisted in-exam rule violations can change the model input. Tab/window/
 fullscreen violations, screenshot warnings, and recorded webcam/object rule
 violations are mapped into the existing twelve-feature contract. Normal browser
@@ -13,8 +13,17 @@ start/end records, elapsed minutes, timeout submission, consent, calibration,
 connectivity, and passed pre-exam checks stay at the non-suspicious training
 baseline and cannot raise the displayed probability.
 
+For exams with Motion Detection off (`require_camera = false`), the server
+discards camera rule events and sends only focus-switch and screenshot counts
+to a separate browser-only Random Forest artifact. Its input and metadata
+contain no webcam fields. Camera-enabled exams retain the twelve-feature
+model. The profile is part of the stored prediction version, so older results
+are refreshed under the appropriate policy. The student table displays only
+completed, positive-probability results with a flagged risk level; coverage
+and Normal counts still reflect every analyzed session.
+
 The browser performs FaceMesh and hand landmark inference locally. Random
-Forest receives only the twelve numeric summary values derived from qualifying
+Forest receives only numeric summary values derived from qualifying
 rule records—never images, video, landmarks, names, student numbers, email
 addresses, course information, scores, or grades.
 
@@ -44,3 +53,8 @@ key is `(exam_session_id, model_version)`.
 No result changes a score, warning count, submission state, or academic record.
 Professors must inspect the supporting monitoring incidents before taking any
 action.
+
+The browser-only artifact is a limited prototype: the source labels include
+camera-based suspicious cases, so its held-out recall against those mixed
+labels is low. Its percentages are not calibrated for camera-off exams and
+need validation on real camera-off sessions before consequential use.

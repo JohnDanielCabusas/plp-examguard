@@ -4235,22 +4235,6 @@ tr:hover td { background: #F8FDF8; }
 .warning-2 { color: #f97316; font-weight: 600; }
 .warning-3 { color: var(--danger); font-weight: 700; background: rgba(220,38,38,0.05); }
 
-/* Score bars */
-.score-bar-wrap {
-  width: 80px;
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.score-bar-fill {
-  height: 100%;
-  background: var(--primary);
-  border-radius: 3px;
-  transition: width 0.3s;
-}
-
 /* ============================================================
    RANK BADGES
    ============================================================ */
@@ -13794,9 +13778,6 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .ms-action-main { width: 100%; display: flex; align-items: center; justify-content: center; }
 .ms-chat-btn.ms-chat-btn { position: absolute; right: 0; top: 50%; margin-left: 0; transform: translateY(-50%); }
 .ms-action-status { font-size: 12px; color: #5b6573; text-align: center; }
-/* Unread-message count on the Monitoring sidebar item */
-.nav-item { position: relative; }
-.nav-msg-badge { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface, #0f2d1a); }
 
 /* Professor incoming-message popup — top-right, auto-dismisses after 3s */
 #prof-msg-popups { position: fixed; top: 74px; right: 18px; z-index: 9500; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
@@ -15325,15 +15306,10 @@ label.theme-switch,
   #report-tbody td[data-label="Student ID"],
   #report-tbody td[data-label="Year & Section"],
   #report-tbody td[data-label="Score"],
-  #report-tbody td[data-label="Percentage"],
+  #report-tbody td[data-label="Warnings"],
   #report-tbody td[data-label="Time"],
   #report-tbody td[data-label="Submitted"] {
     text-align: center;
-  }
-
-  /* the score cell wraps its value and progress bar in a flex row */
-  #report-tbody td[data-label="Score"] > div {
-    justify-content: center;
   }
 
   /* the time cell stacks a SUBMITTED label over the timestamp */

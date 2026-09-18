@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   FEATURE_COLUMNS,
+  BROWSER_FEATURE_COLUMNS,
   NEUTRAL_FEATURE_DEFAULTS,
   PredictionUnavailableError,
   aggregateSessionFeatureSnapshot,
@@ -140,5 +141,20 @@ assert.equal(recordedRuleViolations.features.browser_tab_switched_count, 1);
 assert.equal(recordedRuleViolations.features.browser_screenshot_count, 1);
 assert.equal(recordedRuleViolations.features.browser_exam_duration_minutes, NEUTRAL_FEATURE_DEFAULTS.browser_exam_duration_minutes);
 assert.equal(recordedRuleViolations.features.webcam_face_present, NEUTRAL_FEATURE_DEFAULTS.webcam_face_present);
+
+const cameraOffSnapshot = aggregateViolationFeatureSnapshot(session, [
+  { violation_type: 'tab_switch', dismissed: false },
+  { violation_type: 'no_person', dismissed: false },
+  { violation_type: 'restricted_phone', dismissed: false },
+  { violation_type: 'new_camera_warning', detection_metadata: { source: 'yolo', countsAsWarning: true }, dismissed: false },
+], undefined, { cameraEnabled: false });
+assert.deepEqual(Object.keys(cameraOffSnapshot.features), BROWSER_FEATURE_COLUMNS);
+assert.equal(cameraOffSnapshot.violationCount, 1);
+assert.deepEqual(cameraOffSnapshot.violations.map(event => event.violation_type), ['tab_switch']);
+
+const cameraOnlySnapshot = aggregateViolationFeatureSnapshot(session, [
+  { violation_type: 'FACE_ABSENT', dismissed: false },
+], undefined, { cameraEnabled: false });
+assert.equal(cameraOnlySnapshot.violationCount, 0);
 
 console.log('Random Forest aggregation tests passed.');

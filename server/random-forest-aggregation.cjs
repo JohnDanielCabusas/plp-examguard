@@ -12,8 +12,13 @@ const FEATURE_COLUMNS = Object.freeze([
   'webcam_head_yaw',
   'webcam_head_roll',
 ]);
+const BROWSER_FEATURE_COLUMNS = Object.freeze([
+  'browser_tab_switched_count',
+  'browser_screenshot_count',
+]);
 
 const FEATURE_CONTRACT_VERSION = 'rf-session-summary-v1';
+const BROWSER_FEATURE_CONTRACT_VERSION = 'rf-browser-rule-logs-v1';
 const DEG_TO_RAD = Math.PI / 180;
 
 // Only events that are raised by the in-exam rule engine belong in a
@@ -43,6 +48,9 @@ const RULE_VIOLATION_TYPES = Object.freeze(new Set([
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+]));
+const BROWSER_VIOLATION_TYPES = Object.freeze(new Set([
+  'window_blur', 'tab_switch', 'fullscreen_exit', 'screenshot',
 ]));
 
 // Missing sensors must not make an otherwise completed examination impossible to
@@ -113,18 +121,23 @@ function collectRuleViolationEvents(session, recordedEvents = []) {
   return source.filter(isRuleViolationEvent);
 }
 
-// Build the legacy model's fixed feature shape from confirmed rule records.
-// Neutral training medians fill every non-violation field, meaning elapsed
-// time, normal start/end checks, and raw pre-exam sensor checks cannot move the
-// probability. Only a persisted, non-dismissed rule event changes a feature.
-function aggregateViolationFeatureSnapshot(session, recordedEvents = [], configuredDefaults = NEUTRAL_FEATURE_DEFAULTS) {
+// Build the selected model's feature shape from confirmed rule records.
+// Camera-off exams admit only browser rule types and return only the two
+// violation-derived browser features. In the full model, neutral training
+// medians keep lifecycle and pre-exam signals from moving the probability.
+function aggregateViolationFeatureSnapshot(session, recordedEvents = [], configuredDefaults = NEUTRAL_FEATURE_DEFAULTS, options = {}) {
   if (!session || session.submitted !== true) {
     throw new PredictionUnavailableError('The examination session is not completed.', 'SESSION_NOT_COMPLETED');
   }
+  const cameraEnabled = options.cameraEnabled !== false;
+  const columns = cameraEnabled ? FEATURE_COLUMNS : BROWSER_FEATURE_COLUMNS;
   const defaults = { ...NEUTRAL_FEATURE_DEFAULTS, ...(configuredDefaults || {}) };
-  FEATURE_COLUMNS.forEach((column) => finiteNumber(defaults[column], `Neutral default for ${column}`));
+  columns.forEach((column) => finiteNumber(defaults[column], `Neutral default for ${column}`));
 
-  const violations = collectRuleViolationEvents(session, recordedEvents);
+  const violations = collectRuleViolationEvents(session, recordedEvents)
+    .filter(event => cameraEnabled || BROWSER_VIOLATION_TYPES.has(
+      String(event.violation_type || event.violationType || event.type || '').trim(),
+    ));
   const types = violations.map(event => String(event.violation_type || event.violationType || event.type || '').trim());
   const typeCount = type => types.filter(value => value === type).length;
   const countAny = candidates => types.filter(value => candidates.has(value)).length;
@@ -138,18 +151,18 @@ function aggregateViolationFeatureSnapshot(session, recordedEvents = [], configu
   const features = { ...defaults };
   features.browser_tab_switched_count = Math.min(5, countAny(focusTypes));
   features.browser_screenshot_count = Math.min(1, typeCount('screenshot'));
-  if (countAny(noFaceTypes) > 0) {
+  if (cameraEnabled && countAny(noFaceTypes) > 0) {
     features.webcam_face_present = 0;
     features.webcam_no_of_face = 0;
     features.webcam_face_conf = 0;
   }
-  if (countAny(multiFaceTypes) > 0) features.webcam_no_of_face = 2;
-  if (countAny(pitchTypes) > 0) features.webcam_head_pitch = 0.30996;
-  if (countAny(yawTypes) > 0) features.webcam_head_yaw = 0.74048;
-  if (countAny(handOrObjectTypes) > 0) features.webcam_hand_count = 3;
+  if (cameraEnabled && countAny(multiFaceTypes) > 0) features.webcam_no_of_face = 2;
+  if (cameraEnabled && countAny(pitchTypes) > 0) features.webcam_head_pitch = 0.30996;
+  if (cameraEnabled && countAny(yawTypes) > 0) features.webcam_head_yaw = 0.74048;
+  if (cameraEnabled && countAny(handOrObjectTypes) > 0) features.webcam_hand_count = 3;
 
   const ordered = {};
-  FEATURE_COLUMNS.forEach(column => { ordered[column] = roundFeature(Number(features[column])); });
+  columns.forEach(column => { ordered[column] = roundFeature(Number(features[column])); });
   return { features: ordered, violations, violationCount: violations.length };
 }
 
@@ -244,7 +257,9 @@ function aggregateSessionFeatures(session, configuredDefaults) {
 
 module.exports = {
   FEATURE_COLUMNS,
+  BROWSER_FEATURE_COLUMNS,
   FEATURE_CONTRACT_VERSION,
+  BROWSER_FEATURE_CONTRACT_VERSION,
   NEUTRAL_FEATURE_DEFAULTS,
   RULE_VIOLATION_TYPES,
   PredictionUnavailableError,
