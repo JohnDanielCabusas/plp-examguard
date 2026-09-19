@@ -10633,6 +10633,19 @@ async function allowAbsentStudentExam(studentId) {
   if (!current.includes(studentId)) {
     DB.updateExam(examId, { lateExamStudentIds: [...current, studentId] });
   }
+
+  // If the database has no column for this, the sync layer drops the field and
+  // the clearance never leaves this browser: the professor sees "Exam allowed"
+  // while the student still finds the exam shut. Say so rather than reporting a
+  // success that did not happen.
+  await (window.SupabaseSync?.waitForDocSync?.('exams', examId) || Promise.resolve());
+  if (window.SupabaseSync?._examLateExamSupported === false) {
+    showToast(
+      'This database has no late-exam column yet, so the student will not see the exam. Run the Supabase schema update, reload this page, then try again.',
+      'error',
+    );
+    return;
+  }
   DB.addLog({
     examId,
     studentId,

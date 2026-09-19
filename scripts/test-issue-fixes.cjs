@@ -164,6 +164,34 @@ sandbox.navigator.mediaDevices = {
   assert.equal(logged.length, 1, 'but the professor is still told it is there');
   assert.equal(logged[0].type, 'screen_record_possible');
 
+  // Device labels stay blank until the page holds a camera permission. Reading
+  // them too early returned a meaningless all-clear, which is how a recorder
+  // that was plainly running went unreported.
+  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
+    { kind: 'videoinput', label: '' },
+    { kind: 'audioinput', label: '' },
+  ]);
+  app._reportedRecorderLabels = null;
+  app._recorderRescanAttempts = 0;
+  app._recorderRescanPending = null;
+  timers.length = 0;
+  const early = await app._readCaptureDeviceState();
+  assert.equal(early.labelsVisible, false, 'blank labels are reported as unreadable');
+  await app._checkScreenRecordingEnvironment('pre-exam');
+  assert.ok(
+    timers.some(t => !t.cancelled),
+    'an unreadable scan schedules a retry instead of concluding the machine is clean',
+  );
+
+  // Once the permission lands and the labels appear, the retry finds it.
+  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
+    { kind: 'videoinput', label: 'OBS Virtual Camera' },
+  ]);
+  raised.length = 0;
+  app._reportedRecorderLabels = null;
+  await app._checkScreenRecordingEnvironment('pre-exam');
+  assert.equal(raised.length, 1, 'the recorder is caught once the labels become readable');
+
   runExamRuntimeTests();
   runAdminTests();
   runAdminReviewTests();

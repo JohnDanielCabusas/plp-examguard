@@ -332,6 +332,10 @@ const ExamApp = {
   _fullscreenLockTotalSeconds: 0,
   _lateExamAttempt: false,         // sitting an exam the professor cleared after the fact (#31)
   _recorderScanInterval: null,     // periodic screen-recorder environment scan
+  _recorderRescanPending: null,    // retry pending because device labels were not readable yet
+  _recorderRescanAttempts: 0,
+  _recorderDeviceChangeHandler: null,
+  _extendedDisplayReported: false,
   _reportedRecorderLabels: null,   // Set of recorder device labels already reported
   _recentClipboardShortcut: null,
   _intentionalFullscreenExit: false,
@@ -951,15 +955,23 @@ const ExamApp = {
   // question and again on a slow loop while the exam runs. Device labels are
   // only readable once camera permission has been granted, so this scan is
   // strongest on exams that require the webcam.
-  async _scanForScreenRecorders() {
-    if (!navigator.mediaDevices?.enumerateDevices) return [];
+  // Device labels are blank until the page holds a camera permission. Reading
+  // them too early returns a clean bill of health that means nothing, which is
+  // why the first version of this check missed recorders that were plainly
+  // running: it ran before the webcam prompt had been answered. The caller
+  // needs to tell "nothing found" apart from "nothing readable yet".
+  async _readCaptureDeviceState() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      return { matches: [], labelsVisible: false, supported: false };
+    }
     let devices = [];
     try {
       devices = await navigator.mediaDevices.enumerateDevices();
     } catch (_) {
-      return [];
+      return { matches: [], labelsVisible: false, supported: true };
     }
 
+    const labelsVisible = (devices || []).some(device => String(device?.label || '').trim());
     const matches = [];
     const seen = new Set();
     (devices || []).forEach((device) => {
@@ -977,12 +989,24 @@ const ExamApp = {
         confident: !!strong,
       });
     });
+    return { matches, labelsVisible, supported: true };
+  },
+
+  async _scanForScreenRecorders() {
+    const { matches } = await this._readCaptureDeviceState();
     return matches;
   },
 
   async _checkScreenRecordingEnvironment(stage = 'during') {
     if (!this.session) return [];
-    const matches = await this._scanForScreenRecorders();
+    const { matches, labelsVisible, supported } = await this._readCaptureDeviceState();
+
+    // Nothing readable yet: come back once the camera permission has landed
+    // instead of recording a false all-clear.
+    if (supported && !labelsVisible) {
+      this._scheduleRecorderRescan(stage);
+      return [];
+    }
     if (!matches.length) return [];
 
     if (!this._reportedRecorderLabels) this._reportedRecorderLabels = new Set();
@@ -1023,6 +1047,18 @@ const ExamApp = {
     return matches;
   },
 
+  // Retry a scan whose labels were not readable yet, a few times, a second
+  // apart. The camera prompt is usually answered within that window.
+  _scheduleRecorderRescan(stage) {
+    if (this._recorderRescanPending) return;
+    this._recorderRescanAttempts = (this._recorderRescanAttempts || 0) + 1;
+    if (this._recorderRescanAttempts > 8) return;
+    this._recorderRescanPending = setTimeout(() => {
+      this._recorderRescanPending = null;
+      this._checkScreenRecordingEnvironment(stage).catch(() => {});
+    }, 1500);
+  },
+
   _startScreenRecordingMonitor() {
     this._stopScreenRecordingMonitor();
     // Slow on purpose: enumerateDevices is cheap but not free, and a recorder
@@ -1031,12 +1067,45 @@ const ExamApp = {
     this._recorderScanInterval = setInterval(() => {
       this._checkScreenRecordingEnvironment('during').catch(() => {});
     }, 30000);
+
+    // Starting a virtual camera adds a device, and the browser says so at once.
+    // This turns a recorder switched on mid-exam from a wait of up to half a
+    // minute into an immediate catch.
+    if (navigator.mediaDevices?.addEventListener) {
+      this._recorderDeviceChangeHandler = () => {
+        this._checkScreenRecordingEnvironment('during').catch(() => {});
+      };
+      navigator.mediaDevices.addEventListener('devicechange', this._recorderDeviceChangeHandler);
+    }
+
+    // A second display is not proof of anything, but it is the usual shape of a
+    // recording or mirroring setup, so the professor gets told it is there.
+    this._reportExtendedDisplay();
+  },
+
+  _reportExtendedDisplay() {
+    if (!this.session || this._extendedDisplayReported) return;
+    if (window.screen?.isExtended !== true) return;
+    this._extendedDisplayReported = true;
+    this._recordActivity(
+      'screen_record_possible',
+      'The student is working across more than one display',
+      { source: 'DISPLAY_SCAN', screens: 'extended' },
+    );
   },
 
   _stopScreenRecordingMonitor() {
     if (this._recorderScanInterval) {
       clearInterval(this._recorderScanInterval);
       this._recorderScanInterval = null;
+    }
+    if (this._recorderRescanPending) {
+      clearTimeout(this._recorderRescanPending);
+      this._recorderRescanPending = null;
+    }
+    if (this._recorderDeviceChangeHandler && navigator.mediaDevices?.removeEventListener) {
+      navigator.mediaDevices.removeEventListener('devicechange', this._recorderDeviceChangeHandler);
+      this._recorderDeviceChangeHandler = null;
     }
   },
 
@@ -3269,15 +3338,19 @@ const ExamApp = {
     this.renderQuestions();
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
-    // Before the student answers anything: catch a recorder that was already
-    // running, which no keypress would ever have revealed.
-    this._checkScreenRecordingEnvironment('pre-exam').catch(() => {});
+    this._recorderRescanAttempts = 0;
     this._startScreenRecordingMonitor();
 
     if (this._cameraRequired && this._webcamConsentAccepted) {
       if (this._cameraStream) this._activateCameraMonitoring(document.getElementById('camera-feed'));
       else this.initCamera();
     }
+
+    // Catch a recorder that was already running, which no keypress would ever
+    // have revealed. This runs after the camera has been asked for, because the
+    // device labels it reads stay blank until that permission is held; the scan
+    // retries on its own until they become readable.
+    this._checkScreenRecordingEnvironment('pre-exam').catch(() => {});
     // Verify display brightness with a perceptual check at the start of every
     // exam — the camera's ambient-light monitor only catches a dim screen
     // after the fact, so this check still runs even when the camera is on.
