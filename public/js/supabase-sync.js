@@ -19,6 +19,7 @@ const SupabaseSync = {
   _sessionAttemptHistorySupported: true,
   _examPoliciesSupported: true,
   _examCameraExemptSupported: true,
+  _examLateExamSupported: true,
   _examObjectMonitoringSupported: true,
   // Set false the first time a messages write/read fails because the table
   // doesn't exist yet (schema-bootstrap.sql not applied). Keeps the chat feature
@@ -507,6 +508,12 @@ const SupabaseSync = {
           normalized.cameraExemptStudentIds = prior.cameraExemptStudentIds;
         }
       }
+      if (!('late_exam_student_ids' in r)) {
+        const prior = existingById.get(normalized.id);
+        if (prior && Array.isArray(prior.lateExamStudentIds)) {
+          normalized.lateExamStudentIds = prior.lateExamStudentIds;
+        }
+      }
       if (!('exam_policies' in r)) {
         const prior = existingById.get(normalized.id);
         if (prior && Array.isArray(prior.examPolicies)) {
@@ -607,6 +614,13 @@ const SupabaseSync = {
           if (this._isMissingExamCameraExemptError(table, error) && this._examCameraExemptSupported !== false) {
             this._examCameraExemptSupported = false;
             rows = rows.map(row => this._withoutExamCameraExempt(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
+          if (this._isMissingExamLateExamError(table, error) && this._examLateExamSupported !== false) {
+            this._examLateExamSupported = false;
+            rows = rows.map(row => this._withoutExamLateExam(row));
             ({ error } = await c.from(table).upsert(rows));
             if (!error) break;
             continue;
@@ -735,6 +749,15 @@ const SupabaseSync = {
           const prior = current.find(r => r.id === normalized.id);
           if (prior && Array.isArray(prior.cameraExemptStudentIds)) {
             normalized.cameraExemptStudentIds = prior.cameraExemptStudentIds;
+          }
+        }
+        // And for lateExamStudentIds — the list of absent students cleared to sit
+        // the exam afterwards. A pre-migration echo wiping it would quietly shut
+        // a student out again right after the professor let them in (#31).
+        if (table === 'exams' && row && !('late_exam_student_ids' in row)) {
+          const prior = current.find(r => r.id === normalized.id);
+          if (prior && Array.isArray(prior.lateExamStudentIds)) {
+            normalized.lateExamStudentIds = prior.lateExamStudentIds;
           }
         }
         if (table === 'exams' && row && !('exam_policies' in row)) {
@@ -1047,6 +1070,13 @@ const SupabaseSync = {
             if (!retryError) return;
             continue;
           }
+          if (this._isMissingExamLateExamError(table, retryError) && this._examLateExamSupported !== false) {
+            this._examLateExamSupported = false;
+            retryRow = this._withoutExamLateExam(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           if (this._isMissingExamPoliciesError(table, retryError) && this._examPoliciesSupported !== false) {
             this._examPoliciesSupported = false;
             retryRow = this._withoutExamPolicies(retryRow);
@@ -1243,6 +1273,9 @@ const SupabaseSync = {
     }
     if (this._examCameraExemptSupported !== false) {
       row.camera_exempt_student_ids = Array.isArray(d.cameraExemptStudentIds) ? d.cameraExemptStudentIds : [];
+    }
+    if (this._examLateExamSupported !== false) {
+      row.late_exam_student_ids = Array.isArray(d.lateExamStudentIds) ? d.lateExamStudentIds : [];
     }
     if (this._examObjectMonitoringSupported !== false) {
       row.object_monitoring = {
@@ -1499,6 +1532,7 @@ const SupabaseSync = {
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
       excludedStudentIds: Array.isArray(r.excluded_student_ids) ? r.excluded_student_ids : [],
       cameraExemptStudentIds: Array.isArray(r.camera_exempt_student_ids) ? r.camera_exempt_student_ids : [],
+      lateExamStudentIds: Array.isArray(r.late_exam_student_ids) ? r.late_exam_student_ids : [],
       objectMonitoring: {
         ...this._normalizeObjectMonitoring(r.object_monitoring),
         enabled: !!r.require_camera,
@@ -1649,6 +1683,17 @@ const SupabaseSync = {
   _withoutExamCameraExempt(row) {
     const next = { ...row };
     delete next.camera_exempt_student_ids;
+    return next;
+  },
+
+  _isMissingExamLateExamError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'exams' && message.includes(`Could not find the 'late_exam_student_ids' column`);
+  },
+
+  _withoutExamLateExam(row) {
+    const next = { ...row };
+    delete next.late_exam_student_ids;
     return next;
   },
 

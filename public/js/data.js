@@ -1195,6 +1195,16 @@ const DB = {
   },
   addSession(data) {
     const sessions = [...this._read(this.KEYS.sessions, [])];
+    // One student sits an exam once. A second row for the same pair is how the
+    // same name ended up twice in the report list and twice in the suspicion
+    // probability (#26, #29) — it happens when the local cache has not caught
+    // up with the server yet and the entry check finds nothing. Re-use the
+    // existing attempt instead of opening a rival one; retakes are recorded on
+    // this same row through attemptHistory.
+    if (data.examId && data.studentId) {
+      const existing = this.getStudentSession(data.examId, data.studentId);
+      if (existing) return existing;
+    }
     const exam = data.examId ? this._read(this.KEYS.exams, []).find(entry => entry.id === data.examId) : null;
     const newSession = this._withOwner({ id: this.generateId(), ...data }, exam?.ownerAdminId || this._getDefaultOwnerAdminId());
     sessions.push(newSession);

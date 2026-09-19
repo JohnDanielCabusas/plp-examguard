@@ -357,6 +357,10 @@ execute function public.set_random_forest_prediction_updated_at();
 -- single exam (e.g. their webcam is broken), without turning it off for the
 -- whole class. Mirrors exams.excluded_student_ids in shape.
 alter table if exists public.exams add column if not exists camera_exempt_student_ids jsonb not null default '[]'::jsonb;
+-- Absent students the professor has cleared to sit this exam after the scheduled
+-- date. Kept apart from excluded_student_ids so the attendance record for the
+-- sitting they missed stays Absent and unchanged (#31).
+alter table if exists public.exams add column if not exists late_exam_student_ids jsonb not null default '[]'::jsonb;
 
 -- ── Default accounts ──
 insert into public.superadmin (id, username, password, name, email, department)

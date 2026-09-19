@@ -375,6 +375,10 @@ const BEHAVIOR_LABELS = {
   ctrl_c_attempt: 'Ctrl+C Attempt',
   ctrl_v_attempt: 'Ctrl+V Attempt',
   screen_record: 'Screen Recording',
+  // A hint, not a finding: capture-capable hardware was present. Kept out of
+  // every violation list on purpose, since plenty of machines carry it for
+  // innocent reasons (#23).
+  screen_record_possible: 'Capture Device Present',
   camera_denied: 'Camera Denied',
   auto_submit: 'Auto-Submitted',
   force_submit: 'Force Submitted',
@@ -629,6 +633,7 @@ function getStudentYearSectionSummary(student, separator = ' ') {
 
 function getActivityTone(type) {
   if (['brightness_check_passed', 'camera_restored', 'connection_restored'].includes(type)) return 'success';
+  if (type === 'screen_record_possible') return 'neutral';
   if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
   if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'screen_record', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
@@ -7121,7 +7126,7 @@ async function openExamResultsInReports(examId) {
 function viewExamResults(examId) {
   const exam = DB.getExam(examId);
   if (!exam) return;
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sessions = dedupeSessionsByStudent(DB.getSessionsByExam(examId).filter(s => s.submitted));
 
   document.getElementById('modal-results-title').textContent = `Results - ${exam.title}`;
 
@@ -7306,7 +7311,7 @@ function viewStudentAnswersLegacy(sessionId) {
   document.getElementById('modal-answers-body').innerHTML = html;
   openModal('modal-student-answers');
   aiScanJobs.forEach(job => {
-    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
+    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId, false, { auto: true });
   });
 }
 
@@ -7930,7 +7935,7 @@ function viewStudentAnswers(sessionId, source = currentSection) {
   renderStudentAnswersFooter(mode, sessionId);
   openModal('modal-student-answers');
   aiScanJobs.forEach(job => {
-    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId);
+    detectAIContentDetailed(job.text, job.badgeId, session.id, job.questionId, false, { auto: true });
   });
 }
 
@@ -7988,7 +7993,7 @@ function saveEssayGrades(sessionId) {
 function viewQuestionBreakdown(examId) {
   const exam = DB.getExam(examId);
   if (!exam) return;
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sessions = dedupeSessionsByStudent(DB.getSessionsByExam(examId).filter(s => s.submitted));
   if (!sessions.length) return;
 
   const rows = exam.questions.map((q, idx) => {
@@ -9834,8 +9839,31 @@ function formatRandomForestUnavailableReason(reason) {
   return value;
 }
 
+// Keep one entry per student — the most recently submitted attempt. The server
+// already collapses retakes, but a professor panel talking to an older server,
+// or reading a cached payload, must not put the same student in this list twice
+// (#29).
+function dedupeRandomForestPredictions(predictions) {
+  const latest = new Map();
+  (Array.isArray(predictions) ? predictions : []).forEach((prediction) => {
+    if (!prediction) return;
+    const key = prediction.studentId || prediction.examSessionId;
+    if (!key) return;
+    const current = latest.get(key);
+    if (!current) { latest.set(key, prediction); return; }
+    const time = value => {
+      const parsed = value ? new Date(value).getTime() : 0;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const incoming = Math.max(time(prediction.submittedAt), time(prediction.predictedAt));
+    const existing = Math.max(time(current.submittedAt), time(current.predictedAt));
+    if (incoming >= existing) latest.set(key, prediction);
+  });
+  return [...latest.values()];
+}
+
 function renderRandomForestStudentRows(predictions) {
-  const rows = (Array.isArray(predictions) ? predictions : [])
+  const rows = dedupeRandomForestPredictions(predictions)
     .filter(prediction => {
       const meta = getRandomForestResultMeta(prediction);
       const probability = Number(prediction?.suspiciousProbability);
@@ -10003,6 +10031,183 @@ function loadStatsExams() {
   if (cur) sel.value = cur;
 }
 
+// ============================================================
+// CLASS PERFORMANCE  (difficulty guidance for the next exam)
+// ============================================================
+// Deliberately advisory. The system does not retune difficulty per student
+// behind the back of the professor; it puts the previous sitting numbers in
+// front of them and names the direction those numbers point, and the professor
+// decides what the next exam looks like (#32).
+const CLASS_PERFORMANCE_LOW_AVG = 60;   // below this the class struggled
+const CLASS_PERFORMANCE_HIGH_AVG = 85;  // above this the exam offered little resistance
+
+function summariseExamClassPerformance(exam) {
+  if (!exam) return null;
+  const sessions = dedupeSessionsByStudent(
+    DB.getSessionsByExam(exam.id).filter(session => session.submitted)
+  );
+  if (!sessions.length) return null;
+
+  let totalPct = 0;
+  let passing = 0;
+  sessions.forEach((session) => {
+    const result = calculateSessionScoreBreakdown(exam, session);
+    const pct = result.max > 0 ? (result.earned / result.max) * 100 : 0;
+    totalPct += pct;
+    if (pct >= 75) passing += 1;
+  });
+
+  return {
+    examId: exam.id,
+    title: exam.title || 'Untitled exam',
+    submissions: sessions.length,
+    average: Math.round(totalPct / sessions.length),
+    passRate: Math.round((passing / sessions.length) * 100),
+    difficulty: dominantExamDifficulty(exam, sessions),
+    when: exam.closedAt || exam.startedAt || exam.createdAt || null,
+  };
+}
+
+// The level most questions in an exam sit at, resolved the same way the
+// Question Difficulty card resolves it (professor override, then student stats,
+// then the AI estimate).
+function dominantExamDifficulty(exam, sessions) {
+  const counts = { easy: 0, medium: 0, hard: 0 };
+  (exam?.questions || []).forEach((q) => {
+    if (q.type === 'essay') return;
+    const resolved = resolveQuestionDifficulty(q, sessions || []);
+    if (resolved?.level && counts[resolved.level] !== undefined) counts[resolved.level] += 1;
+  });
+  const ordered = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return ordered[0][1] > 0 ? ordered[0][0] : null;
+}
+
+// The most recent earlier exam in the same course that actually has results.
+function findPreviousExamPerformance(exam) {
+  if (!exam?.subjectId) return null;
+  const when = value => {
+    const parsed = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const currentWhen = when(exam.closedAt || exam.startedAt || exam.createdAt);
+
+  const earlier = DB.getExams()
+    .filter(candidate => candidate.id !== exam.id
+      && candidate.subjectId === exam.subjectId
+      && ['active', 'closed', 'archived'].includes(candidate.status))
+    .filter(candidate => when(candidate.closedAt || candidate.startedAt || candidate.createdAt) < currentWhen)
+    .sort((a, b) => when(b.closedAt || b.startedAt || b.createdAt) - when(a.closedAt || a.startedAt || a.createdAt));
+
+  for (const candidate of earlier) {
+    const summary = summariseExamClassPerformance(candidate);
+    if (summary) return summary;
+  }
+  return null;
+}
+
+const DIFFICULTY_LADDER = ['easy', 'medium', 'hard'];
+
+function shiftDifficulty(level, direction) {
+  const index = DIFFICULTY_LADDER.indexOf(level);
+  if (index === -1) return null;
+  const next = Math.min(DIFFICULTY_LADDER.length - 1, Math.max(0, index + direction));
+  return DIFFICULTY_LADDER[next];
+}
+
+function buildDifficultyRecommendation(current) {
+  const level = current.difficulty;
+  const label = l => l ? l.charAt(0).toUpperCase() + l.slice(1) : 'the current level';
+
+  if (current.average < CLASS_PERFORMANCE_LOW_AVG) {
+    const eased = shiftDifficulty(level, -1);
+    return {
+      tone: 'danger',
+      headline: eased && eased !== level
+        ? `Consider ${label(level)} to ${label(eased)} next`
+        : 'Consider easing the next exam',
+      reason: `The class averaged ${current.average}% and only ${current.passRate}% reached the 75% mark. That is the pattern of an exam pitched above where the class currently is.`,
+    };
+  }
+
+  if (current.average >= CLASS_PERFORMANCE_HIGH_AVG) {
+    const raised = shiftDifficulty(level, 1);
+    return {
+      tone: 'positive',
+      headline: raised && raised !== level
+        ? `Consider ${label(level)} to ${label(raised)} next`
+        : 'Consider raising the next exam',
+      reason: `The class averaged ${current.average}% with a ${current.passRate}% pass rate. There is room to ask more of them without losing the class.`,
+    };
+  }
+
+  return {
+    tone: 'neutral',
+    headline: `Hold the next exam at ${label(level)}`,
+    reason: `The class averaged ${current.average}% with a ${current.passRate}% pass rate, a spread that separates students without defeating them.`,
+  };
+}
+
+function renderClassPerformanceCard(exam, sessions) {
+  const current = {
+    examId: exam.id,
+    title: exam.title,
+    submissions: sessions.length,
+    average: sessions.length
+      ? Math.round(sessions.reduce((sum, s) => sum + s._statsPct, 0) / sessions.length)
+      : 0,
+    passRate: sessions.length
+      ? Math.round((sessions.filter(s => s._statsMax > 0 && s._statsPct >= 75).length / sessions.length) * 100)
+      : 0,
+    difficulty: dominantExamDifficulty(exam, sessions),
+  };
+  const previous = findPreviousExamPerformance(exam);
+  const advice = buildDifficultyRecommendation(current);
+  const delta = previous ? current.average - previous.average : null;
+  const levelChip = level => level && DIFFICULTY_META[level]
+    ? `<span class="stats-disc-band" style="color:${DIFFICULTY_META[level].color};background:${DIFFICULTY_META[level].bg};">${DIFFICULTY_META[level].label}</span>`
+    : '<span class="stats-disc-band" style="color:var(--text-muted);background:var(--surface-2);">Not set</span>';
+
+  return `
+    <section class="stats-analysis-card">
+      <div class="stats-analysis-heading">
+        <div><span class="stats-card-kicker">Planning</span><h3>Class Performance</h3><p>What this sitting suggests about the next one</p></div>
+        <span class="stats-status-chip tone-${advice.tone}">${escHtml(advice.headline)}</span>
+      </div>
+      <div class="stats-analysis-body">
+        <div class="stats-analysis-description">
+          ${escHtml(advice.reason)} Nothing is changed automatically, the difficulty of the next exam stays your call.
+        </div>
+        <div class="stats-perf-compare">
+          <div class="stats-perf-col">
+            <span class="stats-perf-when">This exam</span>
+            <strong class="stats-perf-title">${escHtml(current.title)}</strong>
+            <div class="stats-perf-figures">
+              <span><b>${current.average}%</b> average</span>
+              <span><b>${current.passRate}%</b> passed</span>
+              <span><b>${current.submissions}</b> submitted</span>
+            </div>
+            <div class="stats-perf-level">Difficulty ${levelChip(current.difficulty)}</div>
+          </div>
+          <div class="stats-perf-col">
+            <span class="stats-perf-when">Previous exam</span>
+            ${previous ? `
+              <strong class="stats-perf-title">${escHtml(previous.title)}</strong>
+              <div class="stats-perf-figures">
+                <span><b>${previous.average}%</b> average</span>
+                <span><b>${previous.passRate}%</b> passed</span>
+                <span><b>${previous.submissions}</b> submitted</span>
+              </div>
+              <div class="stats-perf-level">Difficulty ${levelChip(previous.difficulty)}</div>
+              <div class="stats-perf-delta ${delta > 0 ? 'is-up' : delta < 0 ? 'is-down' : ''}">
+                ${delta === 0 ? 'Same class average as last time' : `${delta > 0 ? '+' : ''}${delta} points ${delta > 0 ? 'above' : 'below'} the previous average`}
+              </div>`
+              : `<div class="stats-perf-empty">No earlier exam in this course has results yet. Once one does, the two sittings are compared here.</div>`}
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
 function renderExamStats() {
   const examId = document.getElementById('stats-exam-select').value;
   const content = document.getElementById('stats-content');
@@ -10012,8 +10217,7 @@ function renderExamStats() {
   }
 
   const exam = DB.getExam(examId);
-  const sessions = DB.getSessionsByExam(examId)
-    .filter(s => s.submitted)
+  const sessions = dedupeSessionsByStudent(DB.getSessionsByExam(examId).filter(s => s.submitted))
     .map(session => {
       // Rebuild each result from the recorded answers and persisted professor
       // overrides so stale cached score fields cannot skew Statistics.
@@ -10176,23 +10380,27 @@ function renderExamStats() {
     <section class="stats-analysis-card">
       <div class="stats-analysis-heading">
         <div><span class="stats-card-kicker">Quality check</span><h3>Discrimination Index</h3><p>Top and bottom performer comparison</p></div>
-        ${discFlagged ? `<span class="stats-status-chip tone-danger">${discFlagged} question${discFlagged===1?'':'s'} to review</span>` : `<span class="stats-status-chip tone-positive">All questions discriminate well</span>`}
+        ${!discReliable
+          ? `<span class="stats-status-chip tone-neutral">Provisional &mdash; ${ranked.length} submission${ranked.length===1?'':'s'}</span>`
+          : discFlagged
+            ? `<span class="stats-status-chip tone-danger">${discFlagged} question${discFlagged===1?'':'s'} to review</span>`
+            : `<span class="stats-status-chip tone-positive">All questions discriminate well</span>`}
       </div>
       <div class="stats-analysis-body">
       <div class="stats-analysis-description">
         How well each question separates high performers from low performers (top 27% vs bottom 27% by total score). Higher is better; <strong>negative</strong> means high scorers did <em>worse</em> — usually a miskeyed or confusing question.
         ${!discReliable ? `<br/><strong style="color:#d97706;">Only ${ranked.length} submission${ranked.length===1?'':'s'}</strong> — treat these values as provisional until at least ${DISCRIMINATION_MIN_SAMPLE}.` : ''}
       </div>
-      <div class="stats-analysis-list">
+      <div class="stats-analysis-list stats-disc-grid">
         ${discStats.map(({qi,q,d})=>{
           const meta = discriminationMeta(d);
           return `
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;margin-bottom:5px;">
-              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Q${qi+1}: ${escHtml(q.content.substring(0,55))}${q.content.length>55?'…':''}</span>
-              <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                <span style="font-weight:800;font-variant-numeric:tabular-nums;color:${meta.color};">${d>0?'+':''}${d.toFixed(2)}</span>
-                <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};">${meta.label}</span>
+          <div class="stats-disc-item">
+            <div class="stats-disc-head">
+              <span class="stats-disc-label" title="${escAttr(q.content)}">Q${qi+1}: ${escHtml(q.content.substring(0,55))}${q.content.length>55?'…':''}</span>
+              <span class="stats-disc-value">
+                <span style="color:${meta.color};">${d>0?'+':''}${d.toFixed(2)}</span>
+                <span class="stats-disc-band" style="color:${meta.color};background:${meta.bg};">${meta.label}</span>
               </span>
             </div>
             ${discriminationBar(d, meta.color)}
@@ -10201,6 +10409,8 @@ function renderExamStats() {
       </div>
       </div>
     </section>` : ''}
+
+    ${renderClassPerformanceCard(exam, sessions)}
 
     ${randomForestCardShell()}</div>`;
   loadRandomForestPrediction(examId);
@@ -10341,6 +10551,15 @@ function renderReportSessionTime(session) {
 // submitted attempt is excluded: they clearly sat the exam (they were marked
 // absent after the fact, or grandfathered in), so they belong in the ranked
 // results, not in the absentee block.
+// A student the professor has since cleared to sit this exam late. The clearance
+// is deliberately separate from the attendance list: the student stays marked
+// absent for the scheduled sitting, which is the record that should not change
+// just because they are being given the exam afterwards (#31).
+function isStudentAllowedLateExam(exam, studentId) {
+  if (!exam || !studentId) return false;
+  return (exam.lateExamStudentIds || []).includes(studentId);
+}
+
 function getExamAbsentStudents(exam) {
   if (!exam?.subjectId) return [];
   const excluded = new Set(exam.excludedStudentIds || []);
@@ -10350,7 +10569,11 @@ function getExamAbsentStudents(exam) {
   );
   return getExamAttendanceStudents(exam.subjectId)
     .filter(student => excluded.has(student.id) && !submittedStudentIds.has(student.id))
-    .map(student => ({ ...student, studentName: student.name }))
+    .map(student => ({
+      ...student,
+      studentName: student.name,
+      lateExamAllowed: isStudentAllowedLateExam(exam, student.id),
+    }))
     .sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 }
 
@@ -10371,11 +10594,79 @@ function renderReportAbsentRows(absentStudents) {
     <td data-label="Score"><span class="text-muted">&mdash;</span></td>
     <td data-label="Warnings"><span class="text-muted">&mdash;</span></td>
     <td data-label="Time" class="report-session-cell"><span class="report-session-empty">-</span></td>
-    <td data-label="Submitted" class="report-status-cell"><span class="badge badge-danger">Absent</span></td>
-    <td data-label="Actions"><span class="report-absent-hint">Marked absent &mdash; exam not taken</span></td>
+    <td data-label="Submitted" class="report-status-cell">
+      <span class="badge badge-danger">Absent</span>
+      ${student.lateExamAllowed ? '<span class="report-allowed-chip">Exam allowed</span>' : ''}
+    </td>
+    <td data-label="Actions">
+      <div class="table-actions">
+        ${student.lateExamAllowed
+          ? `<button class="btn-action btn-action-ghost" onclick="revokeAbsentStudentExam('${escAttr(student.id)}')" title="Withdraw this student access to the exam - attendance stays Absent">Withdraw Access</button>`
+          : `<button class="tbl-btn tbl-btn-warning" onclick="allowAbsentStudentExam('${escAttr(student.id)}')" title="Let this student sit the exam later without changing the attendance record or reopening the exam">Allow Exam</button>`}
+      </div>
+    </td>
   </tr>`).join('');
   return header + rows;
 }
+
+// Give an absent student access to this exam without disturbing anything the
+// professor already set up. The only route before this was to reopen the exam,
+// activate it again, reconfigure attendance and edit the student record - four
+// changes to the whole class in order to admit one person (#31). The student
+// stays on the absentee list; their attempt is written as its own session
+// instead of overwriting the attendance record.
+async function allowAbsentStudentExam(studentId) {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  const exam = examId ? DB.getExam(examId) : null;
+  if (!exam) return;
+  // The absentee rows are keyed by the student record id, not the school ID, so
+  // this is a getStudentById lookup rather than getStudent.
+  const student = DB.getStudentById(studentId);
+  const name = student?.name || studentId;
+
+  const ok = await showConfirm(
+    `Allow ${name} to take "${exam.title}"?\n\nThey stay marked absent for the scheduled sitting. Their attempt is recorded as a separate session, and the exam is left exactly as it is for everyone else.`
+  );
+  if (!ok) return;
+
+  const current = exam.lateExamStudentIds || [];
+  if (!current.includes(studentId)) {
+    DB.updateExam(examId, { lateExamStudentIds: [...current, studentId] });
+  }
+  DB.addLog({
+    examId,
+    studentId,
+    type: 'late_exam_allowed',
+    details: `${name} was allowed to take this exam after being marked absent`,
+  });
+  showToast(`${name} can now take this exam. Attendance still shows Absent.`, 'success');
+  renderReportTable();
+}
+window.allowAbsentStudentExam = allowAbsentStudentExam;
+
+async function revokeAbsentStudentExam(studentId) {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  const exam = examId ? DB.getExam(examId) : null;
+  if (!exam) return;
+  const student = DB.getStudentById(studentId);
+  const name = student?.name || studentId;
+
+  const ok = await showConfirm(`Withdraw access to "${exam.title}" for ${name}?`);
+  if (!ok) return;
+
+  DB.updateExam(examId, {
+    lateExamStudentIds: (exam.lateExamStudentIds || []).filter(id => id !== studentId),
+  });
+  DB.addLog({
+    examId,
+    studentId,
+    type: 'late_exam_revoked',
+    details: `Late access to this exam was withdrawn for ${name}`,
+  });
+  showToast(`${name} can no longer take this exam.`, 'info');
+  renderReportTable();
+}
+window.revokeAbsentStudentExam = revokeAbsentStudentExam;
 
 // ── Export ───────────────────────────────────────
 // Format first, from the animated fan. Word and PDF then ask what to put in
@@ -10964,8 +11255,7 @@ function filterReportAbsentStudents(students) {
 // never offers a combination that would return nothing.
 function getReportYearSectionOptions(examId, exam) {
   const values = new Set();
-  DB.getSessionsByExam(examId)
-    .filter(session => session.submitted)
+  dedupeSessionsByStudent(DB.getSessionsByExam(examId).filter(session => session.submitted))
     .forEach((session) => {
       const value = getStudentYearSectionSummary(session, ' / ');
       if (value) values.add(value);
@@ -11027,9 +11317,65 @@ function syncReportLiveBadge(exam) {
   badge.classList.toggle('hidden', exam?.status !== 'active');
 }
 
+// How recently an attempt was worked on, used to decide which of several rows
+// for the same student is the one that counts.
+function sessionRecencyValue(session) {
+  const raw = session?.endTime || session?.startTime || session?.createdAt || null;
+  const time = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+// Collapse rival rows for the same student down to the attempt that counts.
+//
+// A retake is recorded on the student's existing row (older attempts move into
+// attemptHistory), so a student should never occupy two rows. They did anyway
+// whenever a second row was opened before the first had synced, which is why
+// one student appeared twice in the report list and twice in the suspicion
+// probability (#26, #29) — once per row, each carrying its own violations.
+// The newest row wins; the rest are folded in as earlier attempts so nothing
+// is silently dropped from the professor's view.
+function dedupeSessionsByStudent(sessions) {
+  const byStudent = new Map();
+  (sessions || []).forEach(session => {
+    if (!session) return;
+    const key = session.studentId || session.id;
+    const group = byStudent.get(key);
+    if (group) group.push(session);
+    else byStudent.set(key, [session]);
+  });
+
+  const kept = [];
+  byStudent.forEach(group => {
+    const ordered = group.slice().sort((a, b) => {
+      // An attempt still in progress outranks a finished one: it is what the
+      // student is actually sitting right now.
+      if (!!a.submitted !== !!b.submitted) return a.submitted ? 1 : -1;
+      return sessionRecencyValue(b) - sessionRecencyValue(a);
+    });
+    const latest = ordered[0];
+    const superseded = ordered.slice(1);
+    const archived = Array.isArray(latest.attemptHistory) ? latest.attemptHistory.length : 0;
+    const attemptCount = 1 + archived + superseded.length;
+    kept.push(attemptCount > 1
+      ? { ...latest, attemptCount, supersededSessionIds: superseded.map(s => s.id) }
+      : latest);
+  });
+  return kept;
+}
+
+// Shown beside the name so a collapsed row still says how many attempts sit
+// behind it — a retake must be visible, just not a second student.
+function renderAttemptBadge(session) {
+  const attempts = Number(session?.attemptCount) || 0;
+  if (attempts < 2) return '';
+  return `<span class="report-attempt-badge" title="${attempts} attempts recorded for this student — the latest is shown">Attempt ${attempts}</span>`;
+}
+
 function getOrderedSubmittedReportSessions(examId, { applyFilters = true } = {}) {
   if (!examId) return [];
-  const submitted = DB.getSessionsByExam(examId).filter(session => session.submitted);
+  const submitted = dedupeSessionsByStudent(
+    DB.getSessionsByExam(examId).filter(session => session.submitted)
+  );
   const scoped = applyFilters ? filterReportSessions(submitted) : submitted;
   return scoped.sort((a, b) => compareSessionsByLastName(a, b, reportNameSort));
 }
@@ -11179,7 +11525,7 @@ function renderReportTable() {
           onchange="toggleReportRowSelection('${s.id}', this.checked)" />
       </td>
       <td data-label="Rank"><div class="rank-badge rank-${i < 3 ? i+1 : 'other'}">${i+1}</div></td>
-      <td data-label="Name"><strong>${escHtml(s.studentName)}</strong></td>
+      <td data-label="Name"><strong>${escHtml(s.studentName)}</strong>${renderAttemptBadge(s)}</td>
       <td data-label="Student ID">${escHtml(s.studentId)}</td>
       <td data-label="Year &amp; Section">${escHtml(getStudentYearSectionSummary(s))}</td>
       <td data-label="Score" data-report-score="${s.score !== null && s.score !== undefined ? escAttr(String(s.score)) : ''}">
@@ -11187,7 +11533,11 @@ function renderReportTable() {
       </td>
       <td data-label="Warnings">${Number.isFinite(warningCount) ? warningCount : 0}</td>
       <td data-label="Time" class="report-session-cell">${sessionTimeHtml}</td>
-      <td data-label="Submitted" class="report-status-cell">${submissionStatus}</td>
+      <td data-label="Submitted" class="report-status-cell">${submissionStatus}${
+        isStudentAllowedLateExam(exam, s.studentId)
+          ? '<span class="report-allowed-chip" title="Sat this exam after the scheduled date, by professor approval">Late sitting</span>'
+          : ''
+      }</td>
       <td data-label="Actions">
         <div class="table-actions">
           <button class="btn-action btn-action-ghost" onclick="viewStudentAnswers('${s.id}', 'reports')">Review${icEyeFill}</button>
@@ -11203,7 +11553,7 @@ function generatePDF() {
   if (!examId) return;
   const exam = DB.getExam(examId);
   if (!exam) return;
-  const sessions = DB.getSessionsByExam(examId).filter(s => s.submitted);
+  const sessions = dedupeSessionsByStudent(DB.getSessionsByExam(examId).filter(s => s.submitted));
   const sorted = [...sessions].sort((a, b) => (b.score || 0) - (a.score || 0));
   const settings = DB.getSettings();
   const adminSession = Auth.getAdminSession();
@@ -12961,10 +13311,36 @@ function getAIDetectionBarColor(label) {
   return label === 'high' ? '#dc2626' : label === 'medium' ? '#d97706' : '#15803d';
 }
 
+// Not every essay can be scanned, and neither case is a failure worth shouting
+// about: the key may simply not be configured, and a one-line answer carries no
+// signal. Both used to surface as a red "AI detection failed" toast the moment
+// Review was opened — once per essay (#27).
+const AI_DETECTION_MIN_CHARS = 30;
+
+function getAIDetectionAvailability(text) {
+  if (!DB.getSettings().claudeApiKey) {
+    return {
+      ok: false,
+      code: 'no_key',
+      badge: 'AI check off',
+      reason: 'AI detection needs a Groq API key. Add one under Settings to enable it.',
+    };
+  }
+  if (!text || text.trim().length < AI_DETECTION_MIN_CHARS) {
+    return {
+      ok: false,
+      code: 'too_short',
+      badge: 'Too short',
+      reason: `This answer is under ${AI_DETECTION_MIN_CHARS} characters — too short to analyze reliably.`,
+    };
+  }
+  return { ok: true };
+}
+
 async function analyzeAIContent(text) {
+  const availability = getAIDetectionAvailability(text);
+  if (!availability.ok) throw Object.assign(new Error(availability.reason), { code: availability.code });
   const apiKey = DB.getSettings().claudeApiKey;
-  if (!apiKey) throw new Error('Groq API key not set. Go to Settings.');
-  if (!text || text.trim().length < 30) throw new Error('Text is too short to analyze.');
 
   const systemPrompt = `You are an expert forensic linguist and AI-generated content detector specialized in analyzing student academic writing. Your task is to determine whether a submitted essay was written by a human student or generated by an AI assistant.
 
@@ -13035,12 +13411,30 @@ Thresholds: 0-40=low, 41-69=medium, 70-100=high`;
   };
 }
 
-async function detectAIContentDetailed(text, badgeId, sessionId, questionId, forceRescan = false) {
+async function detectAIContentDetailed(text, badgeId, sessionId, questionId, forceRescan = false, options = {}) {
+  // Opening Review kicks off a scan for every essay on the page. Those are
+  // background work the professor never asked for, so they report their outcome
+  // on the badge and stay out of the toast channel; only a badge the professor
+  // clicked themselves is allowed to raise an error (#27).
+  const isAutoScan = options.auto === true;
   const cachedResult = !forceRescan ? getCachedEssayAIDetection(sessionId, questionId, text) : null;
 
   const badgeEl = document.getElementById(badgeId);
   const barEl = document.getElementById(badgeId + '-bar');
   if (badgeEl) { badgeEl.className = 'ai-badge ai-badge-scanning'; badgeEl.textContent = 'Scanning…'; }
+
+  const availability = getAIDetectionAvailability(text);
+  if (!cachedResult && !availability.ok) {
+    if (barEl) barEl.style.width = '0%';
+    if (badgeEl) {
+      badgeEl.className = 'ai-badge ai-badge-scanning';
+      badgeEl.textContent = availability.badge;
+      badgeEl.title = availability.reason;
+    }
+    // Asking for a rescan by hand deserves an answer about why nothing happened.
+    if (!isAutoScan) showToast(availability.reason, 'info');
+    return null;
+  }
 
   const prompt = `You are an AI-generated content detector. Analyze the following student essay response and determine the likelihood that it was generated by an AI (such as ChatGPT, Claude, etc.) rather than written by a human student.
 
@@ -13087,10 +13481,14 @@ ${text.slice(0, 2000)}
     return result;
   } catch (e) {
     if (badgeEl) {
-      badgeEl.className = 'ai-badge ai-badge-medium';
+      // Not a grading signal, so don't colour it like one — a failed scan used
+      // to render in the same amber as a medium AI likelihood.
+      badgeEl.className = 'ai-badge ai-badge-scanning';
       badgeEl.textContent = 'Scan failed';
+      badgeEl.title = `${e.message || 'The AI detector could not be reached.'} Select this badge to try again.`;
     }
-    showToast('AI detection failed: ' + e.message, 'error');
+    if (!isAutoScan) showToast('AI detection failed: ' + e.message, 'error');
+    else console.warn('[AI Detection] Background scan failed:', e?.message || e);
     return null;
   }
 }

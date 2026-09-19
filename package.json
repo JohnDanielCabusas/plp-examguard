@@ -23,6 +23,7 @@
     "test:answer-sheet": "node scripts/test-answer-sheet.cjs",
     "test:export-menu": "node scripts/test-export-menu.cjs",
     "test:live-badges": "node scripts/test-live-badges.cjs",
+    "test:issue-fixes": "node scripts/test-issue-fixes.cjs",
     "test:exam-timer": "node scripts/test-exam-timer.cjs",
     "test:identification": "node scripts/test-identification-answers.cjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",

@@ -223,8 +223,28 @@ async function buildStatisticsSummary(professorId, exam) {
   const profile = getPredictionProfile(exam.require_camera);
   const metadata = getModelMetadata(profile);
   const modelVersion = getPredictionModelVersion(metadata, profile);
+  // One row per student, not one row per session. A student who retakes an exam
+  // can end up with more than one submitted session row, and every one of them
+  // carried its own violations into this list — which is why the same name
+  // appeared twice in the suspicion probability (#29). Only the student's most
+  // recent attempt is scored; the earlier ones stay in the session record but
+  // no longer stand beside it as a second person.
+  const latestSessionsCte = `
+    with latest_sessions as (
+      select distinct on (coalesce(nullif(s.student_id, ''), s.id)) s.*
+        from public.sessions s
+        join public.exams e on e.id = s.exam_id
+       where s.exam_id = $2
+         and s.submitted = true
+         and coalesce(s.owner_admin_id, e.owner_admin_id) = $1
+       order by coalesce(nullif(s.student_id, ''), s.id),
+                s.end_time desc nulls last,
+                s.start_time desc nulls last,
+                s.id
+    )`;
   const { rows } = await query(
-    `select count(*)::integer as total_sessions,
+    `${latestSessionsCte}
+     select count(*)::integer as total_sessions,
             count(*) filter (where p.status = 'completed')::integer as analyzed_sessions,
             count(*) filter (where p.status = 'unavailable')::integer as unavailable_sessions,
             count(*) filter (where p.status = 'failed')::integer as failed_sessions,
@@ -234,20 +254,17 @@ async function buildStatisticsSummary(professorId, exam) {
             count(*) filter (where p.status = 'completed' and p.risk_level = 'suspicious')::integer as suspicious_count,
             avg(p.suspicious_probability) filter (where p.status = 'completed') as average_probability,
             max(p.updated_at) as last_updated
-       from public.sessions s
-       join public.exams e on e.id = s.exam_id
+       from latest_sessions s
        left join public.random_forest_predictions p
          on p.exam_session_id = s.id
         and p.model_version = $3
-        and p.owner_admin_id = $1
-      where s.exam_id = $2
-        and s.submitted = true
-        and coalesce(s.owner_admin_id, e.owner_admin_id) = $1`,
+        and p.owner_admin_id = $1`,
     [professorId, exam.id, modelVersion],
   );
   const row = rows[0] || {};
   const predictionResult = await query(
-    `select s.id as exam_session_id,
+    `${latestSessionsCte}
+     select s.id as exam_session_id,
             s.student_id,
             s.student_name,
             s.end_time as submitted_at,
@@ -258,15 +275,11 @@ async function buildStatisticsSummary(professorId, exam) {
             p.requires_professor_review,
             p.unavailable_reason,
             p.predicted_at
-       from public.sessions s
-       join public.exams e on e.id = s.exam_id
+       from latest_sessions s
        left join public.random_forest_predictions p
          on p.exam_session_id = s.id
         and p.model_version = $3
         and p.owner_admin_id = $1
-      where s.exam_id = $2
-        and s.submitted = true
-        and coalesce(s.owner_admin_id, e.owner_admin_id) = $1
       order by lower(coalesce(nullif(s.student_name, ''), s.student_id)),
                s.end_time desc nulls last,
                s.id`,

@@ -3266,6 +3266,45 @@ tr:hover td { background: #F8FDF8; }
   white-space: normal;
 }
 
+/* Marks a row that stands for more than one attempt, so a collapsed retake is
+   visible without putting the student in the list twice (#26). */
+.report-attempt-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: rgba(37, 99, 235, .12);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+[data-theme="dark"] .report-attempt-badge {
+  background: rgba(96, 165, 250, .16);
+  color: #93c5fd;
+}
+
+/* Absent student the professor has since cleared to sit the exam late (#31). */
+.report-allowed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: rgba(21, 128, 61, .12);
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+[data-theme="dark"] .report-allowed-chip {
+  background: rgba(74, 222, 128, .16);
+  color: #4ade80;
+}
+
 [data-theme="dark"] .report-absent-divider td {
   background: rgba(245,158,11,0.1);
   border-top-color: rgba(245,158,11,0.28);
@@ -15632,6 +15671,127 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 }
 .stats-status-chip.tone-positive { color:#15803d; background:rgba(34,197,94,.12); }
 .stats-status-chip.tone-danger { color:#b91c1c; background:rgba(239,68,68,.13); }
+.stats-status-chip.tone-neutral { color:#5b6672; background:rgba(100,116,139,.14); }
+[data-theme="dark"] .stats-status-chip.tone-neutral { color:#cbd5e1; background:rgba(148,163,184,.18); }
+
+/* Discrimination Index items.
+   A single full-width column stretched every question across the whole card, so
+   the title sat at one edge, the score at the other with a metre of dead space
+   between them, and the diverging bar became an unreadable hairline running the
+   full width. An exam with 60 questions turned into 60 of those (#30). Sized
+   columns keep the label, the value and the bar within reading distance. */
+.stats-disc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px 18px;
+}
+.stats-disc-item {
+  min-width: 0;
+  padding: 11px 13px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+.stats-disc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.stats-disc-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-disc-value {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.stats-disc-band {
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .stats-disc-grid { grid-template-columns: 1fr; }
+}
+
+/* Class Performance: this sitting beside the one before it, so the professor
+   can judge the next exam difficulty from evidence rather than memory (#32). */
+.stats-perf-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.stats-perf-col {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.stats-perf-when {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.stats-perf-title {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-perf-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.stats-perf-figures b {
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-perf-level {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.stats-perf-delta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.stats-perf-delta.is-up { color: #15803d; }
+.stats-perf-delta.is-down { color: #b91c1c; }
+[data-theme="dark"] .stats-perf-delta.is-up { color: #4ade80; }
+[data-theme="dark"] .stats-perf-delta.is-down { color: #f87171; }
+.stats-perf-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
 .stats-empty-analysis-card .stats-analysis-body { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .stats-empty-analysis-card .stats-analysis-description { max-width: 82ch; margin-bottom: 0; font-size: 12px; }
 [data-theme="dark"] .stats-overview-card.tone-positive,
@@ -16159,6 +16319,41 @@ body.exam-page {
 .fullscreen-lock-card h2 { margin: 5px 0 10px; font-size: 24px; }
 .fullscreen-lock-card p { margin: 0; color: #66726a; font-size: 14px; line-height: 1.55; }
 .fullscreen-lock-return { margin-top: 22px; }
+
+/* Return-to-fullscreen deadline. The lock used to wait forever, which let a
+   student work outside the exam and come back whenever they liked (#28). */
+.fullscreen-lock-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid rgba(220, 38, 38, .28);
+  border-radius: 12px;
+  background: rgba(220, 38, 38, .08);
+}
+.fullscreen-lock-countdown-num {
+  min-width: 34px;
+  color: #b91c1c;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.fullscreen-lock-countdown-msg {
+  color: #7f1d1d;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+}
+[data-theme="dark"] .fullscreen-lock-countdown {
+  border-color: rgba(248, 113, 113, .32);
+  background: rgba(248, 113, 113, .12);
+}
+[data-theme="dark"] .fullscreen-lock-countdown-num { color: #fca5a5; }
+[data-theme="dark"] .fullscreen-lock-countdown-msg { color: #fecaca; }
 [data-theme="dark"] .fullscreen-lock-card { border-color: #3b4940; color: #eef5f0; background: #151d18; }
 [data-theme="dark"] .fullscreen-lock-card p { color: #a7b2aa; }
 .exam-page #toast-container { top: 84px; right: 18px; }

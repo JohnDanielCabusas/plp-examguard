@@ -77,8 +77,68 @@ const EXAM_WARNING_TIMINGS = Object.freeze({
   standardSeconds: 5,
   finalSeconds: 3,
   returnedReadSeconds: 3,
+  // Standing "Fullscreen Required" lock. Without a deadline the student could
+  // sit outside fullscreen in another application for as long as they liked
+  // and walk back into the exam untouched, so the lock is time-boxed and each
+  // expiry costs a strike.
+  fullscreenLockSeconds: 15,
   tickMs: 100,
 });
+
+// 640x480 left the professor squinting at a soft, pixelated frame and gave the
+// phone/person detectors very little to work with (#34). `ideal` degrades on
+// its own for webcams that cannot reach 720p, so nothing is locked out.
+const EXAM_CAMERA_CONSTRAINTS = Object.freeze({
+  width: { ideal: 1280, min: 640 },
+  height: { ideal: 720, min: 480 },
+  frameRate: { ideal: 24, min: 10 },
+  facingMode: 'user',
+});
+
+// Evidence stills the professor inspects. The live monitoring grid stays at
+// 320x240 because it refreshes constantly for every student at once; a
+// violation snapshot is captured rarely and has to be legible.
+const VIOLATION_SNAPSHOT_WIDTH = 640;
+const VIOLATION_SNAPSHOT_HEIGHT = 480;
+const VIOLATION_SNAPSHOT_QUALITY = 0.78;
+
+// Capture hardware that screen recorders and streaming suites register with the
+// operating system. Matched case-insensitively against media-device labels.
+//
+// Named products only. A generic match such as "virtual camera" or an audio
+// loopback like Stereo Mix, which ships enabled on a great many Realtek
+// machines, would cost innocent students a strike for hardware they never chose
+// to install. Those live in the softer list below instead.
+const SCREEN_RECORDER_DEVICE_SIGNATURES = Object.freeze([
+  'obs virtual',
+  'obs-camera',
+  'obs camera',
+  'streamlabs',
+  'xsplit',
+  'manycam',
+  'camtwist',
+  'camtasia',
+  'bandicam',
+  'sharex',
+  'screenflow',
+  'nvidia broadcast',
+  'wirecast',
+  'vmix',
+  'splitcam',
+]);
+
+// Weaker signals: worth putting in front of the professor, never worth a strike
+// on their own. These are recorded in the activity log and nothing more.
+const SCREEN_RECORDER_WEAK_SIGNATURES = Object.freeze([
+  'virtual camera',
+  'virtual cam',
+  'screen capture',
+  'capture card',
+  'stereo mix',
+  'vb-audio',
+  'vb audio',
+  'voicemeeter',
+]);
 
 function loadExamScript(src) {
   if (EXAM_EXTERNAL_ASSETS.has(src)) return EXAM_EXTERNAL_ASSETS.get(src);
@@ -270,6 +330,9 @@ const ExamApp = {
   _fullscreenLockToken: 0,
   _fullscreenLockDeadline: 0,
   _fullscreenLockTotalSeconds: 0,
+  _lateExamAttempt: false,         // sitting an exam the professor cleared after the fact (#31)
+  _recorderScanInterval: null,     // periodic screen-recorder environment scan
+  _reportedRecorderLabels: null,   // Set of recorder device labels already reported
   _recentClipboardShortcut: null,
   _intentionalFullscreenExit: false,
   // ── Connectivity monitor ──
@@ -815,33 +878,35 @@ const ExamApp = {
     const canvas = document.getElementById('camera-canvas');
     if (!video || !canvas || !this._cameraStream || video.readyState < 2) return null;
 
-    canvas.width = 320;
-    canvas.height = 240;
+    const shotWidth = VIOLATION_SNAPSHOT_WIDTH;
+    const shotHeight = VIOLATION_SNAPSHOT_HEIGHT;
+    canvas.width = shotWidth;
+    canvas.height = shotHeight;
     const ctx = canvas.getContext('2d');
     ctx.save();
     ctx.scale(-1, 1);
-    ctx.drawImage(video, -320, 0, 320, 240);
+    ctx.drawImage(video, -shotWidth, 0, shotWidth, shotHeight);
     ctx.restore();
     const box = detectionMetadata?.boundingBox;
     if (box && Number(box.frameWidth) > 0 && Number(box.frameHeight) > 0) {
-      const scaleX = 320 / Number(box.frameWidth);
-      const scaleY = 240 / Number(box.frameHeight);
+      const scaleX = shotWidth / Number(box.frameWidth);
+      const scaleY = shotHeight / Number(box.frameHeight);
       const width = Number(box.width || 0) * scaleX;
       const height = Number(box.height || 0) * scaleY;
-      const x = 320 - ((Number(box.x || 0) + Number(box.width || 0)) * scaleX);
+      const x = shotWidth - ((Number(box.x || 0) + Number(box.width || 0)) * scaleX);
       const y = Number(box.y || 0) * scaleY;
       ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.strokeRect(x, y, width, height);
       const label = String(detectionMetadata.objectLabel || detectionMetadata.objectClass || 'Restricted object');
-      ctx.font = 'bold 11px sans-serif';
-      const labelWidth = Math.min(310, ctx.measureText(label).width + 10);
+      ctx.font = 'bold 18px sans-serif';
+      const labelWidth = Math.min(shotWidth - 10, ctx.measureText(label).width + 16);
       ctx.fillStyle = '#ef4444';
-      ctx.fillRect(x, Math.max(0, y - 18), labelWidth, 18);
+      ctx.fillRect(x, Math.max(0, y - 26), labelWidth, 26);
       ctx.fillStyle = '#fff';
-      ctx.fillText(label, x + 5, Math.max(12, y - 5));
+      ctx.fillText(label, x + 8, Math.max(19, y - 7));
     }
-    return canvas.toDataURL('image/jpeg', 0.6);
+    return canvas.toDataURL('image/jpeg', VIOLATION_SNAPSHOT_QUALITY);
   },
 
   _buildCameraSnapshots(nextSnapshot) {
@@ -874,6 +939,105 @@ const ExamApp = {
 
   _isFullscreenActive() {
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  },
+
+  // ── Screen-recording environment ─────────────────────────────
+  // No browser exposes "the screen is being recorded right now" — only the OS
+  // knows, and the capture hotkeys the page can see are pressed once, at the
+  // moment recording starts. That is why a recorder already running before the
+  // exam opened went completely unnoticed (#23): there was no keypress left to
+  // catch. What the page CAN see is the capture hardware recording and
+  // streaming software installs, so the environment is scanned before the first
+  // question and again on a slow loop while the exam runs. Device labels are
+  // only readable once camera permission has been granted, so this scan is
+  // strongest on exams that require the webcam.
+  async _scanForScreenRecorders() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    let devices = [];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (_) {
+      return [];
+    }
+
+    const matches = [];
+    const seen = new Set();
+    (devices || []).forEach((device) => {
+      const rawLabel = String(device?.label || '').trim();
+      if (!rawLabel || seen.has(rawLabel)) return;
+      const label = rawLabel.toLowerCase();
+      const strong = SCREEN_RECORDER_DEVICE_SIGNATURES.find(sig => label.includes(sig));
+      const weak = strong ? null : SCREEN_RECORDER_WEAK_SIGNATURES.find(sig => label.includes(sig));
+      if (!strong && !weak) return;
+      seen.add(rawLabel);
+      matches.push({
+        label: rawLabel,
+        kind: device.kind || 'unknown',
+        signature: strong || weak,
+        confident: !!strong,
+      });
+    });
+    return matches;
+  },
+
+  async _checkScreenRecordingEnvironment(stage = 'during') {
+    if (!this.session) return [];
+    const matches = await this._scanForScreenRecorders();
+    if (!matches.length) return [];
+
+    if (!this._reportedRecorderLabels) this._reportedRecorderLabels = new Set();
+    const fresh = matches.filter(match => !this._reportedRecorderLabels.has(match.label));
+    if (!fresh.length) return matches;
+    fresh.forEach(match => this._reportedRecorderLabels.add(match.label));
+
+    const describe = list => list.map(match => match.label).join(', ');
+    const metadataFor = list => ({
+      source: 'DEVICE_SCAN',
+      stage,
+      devices: list.map(match => ({ label: match.label, kind: match.kind, confident: match.confident })),
+    });
+
+    // Named recording software found before the first question is the case this
+    // check exists for, so it costs a strike exactly like a capture hotkey does.
+    const confident = fresh.filter(match => match.confident);
+    if (confident.length) {
+      const detail = stage === 'pre-exam'
+        ? `Screen recording software was already running when this exam opened (${describe(confident)})`
+        : `Screen recording software was detected during the exam (${describe(confident)})`;
+      if (!this.issueWarning('screen_record', detail, metadataFor(confident))) {
+        this._recordActivity('screen_record', detail, metadataFor(confident));
+      }
+    }
+
+    // Everything else is a hint, not a verdict. A generic virtual camera or an
+    // audio loopback is on plenty of machines for innocent reasons, so it goes
+    // to the professor as a log entry and never costs the student anything.
+    const uncertain = fresh.filter(match => !match.confident);
+    if (uncertain.length) {
+      this._recordActivity(
+        'screen_record_possible',
+        `Capture-capable devices present on this machine (${describe(uncertain)})`,
+        metadataFor(uncertain),
+      );
+    }
+    return matches;
+  },
+
+  _startScreenRecordingMonitor() {
+    this._stopScreenRecordingMonitor();
+    // Slow on purpose: enumerateDevices is cheap but not free, and a recorder
+    // started mid-exam is already caught by the capture-hotkey rule. This is
+    // the backstop for the recorder that never produces a keypress.
+    this._recorderScanInterval = setInterval(() => {
+      this._checkScreenRecordingEnvironment('during').catch(() => {});
+    }, 30000);
+  },
+
+  _stopScreenRecordingMonitor() {
+    if (this._recorderScanInterval) {
+      clearInterval(this._recorderScanInterval);
+      this._recorderScanInterval = null;
+    }
   },
 
   _scheduleFullscreenEnforcement(delayMs = 350) {
@@ -1336,9 +1500,31 @@ const ExamApp = {
     return (student.enrolledSubjects || []).includes(exam.subjectId);
   },
 
+  // The professor cleared this student to sit the exam after the scheduled
+  // date. The clearance is held apart from the attendance list on purpose: the
+  // student stays marked absent for the sitting they missed, and nothing about
+  // the exam itself is reopened or reconfigured for the rest of the class (#31).
+  _hasLateExamGrant(student, exam) {
+    if (!student || !exam) return false;
+    return (exam.lateExamStudentIds || []).includes(student.id);
+  },
+
   _isStudentAbsentForExam(student, exam) {
     if (!student || !exam) return false;
+    if (this._hasLateExamGrant(student, exam)) return false;
     return (exam.excludedStudentIds || []).includes(student.id);
+  },
+
+  // A cleared student sees the exam as open even once it has closed for the
+  // class, until they have submitted. Everyone else sees its real status.
+  _examForStudent(exam, student) {
+    if (!exam || !student) return exam;
+    if (!this._hasLateExamGrant(student, exam)) return exam;
+    if (exam.status === 'draft') return exam;
+    const session = DB.getStudentSession(exam.id, student.id);
+    if (session?.submitted) return exam;
+    if (exam.status === 'active') return exam;
+    return { ...exam, status: 'active', lateExamForStudent: true };
   },
 
   // ============================================================
@@ -1388,7 +1574,7 @@ const ExamApp = {
       return;
     }
 
-    const exam = this._resolveExamFromSession(studentSession);
+    let exam = this._resolveExamFromSession(studentSession);
     if (!exam) {
       // Exam target invalid — clear it and go back to dashboard
       const sess = { ...studentSession };
@@ -1399,10 +1585,17 @@ const ExamApp = {
       return;
     }
 
+    const portalStudent = this._getPortalStudent(studentSession.studentId);
+    // A student cleared to sit this exam late still finds it open, even after it
+    // closed for the rest of the class. The flag is held here rather than on the
+    // exam object because the runtime re-reads that object from the database on
+    // every timer tick, which would wipe it.
+    exam = this._examForStudent(exam, portalStudent);
+    this._lateExamAttempt = !!exam.lateExamForStudent;
+
     this.exam = exam;
     this._preloadYoloObjectModel();
 
-    const portalStudent = this._getPortalStudent(studentSession.studentId);
     if (!portalStudent) {
       this._showError(
         this._isPortalStudentArchived(studentSession.studentId)
@@ -1985,7 +2178,9 @@ const ExamApp = {
       if (e.status !== 'draft') return true;
       const dbSession = DB.getStudentSession(e.id, sess.studentId);
       return !!dbSession?.submitted;
-    });
+    // An exam the professor cleared this student to sit late reads as open to
+    // them alone, so it appears here with a Take Exam action instead of Closed.
+    }).map(e => this._examForStudent(e, student));
     if (!allExams.length) {
       listEl.innerHTML = `<div class="dash-empty">
         <div class="dash-empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
@@ -2311,7 +2506,7 @@ const ExamApp = {
     const enrolledIds = (student && student.enrolledSubjects) ? student.enrolledSubjects : [];
     const allSubjects = DB.getSubjects();
     const enrolledSubjects = allSubjects.filter(s => enrolledIds.includes(s.id) && !s.archived);
-    const allExams = DB.getExams();
+    const allExams = DB.getExams().map(e => this._examForStudent(e, student));
     const listEl = document.getElementById('dash-subjects-list');
     if (!listEl) return;
 
@@ -3074,6 +3269,10 @@ const ExamApp = {
     this.renderQuestions();
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
+    // Before the student answers anything: catch a recorder that was already
+    // running, which no keypress would ever have revealed.
+    this._checkScreenRecordingEnvironment('pre-exam').catch(() => {});
+    this._startScreenRecordingMonitor();
 
     if (this._cameraRequired && this._webcamConsentAccepted) {
       if (this._cameraStream) this._activateCameraMonitoring(document.getElementById('camera-feed'));
@@ -3816,6 +4015,9 @@ const ExamApp = {
     if (liveExam) this.exam = liveExam;
     this._renderChatReportOptions();
     const liveSession = this._getLiveSession();
+    // A late sitting runs against an exam that is already closed for the class.
+    // Its own timer ends it; the class-wide close must not (#31).
+    if (this._lateExamAttempt) return;
     if (this.exam.status !== 'closed' || liveSession?.submitted) return;
 
     const deadline = this._getExamDeadlineMs(this.exam, liveSession || this.session);
@@ -3894,9 +4096,7 @@ const ExamApp = {
 
     const doReturn = () => {
       this.requestFullscreen().then((ok) => {
-        if (ok && this._isFullscreenActive()) {
-          if (overlay) overlay.style.display = 'none';
-        }
+        if (ok && this._isFullscreenActive()) this._hideFullscreenLock();
       });
     };
 
@@ -3914,6 +4114,10 @@ const ExamApp = {
           <p>
             This exam must remain in fullscreen. Select the button below to continue.
           </p>
+          <div class="fullscreen-lock-countdown" id="fs-lock-countdown">
+            <span class="fullscreen-lock-countdown-num" id="fs-lock-cd-num">${EXAM_WARNING_TIMINGS.fullscreenLockSeconds}</span>
+            <span class="fullscreen-lock-countdown-msg" id="fs-lock-cd-msg">seconds to return before another warning is recorded</span>
+          </div>
           <button id="fs-return-btn" class="fullscreen-lock-return" data-exam-control="true">
             Return to Fullscreen
           </button>
@@ -3924,6 +4128,45 @@ const ExamApp = {
     }
 
     document.getElementById('fs-return-btn').onclick = doReturn;
+    this._startFullscreenLockCountdown();
+  },
+
+  // The lock is raised by a watchdog that re-arms every second, so this must be
+  // idempotent: a countdown already running keeps its original deadline instead
+  // of being pushed forward on every pass (which would never expire).
+  _startFullscreenLockCountdown() {
+    if (this._fullscreenLockDeadline > Date.now() + 150) return;
+
+    const numEl = document.getElementById('fs-lock-cd-num');
+    const msgEl = document.getElementById('fs-lock-cd-msg');
+
+    this._startDeadlineCountdown({
+      timerKey: '_fullscreenLockTimer',
+      tokenKey: '_fullscreenLockToken',
+      deadlineKey: '_fullscreenLockDeadline',
+      totalKey: '_fullscreenLockTotalSeconds',
+      totalSeconds: EXAM_WARNING_TIMINGS.fullscreenLockSeconds,
+      onUpdate: (remaining) => {
+        if (numEl) numEl.textContent = remaining;
+        if (msgEl) {
+          msgEl.textContent = this.warnings >= 2
+            ? 'seconds to return — the next warning submits your exam'
+            : 'seconds to return before another warning is recorded';
+        }
+      },
+      onExpire: () => {
+        // Back in fullscreen in the meantime: nothing to charge for.
+        if (!this._examRuntimeStarted || this._isFullscreenActive()) {
+          this._hideFullscreenLock();
+          return;
+        }
+        // Hand the screen to the strike overlay so the student sees the count
+        // rise. The enforcement watchdog re-raises this lock — with a fresh
+        // deadline — once that overlay closes and fullscreen is still missing.
+        this._hideFullscreenLock();
+        this.issueWarning('fullscreen_exit', 'Did not return to fullscreen within the allowed time');
+      },
+    });
   },
 
   _reconcileLiveAnswers(liveAnswers) {
@@ -4044,6 +4287,12 @@ const ExamApp = {
     document.addEventListener('cut', copyHandler);
 
     // ── Paste & selection blocked silently ──────────────────────
+    // Registered in the CAPTURE phase. CodeMirror installs its own paste
+    // handler on the hidden textarea it types into, reads the clipboard itself
+    // and inserts the text programmatically. A document-level bubble listener
+    // runs after that, so the warning appeared while the code had already been
+    // pasted (#24). Capturing first — and stopping the event before it reaches
+    // the editor — is what actually prevents the insert.
     const pasteHandler = e => {
       const editable = this._isEditableTarget(e.target);
       const intoAnswer = this._isAnswerFieldTarget(e.target);
@@ -4054,6 +4303,7 @@ const ExamApp = {
       // record entirely, which is why a pasted essay raised nothing at all.
       if (!editable || intoAnswer) {
         e.preventDefault();
+        e.stopImmediatePropagation();
       }
       if (intoAnswer) {
         this.issueWarning('paste_attempt', 'Pasted content into an answer field');
@@ -4061,7 +4311,21 @@ const ExamApp = {
         this._recordActivity('paste_attempt', 'Paste attempt detected');
       }
     };
-    document.addEventListener('paste', pasteHandler);
+    document.addEventListener('paste', pasteHandler, true);
+
+    // Drag-and-drop is the other way text reaches an editor without a paste
+    // event, and CodeMirror accepts drops by default.
+    const dropHandler = e => {
+      if (!this._isAnswerFieldTarget(e.target)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this.issueWarning('paste_attempt', 'Dragged content into an answer field');
+    };
+    document.addEventListener('drop', dropHandler, true);
+    const dragOverHandler = e => {
+      if (this._isAnswerFieldTarget(e.target)) e.preventDefault();
+    };
+    document.addEventListener('dragover', dragOverHandler, true);
 
     const selectHandler = e => {
       if (!this._isEditableTarget(e.target)) e.preventDefault();
@@ -4177,7 +4441,9 @@ const ExamApp = {
       ['visibilitychange',   document, visHandler],
       ['copy',               document, copyHandler],
       ['cut',                document, copyHandler],
-      ['paste',              document, pasteHandler],
+      ['paste',              document, pasteHandler, true],
+      ['drop',               document, dropHandler, true],
+      ['dragover',           document, dragOverHandler, true],
       ['selectstart',        document, selectHandler],
       ['contextmenu',        document, rcHandler],
       ['fullscreenchange',   document, fsHandler],
@@ -5043,7 +5309,7 @@ const ExamApp = {
     try {
       const existingLive = this._cameraStream?.getVideoTracks?.().some(track => track.readyState === 'live');
       const cameraConstraints = {
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          video: EXAM_CAMERA_CONSTRAINTS,
           audio: false,
         };
       const stream = existingLive
@@ -5629,7 +5895,7 @@ const ExamApp = {
     this._cameraPrompting = true; // suppress focus-loss warnings if a permission dialog opens
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        video: EXAM_CAMERA_CONSTRAINTS,
         audio: false,
       });
       if (this._cameraStream) this._cameraStream.getTracks().forEach(t => t.stop());
@@ -6832,15 +7098,19 @@ const ExamApp = {
     // The enforcement watchdog re-arms itself, so every teardown path has to
     // stop it or the lock can surface on the submitted screen.
     this._stopFullscreenEnforcement();
+    this._stopFullscreenLockCountdown();
     this._fullscreenInteractionGraceUntil = 0;
     this._intentionalFullscreenExit = false;
     this.cancelCountdown(false);
-    this.anticheatListeners.forEach(([event, target, handler]) => {
-      target.removeEventListener(event, handler);
+    this.anticheatListeners.forEach(([event, target, handler, capture]) => {
+      // removeEventListener only matches a listener registered with the same
+      // capture flag, so capture-phase entries have to pass it back.
+      target.removeEventListener(event, handler, !!capture);
     });
     this.anticheatListeners = [];
     if (options.preserveCamera !== true) this.stopCamera();
     this._stopConnectionMonitor();
+    this._stopScreenRecordingMonitor();
     this._stopWebcamWaitPoll();
   },
 
@@ -6892,6 +7162,55 @@ const ExamApp = {
           : 'Return to the exam to continue. Your exam will only end when its timer expires or the warning limit is reached.';
         if (wrapEl) wrapEl.style.display = 'none';
         this._countdownInterval = null;
+        // A fullscreen exit is not resolved by waiting it out. This overlay used
+        // to sit here with no deadline, which let a student work in another
+        // application and stroll back whenever they liked. Keep a visible clock
+        // on the recovery screen and charge another strike when it runs out.
+        if (waitingForFullscreen && this.warnings < 3) {
+          this._startFullscreenReturnCountdown();
+        }
+      },
+    });
+    this._countdownInterval = this._warningCountdownTimer;
+  },
+
+  // Second stage of a fullscreen violation: the student has read the strike and
+  // now has a hard, visible window to actually restore fullscreen. Expiry costs
+  // another strike, so three refusals still end the attempt.
+  _startFullscreenReturnCountdown() {
+    const wrapEl = document.getElementById('warning-countdown-wrap');
+    const msgEl = document.getElementById('warning-countdown-msg')
+      || (wrapEl ? wrapEl.querySelector('.warning-countdown-msg') : null);
+    const cdNum = document.getElementById('cd-num');
+    const cdCircle = document.getElementById('cd-circle');
+    const circumference = 163.36;
+
+    this._warningCountdownMode = 'fullscreen_return';
+    this._startDeadlineCountdown({
+      timerKey: '_warningCountdownTimer',
+      tokenKey: '_warningCountdownToken',
+      deadlineKey: '_warningCountdownDeadline',
+      totalKey: '_warningCountdownTotalSeconds',
+      totalSeconds: EXAM_WARNING_TIMINGS.fullscreenLockSeconds,
+      onUpdate: (remaining, msRemaining, activeTotalSeconds, totalMs) => {
+        if (wrapEl) wrapEl.style.display = '';
+        if (msgEl) {
+          msgEl.textContent = this.warnings >= 2
+            ? 'Return to fullscreen now — the next warning submits your exam'
+            : 'Return to fullscreen before this countdown ends or another warning is recorded';
+        }
+        if (cdNum) cdNum.textContent = remaining;
+        if (cdCircle) {
+          cdCircle.style.strokeDashoffset = String(circumference * ((totalMs - msRemaining) / totalMs));
+        }
+      },
+      onExpire: () => {
+        this._warningCountdownMode = null;
+        if (wrapEl) wrapEl.style.display = 'none';
+        if (!this._examRuntimeStarted || this._isFullscreenActive()) return;
+        // issueWarning re-renders this overlay at the next strike level and, on
+        // the third, runs its own final countdown into the auto-submit.
+        this.issueWarning('fullscreen_exit', 'Did not return to fullscreen within the allowed time');
       },
     });
     this._countdownInterval = this._warningCountdownTimer;
@@ -6919,7 +7238,8 @@ const ExamApp = {
     }
 
     const hadFocusReminder = this._warningCountdownMode === 'focus'
-      || this._warningCountdownMode === 'focus_expired';
+      || this._warningCountdownMode === 'focus_expired'
+      || this._warningCountdownMode === 'fullscreen_return';
 
     // Camera, object, clipboard and final-strike warnings own their complete
     // deadline. Focus/visibility recovery events must not cancel those timers.
@@ -7229,6 +7549,16 @@ const ExamApp = {
   _getExamDeadlineMs(exam = this.exam, session = null) {
     const durationMinutes = Number(exam?.timeLimit);
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+
+    // A student sitting the exam late is not bound to the class's start time —
+    // that window closed days ago and would time them out on arrival. They get
+    // the exam's full duration measured from when they actually begin (#31).
+    if (this._lateExamAttempt || exam?.lateExamForStudent) {
+      const lateStartedAt = session?.startTime ? new Date(session.startTime).getTime() : NaN;
+      return Number.isFinite(lateStartedAt)
+        ? lateStartedAt + durationMinutes * 60 * 1000
+        : null;
+    }
 
     const examStartedAt = exam?.startedAt ? new Date(exam.startedAt).getTime() : NaN;
     if (Number.isFinite(examStartedAt)) return examStartedAt + durationMinutes * 60 * 1000;
@@ -7659,6 +7989,9 @@ const ExamApp = {
         indentWithTabs: q.language === 'python' ? false : true,
         lineWrapping: false,
         autofocus: false,
+        // The editor must not accept dropped text; the anti-cheat drop rule
+        // blocks it too, but CodeMirror's own handler runs on its inner nodes.
+        dragDrop: false,
         extraKeys: {
           'Tab': (cm) => cm.replaceSelection('    '),
           'Shift-Tab': 'indentLess',
