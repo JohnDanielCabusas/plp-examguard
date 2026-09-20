@@ -7481,7 +7481,7 @@ const ExamApp = {
   // running, which means the recorder has just been toggled off. The attempt
   // continues, once. A second recording in the same attempt is final, so this
   // cannot be used to keep buying eight seconds at a time.
-  _resolveRecordingStopped() {
+  _resolveRecordingStopped(options = {}) {
     if (this._recordingGraceUsed) {
       this._showToast(
         'Recording was already stopped once this attempt. Your exam is still being submitted.',
@@ -7489,6 +7489,13 @@ const ExamApp = {
       );
       return;
     }
+    // Two very different kinds of evidence end up here, and the professor has
+    // to be able to tell them apart. The capture hotkey toggles the recorder
+    // itself, so pressing it to clear the warning necessarily stops recording.
+    // The button is the student's word and nothing more: the Game Bar stop
+    // control lives outside the browser, and clicking it produces no event a
+    // page can see.
+    const claimed = options.source === 'STUDENT_CLAIM';
     this._recordingGraceUsed = true;
     this._stopWarningCountdown({ hideWrap: true });
     this._terminalViolationActive = false;
@@ -7497,16 +7504,33 @@ const ExamApp = {
     if (overlay) overlay.style.display = 'none';
     this._activeWarningType = null;
     this._setFullscreenWarningAction(false);
+    this._setRecordingStoppedAction(false);
 
     this._recordActivity(
-      'screen_record_stopped',
-      'Screen recording was stopped before the exam was submitted',
-      { source: 'CAPTURE_HOTKEY' },
+      claimed ? 'screen_record_stopped_claim' : 'screen_record_stopped',
+      claimed
+        ? 'Student stated they stopped the recording. This was not verified — the exam continued on their word.'
+        : 'Screen recording was stopped with the capture shortcut before the exam was submitted',
+      { source: claimed ? 'STUDENT_CLAIM' : 'CAPTURE_HOTKEY', verified: !claimed },
     );
     this._showToast(
-      'Recording stopped — your exam has resumed. Recording again will end this attempt.',
+      'Your exam has resumed. Recording again will end this attempt.',
       'warning',
     );
+  },
+
+  _setRecordingStoppedAction(visible) {
+    const button = document.getElementById('warning-recording-stopped');
+    if (!button) return;
+    button.style.display = visible ? 'inline-flex' : 'none';
+    button.disabled = false;
+  },
+
+  // Deliberately taken at face value. It is recorded as a claim, not as an
+  // observation, and the professor decides what it was worth.
+  confirmRecordingStopped() {
+    if (!this._terminalViolationActive) return;
+    this._resolveRecordingStopped({ source: 'STUDENT_CLAIM' });
   },
 
   issueWarning(type, detail, detectionMetadata = null, options = {}) {
@@ -7615,6 +7639,9 @@ const ExamApp = {
     if (!overlay) return;
     this._activeWarningType = type;
     this._setFullscreenWarningAction(type === 'fullscreen_exit' && this.warnings < 3);
+    this._setRecordingStoppedAction(
+      this._isTerminalViolation(type) && !this._recordingGraceUsed,
+    );
 
     const messages = {
       tab_switch:      'You switched to another tab or window.',
@@ -7672,7 +7699,7 @@ const ExamApp = {
       titleEl.textContent = 'SCREEN RECORDING DETECTED';
       subEl.textContent   = this._recordingGraceUsed
         ? 'Recording the exam is not allowed. You already stopped once this attempt, so your exam is being submitted.'
-        : 'Stop the recording now to continue — press the recording shortcut again (Win+Alt+R). You get one chance.';
+        : 'Stop the recording now to continue. Use the recording shortcut (Win+Alt+R), or stop it however you started it and select the button below. You get one chance.';
     } else if (this.warnings >= 3) {
       titleEl.textContent = 'FINAL WARNING!';
       subEl.textContent   = 'Maximum violations reached. Your exam is being submitted now.';

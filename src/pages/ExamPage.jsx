@@ -176,6 +176,17 @@ export default function ExamPage() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
             Return to Fullscreen
           </button>
+          <button
+            type="button"
+            id="warning-recording-stopped"
+            data-exam-control="true"
+            className="warning-fullscreen-return examv2-interactive"
+            style={{ display: 'none' }}
+            onClick={() => window.ExamApp.confirmRecordingStopped()}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
+            I have stopped the recording
+          </button>
         </div>
       </div>
 

@@ -377,6 +377,11 @@ async function runExamRuntimeTests() {
   app._recordActivity = (t) => stopLogged.push(t);
   timers.length = 0;
   app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  assert.equal(
+    element('warning-recording-stopped').style.display,
+    'inline-flex',
+    'the button is offered, because the floating Game Bar stop produces no keypress',
+  );
   app._resolveRecordingStopped();
   assert.equal(app._terminalViolationActive, false, 'stopping clears the violation');
   assert.equal(overlayEl.style.display, 'none', 'and the exam is usable again');
@@ -396,6 +401,35 @@ async function runExamRuntimeTests() {
   app._warningCountdownDeadline = Date.now() - 1;
   runPending();
   assert.equal(submitted, 'violation_terminal', 'and it ends the attempt');
+
+  // The button is the student's word, and is recorded as exactly that so the
+  // professor is never shown a claim dressed up as an observation.
+  app._terminalViolationActive = false;
+  app._recordingGraceUsed = false;
+  app._lastWarningTime = 0;
+  stopLogged.length = 0;
+  const details = [];
+  app._recordActivity = (t, d) => { stopLogged.push(t); details.push(d); };
+  timers.length = 0;
+  app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  app.confirmRecordingStopped();
+  assert.equal(app._terminalViolationActive, false, 'the claim is taken at face value');
+  assert.ok(
+    stopLogged.includes('screen_record_stopped_claim'),
+    'and logged under its own type, not the confirmed one',
+  );
+  assert.match(details.join(' '), /not verified/, 'the professor is told it was never checked');
+  assert.equal(
+    stopLogged.includes('screen_record_stopped'),
+    false,
+    'a claim must never be recorded as a confirmed stop',
+  );
+
+  // The button is not offered once the single chance is gone.
+  app._terminalViolationActive = false;
+  app._lastWarningTime = 0;
+  app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  assert.equal(element('warning-recording-stopped').style.display, 'none', 'no second chance offered');
 
   app._recordActivity = () => {};
   app._terminalViolationActive = false;
