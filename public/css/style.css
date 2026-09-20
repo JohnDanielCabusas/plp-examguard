@@ -7555,9 +7555,12 @@ body.exam-page {
   margin-right: 0;
   border-radius: 10px;
 }
-/* The chip used to be hidden until the sidebar collapsed, which left a blank
-   20px where every other row has an icon. It is the course's own colour and
-   initial, so it belongs in that slot at every width. */
+/* No icon on a course row. The label therefore starts at the row's own padding,
+   level with the left edge of the nav icons above it, rather than sitting in
+   the label column behind an empty indent. The chip still appears when the
+   sidebar collapses to the icon rail, where it is the only thing identifying
+   the course. */
+.portal-subject-item .portal-subject-chip { display: none; }
 
 /* Collapsed: show chip centered like nav icons, hide label */
 .portal-sidebar.collapsed .portal-subject-item {
@@ -7688,9 +7691,6 @@ body.exam-page {
 /* Subject items in sidebar — text only, no chip */
 .portal-subject-item {
   display: flex; align-items: center; gap: 10px;
-  /* Same padding and gap as .portal-nav-item. The course's colour chip sits in
-     the slot the other items use for their icon, so every label lines up down
-     the left edge with no empty indent standing in for a missing icon. */
   padding: 10px 12px;
   cursor: pointer;
   border-radius: 0 24px 24px 0;

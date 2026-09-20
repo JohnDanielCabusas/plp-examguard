@@ -156,7 +156,16 @@ assert.equal(ruleFor('.portal-wordmark-name {'), ruleFor('.sidebar-wordmark-name
 // colour chip in the slot the others use for an icon, so every label starts at
 // the same x and no blank indent stands in for a missing icon.
 assert.match(styleSource, /\.portal-subject-item \{[\s\S]{0,400}?padding: 10px 12px;/, 'course rows share the nav padding');
-assert.doesNotMatch(styleSource, /\.portal-subject-item \.portal-subject-chip \{ display: none; \}/, 'the chip fills the icon slot at every width');
+// Courses carry no icon, so their label sits at the row padding, level with the
+// left edge of the nav icons rather than behind a blank indent.
+assert.ok(
+  styleSource.includes('.portal-subject-item .portal-subject-chip { display: none; }'),
+  'course rows show no chip while the sidebar is expanded',
+);
+assert.ok(
+  styleSource.includes('.portal-sidebar.collapsed .portal-subject-item .portal-subject-chip'),
+  'but the chip returns on the collapsed rail, where it is the only identifier',
+);
 
 // The sidebar list is rebuilt on every dashboard refresh, which used to throw
 // away the highlight on the course the student had open.
