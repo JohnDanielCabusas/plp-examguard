@@ -9682,10 +9682,16 @@ const DIFFICULTY_EASY_MIN = 70;   // pct >= this → Easy
 const DIFFICULTY_HARD_MAX = 40;   // pct <  this → Hard
 const DIFFICULTY_MIN_SAMPLE = 10; // submissions needed before stats override the AI/manual label
 
+// Difficulty and Bloom level sit side by side on the same question, so they
+// share one badge shape and are kept in two hue families that cannot be
+// confused for one another: difficulty runs the familiar green-amber-red scale,
+// Bloom runs a cool-to-warm progression through blue and violet. The emoji
+// circles that used to stand in for difficulty are gone -- they could not be
+// recoloured for dark mode and rendered differently on every platform.
 const DIFFICULTY_META = {
-  easy:   { label: 'Easy',   color: '#15803d', bg: 'rgba(21,128,61,0.12)',  emoji: '🟢' },
-  medium: { label: 'Medium', color: '#d97706', bg: 'rgba(217,119,6,0.12)',  emoji: '🟡' },
-  hard:   { label: 'Hard',   color: '#dc2626', bg: 'rgba(220,38,38,0.12)',  emoji: '🔴' },
+  easy:   { label: 'Easy',   tone: 'green', color: '#15803d', bg: 'rgba(21,128,61,0.12)' },
+  medium: { label: 'Medium', tone: 'amber', color: '#b45309', bg: 'rgba(217,119,6,0.12)' },
+  hard:   { label: 'Hard',   tone: 'red',   color: '#b91c1c', bg: 'rgba(220,38,38,0.12)' },
 };
 
 const DIFFICULTY_SOURCE_LABEL = {
@@ -9784,8 +9790,10 @@ function resolveQuestionDifficulty(q, sessions) {
 // Small inline pill for a difficulty level, used across stats + editor + preview.
 function difficultyBadge(level, extraStyle = '') {
   const meta = DIFFICULTY_META[level];
-  if (!meta) return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#6b7280;background:rgba(107,114,128,0.12);white-space:nowrap;${extraStyle}">Unrated</span>`;
-  return `<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};white-space:nowrap;${extraStyle}">${meta.emoji} ${meta.label}</span>`;
+  if (!meta) {
+    return `<span class="qmeta-badge qmeta-tone-slate" style="${extraStyle}">Unrated</span>`;
+  }
+  return `<span class="qmeta-badge qmeta-tone-${meta.tone}" style="${extraStyle}">${meta.label}</span>`;
 }
 
 // Horizontal 3-band gauge with a marker at `pct` (0% = hardest/left, 100% =
@@ -9874,19 +9882,23 @@ function discriminationBar(d, color) {
 // Six cognitive levels, low-order (recall) → high-order (creation). Tagged by
 // AI at generation and overridable by the professor in the question editor.
 const BLOOM_LEVELS = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
+// A ladder, so the colours climb like one: blue through violet to rose as the
+// thinking gets harder. It deliberately avoids green, amber and red, which
+// belong to difficulty — the two badges share a question and must never be
+// mistaken for each other.
 const BLOOM_META = {
-  remember:   { label: 'Remember',   order: 1, color: '#2563eb', bg: 'rgba(37,99,235,0.12)',  hint: 'Recall facts & basic concepts' },
-  understand: { label: 'Understand', order: 2, color: '#0d9488', bg: 'rgba(13,148,136,0.12)', hint: 'Explain ideas or concepts' },
-  apply:      { label: 'Apply',      order: 3, color: '#15803d', bg: 'rgba(21,128,61,0.12)',  hint: 'Use information in new situations' },
-  analyze:    { label: 'Analyze',    order: 4, color: '#d97706', bg: 'rgba(217,119,6,0.12)',  hint: 'Draw connections among ideas' },
-  evaluate:   { label: 'Evaluate',   order: 5, color: '#db2777', bg: 'rgba(219,39,119,0.12)', hint: 'Justify a stand or decision' },
-  create:     { label: 'Create',     order: 6, color: '#7c3aed', bg: 'rgba(124,58,237,0.12)', hint: 'Produce new or original work' },
+  remember:   { label: 'Remember',   order: 1, tone: 'blue',    color: '#1d4ed8', bg: 'rgba(37,99,235,0.12)',  hint: 'Recall facts & basic concepts' },
+  understand: { label: 'Understand', order: 2, tone: 'indigo',  color: '#4338ca', bg: 'rgba(79,70,229,0.12)',  hint: 'Explain ideas or concepts' },
+  apply:      { label: 'Apply',      order: 3, tone: 'violet',  color: '#6d28d9', bg: 'rgba(124,58,237,0.12)', hint: 'Use information in new situations' },
+  analyze:    { label: 'Analyze',    order: 4, tone: 'purple',  color: '#a21caf', bg: 'rgba(192,38,211,0.12)', hint: 'Draw connections among ideas' },
+  evaluate:   { label: 'Evaluate',   order: 5, tone: 'pink',    color: '#be185d', bg: 'rgba(219,39,119,0.12)', hint: 'Justify a stand or decision' },
+  create:     { label: 'Create',     order: 6, tone: 'rose',    color: '#be123c', bg: 'rgba(225,29,72,0.12)',  hint: 'Produce new or original work' },
 };
 
 function bloomBadge(level, extraStyle = '') {
   const meta = BLOOM_META[level];
   if (!meta) return '';
-  return `<span title="${meta.hint}" style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;color:${meta.color};background:${meta.bg};white-space:nowrap;${extraStyle}">${meta.order}· ${meta.label}</span>`;
+  return `<span class="qmeta-badge qmeta-tone-${meta.tone}" title="${meta.hint}" style="${extraStyle}"><span class="qmeta-rank">${meta.order}</span>${meta.label}</span>`;
 }
 
 function setQuestionBloom(idx, level) {
@@ -14153,7 +14165,7 @@ ${rawText}`;
 
 function renderAIPreview(questions) {
   const typeLabel = { mcq: 'Multiple Choice', tf: 'True / False', identification: 'Identification', enumeration: 'Enumeration', matching: 'Matching', essay: 'Essay', coding: 'Coding', checkbox: 'Checkboxes' };
-  const sectionColors = { mcq: '#0f2d1a', tf: '#0f2d1a', identification: '#0f2d1a', enumeration: '#0f2d1a', matching: '#0f2d1a', essay: '#0f2d1a', coding: '#0f2d1a', checkbox: '#0f2d1a' };
+
   const previewTitle = document.getElementById('ai-preview-title');
   if (previewTitle) previewTitle.textContent = `${questions.length} questions generated — select which to import`;
   const selectAll = document.getElementById('ai-select-all');
@@ -14166,10 +14178,10 @@ function renderAIPreview(questions) {
   questions.forEach((q, i) => {
     if (q.type !== lastType) {
       const count = questions.filter(x => x.type === q.type).length;
-      html += `<div style="display:flex;align-items:center;gap:10px;margin:${lastType ? '14px' : '4px'} 0 6px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:${sectionColors[q.type] || '#6b7280'};letter-spacing:0.05em;">${typeLabel[q.type] || q.type}</span>
-        <span style="font-size:11px;color:#9ca3af;">(${count})</span>
-        <div style="flex:1;height:1px;background:#e5e7eb;"></div>
+      html += `<div class="ai-type-heading"${lastType ? '' : ' style="margin-top:4px;"'}>
+        <span class="ai-type-heading-label">${typeLabel[q.type] || q.type}</span>
+        <span class="ai-type-heading-count">(${count})</span>
+        <div class="ai-type-heading-rule"></div>
       </div>`;
       lastType = q.type;
     }
@@ -14188,7 +14200,7 @@ function renderAIPreview(questions) {
             <span>${groupNum[q.type]}. ${escHtml(q.content)}</span>
             <span style="flex-shrink:0;display:flex;gap:5px;">${BLOOM_LEVELS.includes(q.bloom) ? bloomBadge(q.bloom) : ''}${['easy','medium','hard'].includes(q.difficulty) ? difficultyBadge(q.difficulty) : ''}</span>
           </div>
-          ${q.type === 'mcq' ? `<div style="font-size:12px;color:#6b7280;margin-bottom:3px;">${q.options.map((o, oi) => `<span style="margin-right:12px;">${String.fromCharCode(65+oi)}. ${escHtml(o)}</span>`).join('')}</div>` : ''}
+          ${q.type === 'mcq' ? `<div class="ai-q-options">${q.options.map((o, oi) => `<span><span class="ai-q-option-letter">${String.fromCharCode(65+oi)}.</span> ${escHtml(o)}</span>`).join('')}</div>` : ''}
           <div class="ai-q-correct">✓ ${escHtml(q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : q.correctAnswer)}</div>
         </div>
       </label>

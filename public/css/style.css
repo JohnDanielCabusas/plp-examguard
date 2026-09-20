@@ -11442,6 +11442,89 @@ tr:hover td { background: #fafbfc !important; }
   color: #64748b;
 }
 
+/* ── Question metadata badges (difficulty + Bloom level) ──────────────────
+   One shape, one type scale, one dot. Difficulty keeps green/amber/red;
+   Bloom climbs blue → rose. Both readable on light and dark. */
+.qmeta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.qmeta-badge::before {
+  content: '';
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.qmeta-rank {
+  font-weight: 700;
+  opacity: .62;
+}
+
+.qmeta-tone-green  { color: #15803d; background: rgba(21,128,61,.10);  border-color: rgba(21,128,61,.24); }
+.qmeta-tone-amber  { color: #b45309; background: rgba(217,119,6,.10);  border-color: rgba(217,119,6,.24); }
+.qmeta-tone-red    { color: #b91c1c; background: rgba(220,38,38,.10);  border-color: rgba(220,38,38,.24); }
+.qmeta-tone-blue   { color: #1d4ed8; background: rgba(37,99,235,.10);  border-color: rgba(37,99,235,.24); }
+.qmeta-tone-indigo { color: #4338ca; background: rgba(79,70,229,.10);  border-color: rgba(79,70,229,.24); }
+.qmeta-tone-violet { color: #6d28d9; background: rgba(124,58,237,.10); border-color: rgba(124,58,237,.24); }
+.qmeta-tone-purple { color: #a21caf; background: rgba(192,38,211,.10); border-color: rgba(192,38,211,.24); }
+.qmeta-tone-pink   { color: #be185d; background: rgba(219,39,119,.10); border-color: rgba(219,39,119,.24); }
+.qmeta-tone-rose   { color: #be123c; background: rgba(225,29,72,.10);  border-color: rgba(225,29,72,.24); }
+.qmeta-tone-slate  { color: #475569; background: rgba(100,116,139,.10);border-color: rgba(100,116,139,.24); }
+
+/* Dark mode needs the lighter end of each hue; the light-mode values are all
+   too dark to read on a dark panel. */
+[data-theme="dark"] .qmeta-tone-green  { color: #4ade80; background: rgba(74,222,128,.13);  border-color: rgba(74,222,128,.26); }
+[data-theme="dark"] .qmeta-tone-amber  { color: #fbbf24; background: rgba(251,191,36,.13);  border-color: rgba(251,191,36,.26); }
+[data-theme="dark"] .qmeta-tone-red    { color: #f87171; background: rgba(248,113,113,.13); border-color: rgba(248,113,113,.26); }
+[data-theme="dark"] .qmeta-tone-blue   { color: #93c5fd; background: rgba(147,197,253,.13); border-color: rgba(147,197,253,.26); }
+[data-theme="dark"] .qmeta-tone-indigo { color: #a5b4fc; background: rgba(165,180,252,.13); border-color: rgba(165,180,252,.26); }
+[data-theme="dark"] .qmeta-tone-violet { color: #c4b5fd; background: rgba(196,181,253,.13); border-color: rgba(196,181,253,.26); }
+[data-theme="dark"] .qmeta-tone-purple { color: #e9a8f5; background: rgba(233,168,245,.13); border-color: rgba(233,168,245,.26); }
+[data-theme="dark"] .qmeta-tone-pink   { color: #f9a8d4; background: rgba(249,168,212,.13); border-color: rgba(249,168,212,.26); }
+[data-theme="dark"] .qmeta-tone-rose   { color: #fda4af; background: rgba(253,164,175,.13); border-color: rgba(253,164,175,.26); }
+[data-theme="dark"] .qmeta-tone-slate  { color: #cbd5e1; background: rgba(203,213,225,.12); border-color: rgba(203,213,225,.24); }
+
+/* ── AI generation preview ────────────────────────────────────────────────
+   The type heading, its rule and the answer options were hardcoded to
+   light-mode colours, which left them unreadable on the dark panel. */
+.ai-type-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+.ai-type-heading:first-child { margin-top: 4px; }
+.ai-type-heading-label {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.ai-type-heading-count { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.ai-type-heading-rule { flex: 1; height: 1px; background: var(--border); }
+.ai-q-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ai-q-option-letter { font-weight: 700; opacity: .8; }
+
 /* Share Mode used to be a select with a single option (#43). */
 .share-mode-static {
   display: grid;

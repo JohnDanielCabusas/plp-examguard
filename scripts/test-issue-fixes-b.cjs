@@ -121,4 +121,56 @@ assert.match(adminSource, /disabled title="\$\{escAttr\(recoverBlockedReason\)\}
 assert.match(adminSource, /monitorLateAuthorized/, 'monitoring knows who is sitting late');
 assert.match(adminSource, /In Progress &middot; Late Sitting/, 'and says so while they are working');
 
+// ── Question metadata badges: one system, two non-overlapping scales ───────
+const sliceOut = (from, to) => adminSource.slice(adminSource.indexOf(from), adminSource.indexOf(to));
+const metaBox = {};
+vm.runInNewContext(
+  `${sliceOut('const DIFFICULTY_META = {', 'const DIFFICULTY_SOURCE_LABEL')}
+   ${sliceOut('function difficultyBadge(', '\n// Horizontal 3-band gauge')}
+   ${sliceOut('const BLOOM_META = {', 'function setQuestionBloom')}
+   this.out = { DIFFICULTY_META, BLOOM_META, bloomBadge, difficultyBadge };`,
+  metaBox,
+);
+const { DIFFICULTY_META, BLOOM_META, bloomBadge, difficultyBadge } = metaBox.out;
+
+// Both families render the same component, so they read as one system.
+assert.match(difficultyBadge('easy'), /class="qmeta-badge qmeta-tone-green"/);
+assert.match(bloomBadge('remember'), /class="qmeta-badge qmeta-tone-blue"/);
+assert.match(difficultyBadge('nonsense'), /qmeta-tone-slate/, 'an unrated question still gets a badge');
+
+// The emoji circles are gone: they could not be recoloured for dark mode.
+['easy', 'medium', 'hard'].forEach((level) => {
+  assert.doesNotMatch(difficultyBadge(level), /[\u{1F7E0}-\u{1F7EB}]/u, 'no emoji in a difficulty badge');
+});
+
+// Difficulty owns green/amber/red. Bloom must not borrow any of them, or the
+// two dimensions become indistinguishable on a question that shows both.
+const difficultyTones = new Set(Object.values(DIFFICULTY_META).map(m => m.tone));
+const bloomTones = Object.values(BLOOM_META).map(m => m.tone);
+assert.deepEqual([...difficultyTones].sort(), ['amber', 'green', 'red']);
+bloomTones.forEach((tone) => {
+  assert.equal(difficultyTones.has(tone), false, `Bloom must not reuse the difficulty tone "${tone}"`);
+});
+assert.equal(new Set(bloomTones).size, 6, 'each Bloom level is its own step on the ladder');
+
+// Every tone used must actually be defined, in both themes.
+[...difficultyTones, ...bloomTones, 'slate'].forEach((tone) => {
+  assert.ok(styleSource.includes(`.qmeta-tone-${tone}`), `.qmeta-tone-${tone} must exist`);
+  assert.ok(
+    styleSource.includes(`[data-theme="dark"] .qmeta-tone-${tone}`),
+    `.qmeta-tone-${tone} needs a dark-mode value or it is unreadable`,
+  );
+});
+
+// ── The AI preview must not hardcode light-mode colours ───────────────────
+const previewFn = adminSource.slice(
+  adminSource.indexOf('function renderAIPreview('),
+  adminSource.indexOf('\n}\n', adminSource.indexOf('function renderAIPreview(')),
+);
+assert.doesNotMatch(previewFn, /#0f2d1a/, 'the type heading was invisible on the dark panel');
+assert.doesNotMatch(previewFn, /background:#e5e7eb/, 'and its rule was a light-grey line');
+assert.doesNotMatch(previewFn, /color:#6b7280/, 'and the answer options were too dim to read');
+assert.match(previewFn, /class="ai-type-heading"/, 'the heading is themed through CSS instead');
+assert.match(previewFn, /class="ai-q-options"/, 'and so are the options');
+
 console.log('Second-batch issue fix tests passed (#35, #37, #38, #39, #40, #41, #42, #43, #44).');
