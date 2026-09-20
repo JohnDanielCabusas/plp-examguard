@@ -292,7 +292,14 @@ async function runExamRuntimeTests() {
   app._captureCameraViolationSnapshot = () => {};
 
   timers.length = 0;
+  app.warnings = 2; // one short of the three-strike limit
   assert.equal(app.issueWarning('screen_record', 'recorder running'), true);
+  assert.equal(
+    app.warnings,
+    2,
+    'a terminal violation is not a strike: counting it let the three-strike rule '
+    + 'submit the exam out from under this countdown, seconds early',
+  );
   assert.equal(titleEl.textContent, 'SCREEN RECORDING DETECTED');
   assert.equal(
     element('warning-overlay-count-row').style.display,
@@ -325,6 +332,14 @@ async function runExamRuntimeTests() {
     examSource,
     /trigger === 'auto' \|\| trigger === 'violation_terminal'\) \? 'violations'/,
     'a terminal violation records itself with an already-permitted submit reason',
+  );
+  // The remote three-strike check runs on a poll. Without this guard it
+  // submitted mid-countdown, cutting the notice short and discarding a student
+  // who had already stopped recording.
+  assert.match(
+    examSource,
+    /Number\(liveSession\.warnings \|\| 0\) >= 3[\s\S]{0,300}?&& !this\._terminalViolationActive/,
+    'the strike rule stands down while a terminal countdown owns the ending',
   );
 
   // ── Grace period, but only where stopping can be confirmed ───────────────
@@ -377,7 +392,7 @@ async function runExamRuntimeTests() {
   assert.equal(app._terminalViolationActive, false, 'stopping the recorder clears the violation');
   assert.equal(overlayEl.style.display, 'none', 'the overlay closes and the exam is usable again');
   assert.ok(recorded.includes('screen_record_stopped'), 'the professor still sees that it happened');
-  assert.equal(app.warnings, 1, 'the strike stays on the record');
+  assert.equal(app.warnings, 0, 'a terminal violation never consumed a strike to begin with');
   assert.equal(
     app._reportedRecorderLabels.has('OBS Virtual Camera'),
     false,

@@ -3619,6 +3619,10 @@ const ExamApp = {
       !liveSession.submitted
       && previousWarnings < 3
       && Number(liveSession.warnings || 0) >= 3
+      // A terminal violation owns the ending while its countdown runs. Letting
+      // the strike rule submit in the middle of it cut the notice short and
+      // would have thrown away a student who stopped recording in time.
+      && !this._terminalViolationActive
     ) {
       this.submitExam('auto');
     }
@@ -7562,7 +7566,12 @@ const ExamApp = {
     // Clear any in-progress read countdown so the new warning takes over cleanly
     this._cancelReadCountdown();
 
-    this.warnings++;
+    // A terminal violation is not a strike. It carries its own, heavier
+    // consequence on its own timing, and counting it as one let the ordinary
+    // three-strike rule submit the exam out from under its countdown -- the
+    // student was submitted a second or two early, and worse, stopping the
+    // recording in time saved nothing because the strike rule fired anyway.
+    if (!terminal) this.warnings++;
     const warningCount = this.warnings;
 
     // Update warning badge in header
