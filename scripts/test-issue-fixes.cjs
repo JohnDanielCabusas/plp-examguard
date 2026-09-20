@@ -360,13 +360,46 @@ async function runExamRuntimeTests() {
   app._lastWarningTime = 0;
   submitted = null;
   timers.length = 0;
+  app._recordingGraceUsed = false;
   app.issueWarning('screen_record', 'Screen recording shortcut detected');
-  assert.match(subEl.textContent, /cannot be continued/, 'no promise the system cannot keep');
+  assert.match(subEl.textContent, /Stop the recording now/, 'the student is told how to continue');
   app._warningCountdownDeadline = Date.now() - 1;
   runPending();
-  assert.equal(submitted, 'violation_terminal', 'the attempt ends');
+  assert.equal(submitted, 'violation_terminal', 'left running, the attempt ends');
 
+  // Pressing the shortcut again toggles the recorder off, and is read as such.
   app._terminalViolationActive = false;
+  app._recordingGraceUsed = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
+  submitted = null;
+  const stopLogged = [];
+  app._recordActivity = (t) => stopLogged.push(t);
+  timers.length = 0;
+  app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  app._resolveRecordingStopped();
+  assert.equal(app._terminalViolationActive, false, 'stopping clears the violation');
+  assert.equal(overlayEl.style.display, 'none', 'and the exam is usable again');
+  assert.ok(stopLogged.includes('screen_record_stopped'), 'the professor still sees it happened');
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, null, 'a resolved violation never submits');
+
+  // The chance is not renewable: recording again in the same attempt is final.
+  app._terminalViolationActive = false;
+  app._lastWarningTime = 0;
+  timers.length = 0;
+  app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  assert.match(subEl.textContent, /already stopped once/, 'the second time says why there is no way out');
+  app._resolveRecordingStopped();
+  assert.equal(app._terminalViolationActive, true, 'the second recording cannot be talked away');
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, 'violation_terminal', 'and it ends the attempt');
+
+  app._recordActivity = () => {};
+  app._terminalViolationActive = false;
+  app._recordingGraceUsed = false;
   app.warnings = 0;
   app._lastWarningTime = 0;
 

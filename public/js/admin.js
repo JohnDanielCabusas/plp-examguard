@@ -381,6 +381,7 @@ const BEHAVIOR_LABELS = {
   // every violation list on purpose, since plenty of machines carry it for
   // innocent reasons (#23).
   screen_record_possible: 'Recording Software Installed',
+  screen_record_stopped: 'Recording Stopped In Time',
   camera_denied: 'Camera Denied',
   auto_submit: 'Auto-Submitted',
   force_submit: 'Force Submitted',

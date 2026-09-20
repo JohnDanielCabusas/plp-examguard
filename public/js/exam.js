@@ -340,6 +340,7 @@ const ExamApp = {
   _fullscreenLockTotalSeconds: 0,
   _lateExamAttempt: false,         // sitting an exam the professor cleared after the fact (#31)
   _terminalViolationActive: false, // attempt is ending; later warnings must not interrupt it
+  _recordingGraceUsed: false,      // the one chance to stop recording has been spent
 
   _recorderScanInterval: null,     // periodic screen-recorder environment scan
   _recorderRescanPending: null,    // retry pending because device labels were not readable yet
@@ -3378,6 +3379,7 @@ const ExamApp = {
     // the dashboard could sit the whole retake with the recorder still running.
     this._reportedRecorderLabels = new Set();
     this._extendedDisplayReported = false;
+    this._recordingGraceUsed = false;
     this._startScreenRecordingMonitor();
 
     if (this._cameraRequired && this._webcamConsentAccepted) {
@@ -4525,6 +4527,15 @@ const ExamApp = {
       // not cost a student their whole exam.
       if (e.metaKey && e.altKey && pressed === 'r') {
         e.preventDefault();
+        // The same key both starts and stops recording, and the operating
+        // system acts on it whatever this page does about the event. If the
+        // press is trusted as evidence that recording began, the next press is
+        // evidence it ended, and refusing to read it that way would be picking
+        // whichever reading is worse for the student.
+        if (this._terminalViolationActive && this._activeWarningType === 'screen_record') {
+          this._resolveRecordingStopped();
+          return;
+        }
         this.issueWarning('screen_record', 'Screen recording shortcut detected');
         return;
       }
@@ -7466,6 +7477,38 @@ const ExamApp = {
   // right now" from "this program exists on the machine", so there is no
   // honest way to offer the student a way back. See #23.
 
+  // The student pressed the recording shortcut again while the countdown was
+  // running, which means the recorder has just been toggled off. The attempt
+  // continues, once. A second recording in the same attempt is final, so this
+  // cannot be used to keep buying eight seconds at a time.
+  _resolveRecordingStopped() {
+    if (this._recordingGraceUsed) {
+      this._showToast(
+        'Recording was already stopped once this attempt. Your exam is still being submitted.',
+        'error',
+      );
+      return;
+    }
+    this._recordingGraceUsed = true;
+    this._stopWarningCountdown({ hideWrap: true });
+    this._terminalViolationActive = false;
+
+    const overlay = document.getElementById('warning-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._activeWarningType = null;
+    this._setFullscreenWarningAction(false);
+
+    this._recordActivity(
+      'screen_record_stopped',
+      'Screen recording was stopped before the exam was submitted',
+      { source: 'CAPTURE_HOTKEY' },
+    );
+    this._showToast(
+      'Recording stopped — your exam has resumed. Recording again will end this attempt.',
+      'warning',
+    );
+  },
+
   issueWarning(type, detail, detectionMetadata = null, options = {}) {
     if (!this.session) return false;
     // The attempt is already ending. Nothing may restart the overlay, reset its
@@ -7627,7 +7670,9 @@ const ExamApp = {
 
     if (terminalViolation) {
       titleEl.textContent = 'SCREEN RECORDING DETECTED';
-      subEl.textContent   = 'Recording the exam is not allowed. Your exam is being submitted and cannot be continued.';
+      subEl.textContent   = this._recordingGraceUsed
+        ? 'Recording the exam is not allowed. You already stopped once this attempt, so your exam is being submitted.'
+        : 'Stop the recording now to continue — press the recording shortcut again (Win+Alt+R). You get one chance.';
     } else if (this.warnings >= 3) {
       titleEl.textContent = 'FINAL WARNING!';
       subEl.textContent   = 'Maximum violations reached. Your exam is being submitted now.';
@@ -7668,7 +7713,9 @@ const ExamApp = {
       const circumference = 163.36; // 2π × r(26)
 
       if (cdWrap) {
-        if (cdMsg) cdMsg.textContent = endsAttempt
+        if (cdMsg) cdMsg.textContent = isTerminal && !this._recordingGraceUsed
+          ? 'Stop the recording to continue your exam'
+          : endsAttempt
           ? 'Submitting your exam when the countdown ends'
           : type === 'fullscreen_exit'
             ? 'Return to fullscreen before this warning closes'
