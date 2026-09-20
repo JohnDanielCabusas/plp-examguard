@@ -1714,10 +1714,6 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
 }
 [data-theme="dark"] .login-system-name { color: #6ee7a8; }
 
-.sidebar-brand-system {
-  font-weight: 800;
-  letter-spacing: .1em;
-}
 
 .login-logo img {
   width: 88px;
@@ -2345,6 +2341,37 @@ textarea.form-control {
   padding: 12px;
   border-top: 1px solid rgba(255,255,255,0.12);
   flex-shrink: 0;
+}
+
+/* Product wordmark above Sign Out (#44). */
+.sidebar-wordmark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 14px 12px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sidebar-wordmark-name {
+  color: #d9e6dd;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .26em;
+  line-height: 1;
+}
+.sidebar-wordmark-sub {
+  color: rgba(217,230,221,0.55);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  line-height: 1.3;
+}
+/* Collapsed to the icon rail there is no room for a wordmark. */
+.sidebar.collapsed .sidebar-wordmark {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
 }
 
 /* ── Sign Out button (admin) ── */

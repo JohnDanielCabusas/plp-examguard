@@ -83,6 +83,14 @@ assert.match(examSource, /classList\.remove\('q-shake'\)/, 'and is taken off aga
 assert.doesNotMatch(examPage, /examv2-stat-label">Skipped</, 'unanswered questions were never deliberately skipped');
 assert.match(examPage, /examv2-stat-label">Unanswered</);
 assert.match(loginPage, /login-system-name">TUKLAS</, 'the product name is visible to the people using it');
+// And in the professor panel, as a wordmark above Sign Out rather than
+// competing with the school name at the top.
+assert.match(adminPage, /sidebar-wordmark-name">TUKLAS</, 'the sidebar carries the product name');
+const footer = adminPage.slice(adminPage.indexOf('className="sidebar-footer"'));
+assert.ok(
+  footer.indexOf('sidebar-wordmark') < footer.indexOf('sidebar-signout-btn'),
+  'the wordmark sits above Sign Out',
+);
 
 // ── #40: positioning conditions count down before they count ───────────────
 ['FACE_TOO_FAR', 'FACE_TOO_CLOSE', 'FACE_PARTIALLY_VISIBLE', 'FACE_NEAR_FRAME_EDGE'].forEach((type) => {

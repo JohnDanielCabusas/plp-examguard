@@ -301,7 +301,7 @@ export default function AdminPage() {
             </div>
             <div className="sidebar-brand-text">
               <h2 id="sb-school-name">TUKLAS</h2>
-              <p><span className="sidebar-brand-system">TUKLAS</span> Professor Panel</p>
+              <p>Professor Panel</p>
             </div>
           </div>
 
@@ -352,6 +352,14 @@ export default function AdminPage() {
             {/* Hidden targets kept for admin.js — user info lives in topbar chip */}
             <span id="sb-user-name" style={{ display: 'none' }} />
             <span id="sb-avatar" style={{ display: 'none' }} />
+
+            {/* The product wordmark sits above Sign Out, where the sidebar has
+                room for it, rather than competing with the school name at the
+                top of the panel (#44). */}
+            <div className="sidebar-wordmark" aria-label="TUKLAS">
+              <span className="sidebar-wordmark-name">TUKLAS</span>
+              <span className="sidebar-wordmark-sub">Online Examination System</span>
+            </div>
 
             <button className="sidebar-signout-btn" data-label="Sign Out" onClick={() => window.doLogout()}>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
