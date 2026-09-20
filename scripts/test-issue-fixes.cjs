@@ -273,6 +273,12 @@ function runExamRuntimeTests() {
   timers.length = 0;
   assert.equal(app.issueWarning('screen_record', 'recorder running'), true);
   assert.equal(titleEl.textContent, 'SCREEN RECORDING DETECTED');
+  assert.equal(
+    element('warning-overlay-count-row').style.display,
+    'none',
+    'no "1 of 3 warnings" on a violation that gives no further chances',
+  );
+  assert.equal(element('warning-pips').style.display, 'none', 'and no strike pips either');
   assert.notEqual(overlayEl.style.display, 'none', 'the warning stays on screen');
   assert.equal(submitted, null, 'the student gets the countdown before submission');
 
@@ -285,7 +291,20 @@ function runExamRuntimeTests() {
 
   app._warningCountdownDeadline = Date.now() - 1;
   runPending();
-  assert.equal(submitted, 'auto', 'the attempt is submitted when the countdown ends');
+  // Not 'auto'. That trigger is refused below three warnings, so sending a
+  // terminal violation through it froze the countdown at zero and trapped the
+  // student behind an overlay that never resolved.
+  assert.equal(submitted, 'violation_terminal', 'the attempt is submitted when the countdown ends');
+  assert.match(
+    examSource,
+    /if \(trigger === 'auto'\)\s*\{[\s\S]{0,400}?warningCount < 3/,
+    'the three-warning guard is scoped to the strike-based trigger only',
+  );
+  assert.match(
+    examSource,
+    /trigger === 'auto' \|\| trigger === 'violation_terminal'\) \? 'violations'/,
+    'a terminal violation records itself with an already-permitted submit reason',
+  );
 
   // Opening the capture overlay is an ordinary strike, not the end.
   app._terminalViolationActive = false;

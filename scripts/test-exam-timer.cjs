@@ -423,9 +423,20 @@ assert.equal(updatedSessions, 0, 'Two warnings must never auto-submit an exam.')
 
 assert.doesNotMatch(source, /Time expired\. Submitting your exam now/);
 assert.doesNotMatch(source, /const COUNTDOWN_SECS = 7/);
+// Violation auto-submit still belongs only to the three-warning enforcement
+// paths: the remote-sync check, and the warning overlay when its final
+// countdown ends. The overlay shares that call site with terminal violations
+// such as screen recording, which end the attempt on their own and therefore
+// use a separate trigger so they are NOT held to the three-warning count --
+// sending them through 'auto' left the countdown frozen at zero.
 assert.equal(
   (source.match(/submitExam\('auto'\)/g) || []).length,
-  2,
-  'Only the two three-warning enforcement paths may request violation auto-submit.',
+  1,
+  'Only the remote three-warning check may request violation auto-submit directly.',
+);
+assert.equal(
+  (source.match(/submitExam\(isTerminal \? 'violation_terminal' : 'auto'\)/g) || []).length,
+  1,
+  'The warning overlay is the only other violation submitter, and it distinguishes the two.',
 );
 console.log('Exam timer and submitted-review tests passed.');

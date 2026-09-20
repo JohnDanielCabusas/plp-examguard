@@ -7564,6 +7564,14 @@ const ExamApp = {
       if (pip) pip.classList.toggle('active', i <= this.warnings);
     }
 
+    // "1 of 3 warnings" promises two more chances that a terminal violation is
+    // not going to give, so the strike counter is hidden for those entirely.
+    const terminal = this._isTerminalViolation(type);
+    const pipsEl = document.getElementById('warning-pips');
+    const countRow = document.getElementById('warning-overlay-count-row');
+    if (pipsEl) pipsEl.style.display = terminal ? 'none' : '';
+    if (countRow) countRow.style.display = terminal ? 'none' : '';
+
     const terminalViolation = this._isTerminalViolation(type);
     // A terminal violation wears the final-warning colours whatever the strike
     // count, because that is what it is: the end of the attempt.
@@ -7649,7 +7657,14 @@ const ExamApp = {
               // the submitted screen, never by the questions: the recording is
               // still running, so they must not come back into view.
               if (cdNum) cdNum.textContent = '0';
-              this.submitExam('auto');
+              const submitted = this.submitExam(isTerminal ? 'violation_terminal' : 'auto');
+              // A refused submission would strand the student behind an overlay
+              // frozen at zero with no way forward, so say so loudly rather
+              // than failing silently.
+              if (submitted === false) {
+                console.error('[Exam] Auto-submission was refused; the student is stuck on the warning overlay.');
+                if (cdMsg) cdMsg.textContent = 'Submitting your exam…';
+              }
             } else {
               if (cdWrap) cdWrap.style.display = 'none';
               overlay.style.display = 'none';
@@ -9130,6 +9145,11 @@ const ExamApp = {
       }
     }
 
+    // Strike-based auto-submission only happens at the third warning. A
+    // terminal violation is not strike-based — it ends the attempt on its own
+    // — so it uses its own trigger and is deliberately not held to this count.
+    // Sending it through 'auto' left the countdown frozen at zero with the
+    // student trapped behind an overlay that would never resolve.
     if (trigger === 'auto') {
       const liveSession = this._getLiveSession() || this.session;
       const warningCount = Number(liveSession?.warnings ?? this.warnings ?? 0);
@@ -9191,13 +9211,16 @@ const ExamApp = {
     const score = this.calculateScore();
 
     if (this.session) {
-      const autoSubmitted = trigger === 'auto' || trigger === 'timeout' || trigger === 'exam_closed';
+      const autoSubmitted = trigger === 'auto' || trigger === 'timeout'
+        || trigger === 'exam_closed' || trigger === 'violation_terminal';
       // Records WHY the session ended up auto-submitted (violations vs. time
       // running out) so the professor's Reports tab can show the real reason
       // instead of guessing from the warning count after the fact.
+      // 'violations' is an existing, already-permitted submit_reason value, so
+      // a terminal violation needs no new database enum to record itself.
       const submitReason = trigger === 'timeout' ? 'timeout'
         : trigger === 'exam_closed' ? 'exam_closed'
-        : trigger === 'auto' ? 'violations'
+        : (trigger === 'auto' || trigger === 'violation_terminal') ? 'violations'
         : 'manual';
       DB.updateSession(this.session.id, {
         submitted: true,
