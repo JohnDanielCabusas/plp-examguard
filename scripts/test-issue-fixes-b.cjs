@@ -152,6 +152,9 @@ assert.ok(
   'both section labels take the same muted colour in dark mode',
 );
 assert.equal(ruleFor('.portal-wordmark-name {'), ruleFor('.sidebar-wordmark-name {'), 'one product, one wordmark');
+// Course names carry no icon; without a matching indent they sat 30px left of
+// every other label in the sidebar.
+assert.match(styleSource, /\.portal-subject-item \{[\s\S]{0,400}?padding: 10px 12px 10px 42px;/, 'course names line up with the nav labels');
 assert.equal(ruleFor('.portal-wordmark-sub {'), ruleFor('.sidebar-wordmark-sub {'));
 
 // Archive is the last nav entry, after the enrolled courses, so enrolling in a

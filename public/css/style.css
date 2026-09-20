@@ -7680,7 +7680,10 @@ body.exam-page {
 /* Subject items in sidebar — text only, no chip */
 .portal-subject-item {
   display: flex; align-items: center;
-  padding: 10px 12px 10px 16px;
+  /* Course names carry no icon, so without this indent they started 30px to
+     the left of every other label in the sidebar. 42px = the nav item's 12px
+     padding + a 20px icon + the 10px gap, which lines them up exactly. */
+  padding: 10px 12px 10px 42px;
   cursor: pointer;
   border-radius: 0 24px 24px 0;
   margin-right: 10px;
