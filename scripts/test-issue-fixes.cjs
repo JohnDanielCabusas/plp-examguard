@@ -152,6 +152,19 @@ sandbox.navigator.mediaDevices = {
   await app._checkScreenRecordingEnvironment('during');
   assert.equal(raised.length, 1, 'the same recorder is only reported once');
 
+  // ...but only within one attempt. A recorder reported once used to stay
+  // "already reported" for the life of the page, so a student who was submitted
+  // for it and went straight back in from the dashboard could sit the whole
+  // retake with the recorder still running.
+  assert.match(
+    examSource,
+    /_beginExamRuntime\(\)\s*\{[\s\S]*?this\._reportedRecorderLabels = new Set\(\);/,
+    'each attempt starts the recorder scan from a clean slate',
+  );
+  app._reportedRecorderLabels = new Set(); // what a fresh attempt does
+  await app._checkScreenRecordingEnvironment('pre-exam');
+  assert.equal(raised.length, 2, 'a new attempt reports the recorder again');
+
   // No recorder present, nothing reported.
   sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
     { kind: 'videoinput', label: 'Integrated Webcam' },

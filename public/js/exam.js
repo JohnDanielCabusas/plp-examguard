@@ -1013,6 +1013,21 @@ const ExamApp = {
     if (!this.session) return [];
     const { matches, labelsVisible, supported } = await this._readCaptureDeviceState();
 
+    // Whether this check can see anything at all depends on the machine and on
+    // camera permission, so it says so out loud. Without this the only symptom
+    // of a scan that is structurally blind is silence.
+    if (stage === 'pre-exam' || matches.length || !labelsVisible) {
+      console.info(
+        '[Proctor] Recorder scan (%s): api=%s labelsReadable=%s matches=%s',
+        stage,
+        supported ? 'yes' : 'unavailable',
+        labelsVisible ? 'yes' : 'no',
+        matches.length
+          ? matches.map(m => `${m.label}${m.confident ? '' : ' [weak]'}`).join(', ')
+          : 'none',
+      );
+    }
+
     // Nothing readable yet: come back once the camera permission has landed
     // instead of recording a false all-clear.
     if (supported && !labelsVisible) {
@@ -3351,6 +3366,12 @@ const ExamApp = {
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
     this._recorderRescanAttempts = 0;
+    // Each attempt starts from a clean slate. Without this, a recorder reported
+    // once stayed "already reported" for the life of the page, so a student who
+    // triggered the check, was submitted, and then went straight back in from
+    // the dashboard could sit the whole retake with the recorder still running.
+    this._reportedRecorderLabels = new Set();
+    this._extendedDisplayReported = false;
     this._startScreenRecordingMonitor();
 
     if (this._cameraRequired && this._webcamConsentAccepted) {
