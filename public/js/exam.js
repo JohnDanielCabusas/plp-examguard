@@ -82,8 +82,16 @@ const EXAM_WARNING_TIMINGS = Object.freeze({
   // and walk back into the exam untouched, so the lock is time-boxed and each
   // expiry costs a strike.
   fullscreenLockSeconds: 15,
+  // Screen recording ends the attempt. It is not a strike the student can
+  // absorb and carry on from: the recording is still running while they read
+  // the warning, so letting the overlay close just hands the questions back to
+  // whatever is capturing them.
+  screenRecordSeconds: 8,
   tickMs: 100,
 });
+
+// Violations that end the attempt outright, whatever the strike count.
+const TERMINAL_VIOLATION_TYPES = Object.freeze(['screen_record']);
 
 // 640x480 left the professor squinting at a soft, pixelated frame and gave the
 // phone/person detectors very little to work with (#34). `ideal` degrades on
@@ -331,6 +339,7 @@ const ExamApp = {
   _fullscreenLockDeadline: 0,
   _fullscreenLockTotalSeconds: 0,
   _lateExamAttempt: false,         // sitting an exam the professor cleared after the fact (#31)
+  _terminalViolationActive: false, // attempt is ending; later warnings must not interrupt it
   _recorderScanInterval: null,     // periodic screen-recorder environment scan
   _recorderRescanPending: null,    // retry pending because device labels were not readable yet
   _recorderRescanAttempts: 0,
@@ -4476,9 +4485,18 @@ const ExamApp = {
       // external recorder such as OBS, because no browser API reports that the
       // screen is being captured.
       const pressed = typeof e.key === 'string' ? e.key.toLowerCase() : '';
-      if (e.metaKey && ((e.altKey && pressed === 'r') || pressed === 'g')) {
+      // Win+Alt+R toggles recording: that is the attempt ending. Win+G only
+      // opens the capture overlay, which is a strike but not proof that
+      // anything is being recorded, and a stray Windows-key combination must
+      // not cost a student their whole exam.
+      if (e.metaKey && e.altKey && pressed === 'r') {
         e.preventDefault();
         this.issueWarning('screen_record', 'Screen recording shortcut detected');
+        return;
+      }
+      if (e.metaKey && pressed === 'g') {
+        e.preventDefault();
+        this.issueWarning('screen_record_panel', 'Screen capture overlay shortcut detected');
         return;
       }
       if (e.metaKey && e.shiftKey && ['s', '3', '4', '5'].includes(pressed)) {
@@ -7174,6 +7192,9 @@ const ExamApp = {
     this._stopFullscreenLockCountdown();
     this._fullscreenInteractionGraceUntil = 0;
     this._intentionalFullscreenExit = false;
+    // Only reached once the attempt is over or a new one is starting, so the
+    // terminal countdown has already done its work by now.
+    this._terminalViolationActive = false;
     this.cancelCountdown(false);
     this.anticheatListeners.forEach(([event, target, handler, capture]) => {
       // removeEventListener only matches a listener registered with the same
@@ -7398,21 +7419,32 @@ const ExamApp = {
     });
   },
 
+  _isTerminalViolation(type) {
+    return TERMINAL_VIOLATION_TYPES.includes(type);
+  },
+
   issueWarning(type, detail, detectionMetadata = null, options = {}) {
     if (!this.session) return false;
+    // The attempt is already ending. Nothing may restart the overlay, reset its
+    // countdown or otherwise talk the exam out of submitting.
+    if (this._terminalViolationActive) return false;
     if (this.warnings >= 3) return false;
+    const terminal = this._isTerminalViolation(type);
     if (type === 'fullscreen_exit') {
       if (this._intentionalFullscreenExit) {
         this._intentionalFullscreenExit = false;
         return false;
       }
     }
-    if (this._cameraPrompting) return false; // camera permission dialog open — not a violation
+    if (this._cameraPrompting && !terminal) return false; // camera permission dialog open — not a violation
 
-    // Debounce: prevent double-firing within 1500ms (blur + visibilitychange fire together)
+    // Debounce: prevent double-firing within 1500ms (blur + visibilitychange fire together).
+    // A violation that ends the attempt is never swallowed by this window just
+    // because an unrelated warning landed a moment earlier.
     const now = Date.now();
-    if (this._lastWarningTime && (now - this._lastWarningTime) < 1500) return false;
+    if (!terminal && this._lastWarningTime && (now - this._lastWarningTime) < 1500) return false;
     this._lastWarningTime = now;
+    if (terminal) this._terminalViolationActive = true;
 
     this._stopWarningCountdown({ hideWrap: true });
     // Clear any in-progress read countdown so the new warning takes over cleanly
@@ -7501,6 +7533,7 @@ const ExamApp = {
       fullscreen_exit: 'You exited fullscreen mode.',
       screenshot:      'Screenshot attempt detected.',
       screen_record:   'Screen recording is not allowed during the exam.',
+      screen_record_panel: 'The screen capture overlay was opened. Recording the exam is not allowed.',
       no_person:       'No person detected in the camera frame.',
       multiple_people: 'Another visible face/person was detected in the camera frame.',
       look_down:       'Looking down away from the screen/camera for too long was detected.',
@@ -7531,9 +7564,15 @@ const ExamApp = {
       if (pip) pip.classList.toggle('active', i <= this.warnings);
     }
 
-    overlay.className = 'warning-level-' + this.warnings;
+    const terminalViolation = this._isTerminalViolation(type);
+    // A terminal violation wears the final-warning colours whatever the strike
+    // count, because that is what it is: the end of the attempt.
+    overlay.className = 'warning-level-' + (terminalViolation ? 3 : this.warnings);
 
-    if (this.warnings >= 3) {
+    if (terminalViolation) {
+      titleEl.textContent = 'SCREEN RECORDING DETECTED';
+      subEl.textContent   = 'Recording the exam is not allowed. Your exam is being submitted and cannot be continued.';
+    } else if (this.warnings >= 3) {
       titleEl.textContent = 'FINAL WARNING!';
       subEl.textContent   = 'Maximum violations reached. Your exam is being submitted now.';
     } else {
@@ -7557,11 +7596,15 @@ const ExamApp = {
 
     {
       const isFinalWarning = this.warnings >= 3;
-      const secs = isFinalWarning
-        ? EXAM_WARNING_TIMINGS.finalSeconds
-        : isFocusLoss
-          ? EXAM_WARNING_TIMINGS.focusSeconds
-          : EXAM_WARNING_TIMINGS.standardSeconds;
+      const isTerminal = this._isTerminalViolation(type);
+      const endsAttempt = isFinalWarning || isTerminal;
+      const secs = isTerminal
+        ? EXAM_WARNING_TIMINGS.screenRecordSeconds
+        : isFinalWarning
+          ? EXAM_WARNING_TIMINGS.finalSeconds
+          : isFocusLoss
+            ? EXAM_WARNING_TIMINGS.focusSeconds
+            : EXAM_WARNING_TIMINGS.standardSeconds;
       const cdWrap = document.getElementById('warning-countdown-wrap');
       const cdNum  = document.getElementById('cd-num');
       const cdCircle = document.getElementById('cd-circle');
@@ -7569,7 +7612,7 @@ const ExamApp = {
       const circumference = 163.36; // 2π × r(26)
 
       if (cdWrap) {
-        if (cdMsg) cdMsg.textContent = isFinalWarning
+        if (cdMsg) cdMsg.textContent = endsAttempt
           ? 'Submitting your exam when the countdown ends'
           : type === 'fullscreen_exit'
             ? 'Return to fullscreen before this warning closes'
@@ -7584,8 +7627,8 @@ const ExamApp = {
       // Focus-loss: issueWarning calls startCountdown() right after this — let it
       // own the interval so only ONE timer updates #cd-num and #cd-circle.
       // Every other warning is owned here, including final auto-submission.
-      if (!isFocusLoss || isFinalWarning) {
-        this._warningCountdownMode = isFinalWarning ? 'final' : 'info';
+      if (!isFocusLoss || endsAttempt) {
+        this._warningCountdownMode = isTerminal ? 'terminal' : isFinalWarning ? 'final' : 'info';
         this._startDeadlineCountdown({
           timerKey: '_warningCountdownTimer',
           tokenKey: '_warningCountdownToken',
@@ -7601,7 +7644,10 @@ const ExamApp = {
           },
           onExpire: () => {
             this._warningCountdownMode = null;
-            if (isFinalWarning) {
+            if (endsAttempt) {
+              // The overlay stays up for the whole countdown and is replaced by
+              // the submitted screen, never by the questions: the recording is
+              // still running, so they must not come back into view.
               if (cdNum) cdNum.textContent = '0';
               this.submitExam('auto');
             } else {

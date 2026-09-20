@@ -179,9 +179,12 @@ raised.length = 0;
 assert.equal(pressKey({ key: 'R', metaKey: true, altKey: true }), true, 'Win+Alt+R is blocked');
 assert.deepEqual(raised, ['screen_record'], 'Win+Alt+R warns about screen recording');
 
+// Win+G only opens the capture overlay. It is still a strike, but it is not
+// proof that anything is being recorded, and screen_record now ends the attempt
+// outright — a stray Windows-key combination must not cost a whole exam.
 raised.length = 0;
 pressKey({ key: 'g', metaKey: true });
-assert.deepEqual(raised, ['screen_record'], 'Win+G warns about screen recording');
+assert.deepEqual(raised, ['screen_record_panel'], 'Win+G warns about the capture overlay');
 
 raised.length = 0;
 pressKey({ key: 's', metaKey: true, shiftKey: true });

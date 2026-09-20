@@ -375,6 +375,7 @@ const BEHAVIOR_LABELS = {
   ctrl_c_attempt: 'Ctrl+C Attempt',
   ctrl_v_attempt: 'Ctrl+V Attempt',
   screen_record: 'Screen Recording',
+  screen_record_panel: 'Capture Overlay Opened',
   // A hint, not a finding: capture-capable hardware was present. Kept out of
   // every violation list on purpose, since plenty of machines carry it for
   // innocent reasons (#23).
@@ -423,6 +424,7 @@ const VIOLATION_ALERTABLE_TYPES = new Set([
   'ctrl_c_attempt',
   'ctrl_v_attempt',
   'screen_record',
+  'screen_record_panel',
   'camera_denied',
   'screenshot',
   'brightness_check_failed',
@@ -636,6 +638,7 @@ function getActivityTone(type) {
   if (type === 'screen_record_possible') return 'neutral';
   if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
+  if (type === 'screen_record_panel') return 'warning';
   if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'screen_record', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
   return 'neutral';
 }
@@ -9386,7 +9389,7 @@ async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase)
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'paste_attempt', 'screenshot', 'screen_record'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'paste_attempt', 'screenshot', 'screen_record', 'screen_record_panel'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),

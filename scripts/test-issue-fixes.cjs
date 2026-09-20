@@ -94,6 +94,9 @@ vm.runInNewContext(
 );
 const app = sandbox.window.ExamApp;
 const consts = sandbox.__examConsts;
+// Earlier blocks stub issueWarning to record calls; the terminal-violation
+// test needs the real one back.
+const realIssueWarning = app.issueWarning;
 
 const runPending = () => {
   const pending = timers.filter(t => !t.cancelled && !t.done);
@@ -243,6 +246,61 @@ function runExamRuntimeTests() {
   app._warningCountdownDeadline = Date.now() - 1;
   runPending();
   assert.equal(raised.length, 0, 'a finished exam raises no fullscreen strike');
+
+  // ── Screen recording ends the attempt rather than being waited out ───────
+  assert.equal(consts.EXAM_WARNING_TIMINGS.screenRecordSeconds, 8, 'the recording countdown is 8s');
+  assert.equal(app._isTerminalViolation('screen_record'), true);
+  assert.equal(app._isTerminalViolation('screen_record_panel'), false, 'opening the overlay is only a strike');
+  assert.equal(app._isTerminalViolation('tab_switch'), false);
+
+  const overlayEl = element('warning-overlay');
+  const titleEl = element('warning-overlay-title');
+  const countdownWrap = element('warning-countdown-wrap');
+  countdownWrap.querySelector = () => element('warning-countdown-msg');
+
+  let submitted = null;
+  app.issueWarning = realIssueWarning;
+  app.session = { id: 's1' };
+  app.warnings = 0;
+  app._terminalViolationActive = false;
+  app._lastWarningTime = 0;
+  app.submitExam = reason => { submitted = reason; };
+  app._notifyProfessorViolation = () => Promise.resolve(null);
+  app._runAfterNextPaint = () => {};
+  app._recordActivity = () => {};
+  app._captureCameraViolationSnapshot = () => {};
+
+  timers.length = 0;
+  assert.equal(app.issueWarning('screen_record', 'recorder running'), true);
+  assert.equal(titleEl.textContent, 'SCREEN RECORDING DETECTED');
+  assert.notEqual(overlayEl.style.display, 'none', 'the warning stays on screen');
+  assert.equal(submitted, null, 'the student gets the countdown before submission');
+
+  // Nothing may talk the exam out of submitting once this has started.
+  assert.equal(
+    app.issueWarning('tab_switch', 'switched away'),
+    false,
+    'a later violation cannot reset or cancel the terminal countdown',
+  );
+
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, 'auto', 'the attempt is submitted when the countdown ends');
+
+  // Opening the capture overlay is an ordinary strike, not the end.
+  app._terminalViolationActive = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
+  submitted = null;
+  timers.length = 0;
+  app.issueWarning('screen_record_panel', 'game bar opened');
+  assert.equal(titleEl.textContent, 'WARNING!', 'the capture overlay is a normal warning');
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, null, 'a stray Windows-key combination does not end the exam');
+  app._terminalViolationActive = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
 
   // ── #24: paste into an answer must be stopped before the editor sees it ───
   documentListeners.length = 0;
