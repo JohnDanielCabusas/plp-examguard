@@ -3504,6 +3504,7 @@ const ExamApp = {
   },
 
   _isForceSubmittedSession(session) {
+    if (String(session?.submitReason || '').toLowerCase() === 'force_submit') return true;
     const activities = Array.isArray(session?.activities) ? session.activities : [];
     return activities.some(activity => activity?.type === 'force_submit');
   },
@@ -3514,7 +3515,7 @@ const ExamApp = {
       if (!this.session) return;
       this._pollRemoteSessionState();
       if (!this.session.submitted) this._pollRemoteExamState();
-    }, 1200);
+    }, 10000);
   },
 
   _stopSessionSyncPolling() {
@@ -3545,24 +3546,22 @@ const ExamApp = {
   _pollRemoteSessionState() {
     const client = window.SupabaseSync?._client || window.supabase;
     if (!client || !this.session?.id) return;
-    client.from('sessions').select('*').eq('id', this.session.id).maybeSingle()
+    client.from('sessions')
+      .select('id, submitted, auto_submitted, submit_reason, end_time, warnings, score, max_score, score_released')
+      .eq('id', this.session.id).maybeSingle()
       .then(({ data, error }) => {
         if (error || !data) return;
-        const normalized = window.SupabaseSync?._dbToJsSession
-          ? window.SupabaseSync._dbToJsSession(data)
-          : {
-              ...this.session,
-              submitted: !!data.submitted,
-              autoSubmitted: !!data.auto_submitted,
-              submitReason: data.submit_reason || null,
-              endTime: data.end_time || null,
-              warnings: Number(data.warnings || 0),
-              activities: Array.isArray(data.activities) ? data.activities : [],
-              answers: data.answers && typeof data.answers === 'object' ? data.answers : {},
-              score: data.score ?? null,
-              maxScore: data.max_score ?? null,
-              scoreReleased: !!data.score_released,
-            };
+        const normalized = {
+          ...this.session,
+          submitted: !!data.submitted,
+          autoSubmitted: !!data.auto_submitted,
+          submitReason: data.submit_reason || null,
+          endTime: data.end_time || null,
+          warnings: Number(data.warnings || 0),
+          score: data.score ?? null,
+          maxScore: data.max_score ?? null,
+          scoreReleased: !!data.score_released,
+        };
         this._applyLiveSessionLocally(normalized);
         this._syncLiveSessionState();
       })
@@ -3572,19 +3571,21 @@ const ExamApp = {
   _pollRemoteExamState() {
     const client = window.SupabaseSync?._client || window.supabase;
     if (!client || !this.exam?.id) return;
-    client.from('exams').select('*').eq('id', this.exam.id).maybeSingle()
+    client.from('exams')
+      .select('id, status, require_camera, camera_exempt_student_ids, object_monitoring, closed_at')
+      .eq('id', this.exam.id).maybeSingle()
       .then(({ data, error }) => {
         if (error || !data) return;
-        const normalized = window.SupabaseSync?._dbToJsExam
-          ? window.SupabaseSync._dbToJsExam(data)
-          : {
-              ...this.exam,
-              cameraExemptStudentIds: Array.isArray(data.camera_exempt_student_ids) ? data.camera_exempt_student_ids : [],
-              requireCamera: !!data.require_camera,
-              objectMonitoring: data.object_monitoring && typeof data.object_monitoring === 'object'
-                ? data.object_monitoring
-                : {},
-            };
+        const normalized = {
+          ...this.exam,
+          status: data.status || this.exam.status,
+          closedAt: data.closed_at || null,
+          cameraExemptStudentIds: Array.isArray(data.camera_exempt_student_ids) ? data.camera_exempt_student_ids : [],
+          requireCamera: !!data.require_camera,
+          objectMonitoring: data.object_monitoring && typeof data.object_monitoring === 'object'
+            ? data.object_monitoring
+            : {},
+        };
         this._applyLiveExamLocally(normalized);
         this.exam = DB.getExam(this.exam.id) || normalized;
         this._syncLiveExamStatus();
@@ -4047,7 +4048,7 @@ const ExamApp = {
         || !document.getElementById('state-submitted')?.classList.contains('hidden');
       if (!chatAllowed || !this.exam || !this.session) return;
       this._refreshChatMessagesFromSync();
-    }, 1200);
+    }, 15000);
   },
 
   _stopChatSyncPolling() {
@@ -4776,7 +4777,7 @@ const ExamApp = {
         if (window.SupabaseSync?.refreshExams) await window.SupabaseSync.refreshExams();
       } catch (_) { /* best-effort — next tick retries */ }
       this._syncCameraExemptionState();
-    }, 3000);
+    }, 10000);
   },
 
   _stopWebcamWaitPoll() {
@@ -6159,7 +6160,7 @@ const ExamApp = {
     // Encode live thumbnails asynchronously so JPEG compression cannot block
     // typing, navigation, or violation feedback on the examination page.
     if (this._snapInterval) clearInterval(this._snapInterval);
-    this._snapInterval = setInterval(() => this._captureLiveSnapshotAsync(), 10000);
+    this._snapInterval = setInterval(() => this._captureLiveSnapshotAsync(), 30000);
     // Capture one immediately so the grid shows something right away
     setTimeout(() => this._captureLiveSnapshotAsync(), 1500);
   },
@@ -7083,14 +7084,14 @@ const ExamApp = {
     const sessionId = this.session.id;
     const canvas = this._liveSnapshotCanvas || document.createElement('canvas');
     this._liveSnapshotCanvas = canvas;
-    canvas.width = 320;
-    canvas.height = 240;
+    canvas.width = 240;
+    canvas.height = 180;
 
     try {
       const ctx = canvas.getContext('2d');
       ctx.save();
       ctx.scale(-1, 1);
-      ctx.drawImage(video, -320, 0, 320, 240);
+      ctx.drawImage(video, -240, 0, 240, 180);
       ctx.restore();
     } catch (_) {
       return;
@@ -7122,7 +7123,7 @@ const ExamApp = {
       } finally {
         this._liveSnapshotInFlight = false;
       }
-    }, 'image/jpeg', 0.55);
+    }, 'image/jpeg', 0.45);
   },
 
   captureSnapshot(options = {}) {
@@ -7974,9 +7975,7 @@ const ExamApp = {
   // RENDER QUESTIONS
   // ============================================================
   renderQuestions() {
-    const questions = this.exam.shuffleQuestions
-      ? this._shuffleWithinTypeGroups(this.exam.questions)
-      : [...this.exam.questions];
+    const questions = this._orderQuestionsForAttempt(this.exam.questions, !!this.exam.shuffleQuestions);
     this.questionOrder = questions;
     this.currentQuestionIndex = 0;
     this.markedForReview = new Set();
@@ -8026,9 +8025,19 @@ const ExamApp = {
     const requiredBadge = q.required !== false
       ? `<span class="q-required-badge" title="Required" aria-label="Required question">*</span>`
       : '';
-
+    const currentSection = this._getExamSections().find(section => section.id === q.sectionId);
+    const sectionTitle = String(currentSection?.title || '').trim();
+    const sectionDescription = String(currentSection?.description || '').trim();
+    const sectionSummary = sectionTitle
+      ? `<section class="question-section-summary" aria-label="Current exam section">
+          <h2>${_escText(sectionTitle)}</h2>
+          ${sectionDescription ? `<p>${_escText(sectionDescription)}</p>` : ''}
+        </section>`
+      : '';
     return `
-      <div class="question-card" id="qcard-${q.id}" data-qid="${q.id}" style="display:none;">
+      <div class="examv2-question-frame" id="qframe-${q.id}" style="display:none;">
+        ${sectionSummary}
+        <div class="question-card" id="qcard-${q.id}" data-qid="${q.id}">
         <div class="question-header">
           <div class="question-num">${idx + 1}</div>
           <div class="question-content">${_escText(q.content)}${requiredBadge}</div>
@@ -8037,6 +8046,7 @@ const ExamApp = {
         ${imgHtml}
         <div class="question-type-label">${typeLabels[q.type] || q.type}</div>
         <div class="question-answer-area">${answerHtml}</div>
+        </div>
       </div>
     `;
   },
@@ -8687,9 +8697,41 @@ const ExamApp = {
   _buildNavGrid() {
     const grid = document.getElementById('question-nav-grid');
     if (!grid) return;
-    grid.innerHTML = this.questionOrder.map((q, idx) =>
-      `<button type="button" class="nav-q-btn" data-exam-control="true" id="nav-q-${idx}" onclick="ExamApp.showQuestion(${idx})">${idx + 1}</button>`
-    ).join('');
+    const sections = this._getExamSections();
+    const navHeader = document.querySelector('.examv2-nav-header');
+    if (!sections.length) {
+      grid.classList.remove('has-sections');
+      if (navHeader) navHeader.textContent = 'Questions';
+      grid.innerHTML = this.questionOrder.map((q, idx) =>
+        `<button type="button" class="nav-q-btn" data-exam-control="true" id="nav-q-${idx}" onclick="ExamApp.showQuestion(${idx})">${idx + 1}</button>`
+      ).join('');
+    } else {
+      grid.classList.add('has-sections');
+      if (navHeader) navHeader.textContent = 'Exam sections';
+      const knownIds = new Set(sections.map(section => section.id));
+      const groups = sections.map((section, sectionIndex) => ({
+        id: section.id,
+        title: section.title || `Section ${sectionIndex + 1}`,
+        description: String(section.description || '').trim(),
+        sectionNumber: sectionIndex + 1,
+        items: this.questionOrder.flatMap((question, index) => question.sectionId === section.id ? [{ question, index }] : []),
+      }));
+      const unsectioned = this.questionOrder.flatMap((question, index) => (
+        !question.sectionId || !knownIds.has(question.sectionId) ? [{ question, index }] : []
+      ));
+      if (unsectioned.length) groups.push({ id: '', title: 'Other questions', sectionNumber: null, items: unsectioned });
+      grid.innerHTML = groups.filter(group => group.items.length).map(group => `
+        <section class="examv2-nav-section" data-section-id="${_escAttr(group.id)}">
+          <div class="examv2-nav-section-title">
+            ${group.sectionNumber ? `<span>Section ${group.sectionNumber}</span>` : ''}
+            <strong>${_escText(group.title)}</strong>
+            ${group.description ? `<p>${_escText(group.description)}</p>` : ''}
+          </div>
+          <div class="examv2-nav-section-grid">
+            ${group.items.map(({ index }) => `<button type="button" class="nav-q-btn" data-exam-control="true" id="nav-q-${index}" onclick="ExamApp.showQuestion(${index})">${index + 1}</button>`).join('')}
+          </div>
+        </section>`).join('');
+    }
     this._updateNavGrid();
   },
 
@@ -8701,8 +8743,8 @@ const ExamApp = {
     this.currentQuestionIndex = idx;
 
     questions.forEach((q, i) => {
-      const card = document.getElementById(`qcard-${q.id}`);
-      if (card) card.style.display = i === idx ? '' : 'none';
+      const frame = document.getElementById(`qframe-${q.id}`);
+      if (frame) frame.style.display = i === idx ? '' : 'none';
     });
 
     const prevBtn = document.getElementById('btn-prev');
@@ -9528,6 +9570,29 @@ const ExamApp = {
   // ============================================================
   // SHUFFLE (Fisher-Yates)
   // ============================================================
+  _getExamSections() {
+    if (!Array.isArray(this.exam?.examSections)) return [];
+    return this.exam.examSections.filter(section => section && section.id);
+  },
+
+  _orderQuestionsForAttempt(questions, shouldShuffle) {
+    const source = Array.isArray(questions) ? questions : [];
+    const sections = this._getExamSections();
+    if (!sections.length) {
+      return shouldShuffle ? this._shuffleWithinTypeGroups(source) : [...source];
+    }
+
+    const knownIds = new Set(sections.map(section => section.id));
+    const ordered = [];
+    sections.forEach(section => {
+      const group = source.filter(question => question.sectionId === section.id);
+      ordered.push(...(shouldShuffle ? this.shuffle([...group]) : group));
+    });
+    const unsectioned = source.filter(question => !question.sectionId || !knownIds.has(question.sectionId));
+    ordered.push(...(shouldShuffle ? this._shuffleWithinTypeGroups(unsectioned) : unsectioned));
+    return ordered;
+  },
+
   shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));

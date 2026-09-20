@@ -18,6 +18,7 @@ const SupabaseSync = {
   _sessionCameraSnapshotsSupported: true,
   _sessionAttemptHistorySupported: true,
   _examPoliciesSupported: true,
+  _examSectionsSupported: true,
   _examCameraExemptSupported: true,
   _examLateExamSupported: true,
   _examObjectMonitoringSupported: true,
@@ -520,6 +521,12 @@ const SupabaseSync = {
           normalized.examPolicies = prior.examPolicies;
         }
       }
+      if (!('exam_sections' in r)) {
+        const prior = existingById.get(normalized.id);
+        if (prior && Array.isArray(prior.examSections)) {
+          normalized.examSections = prior.examSections;
+        }
+      }
       if (!('object_monitoring' in r)) {
         const prior = existingById.get(normalized.id);
         if (prior?.objectMonitoring && typeof prior.objectMonitoring === 'object') {
@@ -628,6 +635,13 @@ const SupabaseSync = {
           if (this._isMissingExamPoliciesError(table, error) && this._examPoliciesSupported !== false) {
             this._examPoliciesSupported = false;
             rows = rows.map(row => this._withoutExamPolicies(row));
+            ({ error } = await c.from(table).upsert(rows));
+            if (!error) break;
+            continue;
+          }
+          if (this._isMissingExamSectionsError(table, error) && this._examSectionsSupported !== false) {
+            this._examSectionsSupported = false;
+            rows = rows.map(row => this._withoutExamSections(row));
             ({ error } = await c.from(table).upsert(rows));
             if (!error) break;
             continue;
@@ -764,6 +778,12 @@ const SupabaseSync = {
           const prior = current.find(r => r.id === normalized.id);
           if (prior && Array.isArray(prior.examPolicies)) {
             normalized.examPolicies = prior.examPolicies;
+          }
+        }
+        if (table === 'exams' && row && !('exam_sections' in row)) {
+          const prior = current.find(r => r.id === normalized.id);
+          if (prior && Array.isArray(prior.examSections)) {
+            normalized.examSections = prior.examSections;
           }
         }
         if (table === 'exams' && row && !('object_monitoring' in row)) {
@@ -1084,6 +1104,13 @@ const SupabaseSync = {
             if (!retryError) return;
             continue;
           }
+          if (this._isMissingExamSectionsError(table, retryError) && this._examSectionsSupported !== false) {
+            this._examSectionsSupported = false;
+            retryRow = this._withoutExamSections(retryRow);
+            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            if (!retryError) return;
+            continue;
+          }
           if (this._isMissingExamObjectMonitoringError(table, retryError) && this._examObjectMonitoringSupported !== false) {
             this._examObjectMonitoringSupported = false;
             retryRow = this._withoutExamObjectMonitoring(retryRow);
@@ -1270,6 +1297,9 @@ const SupabaseSync = {
       row.exam_policies = Array.isArray(d.examPolicies)
         ? d.examPolicies.map(policy => String(policy ?? '').trim()).filter(Boolean)
         : [];
+    }
+    if (this._examSectionsSupported !== false) {
+      row.exam_sections = Array.isArray(d.examSections) ? d.examSections : [];
     }
     if (this._examCameraExemptSupported !== false) {
       row.camera_exempt_student_ids = Array.isArray(d.cameraExemptStudentIds) ? d.cameraExemptStudentIds : [];
@@ -1527,6 +1557,7 @@ const SupabaseSync = {
       allowReview: !!r.allow_review,
       scoringReleased: !!r.scoring_released,
       questions: Array.isArray(r.questions) ? r.questions : [],
+      examSections: Array.isArray(r.exam_sections) ? r.exam_sections : [],
       examPolicies: Array.isArray(r.exam_policies) ? r.exam_policies.map(policy => String(policy ?? '').trim()).filter(Boolean) : [],
       targetYearLevels: Array.isArray(r.target_year_levels) ? r.target_year_levels : [],
       targetSections: Array.isArray(r.target_sections) ? r.target_sections : [],
@@ -1705,6 +1736,17 @@ const SupabaseSync = {
   _withoutExamPolicies(row) {
     const next = { ...row };
     delete next.exam_policies;
+    return next;
+  },
+
+  _isMissingExamSectionsError(table, error) {
+    const message = String(error?.message || '');
+    return table === 'exams' && message.includes(`Could not find the 'exam_sections' column`);
+  },
+
+  _withoutExamSections(row) {
+    const next = { ...row };
+    delete next.exam_sections;
     return next;
   },
 

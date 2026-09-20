@@ -954,7 +954,32 @@ async function handleSessionList(req, res, url) {
   if (!examId) return badRequest(res, 'Exam ID is required.');
 
   const { rows } = await query(
-    `select s.*
+    `select s.id,
+            s.exam_id,
+            s.exam_code,
+            s.student_id,
+            s.student_name,
+            s.year_level,
+            s.section,
+            s.year_section,
+            s.department,
+            s.program,
+            s.start_time,
+            s.end_time,
+            s.warnings,
+            s.score,
+            s.max_score,
+            s.submitted,
+            s.auto_submitted,
+            s.submit_reason,
+            s.score_released,
+            s.owner_admin_id,
+            s.created_at,
+            case
+              when jsonb_typeof(s.camera_snapshots) = 'array' and jsonb_array_length(s.camera_snapshots) > 0
+                then jsonb_build_array(s.camera_snapshots -> 0)
+              else '[]'::jsonb
+            end as camera_snapshots
        from public.sessions s
        left join public.exams e on e.id = s.exam_id
       where s.exam_id = $2

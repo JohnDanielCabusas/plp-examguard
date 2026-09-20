@@ -1113,7 +1113,6 @@ export default function SuperAdminPage() {
             border: "3px solid #e5e7eb",
             borderTopColor: "#1a4d2a",
             borderRadius: "50%",
-            animation: "_fbspin 0.75s linear infinite",
           }}
         />
         <p

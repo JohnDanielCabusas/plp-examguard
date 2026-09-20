@@ -281,9 +281,8 @@ export default function AdminPage() {
     <>
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
-        <div style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%', animation: '_fbspin 0.75s linear infinite' }} />
+        <div className="theme-loading-spinner" style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%' }} />
         <p style={{ color: 'var(--text-muted-2)', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
-        <style>{`@keyframes _fbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
 
       {/* Toast Container */}
@@ -739,11 +738,15 @@ export default function AdminPage() {
                         <span id="exam-total-points" className="exam-q-badge" style={{ marginLeft: '6px', background: '#92400e' }} />
                       </span>
                       <span style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" id="exam-add-section-btn" className="btn btn-secondary btn-sm" onClick={() => window.addExamSection()}>
+                          + Add Section
+                        </button>
                         <button type="button" id="exam-select-all-btn" className="btn btn-secondary btn-sm" onClick={() => window.selectAllQuestions()}>Select All</button>
                         <button type="button" id="exam-clear-selection-btn" className="btn btn-secondary btn-sm" style={{ display: 'none' }} onClick={() => window.clearQuestionSelection()}>Clear Selection</button>
                         <button type="button" id="exam-clear-q-btn" className="btn btn-danger btn-sm" onClick={() => window.clearQuestions()}>Delete All</button>
                       </span>
                     </div>
+                    <div id="exam-sections-builder" className="exam-sections-builder" />
                     <div id="questions-list" />
                     <div className="exam-add-q-bar">
                       {[

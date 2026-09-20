@@ -26,6 +26,7 @@
     "test:issue-fixes": "node scripts/test-issue-fixes.cjs",
     "test:issue-fixes-b": "node scripts/test-issue-fixes-b.cjs",
     "test:exam-timer": "node scripts/test-exam-timer.cjs",
+    "test:exam-sections": "node scripts/test-exam-sections.cjs",
     "test:identification": "node scripts/test-identification-answers.cjs",
     "split:facemesh-evaluation": "node scripts/split-facemesh-evaluation.mjs",
     "supabase:schema": "node scripts/apply-supabase-schema.mjs"

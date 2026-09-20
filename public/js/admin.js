@@ -449,7 +449,9 @@ const VIOLATION_SOUND_PREF_KEY = 'acs_violation_sound_muted';
 const VIOLATION_SOUND_ICON_ON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
 const VIOLATION_SOUND_ICON_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
 const MONITOR_VIOLATION_POLL_MS = 350;
-const MONITOR_SESSION_POLL_MS = 800;
+// SSE carries live violation events. This is only a recovery/snapshot poll, so
+// keep it deliberately slow to avoid repeatedly downloading webcam thumbnails.
+const MONITOR_SESSION_POLL_MS = 10000;
 const MONITOR_VIOLATION_POLL_LIMIT = 100;
 
 function getBehaviorLabel(type) {
@@ -2033,7 +2035,7 @@ function startMessageNotificationPolling() {
     } else {
       refreshMessageNotifications();
     }
-  }, 6000);
+  }, 30000);
 }
 
 let _sharePollTimer = null;
@@ -2047,7 +2049,7 @@ function startExamShareNotificationPolling() {
     } else {
       refreshExamShareNotifications();
     }
-  }, 7000);
+  }, 60000);
 }
 
 document.addEventListener('acsDataChanged', (e) => {
@@ -3972,6 +3974,7 @@ async function submitShareExam() {
           requireAIDetection: !!exam.requireAIDetection,
           allowReview: !!exam.allowReview,
           status: exam.status || 'draft',
+          examSections: getExamSections(exam),
           questions: exam.questions || [],
         }),
         subject: cloneExamEditorData({
@@ -4239,6 +4242,7 @@ async function acceptExamShare(shareId) {
     allowReview: !!snapshotExam.allowReview,
     status: 'draft',
     scoringReleased: false,
+    examSections: cloneExamEditorData(snapshotExam.examSections || []),
     questions: cloneExamQuestionsForDuplicate(snapshotExam.questions || []),
     excludedStudentIds: [],
     cameraExemptStudentIds: [],
@@ -4400,6 +4404,7 @@ async function saveDuplicatedExam() {
     allowReview: !!sourceExam.allowReview,
     status: 'draft',
     scoringReleased: false,
+    examSections: cloneExamEditorData(sourceExam.examSections || []),
     questions: cloneExamQuestionsForDuplicate(sourceExam.questions),
     excludedStudentIds: [],
     ...audienceData,
@@ -5058,6 +5063,7 @@ function getExamEditorPersistedState() {
   return {
     examId,
     excludedStudentIds: [...(exam.excludedStudentIds || [])],
+    examSections: getExamSections(exam),
     questions: exam.questions || [],
   };
 }
@@ -5256,8 +5262,10 @@ function openExamEditor(id) {
   const questionsList = document.getElementById('questions-list');
   const questionCountBadge = document.getElementById('exam-q-count');
   const totalPointsBadge = document.getElementById('exam-total-points');
+  const sectionsBuilder = document.getElementById('exam-sections-builder');
 
   currentQBuilderExamId = null;
+  if (sectionsBuilder) sectionsBuilder.innerHTML = '';
 
   if (id) {
     const e = existingExam;
@@ -5654,20 +5662,35 @@ function buildExamOutlineSections() {
     const typeLabels = { mcq: 'Multiple Choice', checkbox: 'Checkboxes', tf: 'True / False', identification: 'Identification', enumeration: 'Enumeration', matching: 'Matching Type', essay: 'Essay', coding: 'Coding' };
     // Group questions by type — the type is the heading, each question number
     // nests under it as an indented sub-item.
-    const order = [];
-    const byType = new Map();
-    exam.questions.forEach((q, idx) => {
-      if (!byType.has(q.type)) { byType.set(q.type, []); order.push(q.type); }
-      byType.get(q.type).push(idx);
-    });
-    order.forEach(type => {
-      const idxs = byType.get(type);
-      const heading = typeLabels[type] || type;
-      sections.push({ id: 'qblock-' + idxs[0], label: idxs.length > 1 ? `${heading} (${idxs.length})` : heading, level: 0 });
-      idxs.forEach(idx => {
-        sections.push({ id: 'qblock-' + idx, label: `Q${idx + 1}`, level: 1 });
+    const configuredSections = getExamSections(exam);
+    if (configuredSections.length) {
+      const knownSectionIds = new Set(configuredSections.map(section => section.id));
+      configuredSections.forEach((section, sectionIndex) => {
+        const idxs = exam.questions.flatMap((question, index) => question.sectionId === section.id ? [index] : []);
+        sections.push({ id: `exam-question-section-${section.id}`, label: section.title || `Section ${sectionIndex + 1}`, level: 0 });
+        idxs.forEach(idx => sections.push({ id: 'qblock-' + idx, label: `Q${idx + 1}`, level: 1 }));
       });
-    });
+      const unsectioned = exam.questions.flatMap((question, index) => (
+        !question.sectionId || !knownSectionIds.has(question.sectionId) ? [index] : []
+      ));
+      if (unsectioned.length) {
+        sections.push({ id: 'exam-question-section-unassigned', label: `Unsectioned (${unsectioned.length})`, level: 0 });
+        unsectioned.forEach(idx => sections.push({ id: 'qblock-' + idx, label: `Q${idx + 1}`, level: 1 }));
+      }
+    } else {
+      const order = [];
+      const byType = new Map();
+      exam.questions.forEach((q, idx) => {
+        if (!byType.has(q.type)) { byType.set(q.type, []); order.push(q.type); }
+        byType.get(q.type).push(idx);
+      });
+      order.forEach(type => {
+        const idxs = byType.get(type);
+        const heading = typeLabels[type] || type;
+        sections.push({ id: 'qblock-' + idxs[0], label: idxs.length > 1 ? `${heading} (${idxs.length})` : heading, level: 0 });
+        idxs.forEach(idx => sections.push({ id: 'qblock-' + idx, label: `Q${idx + 1}`, level: 1 }));
+      });
+    }
   }
   return sections;
 }
@@ -5765,13 +5788,14 @@ function saveExamFromEditor() {
     runExamEditorWithPersistedWrites(() => {
       DB.updateExam(id, {
         ...data,
+        examSections: cloneExamEditorData(draftExam?.examSections || []),
         questions: cloneExamEditorData(draftExam?.questions || []),
         excludedStudentIds: pruneExamExcludedStudentIds(draftExam?.excludedStudentIds, subjectId),
       });
     });
     showToast('Exam saved.', 'success');
   } else {
-    const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, questions: [], excludedStudentIds: [] });
+    const exam = DB.addExam({ ...data, status: 'draft', scoringReleased: false, examSections: [], questions: [], excludedStudentIds: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');
@@ -5893,7 +5917,7 @@ function saveExam() {
     });
     showToast('Exam updated.', 'success');
   } else {
-    const exam = DB.addExam({ title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, objectMonitoring, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, questions: [] });
+    const exam = DB.addExam({ title, subjectId, description, examPolicies, timeLimit, code, shuffleQuestions, shuffleAnswers, requireCamera, objectMonitoring, requireAIDetection, allowReview, ...audienceData, status: 'draft', scoringReleased: false, examSections: [], questions: [] });
     examId = exam.id;
     document.getElementById('exam-id').value = examId;
     showToast('Exam created.', 'success');
@@ -6228,6 +6252,247 @@ async function deleteExam(id) {
 // ============================================================
 // QUESTION BUILDER
 // ============================================================
+const EXAM_SECTION_TYPE_LABELS = {
+  mcq: 'Multiple Choice',
+  checkbox: 'Checkboxes',
+  tf: 'True / False',
+  identification: 'Identification',
+  enumeration: 'Enumeration',
+  matching: 'Matching Type',
+  essay: 'Essay',
+  coding: 'Coding',
+};
+
+const EXAM_SECTION_TYPES = Object.keys(EXAM_SECTION_TYPE_LABELS);
+
+function getExamSections(exam) {
+  if (!Array.isArray(exam?.examSections)) return [];
+  return exam.examSections.filter(section => section && section.id && EXAM_SECTION_TYPE_LABELS[section.type]);
+}
+
+function getQuestionSectionIdForType(exam, type, preferredSectionId = '') {
+  const sections = getExamSections(exam);
+  const preferred = sections.find(section => section.id === preferredSectionId && section.type === type);
+  if (preferred) return preferred.id;
+  return sections.find(section => section.type === type)?.id || '';
+}
+
+function getSuggestedSectionTitle(type) {
+  return EXAM_SECTION_TYPE_LABELS[type] || 'Untitled section';
+}
+
+function hasSuggestedSectionTitle(section) {
+  const title = String(section?.title || '').trim().toLowerCase();
+  if (!title) return true;
+  return EXAM_SECTION_TYPES.some(type => {
+    const suggestion = getSuggestedSectionTitle(type).toLowerCase();
+    return title === suggestion || title === `${suggestion} section`;
+  });
+}
+
+function renderExamSectionsBuilder(examId) {
+  const builder = document.getElementById('exam-sections-builder');
+  if (!builder) return;
+  const exam = DB.getExam(examId);
+  const sections = getExamSections(exam);
+
+  if (!exam) {
+    builder.innerHTML = '';
+    return;
+  }
+
+  if (!sections.length) {
+    builder.innerHTML = `
+      <div class="exam-sections-empty">
+        <div>
+          <strong>No sections yet</strong>
+          <span>Add named sections to control the order of question types for every student.</span>
+        </div>
+        <button type="button" class="exam-section-empty-action" onclick="addExamSection()">Create first section</button>
+      </div>`;
+    return;
+  }
+
+  builder.innerHTML = `
+    <div class="exam-sections-heading">
+      <div>
+        <strong>Exam sections</strong>
+        <span>Students see sections in this order. Shuffling stays within each section.</span>
+      </div>
+      <span class="exam-sections-count">${sections.length} section${sections.length === 1 ? '' : 's'}</span>
+    </div>
+    <div class="exam-section-editor-list">
+      ${sections.map((section, index) => {
+        const questionCount = (exam.questions || []).filter(question => question.sectionId === section.id).length;
+        return `
+          <article class="exam-section-editor" id="exam-section-editor-${section.id}">
+            <div class="exam-section-order">${index + 1}</div>
+            <div class="exam-section-content">
+              <div class="exam-section-primary-row">
+                <label class="exam-section-title-field">
+                  <span>Section title</span>
+                  <input type="text" class="form-control" maxlength="80" value="${escHtml(section.title || getSuggestedSectionTitle(section.type))}" placeholder="${escHtml(getSuggestedSectionTitle(section.type))}" aria-label="Section ${index + 1} title" onchange="updateExamSection('${section.id}','title',this.value)" />
+                </label>
+                <label class="exam-section-type-field">
+                  <span>Question type</span>
+                  <select class="form-control" aria-label="Section ${index + 1} question type" onchange="updateExamSection('${section.id}','type',this.value)">
+                    ${EXAM_SECTION_TYPES.map(type => `<option value="${type}"${section.type === type ? ' selected' : ''}>${EXAM_SECTION_TYPE_LABELS[type]}</option>`).join('')}
+                  </select>
+                </label>
+                <div class="exam-section-meta">${questionCount} question${questionCount === 1 ? '' : 's'}</div>
+                <div class="exam-section-actions">
+                  <button type="button" onclick="moveExamSection('${section.id}',-1)" title="Move section up" aria-label="Move ${escHtml(section.title)} up" ${index === 0 ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+                  </button>
+                  <button type="button" onclick="moveExamSection('${section.id}',1)" title="Move section down" aria-label="Move ${escHtml(section.title)} down" ${index === sections.length - 1 ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  <button type="button" class="exam-section-delete" onclick="deleteExamSection('${section.id}')" title="Delete section" aria-label="Delete ${escHtml(section.title)}">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                </div>
+              </div>
+              <label class="exam-section-description-field">
+                <span>Description <em>(optional)</em></span>
+                <input type="text" class="form-control exam-section-description" maxlength="240" value="${escHtml(section.description || '')}" placeholder="Add instructions or context for students" aria-label="Section ${index + 1} description" oninput="updateExamSectionDescription('${section.id}',this.value)" />
+              </label>
+            </div>
+          </article>`;
+      }).join('')}
+    </div>`;
+}
+
+function addExamSection() {
+  if (!currentQBuilderExamId) {
+    saveExamFromEditor();
+    if (!currentQBuilderExamId) return;
+  }
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const sections = getExamSections(exam);
+  const unusedType = EXAM_SECTION_TYPES.find(type => !sections.some(section => section.type === type));
+  const type = unusedType || 'mcq';
+  const section = {
+    id: DB.generateId(),
+    title: getSuggestedSectionTitle(type),
+    description: '',
+    titleCustomized: false,
+    type,
+  };
+  const questions = (exam.questions || []).map(question => (
+    !question.sectionId && question.type === type ? { ...question, sectionId: section.id } : question
+  ));
+  DB.updateExam(currentQBuilderExamId, { examSections: [...sections, section], questions });
+  renderQuestionsList(currentQBuilderExamId);
+  document.getElementById(`exam-section-editor-${section.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateExamSection(sectionId, field, value) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const sections = getExamSections(exam);
+  const current = sections.find(section => section.id === sectionId);
+  if (!current) return;
+
+  if (field === 'title') {
+    const title = String(value || '').trim() || getSuggestedSectionTitle(current.type);
+    DB.updateExam(currentQBuilderExamId, {
+      examSections: sections.map(section => section.id === sectionId ? {
+        ...section,
+        title,
+        titleCustomized: title.toLowerCase() !== getSuggestedSectionTitle(section.type).toLowerCase(),
+      } : section),
+    });
+    renderQuestionsList(currentQBuilderExamId);
+    return;
+  }
+
+  if (field === 'description') {
+    const description = String(value || '').trim().slice(0, 240);
+    DB.updateExam(currentQBuilderExamId, {
+      examSections: sections.map(section => section.id === sectionId ? { ...section, description } : section),
+    });
+    renderQuestionsList(currentQBuilderExamId);
+    return;
+  }
+
+  if (field !== 'type' || !EXAM_SECTION_TYPE_LABELS[value] || current.type === value) return;
+  const shouldRefreshTitle = current.titleCustomized !== true && hasSuggestedSectionTitle(current);
+  const questions = (exam.questions || []).map(question => {
+    if (question.sectionId === sectionId) return { ...question, sectionId: '' };
+    if (!question.sectionId && question.type === value) return { ...question, sectionId };
+    return question;
+  });
+  DB.updateExam(currentQBuilderExamId, {
+    examSections: sections.map(section => section.id === sectionId ? {
+      ...section,
+      type: value,
+      title: shouldRefreshTitle ? getSuggestedSectionTitle(value) : section.title,
+      titleCustomized: shouldRefreshTitle ? false : section.titleCustomized,
+    } : section),
+    questions,
+  });
+  renderQuestionsList(currentQBuilderExamId);
+  showToast('Section type updated. Existing questions were kept.', 'success');
+}
+
+function updateExamSectionDescription(sectionId, value) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  if (!exam) return;
+  const description = String(value || '').slice(0, 240);
+  DB.updateExam(currentQBuilderExamId, {
+    examSections: getExamSections(exam).map(section => section.id === sectionId ? { ...section, description } : section),
+  });
+}
+
+function moveExamSection(sectionId, direction) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const sections = getExamSections(exam);
+  const index = sections.findIndex(section => section.id === sectionId);
+  const nextIndex = index + direction;
+  if (index < 0 || nextIndex < 0 || nextIndex >= sections.length) return;
+  [sections[index], sections[nextIndex]] = [sections[nextIndex], sections[index]];
+  DB.updateExam(currentQBuilderExamId, { examSections: sections });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
+async function deleteExamSection(sectionId) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const sections = getExamSections(exam);
+  const section = sections.find(item => item.id === sectionId);
+  if (!exam || !section) return;
+  const questionCount = (exam.questions || []).filter(question => question.sectionId === sectionId).length;
+  const ok = await showConfirm({
+    title: 'Delete section?',
+    message: `Delete “${section.title}”? Its ${questionCount} question${questionCount === 1 ? '' : 's'} will be kept and moved to Unsectioned questions.`,
+    confirmLabel: 'Delete Section',
+    confirmClass: 'btn btn-danger',
+    icon: 'warning',
+  });
+  if (!ok) return;
+  const questions = (exam.questions || []).map(question => (
+    question.sectionId === sectionId ? { ...question, sectionId: '' } : question
+  ));
+  DB.updateExam(currentQBuilderExamId, {
+    examSections: sections.filter(item => item.id !== sectionId),
+    questions,
+  });
+  renderQuestionsList(currentQBuilderExamId);
+  showToast('Section deleted. Its questions were kept.', 'success');
+}
+
+function assignQuestionToSection(questionIndex, sectionId) {
+  const exam = DB.getExam(currentQBuilderExamId);
+  const question = exam?.questions?.[questionIndex];
+  if (!exam || !question) return;
+  const validSectionId = getExamSections(exam).some(section => section.id === sectionId && section.type === question.type)
+    ? sectionId
+    : '';
+  const questions = exam.questions.map((item, index) => index === questionIndex ? { ...item, sectionId: validSectionId } : item);
+  DB.updateExam(currentQBuilderExamId, { questions });
+  renderQuestionsList(currentQBuilderExamId);
+}
+
 function openQuestionBuilder(examId) {
   openExamModal(examId, 'questions');
 }
@@ -6236,9 +6501,44 @@ function renderQuestionsList(examId) {
   const exam = DB.getExam(examId);
   if (!exam) return;
   const container = document.getElementById('questions-list');
+  const builder = document.getElementById('exam-sections-builder');
+
+  renderExamSectionsBuilder(examId);
+  const sections = getExamSections(exam);
 
   if (!exam.questions.length) {
     container.innerHTML = `<div class="empty-state" style="padding:20px;"><p>No questions yet. Use the buttons below to add questions.</p></div>`;
+  } else if (sections.length) {
+    const knownSectionIds = new Set(sections.map(section => section.id));
+    const sectionGroups = sections.map((section, sectionIndex) => {
+      const rows = exam.questions
+        .map((question, index) => ({ question, index }))
+        .filter(({ question }) => question.sectionId === section.id);
+      return `
+        <section class="exam-question-section" id="exam-question-section-${section.id}">
+          <div class="exam-question-section-header">
+            <div>
+              <span class="exam-question-section-number">Section ${sectionIndex + 1}</span>
+              <strong>${escHtml(section.title || `Section ${sectionIndex + 1}`)}</strong>
+            </div>
+            <span>${escHtml(EXAM_SECTION_TYPE_LABELS[section.type])} · ${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="exam-question-section-body">
+            ${rows.length ? rows.map(({ question, index }) => buildQuestionBlock(question, index)).join('') : '<div class="exam-question-section-empty">Add a question of this type, or assign an existing one to this section.</div>'}
+          </div>
+        </section>`;
+    }).join('');
+    const unsectioned = exam.questions
+      .map((question, index) => ({ question, index }))
+      .filter(({ question }) => !question.sectionId || !knownSectionIds.has(question.sectionId));
+    container.innerHTML = sectionGroups + (unsectioned.length ? `
+      <section class="exam-question-section exam-question-section-unassigned" id="exam-question-section-unassigned">
+        <div class="exam-question-section-header">
+          <div><span class="exam-question-section-number">Needs organizing</span><strong>Unsectioned questions</strong></div>
+          <span>${unsectioned.length} question${unsectioned.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="exam-question-section-body">${unsectioned.map(({ question, index }) => buildQuestionBlock(question, index)).join('')}</div>
+      </section>` : '');
   } else {
     container.innerHTML = exam.questions.map((q, idx) => buildQuestionBlock(q, idx)).join('');
     // Auto-size all textareas after render. The question field grows on input,
@@ -6251,6 +6551,8 @@ function renderQuestionsList(examId) {
       });
     });
   }
+  initCustomDropdowns(builder);
+  initCustomDropdowns(container);
   refreshQuestionIssue();
   updateQBadge(examId);
   updateSelectAllUI();
@@ -6510,8 +6812,10 @@ function changeQuestionType(idx, newType) {
     essay:         { options: [], correctAnswer: '', points: 10, rubric: '', minWords: 0 },
     enumeration:   { options: [], correctAnswer: '', points: 5, answers: ['','',''], partialScoring: true },
     matching:      { options: [], correctAnswer: '', points: 5, pairs: [{term:'',match:''},{term:'',match:''}], partialScoring: true },
+    coding:        { options: [], correctAnswer: '', points: 20, language: 'python', starterCode: '', expectedOutput: '', rubric: '' },
   };
-  const questions = exam.questions.map((q, i) => i !== idx ? q : { ...q, type: newType, ...(defaults[newType] || {}) });
+  const nextSectionId = getQuestionSectionIdForType(exam, newType, exam.questions[idx]?.sectionId);
+  const questions = exam.questions.map((q, i) => i !== idx ? q : { ...q, type: newType, sectionId: nextSectionId, ...(defaults[newType] || {}) });
   DB.updateExam(currentQBuilderExamId, { questions });
   renderQuestionsList(currentQBuilderExamId);
 }
@@ -6659,6 +6963,7 @@ function buildQuestionBlock(q, idx) {
   const PLP = '#166534';
   const typeColors = { mcq: PLP, checkbox: PLP, tf: PLP, identification: PLP, enumeration: PLP, matching: PLP, essay: PLP, coding: PLP };
   const typeColor  = typeColors[q.type] || '#6b7280';
+  const matchingSections = getExamSections(DB.getExam(currentQBuilderExamId)).filter(section => section.type === q.type);
   let optionsHtml  = '';
 
   if (q.type === 'enumeration') {
@@ -6842,18 +7147,25 @@ function buildQuestionBlock(q, idx) {
           <span class="qe-badge" style="background:${typeColor}">Q${idx+1}</span>
           <div class="qe-type-dd" id="qtd-${idx}">
             <button class="qe-type-trigger" onclick="event.stopPropagation();toggleTypeDD(${idx})">
-              <span class="qtd-label">${{mcq:'Multiple choice',checkbox:'Checkboxes',tf:'True / False',identification:'Identification',enumeration:'Enumeration',matching:'Matching Type',essay:'Essay'}[q.type]||q.type}</span>
+              <span class="qtd-label">${{mcq:'Multiple choice',checkbox:'Checkboxes',tf:'True / False',identification:'Identification',enumeration:'Enumeration',matching:'Matching Type',essay:'Essay',coding:'Coding'}[q.type]||q.type}</span>
               <svg class="qtd-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <div class="qtd-panel">
-              ${[['mcq','Multiple choice'],['checkbox','Checkboxes'],['tf','True / False'],['identification','Identification'],['enumeration','Enumeration'],['matching','Matching Type'],['essay','Essay']].map(([t,l])=>`<div class="qtd-opt${q.type===t?' qtd-active':''}" onclick="event.stopPropagation();pickQuestionType(${idx},'${t}')">${l}</div>`).join('')}
+              ${[['mcq','Multiple choice'],['checkbox','Checkboxes'],['tf','True / False'],['identification','Identification'],['enumeration','Enumeration'],['matching','Matching Type'],['essay','Essay'],['coding','Coding']].map(([t,l])=>`<div class="qtd-opt${q.type===t?' qtd-active':''}" onclick="event.stopPropagation();pickQuestionType(${idx},'${t}')">${l}</div>`).join('')}
             </div>
           </div>
+          <label class="qe-section-assign" title="Choose the section that contains this question">
+            <span>Section</span>
+            <select class="form-control" onchange="assignQuestionToSection(${idx},this.value)" aria-label="Section for question ${idx + 1}">
+              <option value="">Unsectioned</option>
+              ${matchingSections.map(section => `<option value="${section.id}"${q.sectionId === section.id ? ' selected' : ''}>${escHtml(section.title)}</option>`).join('')}
+            </select>
+          </label>
         </div>
         <div class="qe-header-right">
           <div class="qe-diff-group" onclick="event.stopPropagation()" title="Difficulty level for this question (Easy / Medium / Hard).">
             <span class="qe-pts-label">Level</span>
-            <select class="qe-diff-select" onchange="setQuestionDifficulty(${idx},this.value)">
+            <select class="form-control qe-diff-select" onchange="setQuestionDifficulty(${idx},this.value)">
               ${DIFFICULTY_META[q.difficulty] ? '' : '<option value="" disabled selected hidden>—</option>'}
               <option value="easy"${q.difficulty === 'easy' ? ' selected' : ''}>Easy</option>
               <option value="medium"${q.difficulty === 'medium' ? ' selected' : ''}>Medium</option>
@@ -6862,7 +7174,7 @@ function buildQuestionBlock(q, idx) {
           </div>
           <div class="qe-diff-group" onclick="event.stopPropagation()" title="Bloom's Taxonomy cognitive level this question assesses (recall → higher-order thinking).">
             <span class="qe-pts-label">Bloom</span>
-            <select class="qe-diff-select" onchange="setQuestionBloom(${idx},this.value)">
+            <select class="form-control qe-diff-select" onchange="setQuestionBloom(${idx},this.value)">
               <option value=""${!BLOOM_META[q.bloom] ? ' selected' : ''}>—</option>
               ${BLOOM_LEVELS.map(l => `<option value="${l}"${q.bloom === l ? ' selected' : ''}>${BLOOM_META[l].order}. ${BLOOM_META[l].label}</option>`).join('')}
             </select>
@@ -6961,9 +7273,17 @@ function initExamEditorDrag() {
     if (dropIdx === sourceIdx) { resetDrag(); return; }
     const exam = DB.getExam(currentQBuilderExamId);
     if (!exam) { resetDrag(); return; }
+    const targetQuestion = exam.questions[parseInt(block.dataset.qidx)];
+    const sourceQuestion = exam.questions[sourceIdx];
+    if (targetQuestion && sourceQuestion && targetQuestion.type !== sourceQuestion.type && targetQuestion.sectionId !== sourceQuestion.sectionId) {
+      resetDrag();
+      showToast('A section can only contain its selected question type.', 'error');
+      return;
+    }
     const selected = new Set(exam.questions.filter((_, index) => selectedQuestionIndices.has(index)));
     const questions = [...exam.questions];
-    const [moved] = questions.splice(sourceIdx, 1);
+    const [source] = questions.splice(sourceIdx, 1);
+    const moved = targetQuestion ? { ...source, sectionId: targetQuestion.sectionId || '' } : source;
     questions.splice(dropIdx, 0, moved);
     selectedQuestionIndices = new Set(questions.flatMap((question, index) => selected.has(question) ? [index] : []));
     resetDrag();
@@ -7033,6 +7353,7 @@ function addQuestion(type) {
   const newQ = {
     id: DB.generateId(),
     type,
+    sectionId: getQuestionSectionIdForType(exam, type),
     content: '',
     imageUrl: '',
     required: true,
@@ -7042,12 +7363,11 @@ function addQuestion(type) {
   DB.updateExam(currentQBuilderExamId, { questions });
   renderQuestionsList(currentQBuilderExamId);
   // Animate + scroll the new question into view
-  const container = document.getElementById('questions-list');
-  const last = container.lastElementChild;
-  if (last) {
-    last.classList.add('qe-new');
-    last.scrollIntoView({ behavior: 'smooth' });
-    setTimeout(() => last.classList.remove('qe-new'), 300);
+  const newCard = document.getElementById(`qblock-${questions.length - 1}`);
+  if (newCard) {
+    newCard.classList.add('qe-new');
+    newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => newCard.classList.remove('qe-new'), 300);
   }
 }
 
@@ -8544,19 +8864,19 @@ function normalizeMonitorSessionRow(row) {
     program: row.program || '',
     startTime: row.start_time || null,
     endTime: row.end_time || null,
-    answers: row.answers || {},
+    ...('answers' in row ? { answers: row.answers || {} } : {}),
     warnings: row.warnings || 0,
-    activities: Array.isArray(row.activities) ? row.activities : [],
+    ...('activities' in row ? { activities: Array.isArray(row.activities) ? row.activities : [] } : {}),
     score: row.score ?? null,
     maxScore: row.max_score ?? null,
     submitted: !!row.submitted,
     autoSubmitted: !!row.auto_submitted,
     submitReason: row.submit_reason || null,
     scoreReleased: !!row.score_released,
-    essayGrades: row.essay_grades || {},
-    aiDetections: row.ai_detections || {},
+    ...('essay_grades' in row ? { essayGrades: row.essay_grades || {} } : {}),
+    ...('ai_detections' in row ? { aiDetections: row.ai_detections || {} } : {}),
     cameraSnapshots: Array.isArray(row.camera_snapshots) ? row.camera_snapshots : [],
-    attemptHistory: Array.isArray(row.attempt_history) ? row.attempt_history : [],
+    ...('attempt_history' in row ? { attemptHistory: Array.isArray(row.attempt_history) ? row.attempt_history : [] } : {}),
     ownerAdminId: row.owner_admin_id || '',
     createdAt: row.created_at || null,
   };
@@ -8983,7 +9303,7 @@ function startProfChatSyncPolling() {
   _profChatPollTimer = setInterval(() => {
     if (!_profChatCtx) return;
     refreshProfChatFromSync();
-  }, 1200);
+  }, 15000);
 }
 
 function stopProfChatSyncPolling() {
@@ -10560,7 +10880,7 @@ function startReports() {
     });
   };
   refresh();
-  reportInterval = setInterval(refresh, 3000);
+  reportInterval = setInterval(refresh, 30000);
   // Do not force the badge on here — renderReportTable sets it from the
   // selected exam's status.
   const selectedId = document.getElementById('report-exam-select')?.value;
@@ -14236,6 +14556,7 @@ function importAIQuestions() {
     return {
       id: DB.generateId(),
       type: q.type,
+      sectionId: getQuestionSectionIdForType(exam, q.type),
       content: q.content || '',
       options: Array.isArray(q.options) ? q.options : [],
       correctAnswer: q.type === 'identification'

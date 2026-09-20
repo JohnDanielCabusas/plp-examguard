@@ -84,6 +84,7 @@ alter table if exists public.sessions add constraint sessions_submit_reason_chec
 alter table if exists public.settings add column if not exists claude_api_key text;
 alter table if exists public.exams add column if not exists excluded_student_ids jsonb not null default '[]'::jsonb;
 alter table if exists public.exams add column if not exists exam_policies jsonb not null default '[]'::jsonb;
+alter table if exists public.exams add column if not exists exam_sections jsonb not null default '[]'::jsonb;
 alter table if exists public.exams add column if not exists object_monitoring jsonb not null default '{}'::jsonb;
 update public.exams
 set object_monitoring = jsonb_build_object(
