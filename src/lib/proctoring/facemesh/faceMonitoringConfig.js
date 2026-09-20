@@ -53,7 +53,10 @@ const BASE_CONFIG = Object.freeze({
     faceAbsentIncidentMs: 10000,
     headTurnIncidentMs: 10000,
     lookingDownIncidentMs: 10000,
-    positioningIncidentMs: 4000,
+    // Was 4000, which left one second between the positioning notice appearing
+    // and the violation being recorded. Matched to the other correctable
+    // conditions so the student has a usable window to move (#40).
+    positioningIncidentMs: 10000,
     occlusionIncidentMs: 4000,
     unstableTrackingIncidentMs: 4000,
     recoveryMs: 1000,

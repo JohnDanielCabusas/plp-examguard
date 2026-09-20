@@ -301,7 +301,7 @@ export default function AdminPage() {
             </div>
             <div className="sidebar-brand-text">
               <h2 id="sb-school-name">TUKLAS</h2>
-              <p>Professor Panel</p>
+              <p><span className="sidebar-brand-system">TUKLAS</span> Professor Panel</p>
             </div>
           </div>
 
@@ -671,8 +671,10 @@ export default function AdminPage() {
                       Examination Policies and Rules
                     </div>
                     <div className="exam-policies-toolbar">
+                      {/* The card header above already says "Examination
+                          Policies and Rules"; repeating it here and again in
+                          the empty state said the same thing three times (#43). */}
                       <div className="exam-policies-toolbar-copy">
-                        <label className="exam-policies-title">Examination Policies and Rules</label>
                         <div className="exam-policies-subtitle">
                           Set the rules students must review before they can begin this exam.
                         </div>
@@ -1333,11 +1335,16 @@ export default function AdminPage() {
               <label>Recipient Professor Email *</label>
               <input type="email" className="form-control" id="share-recipient-email" placeholder="professor@school.edu" autoComplete="off" />
             </div>
+            {/* A dropdown offering exactly one option is not a choice, it is a
+                question with one answer (#43). The value is still carried so the
+                share request is unchanged; only the empty decision is gone. */}
             <div className="form-group">
               <label>Share Mode</label>
-              <select className="form-control" id="share-mode">
-                <option value="clone_exam">Clone Full Exam</option>
-              </select>
+              <input type="hidden" id="share-mode" defaultValue="clone_exam" />
+              <div className="share-mode-static">
+                <strong>Clone Full Exam</strong>
+                <span>The recipient receives their own editable copy. Your exam is not changed.</span>
+              </div>
             </div>
             <div className="form-group">
               <label>Optional Note</label>

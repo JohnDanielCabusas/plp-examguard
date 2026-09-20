@@ -784,6 +784,7 @@ export default function LoginPage() {
           <div className="login-logo">
             <img src={settings.logoUrl} alt="PLP Logo" style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
             <h1>{settings.schoolName}</h1>
+            <p className="login-system-name">TUKLAS</p>
             <p>Online Examination System</p>
             <p className="login-tagline">University of Pasig City</p>
           </div>

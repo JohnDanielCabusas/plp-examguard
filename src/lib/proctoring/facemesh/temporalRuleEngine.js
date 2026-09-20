@@ -26,10 +26,18 @@ const POSITIONING_WARNINGS = Object.freeze({
   FACE_TRACKING_UNSTABLE: 'Improve the lighting so your face remains visible.',
 });
 
+// Every condition a student can actually correct counts down where they can see
+// it. The positioning rules were missing, so a student who was simply sitting
+// too far back got a notice and a violation about a second apart, with no way
+// to tell that moving would have been enough (#40).
 const COUNTDOWN_EVENT_TYPES = new Set([
   'FACE_ABSENT',
   'SUSTAINED_HEAD_TURN',
   'SUSTAINED_LOOKING_DOWN',
+  'FACE_PARTIALLY_VISIBLE',
+  'FACE_TOO_CLOSE',
+  'FACE_TOO_FAR',
+  'FACE_NEAR_FRAME_EDGE',
 ]);
 
 function iso(value) {

@@ -591,11 +591,28 @@ function buildStudentLogBody(session) {
   `;
 }
 
+// Routine milestones every attempt produces: the exam starting, consent being
+// given, calibration finishing. Counting them filled the summary with a dozen
+// tiles all reading "1" and buried the two that were about the student's
+// conduct (#43). They stay in the timeline underneath, which is the full record.
+const ROUTINE_ACTIVITY_TYPES = new Set([
+  'browser_exam_start',
+  'browser_exam_end',
+  'exam_policies_acknowledged',
+  'camera_consent_given',
+  'face_calibration_completed',
+  'brightness_check_passed',
+  'brightness_check_skipped',
+  'camera_restored',
+  'connection_restored',
+]);
+
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
     if (activity?.metadata?.supersededBy) return;
     const type = activity?.type || 'unknown';
+    if (ROUTINE_ACTIVITY_TYPES.has(type)) return;
     counts.set(type, (counts.get(type) || 0) + 1);
   });
 
@@ -4268,10 +4285,23 @@ async function declineExamShare(shareId) {
   showToast('Shared exam declined.', 'success');
 }
 
+// Duplicating within the same course is a normal thing to want -- a second
+// version of the same quiz for a different sitting. What must not be duplicated
+// is the title, or the course ends up with two exams nobody can tell apart, so
+// the restriction moved from the course to the name (#43).
 function getExamDuplicateTargetSubjects(sourceExam) {
   return DB.getSubjects()
-    .filter(subject => !subject.archived && subject.id !== sourceExam?.subjectId)
+    .filter(subject => !subject.archived)
     .sort((a, b) => formatCourseNameDisplay(a.name).localeCompare(formatCourseNameDisplay(b.name)));
+}
+
+function isExamTitleTakenInSubject(subjectId, title, ignoreExamId = null) {
+  const wanted = String(title || '').trim().toLowerCase();
+  if (!wanted) return false;
+  return DB.getExams().some(exam => exam.id !== ignoreExamId
+    && exam.subjectId === subjectId
+    && exam.status !== 'archived'
+    && String(exam.title || '').trim().toLowerCase() === wanted);
 }
 
 function getExamAudienceDataForSubject(subject) {
@@ -4306,7 +4336,7 @@ function openDuplicateExamModal(examId) {
     ? `<option value="">— Select Course —</option>${availableSubjects.map(subject => `
         <option value="${subject.id}">${escHtml(subject.code)} - ${escHtml(formatCourseNameDisplay(subject.name))}</option>
       `).join('')}`
-    : '<option value="">No other active course available</option>';
+    : '<option value="">No active course available</option>';
   subjectField.disabled = availableSubjects.length === 0;
 
   const saveBtn = document.getElementById('duplicate-exam-save-btn');
@@ -4324,7 +4354,7 @@ function openDuplicateExamModal(examId) {
 async function showDuplicateExamUnavailableMessage() {
   await showConfirm({
     title: 'Duplicate Exam Unavailable',
-    message: 'No other active course is available for this exam. Please create or activate another course first.',
+    message: 'No active course is available for this exam. Please create or activate a course first.',
     confirmLabel: 'OK',
     confirmClass: 'btn btn-primary',
     hideCancel: true,
@@ -4346,10 +4376,13 @@ async function saveDuplicatedExam() {
     return;
   }
   if (!subjectId) { showToast('Please select a course for the duplicated exam.', 'error'); return; }
-  if (subjectId === sourceExam.subjectId) { showToast('Please select a different course for the duplicated exam.', 'error'); return; }
 
   const subject = DB.getSubject(subjectId);
   if (!subject || subject.archived) { showToast('Selected course is no longer available.', 'error'); return; }
+  if (isExamTitleTakenInSubject(subjectId, title)) {
+    showToast(`"${title}" already exists in ${subject.code}. Give the duplicate a different title.`, 'error');
+    return;
+  }
 
   const audienceData = getExamAudienceDataForSubject(subject);
   DB.addExam({
@@ -4556,9 +4589,16 @@ function renderArchivedExams() {
   tbody.innerHTML = exams.map(e => {
     const subject = subjects.find(s => s.id === e.subjectId);
     const canRecover = canRecoverArchivedExam(e, subjects);
+    // A wrapped sentence where a button should be pushed Delete Permanently out
+    // of line with every other row, so the control moved around the column as
+    // the eye travelled down it (#43). The reason now rides on a disabled button
+    // that occupies the same space as the real one.
+    const recoverBlockedReason = subject?.archived
+      ? 'Recover this course first — an exam cannot return to an archived course.'
+      : 'This exam cannot be recovered.';
     const recoverAction = canRecover
       ? `<button class="btn-action btn-action-ghost" onclick="recoverExam('${e.id}')">Recover${icUndoFill}</button>`
-      : `<span class="text-muted" style="font-size:12px;">${subject?.archived ? 'Recover unavailable while course is archived' : 'Recover unavailable'}</span>`;
+      : `<button class="btn-action btn-action-ghost" disabled title="${escAttr(recoverBlockedReason)}">Recover${icUndoFill}</button>`;
     return `
       <tr>
         <td style="text-align:center;width:36px;">${archiveRowCheckbox('exams', e.id, selected.has(e.id))}</td>
@@ -6037,6 +6077,15 @@ async function setExamStatus(id, status) {
     updateExamDeadlineDisplays();
     showToast('Exam closed.', 'success');
   } else if (status === 'archived') {
+    // Archiving takes the exam out of every working list at once, so it asks
+    // first like the other status changes already do (#37).
+    const ok = await showConfirm({
+      title: 'Archive Exam',
+      message: `Archive "${exam.title}"?\n\nIt moves out of the Exams list and into Archive. Results are kept, and you can recover it from there at any time.`,
+      confirmLabel: 'Archive',
+      confirmClass: 'btn btn-warning',
+    });
+    if (!ok) return;
     DB.updateExam(id, { status: 'archived' });
     showToast('Exam archived.', 'success');
   }
@@ -6081,6 +6130,31 @@ async function reopenExam(id) {
       cameraExemptStudentIds: [],
     });
     showToast('Exam reopened. All students can retake the exam.', 'success');
+  } else if (choice === 'absent') {
+    // Clear every absentee to sit the exam, on the same terms as the per-student
+    // Allow Exam button: attendance still records them absent for the scheduled
+    // date, and nobody who already submitted is disturbed (#43).
+    const absentStudents = getExamAbsentStudents(exam);
+    const granted = new Set(exam.lateExamStudentIds || []);
+    absentStudents.forEach(student => granted.add(student.id));
+    const startedAt = new Date().toISOString();
+    DB.updateExam(id, {
+      status: 'active',
+      startedAt,
+      reopenedAt: startedAt,
+      closedAt: null,
+      lateExamStudentIds: [...granted],
+    });
+    absentStudents.forEach(student => DB.addLog({
+      examId: id,
+      studentId: student.id,
+      type: 'late_exam_allowed',
+      details: `${student.studentName || student.name} was allowed to take this exam after being marked absent`,
+    }));
+    showToast(
+      `Exam reopened. ${absentStudents.length} absent student${absentStudents.length === 1 ? '' : 's'} can now take it — attendance still shows Absent.`,
+      'success',
+    );
   } else {
     // Just reopen for new/unsubmitted students; keep existing submissions
     const startedAt = new Date().toISOString();
@@ -6094,6 +6168,10 @@ async function reopenExam(id) {
 }
 
 function showReopenDialog(exam) {
+  // Reopening is the moment a professor is already thinking about who still
+  // needs to sit the exam, so the absentees belong on this menu rather than
+  // one student at a time in Reports (#43).
+  const absentCount = getExamAbsentStudents(exam).length;
   return new Promise(resolve => {
     const modal = document.createElement('div');
     modal.className = 'modal-backdrop';
@@ -6117,6 +6195,11 @@ function showReopenDialog(exam) {
               Allow everyone to retake
               <span style="display:block;font-size:11px;font-weight:400;opacity:0.85;margin-top:2px;">Resets all submissions — students start fresh</span>
             </button>
+            ${absentCount ? `
+            <button class="btn btn-primary btn-block" id="reopen-absent-btn">
+              Let absent students in
+              <span style="display:block;font-size:11px;font-weight:400;opacity:0.85;margin-top:2px;">${absentCount} marked absent — they stay Absent on the record, submitted answers are kept</span>
+            </button>` : ''}
             <button class="btn btn-secondary btn-block" id="reopen-cancel-btn">Cancel</button>
           </div>
         </div>
@@ -6126,6 +6209,8 @@ function showReopenDialog(exam) {
     const closeReopenDialog = (value) => { unlockBodyScroll(); modal.remove(); resolve(value); };
     modal.querySelector('#reopen-new-btn').onclick  = () => closeReopenDialog('new');
     modal.querySelector('#reopen-all-btn').onclick  = () => closeReopenDialog('all');
+    const absentBtn = modal.querySelector('#reopen-absent-btn');
+    if (absentBtn) absentBtn.onclick = () => closeReopenDialog('absent');
     modal.querySelector('#reopen-cancel-btn').onclick = () => closeReopenDialog(null);
   });
 }
@@ -8671,10 +8756,15 @@ function renderMonitoringTable(examId) {
   const rosterEntries = exam?.subjectId
     ? getExamAttendanceStudents(exam.subjectId).map(student => {
         const session = DB.getStudentSession(examId, student.studentId);
+        // A student cleared to sit the exam after being marked absent is here to
+        // be watched like anyone else, and the professor needs to see why they
+        // are in the room at all (#35).
+        const lateAuthorized = isStudentAllowedLateExam(exam, student.id);
         if (session) {
           return {
             ...session,
-            monitorAbsent: !session.startTime && excludedStudentIds.has(student.id),
+            monitorAbsent: !session.startTime && excludedStudentIds.has(student.id) && !lateAuthorized,
+            monitorLateAuthorized: lateAuthorized && excludedStudentIds.has(student.id),
           };
         }
         return {
@@ -8696,7 +8786,8 @@ function renderMonitoringTable(examId) {
           submitted: false,
           autoSubmitted: false,
           monitorPlaceholder: true,
-          monitorAbsent: excludedStudentIds.has(student.id),
+          monitorAbsent: excludedStudentIds.has(student.id) && !lateAuthorized,
+          monitorLateAuthorized: lateAuthorized && excludedStudentIds.has(student.id),
         };
       })
     : [];
@@ -8785,10 +8876,14 @@ function renderMonitoringTable(examId) {
           ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
           : '<span class="ms-badge ms-badge-green">Submitted</span>')
       : s.startTime
-        ? '<span class="ms-badge ms-badge-blue">In Progress</span>'
-        : s.monitorAbsent
-          ? '<span class="ms-badge ms-badge-muted">Absent</span>'
-          : '<span class="ms-badge ms-badge-muted">Not Started</span>';
+        ? (s.monitorLateAuthorized
+            ? '<span class="ms-badge ms-badge-blue" title="Marked absent for the scheduled sitting and cleared by you to take it late">In Progress &middot; Late Sitting</span>'
+            : '<span class="ms-badge ms-badge-blue">In Progress</span>')
+        : s.monitorLateAuthorized
+          ? '<span class="ms-badge ms-badge-amber" title="Marked absent and cleared by you to take this exam late">Absent &middot; Exam Allowed</span>'
+          : s.monitorAbsent
+            ? '<span class="ms-badge ms-badge-muted">Absent</span>'
+            : '<span class="ms-badge ms-badge-muted">Not Started</span>';
 
     const warnHtml = rawWarnings > 0
       ? `<div class="ms-warn-wrap"><span class="ms-warn-pill" title="Recorded warnings: ${rawWarnings}. Adjusted warnings: ${effectiveWarnings}.">${effectiveWarnings}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div>`
@@ -12365,15 +12460,21 @@ async function allowStudentRetake(sessionId) {
     }
   }
   const grantingAdmin = Auth.getAdminSession?.() || {};
-  const archivedAttempt = buildArchivedAttempt(
-    session,
-    attemptNumber,
-    grantingAdmin.name || grantingAdmin.username || 'Professor',
-  );
+  const grantedBy = grantingAdmin.name || grantingAdmin.username || 'Professor';
 
-  DB.updateSession(sessionId, {
+  // Reset EVERY row this student holds for the exam, not only the one whose
+  // button was pressed. Older data can carry more than one session per student
+  // and a single leftover submitted row kept them in the report list as though
+  // the retake had not been granted (#41), while a leftover unsubmitted row
+  // sent a student who had already finished back into the exam (#42).
+  const siblingSessions = DB.getSessionsByExam(session.examId)
+    .filter(entry => entry.studentId === session.studentId);
+  const targets = siblingSessions.length ? siblingSessions : [session];
+
+  const blankAttempt = {
     submitted:     false,
     autoSubmitted: false,
+    submitReason:  null,
     startTime:     null,
     endTime:       null,
     score:         null,
@@ -12384,9 +12485,17 @@ async function allowStudentRetake(sessionId) {
     warnings:      0,
     activities:    [],
     cameraSnapshots: [],
-    attemptHistory: [...priorAttempts, archivedAttempt],
+  };
+
+  targets.forEach((entry) => {
+    const entryPriors = Array.isArray(entry.attemptHistory) ? entry.attemptHistory : [];
+    // Nothing is thrown away: each row keeps its own finished attempt.
+    const history = entry.submitted || entry.startTime
+      ? [...entryPriors, buildArchivedAttempt(entry, entryPriors.length + 1, grantedBy)]
+      : entryPriors;
+    DB.updateSession(entry.id, { ...blankAttempt, attemptHistory: history });
+    clearViolationAlertsForSession(entry.id);
   });
-  clearViolationAlertsForSession(sessionId);
   showToast(`Retake granted for ${session.studentName}.`, 'success');
   if (currentSection === 'monitoring') renderMonitoringSectionLive();
   renderReportTable();

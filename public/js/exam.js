@@ -5274,6 +5274,14 @@ const ExamApp = {
   _handleFaceMeshRuleEvent(event) {
     if (event?.kind === 'condition-progress') {
       this._faceConditionCountdowns.set(event.eventType, event);
+      // Once the notice is up, tick it down in place. A static "move back"
+      // message gives no sense of how long is left to act on it.
+      if (this._facePositioningWarnings.has(event.eventType)) {
+        this._renderFacePositioningNotice(
+          this._facePositioningWarnings.get(event.eventType),
+          event.remainingSeconds,
+        );
+      }
       return;
     }
     if (event?.kind === 'condition-progress-clear') {
@@ -5282,7 +5290,10 @@ const ExamApp = {
     }
     if (event?.kind === 'positioning-warning') {
       this._facePositioningWarnings.set(event.eventType, event.description);
-      this._renderFacePositioningNotice(event.description);
+      this._renderFacePositioningNotice(
+        event.description,
+        this._faceConditionCountdowns.get(event.eventType)?.remainingSeconds,
+      );
       this._setFaceMeshStatus('warning', event.description);
       return;
     }
@@ -5323,7 +5334,7 @@ const ExamApp = {
     if (event.phase === 'end' && event.incidentId) this._faceViolationIncidentIds.delete(event.incidentId);
   },
 
-  _renderFacePositioningNotice(message) {
+  _renderFacePositioningNotice(message, remainingSeconds = null) {
     const warning = document.getElementById('face-positioning-warning');
     if (!warning) return;
     if (!message) {
@@ -5331,6 +5342,9 @@ const ExamApp = {
       warning.style.display = 'none';
       return;
     }
+
+    const seconds = Number(remainingSeconds);
+    const hasCountdown = Number.isFinite(seconds) && seconds > 0;
 
     warning.innerHTML = `
       <span class="face-positioning-warning-icon" aria-hidden="true">
@@ -5343,7 +5357,11 @@ const ExamApp = {
       <span class="face-positioning-warning-copy">
         <span class="face-positioning-warning-label">Camera positioning</span>
         <span class="face-positioning-warning-message">${_esc(message)}</span>
-      </span>`;
+        ${hasCountdown
+          ? `<span class="face-positioning-warning-hint">Adjust within <strong>${seconds}s</strong> and nothing is recorded.</span>`
+          : ''}
+      </span>
+      ${hasCountdown ? `<span class="face-positioning-warning-count" aria-hidden="true">${seconds}</span>` : ''}`;
     warning.style.display = '';
   },
 
@@ -8827,7 +8845,14 @@ const ExamApp = {
       });
       unansweredRequired.forEach(q => {
         const card = document.getElementById('qcard-' + q.id);
-        if (card) card.classList.add('q-required-missing');
+        if (!card) return;
+        card.classList.add('q-required-missing');
+        // Shake once, here and now. The class is dropped again as soon as the
+        // animation finishes so that revisiting the card does not replay it.
+        card.classList.remove('q-shake');
+        void card.offsetWidth;
+        card.classList.add('q-shake');
+        setTimeout(() => card.classList.remove('q-shake'), 500);
       });
       // Navigate to the first missing question
       const firstIdx = this.questionOrder.findIndex(q => q.id === unansweredRequired[0].id);

@@ -77,9 +77,15 @@ assert.equal(secondArchive.retakeAuthorization.attempt, 3);
 const fnStart = admin.indexOf('async function allowStudentRetake(');
 const fnEnd = admin.indexOf('\n}\n', fnStart);
 const retakeFn = admin.slice(fnStart, fnEnd);
-assert.match(retakeFn, /attemptHistory:\s*\[\.\.\.priorAttempts,\s*archivedAttempt\]/,
+assert.match(retakeFn, /\[\.\.\.entryPriors,\s*buildArchivedAttempt\(/,
   'history must be appended, not overwritten');
 assert.match(retakeFn, /answers:\s*\{\}/, 'the new attempt still starts clean');
+// Every row the student holds for this exam is reset, not just the one whose
+// button was pressed. A single leftover row kept them in the report list as if
+// no retake had been granted, and sent a finished student back into the exam.
+assert.match(retakeFn, /DB\.getSessionsByExam\(session\.examId\)/,
+  'the reset must cover every session row for this student');
+assert.match(retakeFn, /targets\.forEach/, 'and apply to each of them');
 assert.doesNotMatch(retakeFn, /previous submission, answers, and score will be cleared/,
   'the prompt must no longer promise to destroy the attempt');
 

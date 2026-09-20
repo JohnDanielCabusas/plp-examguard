@@ -515,7 +515,7 @@ export default function ExamPage() {
           </div>
           <div className="examv2-stat skipped">
             <span className="examv2-stat-num" id="stat-skipped">0</span>
-            <span className="examv2-stat-label">Skipped</span>
+            <span className="examv2-stat-label">Unanswered</span>
           </div>
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'12px' }}>
             <div className="warning-count" id="warning-count-display">

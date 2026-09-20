@@ -1701,6 +1701,24 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   margin-bottom: 28px;
 }
 
+/* The product name was only ever in the browser tab title, so nobody using the
+   system could see what it was called (#44). */
+.login-system-name {
+  margin: 2px 0;
+  color: var(--primary, #0f5132);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: .22em;
+  text-indent: .22em;
+  line-height: 1.1;
+}
+[data-theme="dark"] .login-system-name { color: #6ee7a8; }
+
+.sidebar-brand-system {
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
 .login-logo img {
   width: 88px;
   height: 88px;
@@ -2735,6 +2753,11 @@ tr:hover td { background: #F8FDF8; }
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   white-space: nowrap;
   line-height: 1.4;
+}
+.btn-action:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  pointer-events: auto; /* keep the title tooltip reachable */
 }
 .btn-action-ghost {
   position: relative;
@@ -6579,9 +6602,16 @@ body.exam-page {
   vertical-align: middle;
 }
 
+/* The red outline stays until the question is answered. The shake does not:
+   it is a one-shot reaction to pressing Finish, and leaving the animation on
+   this class replayed it every time the card was shown again, so paging back
+   through unanswered questions made the exam shake on every Next (#38). */
 .question-card.q-required-missing {
   border-color: #dc2626;
   box-shadow: 0 0 0 2px rgba(220,38,38,0.2);
+}
+
+.question-card.q-shake {
   animation: shake-card 0.4s ease;
 }
 
@@ -9004,23 +9034,52 @@ body.exam-page {
   transition: width 120ms linear;
 }
 
+/* Base rule. The exam page overrides most of this further down; see
+   `.exam-page .face-positioning-warning`, which is what students actually see. */
 .face-positioning-warning {
   position: fixed;
   left: 50%;
-  top: 76px;
+  bottom: 24px;
+  top: auto;
   z-index: 8500;
-  max-width: min(90vw, 520px);
-  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 560px);
+  padding: 12px 16px;
   border: 1px solid #f59e0b;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fffbeb;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
   color: #92400e;
   font-size: 13px;
   font-weight: 700;
-  text-align: center;
+  text-align: left;
   transform: translateX(-50%);
 }
+.face-positioning-warning-hint {
+  color: #a16207;
+  font-size: 11px;
+  font-weight: 600;
+}
+.face-positioning-warning-hint strong { font-variant-numeric: tabular-nums; }
+.face-positioning-warning-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  border: 2px solid #f59e0b;
+  border-radius: 50%;
+  color: #b45309;
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme="dark"] .face-positioning-warning-hint { color: #e2b83f; }
+[data-theme="dark"] .face-positioning-warning-count { color: #f2c94c; border-color: #b7791f; }
 .yolo-camera-status {
   position: absolute;
   top: 8px;
@@ -9840,6 +9899,9 @@ input[type="password"]::-ms-clear {
 .log-type.secondary_computer,
 .log-type.restricted_book { color: #b91c1c; }
 .log-type.force_submit   { color: #0f2d1a; }
+/* Near-black green on a near-black panel: the label was there but unreadable
+   in dark mode (#43). */
+[data-theme="dark"] .log-type.force_submit { color: #6ee7a8; }
 .log-type.auto_submit    { color: #ef4444; }
 .log-type.timeout        { color: #dc2626; }
 
@@ -11352,6 +11414,18 @@ tr:hover td { background: #fafbfc !important; }
   line-height: 1.6;
   color: #64748b;
 }
+
+/* Share Mode used to be a select with a single option (#43). */
+.share-mode-static {
+  display: grid;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.share-mode-static strong { font-size: 13px; }
+.share-mode-static span { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 [data-theme="dark"] .exam-policies-subtitle {
   color: #94a3b8;
 }
@@ -16207,7 +16281,13 @@ body.exam-page {
 .exam-page .face-positioning-warning {
   display: flex;
   align-items: center;
-  width: min(420px, calc(100vw - 32px));
+  /* Was pinned below the header, where it covered the exam's own question-count
+     strip (#43). Moved to the foot of the screen, clear of the header and the
+     question card, and widened for the countdown that now tells the student how
+     long they have to move (#40). */
+  top: auto;
+  bottom: 24px;
+  width: min(520px, calc(100vw - 32px));
   max-width: none;
   min-height: 58px;
   padding: 10px 14px 10px 11px;
@@ -16410,7 +16490,7 @@ body.exam-page {
   .exam-page .confirm-dialog { padding: 32px 20px 22px; }
   .exam-page .confirm-actions { flex-direction: column-reverse; }
   .exam-page .confirm-actions .btn { width: 100%; }
-  .exam-page .face-positioning-warning { top: 66px; }
+  .exam-page .face-positioning-warning { top: auto; bottom: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

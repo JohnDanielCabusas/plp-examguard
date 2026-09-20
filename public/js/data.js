@@ -1186,9 +1186,25 @@ const DB = {
       return Number.isFinite(time) ? time : 0;
     };
 
+    // An unsubmitted row normally wins, because it is the attempt in progress.
+    // But a row that was never started is not an attempt at all, and when one of
+    // those sat beside a finished attempt it sent a student who had already
+    // completed the exam back in to sit it again (#42). A blank row only
+    // outranks a finished one once the finished one has been cleared, which is
+    // exactly what granting a retake does.
+    const isUntouched = entry => !entry.submitted
+      && !entry.startTime
+      && !Object.keys(entry.answers || {}).length;
+    const hasFinishedAttempt = matches.some(entry => entry.submitted);
+
     return matches
       .slice()
       .sort((a, b) => {
+        if (hasFinishedAttempt) {
+          const aBlank = isUntouched(a);
+          const bBlank = isUntouched(b);
+          if (aBlank !== bBlank) return aBlank ? 1 : -1;
+        }
         if (!!a.submitted !== !!b.submitted) return a.submitted ? 1 : -1;
         return getTimestamp(b) - getTimestamp(a);
       })[0];
