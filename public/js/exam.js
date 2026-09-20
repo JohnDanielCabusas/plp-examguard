@@ -340,6 +340,9 @@ const ExamApp = {
   _fullscreenLockTotalSeconds: 0,
   _lateExamAttempt: false,         // sitting an exam the professor cleared after the fact (#31)
   _terminalViolationActive: false, // attempt is ending; later warnings must not interrupt it
+  _terminalViolationVerifiable: false, // stopping can be confirmed, so a grace period applies
+  _terminalViolationLabels: null,  // recorder devices that triggered it, watched for removal
+  _recorderComplianceTimer: null,
   _recorderScanInterval: null,     // periodic screen-recorder environment scan
   _recorderRescanPending: null,    // retry pending because device labels were not readable yet
   _recorderRescanAttempts: 0,
@@ -7194,7 +7197,10 @@ const ExamApp = {
     this._intentionalFullscreenExit = false;
     // Only reached once the attempt is over or a new one is starting, so the
     // terminal countdown has already done its work by now.
+    this._stopRecorderComplianceWatch();
     this._terminalViolationActive = false;
+    this._terminalViolationVerifiable = false;
+    this._terminalViolationLabels = [];
     this.cancelCountdown(false);
     this.anticheatListeners.forEach(([event, target, handler, capture]) => {
       // removeEventListener only matches a listener registered with the same
@@ -7423,6 +7429,80 @@ const ExamApp = {
     return TERMINAL_VIOLATION_TYPES.includes(type);
   },
 
+  // While the terminal countdown runs, keep asking whether the recorder that
+  // triggered it has actually gone. Only the device scan can answer that, so
+  // this watch is started for those detections alone.
+  _startRecorderComplianceWatch() {
+    this._stopRecorderComplianceWatch();
+    if (!this._terminalViolationVerifiable) return;
+
+    const check = async () => {
+      this._recorderComplianceTimer = null;
+      if (!this._terminalViolationActive) return;
+
+      let state = null;
+      try {
+        state = await this._readCaptureDeviceState();
+      } catch (_) {
+        state = null;
+      }
+      if (!this._terminalViolationActive) return;
+
+      // Unreadable labels prove nothing, so the countdown keeps running. This
+      // fails closed on purpose: revoking the camera must not be a way to make
+      // the recording warning disappear.
+      if (state?.labelsVisible) {
+        const present = new Set(state.matches.map(match => match.label));
+        const stillThere = (this._terminalViolationLabels || []).some(label => present.has(label));
+        if (!stillThere) {
+          this._clearTerminalViolation();
+          return;
+        }
+      }
+      this._recorderComplianceTimer = setTimeout(check, 1000);
+    };
+
+    this._recorderComplianceTimer = setTimeout(check, 1000);
+  },
+
+  _stopRecorderComplianceWatch() {
+    if (this._recorderComplianceTimer) {
+      clearTimeout(this._recorderComplianceTimer);
+      this._recorderComplianceTimer = null;
+    }
+  },
+
+  // The student stopped the recording in time. The exam resumes; the strike
+  // they already earned stays on their record.
+  _clearTerminalViolation() {
+    this._stopRecorderComplianceWatch();
+    this._stopWarningCountdown({ hideWrap: true });
+
+    // Forget the devices that triggered this, so restarting the recorder raises
+    // the alarm again rather than being treated as already reported.
+    (this._terminalViolationLabels || []).forEach((label) => {
+      this._reportedRecorderLabels?.delete(label);
+    });
+    this._terminalViolationActive = false;
+    this._terminalViolationVerifiable = false;
+    this._terminalViolationLabels = [];
+
+    const overlay = document.getElementById('warning-overlay');
+    if (overlay) overlay.style.display = 'none';
+    this._activeWarningType = null;
+    this._setFullscreenWarningAction(false);
+
+    this._recordActivity(
+      'screen_record_stopped',
+      'Screen recording was stopped before the exam was submitted',
+      { source: 'DEVICE_SCAN' },
+    );
+    this._showToast(
+      'Recording stopped — your exam has resumed. The violation stays on your record.',
+      'warning',
+    );
+  },
+
   issueWarning(type, detail, detectionMetadata = null, options = {}) {
     if (!this.session) return false;
     // The attempt is already ending. Nothing may restart the overlay, reset its
@@ -7444,7 +7524,18 @@ const ExamApp = {
     const now = Date.now();
     if (!terminal && this._lastWarningTime && (now - this._lastWarningTime) < 1500) return false;
     this._lastWarningTime = now;
-    if (terminal) this._terminalViolationActive = true;
+    if (terminal) {
+      this._terminalViolationActive = true;
+      // The student is only offered a way back if stopping can actually be
+      // confirmed. A device scan can be re-run and the recorder seen to be
+      // gone; a capture hotkey is just a keypress, and a student could press it
+      // and carry on recording, so those keep no grace period.
+      this._terminalViolationVerifiable = detectionMetadata?.source === 'DEVICE_SCAN';
+      this._terminalViolationLabels = Array.isArray(detectionMetadata?.devices)
+        ? detectionMetadata.devices.map(device => device.label).filter(Boolean)
+        : [];
+      if (!this._terminalViolationLabels.length) this._terminalViolationVerifiable = false;
+    }
 
     this._stopWarningCountdown({ hideWrap: true });
     // Clear any in-progress read countdown so the new warning takes over cleanly
@@ -7579,7 +7670,9 @@ const ExamApp = {
 
     if (terminalViolation) {
       titleEl.textContent = 'SCREEN RECORDING DETECTED';
-      subEl.textContent   = 'Recording the exam is not allowed. Your exam is being submitted and cannot be continued.';
+      subEl.textContent   = this._terminalViolationVerifiable
+        ? 'Stop the recording before the countdown ends and your exam will continue. This violation has been recorded either way.'
+        : 'Recording the exam is not allowed. Your exam is being submitted and cannot be continued.';
     } else if (this.warnings >= 3) {
       titleEl.textContent = 'FINAL WARNING!';
       subEl.textContent   = 'Maximum violations reached. Your exam is being submitted now.';
@@ -7620,7 +7713,9 @@ const ExamApp = {
       const circumference = 163.36; // 2π × r(26)
 
       if (cdWrap) {
-        if (cdMsg) cdMsg.textContent = endsAttempt
+        if (cdMsg) cdMsg.textContent = isTerminal && this._terminalViolationVerifiable
+          ? 'Stop the recording to continue your exam'
+          : endsAttempt
           ? 'Submitting your exam when the countdown ends'
           : type === 'fullscreen_exit'
             ? 'Return to fullscreen before this warning closes'
@@ -7635,6 +7730,8 @@ const ExamApp = {
       // Focus-loss: issueWarning calls startCountdown() right after this — let it
       // own the interval so only ONE timer updates #cd-num and #cd-circle.
       // Every other warning is owned here, including final auto-submission.
+      if (isTerminal) this._startRecorderComplianceWatch();
+
       if (!isFocusLoss || endsAttempt) {
         this._warningCountdownMode = isTerminal ? 'terminal' : isFinalWarning ? 'final' : 'info';
         this._startDeadlineCountdown({

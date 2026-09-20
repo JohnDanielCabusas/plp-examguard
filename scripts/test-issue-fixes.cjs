@@ -104,6 +104,14 @@ const runPending = () => {
   return pending.length;
 };
 
+// The recorder compliance check is async, so its promise chain has to be given
+// room to settle before the result is asserted on. setTimeout here is the real
+// one — only the sandbox's copy is faked.
+const runPendingAsync = async () => {
+  runPending();
+  for (let i = 0; i < 6; i += 1) await new Promise(resolve => setTimeout(resolve, 0));
+};
+
 // ── #34: the professor has to be able to see what the camera saw ────────────
 assert.equal(consts.EXAM_CAMERA_CONSTRAINTS.width.ideal, 1280, 'camera asks for 720p, not VGA');
 assert.equal(consts.EXAM_CAMERA_CONSTRAINTS.height.ideal, 720);
@@ -195,7 +203,7 @@ sandbox.navigator.mediaDevices = {
   await app._checkScreenRecordingEnvironment('pre-exam');
   assert.equal(raised.length, 1, 'the recorder is caught once the labels become readable');
 
-  runExamRuntimeTests();
+  await runExamRuntimeTests();
   runAdminTests();
   runAdminReviewTests();
   runClassPerformanceTests();
@@ -205,7 +213,7 @@ sandbox.navigator.mediaDevices = {
   process.exit(1);
 });
 
-function runExamRuntimeTests() {
+async function runExamRuntimeTests() {
   // ── #28: the return-to-fullscreen screen now carries a deadline ───────────
   assert.ok(
     consts.EXAM_WARNING_TIMINGS.fullscreenLockSeconds > 0,
@@ -305,6 +313,72 @@ function runExamRuntimeTests() {
     /trigger === 'auto' \|\| trigger === 'violation_terminal'\) \? 'violations'/,
     'a terminal violation records itself with an already-permitted submit reason',
   );
+
+  // ── Grace period, but only where stopping can be confirmed ───────────────
+  const subEl = element('warning-overlay-sub');
+  app._showToast = () => {};
+  const recorded = [];
+  app._recordActivity = (t, d) => { recorded.push(t); };
+
+  // Hotkey detection carries no device metadata: nothing to re-check, so the
+  // student is told plainly that the attempt is over.
+  app._terminalViolationActive = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
+  submitted = null;
+  timers.length = 0;
+  app.issueWarning('screen_record', 'Screen recording shortcut detected');
+  assert.equal(app._terminalViolationVerifiable, false, 'a keypress cannot be verified');
+  assert.match(subEl.textContent, /cannot be continued/);
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, 'violation_terminal', 'an unverifiable detection still ends the attempt');
+
+  // Device-scan detection can be re-checked, so the student gets a way back.
+  app._terminalViolationActive = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
+  submitted = null;
+  recorded.length = 0;
+  timers.length = 0;
+  app._reportedRecorderLabels = new Set(['OBS Virtual Camera']);
+  app.issueWarning('screen_record', 'Recorder running', {
+    source: 'DEVICE_SCAN',
+    devices: [{ label: 'OBS Virtual Camera', kind: 'videoinput' }],
+  });
+  assert.equal(app._terminalViolationVerifiable, true, 'a device scan can be re-run');
+  assert.match(subEl.textContent, /Stop the recording/, 'the student is told they can still save it');
+
+  // Still recording: the countdown keeps going.
+  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
+    { kind: 'videoinput', label: 'OBS Virtual Camera' },
+  ]);
+  await runPendingAsync();
+  assert.equal(app._terminalViolationActive, true, 'a recorder still present keeps the countdown alive');
+
+  // Recorder gone: the exam resumes and the countdown can no longer fire.
+  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
+    { kind: 'videoinput', label: 'Integrated Webcam' },
+  ]);
+  await runPendingAsync();
+  assert.equal(app._terminalViolationActive, false, 'stopping the recorder clears the violation');
+  assert.equal(overlayEl.style.display, 'none', 'the overlay closes and the exam is usable again');
+  assert.ok(recorded.includes('screen_record_stopped'), 'the professor still sees that it happened');
+  assert.equal(app.warnings, 1, 'the strike stays on the record');
+  assert.equal(
+    app._reportedRecorderLabels.has('OBS Virtual Camera'),
+    false,
+    'restarting the recorder must be able to raise the alarm again',
+  );
+
+  app._warningCountdownDeadline = Date.now() - 1;
+  runPending();
+  assert.equal(submitted, null, 'a cleared violation never submits the exam');
+
+  app._recordActivity = () => {};
+  app._terminalViolationActive = false;
+  app.warnings = 0;
+  app._lastWarningTime = 0;
 
   // Opening the capture overlay is an ordinary strike, not the end.
   app._terminalViolationActive = false;
