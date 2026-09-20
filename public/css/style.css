@@ -7715,18 +7715,12 @@ body.exam-page {
 }
 
 .portal-subject-label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 140px;
-}
-
-.portal-subject-label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: 0;
   max-width: 180px;
   flex-shrink: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   transition: max-width 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.15s ease;
 }
 .portal-sidebar.collapsed .portal-subject-label { max-width: 0; opacity: 0; pointer-events: none; }
