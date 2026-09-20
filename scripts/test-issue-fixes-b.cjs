@@ -152,9 +152,27 @@ assert.ok(
   'both section labels take the same muted colour in dark mode',
 );
 assert.equal(ruleFor('.portal-wordmark-name {'), ruleFor('.sidebar-wordmark-name {'), 'one product, one wordmark');
-// Course names carry no icon; without a matching indent they sat 30px left of
-// every other label in the sidebar.
-assert.match(styleSource, /\.portal-subject-item \{[\s\S]{0,400}?padding: 10px 12px 10px 42px;/, 'course names line up with the nav labels');
+// Course rows use the same padding and gap as the nav rows, with the course's
+// colour chip in the slot the others use for an icon, so every label starts at
+// the same x and no blank indent stands in for a missing icon.
+assert.match(styleSource, /\.portal-subject-item \{[\s\S]{0,400}?padding: 10px 12px;/, 'course rows share the nav padding');
+assert.doesNotMatch(styleSource, /\.portal-subject-item \.portal-subject-chip \{ display: none; \}/, 'the chip fills the icon slot at every width');
+
+// The sidebar list is rebuilt on every dashboard refresh, which used to throw
+// away the highlight on the course the student had open.
+assert.match(examSource, /const isOpen = this\._currentCourseId === s\.id;/, 'the open course survives a re-render');
+assert.match(examSource, /portal-subject-item\$\{isOpen \? ' active' : ''\}/);
+
+// Light text on a dark panel gains weight without explicit smoothing.
+['width: var(--sidebar-width);', 'width: var(--sidebar-w);'].forEach((anchor) => {
+  const at = styleSource.indexOf(anchor);
+  assert.ok(at > 0, `missing sidebar rule anchored at ${anchor}`);
+  const block = styleSource.slice(at, styleSource.indexOf('}', at));
+  assert.ok(
+    block.includes('-webkit-font-smoothing: antialiased'),
+    `the sidebar declaring "${anchor}" needs matching font smoothing`,
+  );
+});
 assert.equal(ruleFor('.portal-wordmark-sub {'), ruleFor('.sidebar-wordmark-sub {'));
 
 // Archive is the last nav entry, after the enrolled courses, so enrolling in a

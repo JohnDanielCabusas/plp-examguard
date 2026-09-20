@@ -2239,6 +2239,8 @@ textarea.form-control {
 .sidebar {
   width: var(--sidebar-width);
   background: var(--bg-sidebar);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   position: fixed;
   top: 0;
   left: 0;
@@ -7525,6 +7527,11 @@ body.exam-page {
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
+  /* Light text on a dark panel gains weight under subpixel antialiasing, which
+     is what made "Student Portal" and the wordmark look thick and soft. Both
+     sidebars ask for greyscale smoothing so they render the same. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   position: fixed;
   top: 0; left: 0;
   height: 100vh;
@@ -7548,8 +7555,9 @@ body.exam-page {
   margin-right: 0;
   border-radius: 10px;
 }
-/* Expanded: hide chip, show only name */
-.portal-subject-item .portal-subject-chip { display: none; }
+/* The chip used to be hidden until the sidebar collapsed, which left a blank
+   20px where every other row has an icon. It is the course's own colour and
+   initial, so it belongs in that slot at every width. */
 
 /* Collapsed: show chip centered like nav icons, hide label */
 .portal-sidebar.collapsed .portal-subject-item {
@@ -7679,11 +7687,11 @@ body.exam-page {
 
 /* Subject items in sidebar — text only, no chip */
 .portal-subject-item {
-  display: flex; align-items: center;
-  /* Course names carry no icon, so without this indent they started 30px to
-     the left of every other label in the sidebar. 42px = the nav item's 12px
-     padding + a 20px icon + the 10px gap, which lines them up exactly. */
-  padding: 10px 12px 10px 42px;
+  display: flex; align-items: center; gap: 10px;
+  /* Same padding and gap as .portal-nav-item. The course's colour chip sits in
+     the slot the other items use for their icon, so every label lines up down
+     the left edge with no empty indent standing in for a missing icon. */
+  padding: 10px 12px;
   cursor: pointer;
   border-radius: 0 24px 24px 0;
   margin-right: 10px;

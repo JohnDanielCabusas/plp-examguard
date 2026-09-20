@@ -2074,7 +2074,11 @@ const ExamApp = {
     container.innerHTML = enrolledSubjects.map(s => {
       const letter = (s.name || s.code || '?').charAt(0).toUpperCase();
       const { c1, c2 } = this._subjectColor(s);
-      return `<div class="portal-subject-item" id="psi-${s.id}" data-label="${_esc(s.name)}" onclick="ExamApp.scrollToCourse('${s.id}')">
+      // This list is rebuilt whenever the dashboard refreshes, which threw away
+      // the active class showCourseView had put on the open course. The current
+      // course now comes back highlighted instead of the sidebar going blank.
+      const isOpen = this._currentCourseId === s.id;
+      return `<div class="portal-subject-item${isOpen ? ' active' : ''}" id="psi-${s.id}" data-label="${_esc(s.name)}" onclick="ExamApp.scrollToCourse('${s.id}')">
         <div class="portal-subject-chip" style="background:linear-gradient(135deg,${c1},${c2});">${letter}</div>
         <span class="portal-subject-label">${_esc(s.name)}</span>
       </div>`;
