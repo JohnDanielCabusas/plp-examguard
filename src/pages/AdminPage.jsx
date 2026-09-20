@@ -1870,42 +1870,53 @@ export default function AdminPage() {
                       </div>
                     )}
 
-                    <div id="ai-file-info" className="ai-file-info-inline-wrap" style={{ display:'none', flexWrap:'wrap', alignItems:'center', gap:'6px', padding:'14px 14px 0' }} />
+                    <div id="ai-file-info" className="ai-file-info-inline-wrap" style={{ display:'none', flexWrap:'wrap', alignItems:'center', gap:'6px', padding:'14px 16px 0' }} />
 
                     <textarea id="ai-custom-prompt-custom" rows={1}
                       value={aiCustomPrompt}
                       placeholder="Ask Tuklas AI anything…"
-                      style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'16px 18px 6px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
+                      style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'16px 16px 8px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
                       onChange={(e) => setAiCustomPrompt(e.target.value)}
                       onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,96)+'px'; }}
                       onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleRunAIGenerate(); } }}
                     />
 
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', padding:'0 10px 10px 14px', flexWrap:'wrap', background:aiTheme.composerBg }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap' }}>
-                        <label htmlFor="ai-file-input" title="Attach files"
-                          style={{ width:'32px', height:'32px', background:'transparent', border:'none', borderRadius:'8px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background 0.15s', color:aiTheme.textMuted }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background=aiTheme.surfaceSoft; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px 16px', padding:'2px 12px 12px', flexWrap:'wrap', background:aiTheme.composerBg }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap', minWidth:0 }}>
+                        <label htmlFor="ai-file-input" title="Attach course materials"
+                          style={{ width:'34px', height:'34px', background:'transparent', border:`1px solid ${aiTheme.previewBorder}`, borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background 0.15s, border-color 0.15s', color:aiTheme.textMuted }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background=aiTheme.surfaceSoft; e.currentTarget.style.borderColor=aiTheme.accentBorder; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor=aiTheme.previewBorder; }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </label>
-                        <span style={{ width:'1px', height:'18px', background:aiTheme.previewBorder, margin:'0 4px' }} />
-                        {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
-                          <button key={m} type="button" onClick={() => { setAiMode(m); setDiffOpen(false); }}
-                            style={{ padding:'6px 14px', borderRadius:'999px', fontSize:'12px', fontWeight:700, border:`1px solid ${aiMode===m ? 'transparent' : aiTheme.previewBorder}`, cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? aiTheme.primaryBg : 'transparent', color: aiMode===m ? aiTheme.primaryText : aiTheme.text }}>
-                            {l}
-                          </button>
-                        ))}
-                        <span style={{ fontSize:'12px', color:aiTheme.textMuted, marginLeft:'2px' }}>Free-form Instructions</span>
+                        {/* One control, not two loose buttons: a track with the
+                            active mode filled inside it. The bare grey caption
+                            that used to float beside them belonged to nothing. */}
+                        <div role="group" aria-label="Generation mode"
+                          style={{ display:'inline-flex', alignItems:'center', gap:'2px', padding:'3px', borderRadius:'999px', background:aiTheme.surfaceSoft, border:`1px solid ${aiTheme.previewBorder}`, flexShrink:0 }}>
+                          {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
+                            <button key={m} type="button" aria-pressed={aiMode===m} onClick={() => { setAiMode(m); setDiffOpen(false); }}
+                              style={{ padding:'6px 15px', borderRadius:'999px', fontSize:'12px', fontWeight:700, border:'none', cursor:'pointer', transition:'background 0.18s, color 0.18s', background: aiMode===m ? aiTheme.primaryBg : 'transparent', color: aiMode===m ? aiTheme.primaryText : aiTheme.textMuted, whiteSpace:'nowrap' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                        <span style={{ fontSize:'11.5px', lineHeight:1.4, color:aiTheme.textMuted, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {aiMode === 'quick'
+                            ? 'Guided form — set the count, types and difficulty'
+                            : 'Free-form — describe the exam you want'}
+                        </span>
                       </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'10px', marginLeft:'auto' }}>
                         <button id="ai-gen-btn" onClick={handleRunAIGenerate}
-                          style={{ height:'40px', padding:'0 18px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'opacity 0.15s', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', whiteSpace:'nowrap' }}>
+                          style={{ height:'38px', padding:'0 18px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', flexShrink:0, transition:'transform 0.15s, box-shadow 0.15s', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', whiteSpace:'nowrap', boxShadow:`0 1px 2px ${aiTheme.previewLine}` }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform='translateY(-1px)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform='none'; }}>
                           Generate with AI
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                         </button>
                         <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
-                          style={{ display:'none', height:'40px', padding:'0 16px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
+                          style={{ display:'none', height:'38px', padding:'0 16px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                           Import Selected
                         </button>
                       </div>

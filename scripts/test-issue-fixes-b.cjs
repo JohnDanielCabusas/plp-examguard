@@ -130,6 +130,15 @@ assert.match(adminSource, /function isExamTitleTakenInSubject/, 'duplicates are 
 assert.match(adminSource, /choice === 'absent'/, 'reopening can let the absentees in');
 assert.match(adminSource, /disabled title="\$\{escAttr\(recoverBlockedReason\)\}"/, 'archive actions stay in one column');
 
+// ── AI composer toolbar ────────────────────────────────────────────────────
+// "Free-form Instructions" used to sit beside the mode buttons as a bare grey
+// caption that described neither of them and changed with neither.
+assert.doesNotMatch(adminPage, />Free-form Instructions</, 'the orphaned caption is gone');
+assert.match(adminPage, /Free-form — describe the exam you want/, 'the caption follows the selected mode');
+assert.match(adminPage, /Guided form — set the count, types and difficulty/);
+assert.match(adminPage, /role="group" aria-label="Generation mode"/, 'Quick and Custom are one control');
+assert.match(adminPage, /aria-pressed=\{aiMode===m\}/, 'and announce which of them is on');
+
 // ── #35: a cleared late student is watchable ───────────────────────────────
 assert.match(adminSource, /monitorLateAuthorized/, 'monitoring knows who is sitting late');
 assert.match(adminSource, /In Progress &middot; Late Sitting/, 'and says so while they are working');
