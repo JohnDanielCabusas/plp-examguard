@@ -1875,7 +1875,7 @@ export default function AdminPage() {
                     <textarea id="ai-custom-prompt-custom" rows={1}
                       value={aiCustomPrompt}
                       placeholder="Ask Tuklas AI anything…"
-                      style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'16px 16px 8px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
+                      style={{ display:'block', width:'100%', boxSizing:'border-box', resize:'none', border:'none', padding:'14px 16px', fontSize:'14px', outline:'none', fontFamily:'inherit', lineHeight:1.6, maxHeight:'96px', overflowY:'auto', background:aiTheme.composerBg, color:aiTheme.textStrong, caretColor:aiTheme.accent, WebkitTextFillColor:aiTheme.textStrong }}
                       onChange={(e) => setAiCustomPrompt(e.target.value)}
                       onInput={(e) => { e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,96)+'px'; }}
                       onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleRunAIGenerate(); } }}

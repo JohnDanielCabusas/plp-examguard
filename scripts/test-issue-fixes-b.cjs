@@ -171,6 +171,9 @@ assert.doesNotMatch(adminPage, />Free-form Instructions</, 'the orphaned caption
 assert.match(adminPage, /Free-form — describe the exam you want/, 'the caption follows the selected mode');
 assert.match(adminPage, /Guided form — set the count, types and difficulty/);
 assert.match(adminPage, /role="group" aria-label="Generation mode"/, 'Quick and Custom are one control');
+// The prompt line sits centred in its row. Uneven vertical padding left it
+// riding high against the attachment chips above it.
+assert.match(adminPage, /padding:'14px 16px', fontSize:'14px'/, 'the composer padding is symmetrical');
 assert.match(adminPage, /aria-pressed=\{aiMode===m\}/, 'and announce which of them is on');
 
 // ── #35: a cleared late student is watchable ───────────────────────────────
