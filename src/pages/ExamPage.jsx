@@ -223,10 +223,18 @@ export default function ExamPage() {
               <span id="portal-footer-name" style={{ display: 'none' }} />
               <span id="portal-footer-id" style={{ display: 'none' }} />
 
-              <div className="portal-nav-item" id="pnav-archived" data-label="Archived" onClick={() => window.ExamApp.showPortalTab('archived')}>
+              <div className="portal-nav-item" id="pnav-archived" data-label="Archive" onClick={() => window.ExamApp.showPortalTab('archived')}>
                 <span className="portal-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
-                <span className="portal-nav-label">Archived</span>
+                <span className="portal-nav-label">Archive</span>
               </div>
+
+              {/* Same wordmark as the professor panel, so both sides of the
+                  system say what it is called. */}
+              <div className="portal-wordmark" aria-label="TUKLAS">
+                <span className="portal-wordmark-name">TUKLAS</span>
+                <span className="portal-wordmark-sub">Online Examination System</span>
+              </div>
+
               <button className="portal-signout-btn" data-label="Sign Out" onClick={() => window.ExamApp.dashSignOut()}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>

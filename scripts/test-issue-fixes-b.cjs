@@ -91,6 +91,19 @@ assert.ok(
   footer.indexOf('sidebar-wordmark') < footer.indexOf('sidebar-signout-btn'),
   'the wordmark sits above Sign Out',
 );
+// Students use the system too, and saw its name nowhere.
+assert.match(examPage, /portal-wordmark-name">TUKLAS</, 'the student portal carries the product name');
+const portalFooter = examPage.slice(examPage.indexOf('className="portal-sidebar-footer"'));
+assert.ok(
+  portalFooter.indexOf('portal-wordmark') < portalFooter.indexOf('portal-signout-btn'),
+  'and puts it in the same place as the professor panel',
+);
+assert.ok(styleSource.includes('.portal-wordmark-name'), 'the student wordmark is styled');
+
+// "Archived" named a state where the nav names a place, and the professor side
+// already said "Archive".
+assert.doesNotMatch(examPage, /portal-nav-label">Archived</, 'the nav item is a place, not a state');
+assert.match(examPage, /portal-nav-label">Archive</);
 
 // ── #40: positioning conditions count down before they count ───────────────
 ['FACE_TOO_FAR', 'FACE_TOO_CLOSE', 'FACE_PARTIALLY_VISIBLE', 'FACE_NEAR_FRAME_EDGE'].forEach((type) => {
