@@ -376,11 +376,11 @@ const BEHAVIOR_LABELS = {
   ctrl_v_attempt: 'Ctrl+V Attempt',
   screen_record: 'Screen Recording',
   screen_record_panel: 'Capture Overlay Opened',
-  screen_record_stopped: 'Recording Stopped In Time',
+
   // A hint, not a finding: capture-capable hardware was present. Kept out of
   // every violation list on purpose, since plenty of machines carry it for
   // innocent reasons (#23).
-  screen_record_possible: 'Capture Device Present',
+  screen_record_possible: 'Recording Software Installed',
   camera_denied: 'Camera Denied',
   auto_submit: 'Auto-Submitted',
   force_submit: 'Force Submitted',
@@ -635,7 +635,7 @@ function getStudentYearSectionSummary(student, separator = ' ') {
 }
 
 function getActivityTone(type) {
-  if (['brightness_check_passed', 'camera_restored', 'connection_restored', 'screen_record_stopped'].includes(type)) return 'success';
+  if (['brightness_check_passed', 'camera_restored', 'connection_restored'].includes(type)) return 'success';
   if (type === 'screen_record_possible') return 'neutral';
   if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';

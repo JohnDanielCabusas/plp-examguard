@@ -139,18 +139,25 @@ sandbox.navigator.mediaDevices = {
   assert.equal(found[0].label, 'OBS Virtual Camera');
 
   const raised = [];
+  const logged = [];
   app.session = { id: 's1' };
   app._reportedRecorderLabels = null;
   app.issueWarning = (type, detail) => { raised.push({ type, detail }); return true; };
+  app._recordActivity = (type, detail) => { logged.push({ type, detail }); };
 
+  // A capture device proves the software is INSTALLED, never that it is
+  // recording. Windows registers "OBS Virtual Camera" at install time and keeps
+  // it enumerable with OBS closed, so treating it as proof of recording
+  // auto-submitted anyone who merely had OBS on their machine.
   await app._checkScreenRecordingEnvironment('pre-exam');
-  assert.equal(raised.length, 1, 'a recorder running before the exam is caught');
-  assert.equal(raised[0].type, 'screen_record');
-  assert.match(raised[0].detail, /already running/, 'the detail says it predated the exam');
+  assert.equal(raised.length, 0, 'an installed recorder is never a violation on its own');
+  assert.equal(logged.length, 1, 'but the professor is told it is installed');
+  assert.equal(logged[0].type, 'screen_record_possible');
+  assert.match(logged[0].detail, /does not mean it was recording/, 'and told what that does not prove');
 
-  // The scan repeats on a loop; the same device must not be charged twice.
+  // The scan repeats on a loop; the same device must not be logged twice.
   await app._checkScreenRecordingEnvironment('during');
-  assert.equal(raised.length, 1, 'the same recorder is only reported once');
+  assert.equal(logged.length, 1, 'the same device is only reported once');
 
   // ...but only within one attempt. A recorder reported once used to stay
   // "already reported" for the life of the page, so a student who was submitted
@@ -163,7 +170,7 @@ sandbox.navigator.mediaDevices = {
   );
   app._reportedRecorderLabels = new Set(); // what a fresh attempt does
   await app._checkScreenRecordingEnvironment('pre-exam');
-  assert.equal(raised.length, 2, 'a new attempt reports the recorder again');
+  assert.equal(logged.length, 2, 'a new attempt reports the device again');
 
   // No recorder present, nothing reported.
   sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
@@ -171,13 +178,13 @@ sandbox.navigator.mediaDevices = {
   ]);
   app._reportedRecorderLabels = null;
   raised.length = 0;
+  logged.length = 0;
   await app._checkScreenRecordingEnvironment('pre-exam');
   assert.equal(raised.length, 0, 'an ordinary webcam is not a recorder');
+  assert.equal(logged.length, 0, 'and is not worth telling the professor about');
 
   // Hardware that merely could capture must never cost a strike: Stereo Mix
   // ships enabled on a great many machines and says nothing about cheating.
-  const logged = [];
-  app._recordActivity = (type, detail) => { logged.push({ type, detail }); };
   sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
     { kind: 'audioinput', label: 'Stereo Mix (Realtek Audio)' },
     { kind: 'videoinput', label: 'Generic Virtual Camera' },
@@ -212,9 +219,10 @@ sandbox.navigator.mediaDevices = {
     { kind: 'videoinput', label: 'OBS Virtual Camera' },
   ]);
   raised.length = 0;
+  logged.length = 0;
   app._reportedRecorderLabels = null;
   await app._checkScreenRecordingEnvironment('pre-exam');
-  assert.equal(raised.length, 1, 'the recorder is caught once the labels become readable');
+  assert.equal(logged.length, 1, 'the device is seen once the labels become readable');
 
   await runExamRuntimeTests();
   runAdminTests();
@@ -342,68 +350,22 @@ async function runExamRuntimeTests() {
     'the strike rule stands down while a terminal countdown owns the ending',
   );
 
-  // ── Grace period, but only where stopping can be confirmed ───────────────
+  // A recording violation offers no way back, because nothing the page can
+  // see tells it the recording has stopped. The wording must not pretend
+  // otherwise.
   const subEl = element('warning-overlay-sub');
   app._showToast = () => {};
-  const recorded = [];
-  app._recordActivity = (t, d) => { recorded.push(t); };
-
-  // Hotkey detection carries no device metadata: nothing to re-check, so the
-  // student is told plainly that the attempt is over.
   app._terminalViolationActive = false;
   app.warnings = 0;
   app._lastWarningTime = 0;
   submitted = null;
   timers.length = 0;
   app.issueWarning('screen_record', 'Screen recording shortcut detected');
-  assert.equal(app._terminalViolationVerifiable, false, 'a keypress cannot be verified');
-  assert.match(subEl.textContent, /cannot be continued/);
+  assert.match(subEl.textContent, /cannot be continued/, 'no promise the system cannot keep');
   app._warningCountdownDeadline = Date.now() - 1;
   runPending();
-  assert.equal(submitted, 'violation_terminal', 'an unverifiable detection still ends the attempt');
+  assert.equal(submitted, 'violation_terminal', 'the attempt ends');
 
-  // Device-scan detection can be re-checked, so the student gets a way back.
-  app._terminalViolationActive = false;
-  app.warnings = 0;
-  app._lastWarningTime = 0;
-  submitted = null;
-  recorded.length = 0;
-  timers.length = 0;
-  app._reportedRecorderLabels = new Set(['OBS Virtual Camera']);
-  app.issueWarning('screen_record', 'Recorder running', {
-    source: 'DEVICE_SCAN',
-    devices: [{ label: 'OBS Virtual Camera', kind: 'videoinput' }],
-  });
-  assert.equal(app._terminalViolationVerifiable, true, 'a device scan can be re-run');
-  assert.match(subEl.textContent, /Stop the recording/, 'the student is told they can still save it');
-
-  // Still recording: the countdown keeps going.
-  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
-    { kind: 'videoinput', label: 'OBS Virtual Camera' },
-  ]);
-  await runPendingAsync();
-  assert.equal(app._terminalViolationActive, true, 'a recorder still present keeps the countdown alive');
-
-  // Recorder gone: the exam resumes and the countdown can no longer fire.
-  sandbox.navigator.mediaDevices.enumerateDevices = async () => ([
-    { kind: 'videoinput', label: 'Integrated Webcam' },
-  ]);
-  await runPendingAsync();
-  assert.equal(app._terminalViolationActive, false, 'stopping the recorder clears the violation');
-  assert.equal(overlayEl.style.display, 'none', 'the overlay closes and the exam is usable again');
-  assert.ok(recorded.includes('screen_record_stopped'), 'the professor still sees that it happened');
-  assert.equal(app.warnings, 0, 'a terminal violation never consumed a strike to begin with');
-  assert.equal(
-    app._reportedRecorderLabels.has('OBS Virtual Camera'),
-    false,
-    'restarting the recorder must be able to raise the alarm again',
-  );
-
-  app._warningCountdownDeadline = Date.now() - 1;
-  runPending();
-  assert.equal(submitted, null, 'a cleared violation never submits the exam');
-
-  app._recordActivity = () => {};
   app._terminalViolationActive = false;
   app.warnings = 0;
   app._lastWarningTime = 0;
