@@ -175,7 +175,8 @@
 [data-theme="dark"] .modal-close { color: var(--text) !important; }
 
 /* Nav */
-[data-theme="dark"] .nav-section-label { color: #94a3a0 !important; }
+[data-theme="dark"] .nav-section-label,
+[data-theme="dark"] .portal-nav-section-label { color: #94a3a0 !important; }
 [data-theme="dark"] .topbar-actions > span { color: var(--text-muted) !important; }
 
 /* Analytics cards */
@@ -422,9 +423,14 @@
   background: rgba(34,197,94,0.12) !important;
   color: #ecfdf5 !important;
 }
+/* Identical to the professor panel's active tab above: solid green fill plus
+   the gold left bar. The student sidebar was using a translucent green with no
+   explicit bar, so the same "current tab" state looked like two different
+   things depending on which side of the system you were on. */
 [data-theme="dark"] .portal-nav-item.active,
 [data-theme="dark"] .portal-subject-item.active {
-  background: rgba(34,197,94,0.18) !important;
+  background: #0e5a35 !important;
+  box-shadow: inset 4px 0 0 #f4c542 !important;
   color: #ffffff !important;
 }
 
@@ -818,7 +824,7 @@
   background: #475569 !important;
 }
 [data-theme="dark"] .portal-subject-item.active:hover {
-  background: rgba(34,197,94,0.18) !important;
+  background: #0e5a35 !important;
   color: #ffffff !important;
 }
 [data-theme="dark"] .course-group-label-text {
@@ -7730,15 +7736,17 @@ body.exam-page {
   overflow: hidden;
   white-space: nowrap;
 }
+/* Identical to .sidebar-wordmark-name / -sub in the professor panel — one
+   product, one wordmark. */
 .portal-wordmark-name {
-  color: rgba(255,255,255,0.92);
+  color: #d9e6dd;
   font-size: 15px;
   font-weight: 800;
   letter-spacing: .26em;
   line-height: 1;
 }
 .portal-wordmark-sub {
-  color: rgba(255,255,255,0.5);
+  color: rgba(217,230,221,0.55);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: .02em;

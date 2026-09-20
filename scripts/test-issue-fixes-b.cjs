@@ -130,6 +130,40 @@ assert.match(adminSource, /function isExamTitleTakenInSubject/, 'duplicates are 
 assert.match(adminSource, /choice === 'absent'/, 'reopening can let the absentees in');
 assert.match(adminSource, /disabled title="\$\{escAttr\(recoverBlockedReason\)\}"/, 'archive actions stay in one column');
 
+// ── The two sidebars are one design ───────────────────────────────────────
+// They were built separately and the current-tab state had drifted: the
+// professor panel filled it solid green with a gold bar, the student portal
+// used a translucent green. Keep the rules identical.
+const ruleFor = (selector) => {
+  const at = styleSource.indexOf(selector);
+  assert.ok(at >= 0, `missing rule: ${selector}`);
+  return styleSource.slice(at + selector.length, styleSource.indexOf('}', at))
+    .split(';').map(d => d.trim()).filter(Boolean).sort().join('; ');
+};
+assert.equal(
+  ruleFor('[data-theme="dark"] .portal-nav-item.active,\n[data-theme="dark"] .portal-subject-item.active {'),
+  ruleFor('[data-theme="dark"] .nav-item.active {'),
+  'the current tab must look the same on both sides of the system',
+);
+// Section labels and the wordmark share their values too.
+assert.match(styleSource, /\[data-theme="dark"\] \.nav-item\.active/);
+assert.ok(
+  styleSource.includes('[data-theme="dark"] .nav-section-label,\n[data-theme="dark"] .portal-nav-section-label'),
+  'both section labels take the same muted colour in dark mode',
+);
+assert.equal(ruleFor('.portal-wordmark-name {'), ruleFor('.sidebar-wordmark-name {'), 'one product, one wordmark');
+assert.equal(ruleFor('.portal-wordmark-sub {'), ruleFor('.sidebar-wordmark-sub {'));
+
+// Archive is the last nav entry, after the enrolled courses, so enrolling in a
+// new course cannot push it out of last place.
+const navBlock = examPage.slice(examPage.indexOf('className="portal-nav"'), examPage.indexOf('</nav>'));
+assert.ok(navBlock.includes('portal-nav-courses'), 'the courses list is in the nav');
+assert.ok(
+  navBlock.indexOf('portal-nav-courses') < navBlock.indexOf('pnav-archived'),
+  'Archive comes after the courses',
+);
+assert.ok(navBlock.includes('pnav-archived'), 'and is part of the nav, not stranded in the footer');
+
 // ── AI composer toolbar ────────────────────────────────────────────────────
 // "Free-form Instructions" used to sit beside the mode buttons as a bare grey
 // caption that described neither of them and changed with neither.

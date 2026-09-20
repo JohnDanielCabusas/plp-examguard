@@ -216,17 +216,20 @@ export default function ExamPage() {
               <div className="portal-nav-divider" />
               <div className="portal-nav-section-label">Enrolled</div>
               <div id="portal-nav-courses" />
+              {/* Archive lives at the end of the nav, after the courses, so
+                  enrolling in a new one never pushes it out of last place. */}
+              <div className="portal-nav-divider" />
+              <div className="portal-nav-section-label">System</div>
+              <div className="portal-nav-item" id="pnav-archived" data-label="Archive" onClick={() => window.ExamApp.showPortalTab('archived')}>
+                <span className="portal-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
+                <span className="portal-nav-label">Archive</span>
+              </div>
             </nav>
             <div className="portal-sidebar-footer">
               {/* Hidden targets kept for exam.js compatibility */}
               <span id="portal-avatar" style={{ display: 'none' }} />
               <span id="portal-footer-name" style={{ display: 'none' }} />
               <span id="portal-footer-id" style={{ display: 'none' }} />
-
-              <div className="portal-nav-item" id="pnav-archived" data-label="Archive" onClick={() => window.ExamApp.showPortalTab('archived')}>
-                <span className="portal-nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg></span>
-                <span className="portal-nav-label">Archive</span>
-              </div>
 
               {/* Same wordmark as the professor panel, so both sides of the
                   system say what it is called. */}
