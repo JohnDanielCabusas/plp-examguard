@@ -384,6 +384,7 @@ const BEHAVIOR_LABELS = {
   screen_record_stopped: 'Recording Stopped (Confirmed)',
   screen_record_stopped_claim: 'Recording Stopped (Student Claim)',
   camera_denied: 'Camera Denied',
+  warning_dismissed: 'Warning Dismissed',
   auto_submit: 'Auto-Submitted',
   force_submit: 'Force Submitted',
   timeout: 'Time Expired',
@@ -529,6 +530,24 @@ function renderViolationReviewAction(session, activity, index) {
   `;
 }
 
+function renderWarningDismissAction(session, activity, index) {
+  const isActiveExam = !!session?.startTime && !session?.submitted;
+  const isWarning = VIOLATION_ALERTABLE_TYPES.has(String(activity?.type || '').trim())
+    || activity?.metadata?.countsAsWarning === true;
+  if (!isWarning) return '';
+
+  if (activity?.metadata?.warningDismissed === true) {
+    return `<div class="activity-log-review-row"><span class="activity-log-review-badge tone-dismissed">Warning dismissed</span></div>`;
+  }
+  if (!isActiveExam || Number(session?.warnings || 0) <= 0) return '';
+
+  return `
+    <div class="activity-log-review-row">
+      <button type="button" class="activity-log-review-btn activity-log-dismiss-warning-btn" onclick="dismissSessionWarning('${escAttr(session.id || '')}', ${index})">Dismiss warning</button>
+    </div>
+  `;
+}
+
 function buildStudentLogBody(session) {
   ensureViolationReviewStyles();
   const activities = Array.isArray(session?.activities) ? session.activities : [];
@@ -586,6 +605,7 @@ function buildStudentLogBody(session) {
             <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
             <div class="log-detail">${escHtml(activity.detail)}</div>
             ${renderViolationReviewAction(session, activity, index)}
+            ${renderWarningDismissAction(session, activity, index)}
           </div>
         </div>
       `).join('')}
@@ -612,7 +632,7 @@ const ROUTINE_ACTIVITY_TYPES = new Set([
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
-    if (activity?.metadata?.supersededBy) return;
+    if (activity?.metadata?.supersededBy || activity?.metadata?.warningDismissed || activity?.type === 'warning_dismissed') return;
     const type = activity?.type || 'unknown';
     if (ROUTINE_ACTIVITY_TYPES.has(type)) return;
     counts.set(type, (counts.get(type) || 0) + 1);
@@ -689,9 +709,13 @@ function getSessionEvidenceRecords(sessionId) {
 }
 
 function getSessionWarningAdjustment(sessionId) {
-  return getSessionEvidenceRecords(sessionId)
+  const evidenceAdjustment = getSessionEvidenceRecords(sessionId)
     .filter(record => record.warningApplied)
     .reduce((sum, record) => sum + Number(record.warningAdjustment || 0), 0);
+  const directDismissals = (DB.getSession(sessionId)?.activities || [])
+    .filter(activity => activity?.metadata?.warningDismissed === true)
+    .length;
+  return evidenceAdjustment - directDismissals;
 }
 
 function getSessionRawWarningCount(session) {
@@ -9774,6 +9798,38 @@ function refreshOpenStudentLog() {
   `;
 }
 
+async function dismissSessionWarning(sessionId, activityIndex) {
+  const session = DB.getSession(sessionId);
+  const activity = session?.activities?.[Number(activityIndex)];
+  if (!session || !activity || session.submitted || !session.startTime) {
+    showToast('Warnings can only be dismissed while the student is actively taking the exam.', 'warning');
+    return;
+  }
+
+  const confirmed = await showConfirm({
+    title: 'Dismiss this warning?',
+    message: 'This removes one active warning from the student and marks this activity as dismissed. The original activity stays in the audit log.',
+    confirmLabel: 'Dismiss warning',
+    confirmClass: 'btn btn-danger',
+  });
+  if (!confirmed) return;
+
+  const result = await monitorApiRequest(`/api/monitor/sessions/${encodeURIComponent(sessionId)}/warnings/dismiss`, {
+    method: 'PATCH',
+    body: { activityIndex: Number(activityIndex) },
+  });
+  if (!result.success || !result.session) {
+    showToast(result.message || 'Unable to dismiss this warning right now.', 'error');
+    return;
+  }
+
+  applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
+  renderMonitoringSectionLive();
+  refreshOpenStudentLog();
+  showToast('Warning dismissed. The student’s active warning count was updated.', 'success');
+}
+window.dismissSessionWarning = dismissSessionWarning;
+
 async function exportAllActivityLogs() {
   const examId = monitorExamId;
   const exam   = examId ? DB.getExam(examId) : null;
@@ -13279,6 +13335,10 @@ function ensureViolationReviewStyles() {
     .activity-log-indicator-metrics { margin-top:10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
     .activity-log-indicator-metrics span { border-radius:999px; padding:4px 8px; background:var(--surface-2, #f1f5f9); color:var(--text-muted, #475569); font-size:10px; font-weight:750; }
     .activity-log-review-btn { border:1px solid var(--border, #d1d5db); background:var(--surface-2, #f9fafb); color:var(--text, #111827); border-radius:10px; padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer; }
+    .activity-log-dismiss-warning-btn { display:inline-flex; align-items:center; min-height:30px; border-color:rgba(248,113,113,.42); background:rgba(127,29,29,.22); color:#fca5a5; border-radius:7px; padding:6px 10px; font-size:11px; letter-spacing:.01em; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }
+    .activity-log-dismiss-warning-btn:hover { background:rgba(185,28,28,.42); border-color:#f87171; color:#fff1f2; }
+    .activity-log-dismiss-warning-btn:active { transform:translateY(1px); }
+    .activity-log-dismiss-warning-btn:focus-visible { outline:2px solid #f87171; outline-offset:2px; }
     .activity-log-review-btn:disabled { cursor:not-allowed; opacity:0.6; }
     .activity-log-review-badge, .violation-review-status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px; font-size:11px; font-weight:800; }
     .violation-review-status { align-self:flex-start; width:max-content; max-width:100%; padding:4px 9px; font-size:10px; line-height:1.2; white-space:nowrap; }

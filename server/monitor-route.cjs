@@ -46,6 +46,17 @@ const REPLAYABLE_VIOLATION_TYPES = new Set([
   'restricted_book',
   ...FACEMESH_INCIDENT_TYPES,
 ]);
+// These are the activity entries that can be tied to a formal warning.  The
+// session warning counter itself is only a number, so retaining the dismissal
+// on the original activity gives professors an auditable, one-click reversal
+// instead of silently altering the student's record.
+const WARNING_ACTIVITY_TYPES = new Set([
+  'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off',
+  'window_blur', 'tab_switch', 'fullscreen_exit', 'copy_attempt', 'paste_attempt',
+  'ctrl_c_attempt', 'ctrl_v_attempt', 'screen_record', 'camera_denied', 'screenshot',
+  'restricted_phone', 'secondary_computer', 'restricted_book',
+  ...FACEMESH_INCIDENT_TYPES,
+]);
 const FACEMESH_EVENT_SEVERITY = Object.freeze({
   FACE_ABSENT: 'MODERATE',
   FACE_PARTIALLY_VISIBLE: 'INFO',
@@ -998,6 +1009,89 @@ async function handleSessionList(req, res, url) {
   });
 }
 
+async function handleWarningDismissal(req, res, sessionId, body) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) return forbid(res);
+
+  const activityIndex = Number.parseInt(String(body?.activityIndex ?? ''), 10);
+  if (!Number.isInteger(activityIndex) || activityIndex < 0) {
+    return badRequest(res, 'A warning activity is required.');
+  }
+
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const result = await client.query(
+      `select s.*, coalesce(s.owner_admin_id, e.owner_admin_id) as effective_owner_admin_id
+         from public.sessions s
+         left join public.exams e on e.id = s.exam_id
+        where s.id = $1
+        for update of s`,
+      [sessionId],
+    );
+    const session = result.rows[0] || null;
+    if (!session || String(session.effective_owner_admin_id || '') !== String(admin.id || '')) {
+      await client.query('rollback');
+      return jsonResponse(res, 404, { success: false, message: 'Exam session not found.' });
+    }
+    if (!session.start_time || session.submitted) {
+      await client.query('rollback');
+      return jsonResponse(res, 409, { success: false, message: 'Warnings can only be dismissed while this exam is active.' });
+    }
+
+    const activities = Array.isArray(session.activities) ? [...session.activities] : [];
+    const activity = activities[activityIndex];
+    const type = String(activity?.type || '').trim();
+    const isWarning = WARNING_ACTIVITY_TYPES.has(type)
+      || activity?.metadata?.countsAsWarning === true;
+    if (!activity || !isWarning) {
+      await client.query('rollback');
+      return badRequest(res, 'That activity is not a dismissible warning.');
+    }
+    if (activity?.metadata?.warningDismissed === true) {
+      await client.query('rollback');
+      return jsonResponse(res, 409, { success: false, message: 'This warning has already been dismissed.' });
+    }
+    if (Number(session.warnings || 0) <= 0) {
+      await client.query('rollback');
+      return jsonResponse(res, 409, { success: false, message: 'This student has no active warnings to remove.' });
+    }
+
+    const dismissedAt = new Date().toISOString();
+    activities[activityIndex] = {
+      ...activity,
+      metadata: {
+        ...(activity.metadata && typeof activity.metadata === 'object' ? activity.metadata : {}),
+        warningDismissed: true,
+        warningDismissedAt: dismissedAt,
+        warningDismissedBy: admin.id,
+      },
+    };
+    activities.push({
+      type: 'warning_dismissed',
+      timestamp: dismissedAt,
+      detail: `Professor dismissed the ${type.replace(/_/g, ' ')} warning as accidental`,
+      metadata: { dismissedActivityIndex: activityIndex, dismissedActivityType: type },
+    });
+
+    const update = await client.query(
+      `update public.sessions
+          set warnings = greatest(0, coalesce(warnings, 0) - 1),
+              activities = $2::jsonb
+        where id = $1
+        returning *`,
+      [sessionId, JSON.stringify(activities)],
+    );
+    await client.query('commit');
+    return jsonResponse(res, 200, { success: true, session: update.rows[0] || null });
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function handleMonitorStream(req, res) {
   const admin = await getCurrentProfessorSession(req);
   if (!admin) return forbid(res);
@@ -1027,6 +1121,7 @@ async function handleMonitorRoute(req, res) {
   const pathname = url.pathname;
   const evidenceReviewMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/review$/);
   const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
+  const warningDismissalMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/warnings\/dismiss$/);
 
   try {
     if (pathname === '/api/monitor/incident') {
@@ -1059,6 +1154,17 @@ async function handleMonitorRoute(req, res) {
     if (pathname === '/api/monitor/sessions') {
       if (req.method !== 'GET') return methodNotAllowed(res);
       return await handleSessionList(req, res, url);
+    }
+
+    if (warningDismissalMatch) {
+      if (req.method !== 'PATCH') return methodNotAllowed(res);
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return badRequest(res, 'Invalid JSON body.');
+      }
+      return await handleWarningDismissal(req, res, decodeURIComponent(warningDismissalMatch[1]), body);
     }
 
     if (pathname === '/api/monitor/violation-evidence') {
