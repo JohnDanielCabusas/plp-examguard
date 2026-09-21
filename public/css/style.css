@@ -547,7 +547,12 @@
 .dm-toggle input:checked ~ .dm-label { color: rgba(200,220,210,0.9); }
 
 .theme-loading-spinner {
-  animation: workspace-loading-spin 0.75s linear infinite;
+  /* Keep this independent from component-level transforms: these loaders are
+     mounted before the application has finished hydrating. */
+  display: block;
+  flex: 0 0 auto;
+  transform-origin: center;
+  animation: workspace-loading-spin 0.75s linear infinite !important;
   transition: border-color 0.2s ease;
   will-change: transform;
 }
@@ -7570,16 +7575,44 @@ body.exam-page {
 
 /* Collapsed: show chip centered like nav icons, hide label */
 .portal-sidebar.collapsed .portal-subject-item {
-  padding: 10px 0 10px 19px;
+  /* A course is one compact rail slot when collapsed. Explicit dimensions
+     prevent an active row from stretching to fill the remaining nav height. */
+  box-sizing: border-box;
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  flex: 0 0 42px;
+  align-self: stretch;
+  justify-content: center;
+  padding: 0;
   gap: 0;
   margin-right: 0;
+  margin-bottom: 4px;
   border-radius: 10px;
+  position: relative;
 }
 .portal-sidebar.collapsed .portal-subject-item .portal-subject-chip {
   display: flex;
   width: 20px; height: 20px;
   border-radius: 5px;
   font-size: 12px;
+}
+.portal-sidebar.collapsed .portal-subject-item:hover::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #0f2d1a;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 .portal-sidebar.collapsed .portal-nav-item:hover::after {
   content: attr(data-label);

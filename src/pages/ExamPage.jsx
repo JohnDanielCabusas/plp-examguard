@@ -132,7 +132,7 @@ export default function ExamPage() {
     <>
       {/* Loading overlay */}
       <div id="fb-loading" style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, gap: '14px' }}>
-        <div className="theme-loading-spinner" style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%' }} />
+        <div className="theme-loading-spinner" role="status" aria-label="Loading your workspace" style={{ width: '36px', height: '36px', border: '3px solid #e5e7eb', borderTopColor: '#1a4d2a', borderRadius: '50%' }} />
         <p className="theme-loading-text" style={{ color: 'var(--text-muted-2)', fontSize: '13px', fontFamily: 'sans-serif', margin: 0 }}>Loading your workspace&hellip;</p>
       </div>
 
