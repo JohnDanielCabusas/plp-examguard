@@ -1892,23 +1892,16 @@ export default function AdminPage() {
                           onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor=aiTheme.previewBorder; }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </label>
-                        {/* One control, not two loose buttons: a track with the
-                            active mode filled inside it. The bare grey caption
-                            that used to float beside them belonged to nothing. */}
                         <div role="group" aria-label="Generation mode"
-                          style={{ display:'inline-flex', alignItems:'center', gap:'2px', padding:'3px', borderRadius:'999px', background:aiTheme.surfaceSoft, border:`1px solid ${aiTheme.previewBorder}`, flexShrink:0 }}>
+                          style={{ display:'inline-flex', alignItems:'center', gap:'6px', flexShrink:0 }}>
                           {[['quick','Quick'],['custom','Custom']].map(([m,l]) => (
                             <button key={m} type="button" aria-pressed={aiMode===m} onClick={() => { setAiMode(m); setDiffOpen(false); }}
-                              style={{ padding:'6px 15px', borderRadius:'999px', fontSize:'12px', fontWeight:700, border:'none', cursor:'pointer', transition:'background 0.18s, color 0.18s', background: aiMode===m ? aiTheme.primaryBg : 'transparent', color: aiMode===m ? aiTheme.primaryText : aiTheme.textMuted, whiteSpace:'nowrap' }}>
+                              style={{ padding:'7px 20px', borderRadius:'20px', fontSize:'12px', fontWeight:700, border:`1.5px solid ${aiTheme.toggleBorder}`, cursor:'pointer', transition:'all 0.2s', background: aiMode===m ? aiTheme.primaryBg : aiTheme.toggleIdleBg, color: aiMode===m ? aiTheme.primaryText : aiTheme.toggleIdleText, boxShadow: aiMode===m ? 'none' : `inset 0 0 0 1px ${aiTheme.accentBorder}`, whiteSpace:'nowrap' }}>
                               {l}
                             </button>
                           ))}
                         </div>
-                        <span style={{ fontSize:'11.5px', lineHeight:1.4, color:aiTheme.textMuted, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                          {aiMode === 'quick'
-                            ? 'Guided form — set the count, types and difficulty'
-                            : 'Free-form — describe the exam you want'}
-                        </span>
+                        <span style={{ fontSize:'12px', lineHeight:1.4, color:aiTheme.textMuted, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>Free-form instructions</span>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:'10px', marginLeft:'auto' }}>
                         <button id="ai-gen-btn" onClick={handleRunAIGenerate}
