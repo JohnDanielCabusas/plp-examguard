@@ -69,6 +69,11 @@ alter table if exists public.superadmin
   add column if not exists email text,
   add column if not exists department text;
 alter table if exists public.superadmin alter column email drop not null;
+-- The default accounts below are seeded with a null password on purpose: the
+-- holder sets one on first sign-in. professors already allows that; superadmin
+-- did not, so applying this schema to a fresh project failed on its own seed
+-- data with a not-null violation.
+alter table if exists public.superadmin alter column password drop not null;
 
 -- ── Feature columns ──
 alter table if exists public.sessions add column if not exists essay_grades jsonb not null default '{}'::jsonb;
