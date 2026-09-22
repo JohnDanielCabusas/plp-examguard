@@ -6,7 +6,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const admin = fs.readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8');
+// Normalised so the source slicing below survives a CRLF checkout.
+const admin = fs.readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8').split(String.fromCharCode(13)).join('');
 
 // Pull the helper out of the bundle and run it for real, rather than asserting
 // on its source text.

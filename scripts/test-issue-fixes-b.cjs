@@ -13,7 +13,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+// Normalised: this repo has mixed line endings and git rewrites them on
+// checkout, so a test that matches a multi-line snippet must not care whether
+// the working copy came back LF or CRLF.
+const read = p => fs.readFileSync(path.join(root, p), 'utf8').split(String.fromCharCode(13)).join('');
 const adminSource = read('public/js/admin.js');
 const examSource = read('public/js/exam.js');
 const dataSource = read('public/js/data.js');
@@ -197,10 +200,11 @@ assert.ok(navBlock.includes('pnav-archived'), 'and is part of the nav, not stran
 // ── AI composer toolbar ────────────────────────────────────────────────────
 // "Free-form Instructions" used to sit beside the mode buttons as a bare grey
 // caption that described neither of them and changed with neither.
-assert.doesNotMatch(adminPage, />Free-form Instructions</, 'the orphaned caption is gone');
-assert.match(adminPage, /Free-form — describe the exam you want/, 'the caption follows the selected mode');
-assert.match(adminPage, /Guided form — set the count, types and difficulty/);
-assert.match(adminPage, /role="group" aria-label="Generation mode"/, 'Quick and Custom are one control');
+// The mode-aware caption and the segmented-control track were deliberately
+// restyled away in "AI GENERATE button UI fix"; those assertions are gone with
+// them rather than re-imposed. What the toolbar must keep is the part screen
+// readers depend on.
+assert.match(adminPage, /role="group" aria-label="Generation mode"/, 'Quick and Custom are announced as one control');
 // The prompt line sits centred in its row. Uneven vertical padding left it
 // riding high against the attachment chips above it.
 assert.match(adminPage, /padding:'14px 16px', fontSize:'14px'/, 'the composer padding is symmetrical');

@@ -14,9 +14,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const examSource = fs.readFileSync(path.join(root, 'public', 'js', 'exam.js'), 'utf8');
-const adminSource = fs.readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8');
-const styleSource = fs.readFileSync(path.join(root, 'public', 'css', 'style.css'), 'utf8');
+const examSource = fs.readFileSync(path.join(root, 'public', 'js', 'exam.js'), 'utf8').split(String.fromCharCode(13)).join('');
+const adminSource = fs.readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8').split(String.fromCharCode(13)).join('');
+const styleSource = fs.readFileSync(path.join(root, 'public', 'css', 'style.css'), 'utf8').split(String.fromCharCode(13)).join('');
 
 // Slice a contiguous block out of a bundle and run it for real, so these tests
 // exercise behaviour rather than asserting on source text.
@@ -618,7 +618,7 @@ function runAdminTests() {
   // The server query behind that list must collapse retakes as well, or an
   // out-of-date panel is the only thing standing between the professor and a
   // duplicate.
-  const routeSource = fs.readFileSync(path.join(root, 'server', 'random-forest-route.cjs'), 'utf8');
+  const routeSource = fs.readFileSync(path.join(root, 'server', 'random-forest-route.cjs'), 'utf8').split(String.fromCharCode(13)).join('');
   assert.match(
     routeSource,
     /with latest_sessions as \(\s*select distinct on/,
