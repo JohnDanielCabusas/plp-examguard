@@ -1,0 +1,32 @@
+# Rebuilt inside the image
+node_modules
+dist
+.venv
+
+# Local-only noise that would otherwise be copied into the build context and
+# slow every deploy down
+.git
+.github
+.claude
+.agents
+.playwright-mcp
+screenshots
+temp-design
+docs
+**/__pycache__
+*.py[cod]
+*.log
+
+# Training inputs and YOLO experiment output. The trained artifacts the app
+# actually loads at runtime live in ml/random_forest/artifacts and are NOT
+# excluded here — the prediction worker reads them on startup.
+ml/random_forest/data
+ml/yolo/data
+ml/yolo/runs
+ml/yolo/artifacts
+
+# Secrets stay out of the image; Railway supplies these as environment
+# variables instead.
+.env
+.env.*
+!.env.example
