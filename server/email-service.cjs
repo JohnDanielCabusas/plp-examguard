@@ -6,17 +6,6 @@ const BRAND_NAME = 'TUKLAS';
 const SUPPORT_NAME = 'TUKLAS Support';
 const SCHOOL_NAME = 'Pamantasan ng Lungsod ng Pasig';
 
-function normalizeFallbackMode(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'console') return 'console';
-  if (normalized === 'console-on-error') return 'console-on-error';
-  return 'off';
-}
-
-function getFallbackMode() {
-  return normalizeFallbackMode(process.env.SMTP_FALLBACK_MODE);
-}
-
 function normalizeSmtpConfig({ host, port, secure, user, pass } = {}) {
   const normalizedHost = String(host || '').trim();
   const normalizedUser = String(user || '').trim().toLowerCase();
@@ -190,17 +179,6 @@ function getReadyTransport(smtpConfig) {
   return transporter;
 }
 
-function logVerificationCode({ to, code, type }) {
-  console.log(`[Email Fallback] ${type} code for ${to}: ${code}`);
-  return {
-    accepted: [to],
-    rejected: [],
-    response: 'console-fallback',
-    delivery: 'console',
-    previewCode: code,
-  };
-}
-
 function isGmailAuthError(error, smtpConfig) {
   const host = String(smtpConfig?.host || '').trim().toLowerCase();
   const message = String(error?.message || '').toLowerCase();
@@ -218,7 +196,7 @@ function isGmailAuthError(error, smtpConfig) {
 function mapEmailError(error, smtpConfig) {
   if (isGmailAuthError(error, smtpConfig)) {
     const friendlyError = new Error(
-      'Gmail blocked the SMTP login. Sign in to the Gmail account in a browser, confirm it is active, and use a 16-digit Google App Password for SMTP_PASS. For local testing, you can also set SMTP_FALLBACK_MODE=console-on-error.',
+      'Gmail blocked the SMTP login. Sign in to the Gmail account in a browser, confirm it is active, and use a 16-digit Google App Password for SMTP_PASS.',
     );
     friendlyError.code = 'SMTP_GMAIL_AUTH_FAILED';
     friendlyError.cause = error;
@@ -236,11 +214,6 @@ async function sendVerificationEmail({ smtpConfig, fromEmail, to, code, type }) 
   if (!to) throw new Error('Missing recipient email.');
   if (!code) throw new Error('Missing verification code.');
 
-  const fallbackMode = getFallbackMode();
-  if (fallbackMode === 'console') {
-    return logVerificationCode({ to, code, type });
-  }
-
   const readyTransporter = getReadyTransport(smtpConfig);
   const payload = buildEmailPayload({ type, code, to, fromEmail });
   try {
@@ -256,10 +229,6 @@ async function sendVerificationEmail({ smtpConfig, fromEmail, to, code, type }) 
     transporter = null;
     transporterConfigKey = null;
     const mappedError = mapEmailError(error, smtpConfig);
-    if (fallbackMode === 'console-on-error') {
-      console.warn(`[Email Fallback] SMTP delivery failed: ${mappedError.message}`);
-      return logVerificationCode({ to, code, type });
-    }
     throw mappedError;
   }
 }

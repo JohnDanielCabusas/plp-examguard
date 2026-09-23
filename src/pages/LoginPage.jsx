@@ -213,9 +213,6 @@ export default function LoginPage() {
   };
 
   const buildDeliveryMessage = (result, fallbackMessage) => {
-    if (result?.delivery === 'console' && result?.previewCode) {
-      return `${fallbackMessage} Dev code: ${result.previewCode}`;
-    }
     return fallbackMessage;
   };
 
