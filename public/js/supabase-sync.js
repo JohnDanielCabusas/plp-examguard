@@ -45,7 +45,7 @@ const SupabaseSync = {
   _normalizeObjectMonitoring(value) {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     return {
-      enabled: !!source.enabled,
+      enabled: source.enabled !== false,
       mode: 'enforce',
       allowSecondaryComputer: false,
       allowBooks: false,
@@ -1308,10 +1308,7 @@ const SupabaseSync = {
       row.late_exam_student_ids = Array.isArray(d.lateExamStudentIds) ? d.lateExamStudentIds : [];
     }
     if (this._examObjectMonitoringSupported !== false) {
-      row.object_monitoring = {
-        ...this._normalizeObjectMonitoring(d.objectMonitoring),
-        enabled: !!d.requireCamera,
-      };
+      row.object_monitoring = this._normalizeObjectMonitoring(d.objectMonitoring);
     }
     return row;
   },
@@ -1564,10 +1561,9 @@ const SupabaseSync = {
       excludedStudentIds: Array.isArray(r.excluded_student_ids) ? r.excluded_student_ids : [],
       cameraExemptStudentIds: Array.isArray(r.camera_exempt_student_ids) ? r.camera_exempt_student_ids : [],
       lateExamStudentIds: Array.isArray(r.late_exam_student_ids) ? r.late_exam_student_ids : [],
-      objectMonitoring: {
-        ...this._normalizeObjectMonitoring(r.object_monitoring),
-        enabled: !!r.require_camera,
-      },
+      objectMonitoring: r.require_camera
+        ? this._normalizeObjectMonitoring(r.object_monitoring)
+        : { ...this._normalizeObjectMonitoring(r.object_monitoring), enabled: false },
       ownerAdminId: r.owner_admin_id || '',
       startedAt: r.started_at || null,
       closedAt: r.closed_at || null,

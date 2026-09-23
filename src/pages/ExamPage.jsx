@@ -805,7 +805,7 @@ export default function ExamPage() {
         <div id="camera-drag-surface" className="camera-feed-wrap">
           <video id="camera-feed" className="camera-feed" autoPlay muted playsInline draggable={false} />
           <canvas id="camera-canvas" style={{ display: 'none' }} />
-          <span id="yolo-camera-status" className="yolo-camera-status" data-state="loading">Object scan loading…</span>
+          <span id="yolo-camera-status" className="yolo-camera-status" data-state="disabled" style={{ display: 'none' }} aria-hidden="true" />
           <div id="camera-blocked-msg" className="camera-blocked-msg" style={{ display: 'none', position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
             <span>Camera<br />blocked</span>
           </div>

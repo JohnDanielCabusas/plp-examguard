@@ -653,7 +653,8 @@ export default function AdminPage() {
                       {[
                         ['exam-shuffle-q',     'Shuffle Questions', 'Randomizes question order for each student.', null],
                         ['exam-shuffle-a',     'Shuffle Answers', 'Randomizes answer choices for each student.', null],
-                        ['exam-require-camera','Motion Detection', 'Monitors student movement and restricted objects through the camera.', {text:'CAMERA', bg:'#dbeafe', color:'#1e40af'}],
+                        ['exam-require-camera','Motion Detection', 'Keeps FaceMesh camera monitoring active during the exam.', {text:'CAMERA', bg:'#dbeafe', color:'#1e40af'}],
+                        ['exam-object-detection','Object Detection', 'Uses YOLO to scan the webcam for restricted objects. FaceMesh stays on when this is off.', {text:'YOLO', bg:'#ede9fe', color:'#6d28d9'}],
                         ['exam-ai-detect',     'AI Detection', 'Flags essay responses that look AI-generated.', {text:'ESSAYS', bg:'#fef9c3', color:'#92400e'}],
                         ['exam-allow-review',  'Allow Review', 'Students can revisit their submitted answers. Right and wrong results appear only after scores are released.', {text:'STUDENTS', bg:'#dcfce7', color:'#166534'}],
                       ].map(([id, label, tooltip, badge]) => (

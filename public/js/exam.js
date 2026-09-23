@@ -5431,7 +5431,8 @@ const ExamApp = {
     this._cameraCalibrationOnly = false;
     this._startViolationReplayBuffer();
     this._startCameraWatchdog();
-    this._startYoloObjectMonitoring(video);
+    if (this._getObjectMonitoringConfig().enabled) this._startYoloObjectMonitoring(video);
+    else this._setYoloStatus('disabled');
     this._activateFaceMeshMonitoring();
     this._setCameraStatusText('Starting camera scan…', { force: true });
     setTimeout(() => this._checkInitialPresence(video), 500);
@@ -5537,22 +5538,23 @@ const ExamApp = {
 
   _getObjectMonitoringConfig() {
     const raw = this.exam?.objectMonitoring || {};
+    const enabled = !!this.exam?.requireCamera && raw.enabled !== false;
     if (window.YoloProctor?.normalizeConfig) {
       return {
         ...window.YoloProctor.normalizeConfig(raw),
-        enabled: !!this.exam?.requireCamera,
+        enabled,
         mode: 'enforce',
       };
     }
     return {
-      enabled: !!this.exam?.requireCamera,
+      enabled,
       mode: 'enforce',
     };
   },
 
   _preloadYoloObjectModel() {
     if (
-      !this.exam?.requireCamera
+      !this._getObjectMonitoringConfig().enabled
       || !window.YoloProctor?.preloadModel
       || this._yoloPreloadPromise
     ) return;
@@ -5579,6 +5581,7 @@ const ExamApp = {
     container.dataset.objectDetection = state;
     const indicator = document.getElementById('yolo-camera-status');
     const labels = {
+      disabled: '',
       idle: 'Object scan off',
       loading: 'Object scan loading',
       ready: 'Object scan active',
@@ -5587,6 +5590,8 @@ const ExamApp = {
     };
     if (indicator) {
       indicator.dataset.state = state;
+      indicator.style.display = state === 'disabled' ? 'none' : '';
+      indicator.setAttribute('aria-hidden', state === 'disabled' ? 'true' : 'false');
       indicator.textContent = labels[state] || 'Object scan unavailable';
       indicator.title = detail.message || indicator.textContent;
     }
@@ -5601,7 +5606,7 @@ const ExamApp = {
     if (
       this._yoloRetryTimer
       || this._yoloRetryCount >= this._YOLO_MAX_RETRIES
-      || !this.exam?.requireCamera
+      || !this._getObjectMonitoringConfig().enabled
       || !this._cameraStream
       || !video
     ) return false;
@@ -5624,7 +5629,7 @@ const ExamApp = {
     // Keep the retry count while replacing a failed monitor. Explicit camera
     // shutdowns still reset it through _stopYoloObjectMonitoring().
     this._stopYoloObjectMonitoring({ resetRetry: false });
-    if (!this.exam?.requireCamera || !video) return;
+    if (!this._getObjectMonitoringConfig().enabled || !video) return;
     const generation = this._yoloStartGeneration;
     this._yoloStarting = true;
     this._setYoloStatus('loading');
@@ -5692,7 +5697,7 @@ const ExamApp = {
     if (
       this._yoloPhoneMonitor
       || generation !== this._yoloStartGeneration
-      || !this.exam?.requireCamera
+      || !this._getObjectMonitoringConfig().enabled
       || !video
     ) return;
 
@@ -5739,7 +5744,7 @@ const ExamApp = {
     this._yoloConfigSignature = '';
     this._yoloPersonSeenUntil = 0;
     this._multiplePeopleSources.delete('yolo');
-    this._setYoloStatus('idle');
+    this._setYoloStatus(this._getObjectMonitoringConfig().enabled ? 'idle' : 'disabled');
   },
 
   _syncYoloMonitoringForExam() {
@@ -5747,7 +5752,8 @@ const ExamApp = {
     const signature = JSON.stringify(config);
     const video = document.getElementById('camera-feed');
     if (!config.enabled || !this.exam?.requireCamera) {
-      if (this._yoloMonitor) this._stopYoloObjectMonitoring();
+      if (this._yoloMonitor || this._yoloPhoneMonitor || this._yoloRetryTimer) this._stopYoloObjectMonitoring();
+      else this._setYoloStatus('disabled');
       return;
     }
     if (!this._yoloMonitor && this._cameraStream && video?.readyState >= 2) {
@@ -6061,7 +6067,11 @@ const ExamApp = {
       this._cameraStream = stream;
       const video = document.getElementById('camera-feed');
       if (video) video.srcObject = stream;
-      if (video && !this._yoloMonitor) this._startYoloObjectMonitoring(video);
+      if (video && !this._yoloMonitor && this._getObjectMonitoringConfig().enabled) {
+        this._startYoloObjectMonitoring(video);
+      } else if (!this._getObjectMonitoringConfig().enabled) {
+        this._setYoloStatus('disabled');
+      }
       this._startViolationReplayBuffer();
       const blockedMsg = document.getElementById('camera-blocked-msg');
       if (blockedMsg) blockedMsg.style.display = 'none';

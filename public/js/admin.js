@@ -4862,23 +4862,32 @@ function normalizeExamPolicies(policies) {
 function normalizeObjectMonitoringConfig(value = {}, cameraEnabled = null) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   return {
-    enabled: cameraEnabled === null ? !!source.enabled : !!cameraEnabled,
+    // Existing camera-monitored exams pre-date this setting, so they retain
+    // object detection unless the professor explicitly turns it off.
+    enabled: cameraEnabled === false ? false : source.enabled !== false,
     mode: 'enforce',
   };
 }
 
 function getObjectMonitoringEditorState() {
   const requireCamera = !!document.getElementById('exam-require-camera')?.checked;
-  return normalizeObjectMonitoringConfig({}, requireCamera);
+  const objectDetection = !!document.getElementById('exam-object-detection')?.checked;
+  return normalizeObjectMonitoringConfig({ enabled: objectDetection }, requireCamera);
 }
 
-function setObjectMonitoringEditorState() {
+function setObjectMonitoringEditorState(value = {}) {
+  const cameraEnabled = !!document.getElementById('exam-require-camera')?.checked;
+  const toggle = document.getElementById('exam-object-detection');
+  if (toggle) toggle.checked = normalizeObjectMonitoringConfig(value, cameraEnabled).enabled;
   syncExamObjectMonitoringControls();
 }
 
 function syncExamObjectMonitoringControls() {
   const cameraToggle = document.getElementById('exam-require-camera');
-  if (!cameraToggle) return;
+  const objectToggle = document.getElementById('exam-object-detection');
+  if (!cameraToggle || !objectToggle) return;
+  objectToggle.disabled = !cameraToggle.checked;
+  if (!cameraToggle.checked) objectToggle.checked = false;
   updateExamEditorSaveButtonState();
 }
 window.syncExamObjectMonitoringControls = syncExamObjectMonitoringControls;
@@ -5143,6 +5152,7 @@ function bindExamEditorDirtyListeners() {
     'exam-shuffle-q',
     'exam-shuffle-a',
     'exam-require-camera',
+    'exam-object-detection',
     'exam-ai-detect',
     'exam-allow-review',
   ].forEach((id) => {
@@ -5273,6 +5283,7 @@ function openExamEditor(id) {
   document.getElementById('exam-shuffle-q').checked = false;
   document.getElementById('exam-shuffle-a').checked = false;
   document.getElementById('exam-require-camera').checked = false;
+  document.getElementById('exam-object-detection').checked = false;
   setObjectMonitoringEditorState({});
   document.getElementById('exam-ai-detect').checked = false;
   document.getElementById('exam-allow-review').checked = false;
