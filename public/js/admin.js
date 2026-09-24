@@ -15,6 +15,7 @@ let currentSection = 'dashboard';
 let monitorInterval = null;
 let monitorExamId = null;
 let monitorNameSort = 'asc';
+let monitorSearchTerm = '';
 let examDeadlineInterval = null;
 let floatingTimerDismissedExamId = null;
 let floatingTimerDragState = null;
@@ -59,6 +60,8 @@ let _lastMonitorEvidencePollAt = 0;
 let _activeViolationReview = null;
 let _violationReviewSaving = false;
 let _activeViolationReplayObjectUrl = '';
+let _loadedViolationReplayEvidenceId = '';
+let _violationReplayLoadToken = 0;
 let _recentViolationEventKeys = new Map();
 let _randomForestStatsRequestToken = 0;
 const ADMIN_SECTIONS = new Set(['dashboard', 'subjects', 'students', 'exams', 'monitoring', 'reports', 'statistics', 'settings', 'archive']);
@@ -367,6 +370,9 @@ const BEHAVIOR_LABELS = {
   brightness_check_skipped: 'Brightness Check Skipped',
   connection_lost: 'Connection Lost',
   connection_restored: 'Connection Restored',
+  connection_hold_ended: 'Exam Resumed After Outage',
+  face_calibration_assisted: 'Face Scan Eased To Let Student In',
+  face_scan_help_requested: 'Student Reported Face Scan Trouble',
   window_blur: 'Window Blur',
   tab_switch: 'Tab Switch',
   fullscreen_exit: 'Fullscreen Exit',
@@ -531,7 +537,15 @@ function renderViolationReviewAction(session, activity, index) {
 }
 
 function renderWarningDismissAction(session, activity, index) {
-  const isActiveExam = !!session?.startTime && !session?.submitted;
+  // A student who alt-tabbed by accident is usually spotted while reading the
+  // log afterwards, so this stays available once the attempt has been submitted.
+  // It corrects the record; it does not undo an auto-submit that already fired.
+  const hasStarted = !!session?.startTime;
+  if (wasActivityHeldByOutage(activity)) {
+    // Worth showing — the professor should see the student left the exam — but
+    // there is no warning behind it to dismiss.
+    return `<div class="activity-log-review-row"><span class="activity-log-review-badge tone-missing">Not counted — exam was on hold, connection lost</span></div>`;
+  }
   const isWarning = VIOLATION_ALERTABLE_TYPES.has(String(activity?.type || '').trim())
     || activity?.metadata?.countsAsWarning === true;
   if (!isWarning) return '';
@@ -539,7 +553,7 @@ function renderWarningDismissAction(session, activity, index) {
   if (activity?.metadata?.warningDismissed === true) {
     return `<div class="activity-log-review-row"><span class="activity-log-review-badge tone-dismissed">Warning dismissed</span></div>`;
   }
-  if (!isActiveExam || Number(session?.warnings || 0) <= 0) return '';
+  if (!hasStarted || Number(session?.warnings || 0) <= 0) return '';
 
   return `
     <div class="activity-log-review-row">
@@ -627,12 +641,18 @@ const ROUTINE_ACTIVITY_TYPES = new Set([
   'brightness_check_skipped',
   'camera_restored',
   'connection_restored',
+  'connection_hold_ended',
+  'face_calibration_assisted',
+  'face_scan_help_requested',
 ]);
 
 function summarizeActivities(activities) {
   const counts = new Map();
   (activities || []).forEach(activity => {
     if (activity?.metadata?.supersededBy || activity?.metadata?.warningDismissed || activity?.type === 'warning_dismissed') return;
+    // Counted alongside real conduct, an outage's focus changes would read as
+    // strikes the student never received.
+    if (wasActivityHeldByOutage(activity)) return;
     const type = activity?.type || 'unknown';
     if (ROUTINE_ACTIVITY_TYPES.has(type)) return;
     counts.set(type, (counts.get(type) || 0) + 1);
@@ -688,7 +708,16 @@ function getActivityTone(type) {
   return 'neutral';
 }
 
+function wasActivityHeldByOutage(activity) {
+  return activity?.metadata?.offlineHold === true
+    || activity?.metadata?.countsAsWarning === false;
+}
+
 function isViolationAlertActivity(activity) {
+  // A student toggling Wi-Fi mid-outage trips the same events as a student
+  // tabbing away, but the exam was on hold: it never cost them a strike, so it
+  // must not raise a live violation alert either.
+  if (wasActivityHeldByOutage(activity)) return false;
   return !!activity?.type && VIOLATION_ALERTABLE_TYPES.has(activity.type);
 }
 
@@ -770,6 +799,21 @@ function getBestEvidenceForSnapshot(sessionId, snapshot) {
   const best = candidates[0];
   const delta = Math.abs(new Date(best.triggeredAt || best.clipEndedAt || 0).getTime() - snapshotAt);
   return delta <= 30000 ? best : null;
+}
+
+// The webcam frame captured for a violation, paired to its activity the same way
+// replay evidence is. It is what the professor judges by when no clip exists.
+function getSnapshotForActivity(session, activity) {
+  const type = String(activity?.type || '').trim();
+  if (!type) return null;
+  const activityAt = new Date(activity?.timestamp || 0).getTime();
+  const candidates = (Array.isArray(session?.cameraSnapshots) ? session.cameraSnapshots : [])
+    .filter(snapshot => snapshot?.kind === 'violation' && snapshot.violationType === type && snapshot.imageData)
+    .sort((a, b) => Math.abs(new Date(a.timestamp || 0).getTime() - activityAt)
+      - Math.abs(new Date(b.timestamp || 0).getTime() - activityAt));
+  const best = candidates[0];
+  if (!best) return null;
+  return Math.abs(new Date(best.timestamp || 0).getTime() - activityAt) <= 30000 ? best : null;
 }
 
 function getBestReplayActivityIndex(session, violationType, timestamp) {
@@ -1325,9 +1369,7 @@ function processIncomingViolationEvent(event) {
 
 function processIncomingViolationEvidence(evidence) {
   if (!evidence?.id) return;
-  const existingIndex = _monitorEvidenceRecords.findIndex(record => record.id === evidence.id);
-  if (existingIndex >= 0) _monitorEvidenceRecords[existingIndex] = evidence;
-  else _monitorEvidenceRecords.unshift(evidence);
+  _monitorEvidenceRecords = mergeMonitorEvidenceRecords(_monitorEvidenceRecords, [evidence]);
   _lastMonitorEvidencePollAt = Date.now();
 
   if (currentSection === 'monitoring' && (!monitorExamId || evidence.examId === monitorExamId)) {
@@ -8597,6 +8639,28 @@ function syncMonitorSortButton() {
   if (label) label.textContent = monitorNameSort === 'desc' ? 'Last name Z-A' : 'Last name A-Z';
 }
 
+// The sessions table is rebuilt on every poll, so the search box is re-synced
+// from the stored term instead of being read back out of the DOM.
+function syncMonitorSearchControls() {
+  const input = document.getElementById('monitor-filter-search');
+  if (input && input.value !== monitorSearchTerm) input.value = monitorSearchTerm;
+  const clearBtn = document.getElementById('monitor-filter-clear');
+  if (clearBtn) clearBtn.hidden = !monitorSearchTerm.trim();
+}
+
+function setMonitorSearch(value) {
+  monitorSearchTerm = String(value || '');
+  renderMonitoringTable(monitorExamId);
+}
+window.setMonitorSearch = setMonitorSearch;
+
+function clearMonitorSearch() {
+  monitorSearchTerm = '';
+  renderMonitoringTable(monitorExamId);
+  document.getElementById('monitor-filter-search')?.focus();
+}
+window.clearMonitorSearch = clearMonitorSearch;
+
 function setMonitorView(view) {
   _monitorView = view;
   const tableView = document.getElementById('monitoring-grid');
@@ -8622,68 +8686,80 @@ function setMonitorView(view) {
   }
 }
 
-function renderCameraGrid(examId) {
-  const container = document.getElementById('camera-grid-container');
-  const empty = document.getElementById('camera-grid-empty');
-  if (!container) return;
+// One tile per violation snapshot, addressed by a stable key so a repaint can
+// reuse the tile that is already on screen.
+function getCameraGridTileKey(session, snapshot, index = 0) {
+  return `${session?.id || ''}|${getMonitorSnapshotKey(snapshot, index)}`;
+}
 
-  if (!examId) {
-    container.innerHTML = '';
-    if (empty) { empty.style.display = ''; container.style.display = 'none'; }
-    return;
-  }
+function formatCameraGridAge(timestamp) {
+  if (!timestamp) return '';
+  const secs = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
+  if (!Number.isFinite(secs)) return '';
+  if (secs < 60) return `${Math.max(0, secs)}s ago`;
+  return `${Math.floor(secs / 60)}m ago`;
+}
 
-  // Only show ACTIVE (not yet submitted) students with camera snapshots
-  const sessions = DB.getSessionsByExam(examId).filter(s => !s.submitted && s.cameraSnapshots?.length > 0);
-
-  if (!sessions.length) {
-    container.innerHTML = '';
-    container.style.display = 'none';
-    if (empty) {
-      empty.style.display = '';
-      empty.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-        <div style="font-size:14px;font-weight:600;color:#6b7280;">No active camera feeds</div>
-        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Feeds appear here for students currently taking the exam</div>`;
-    }
-    return;
-  }
-
-  if (empty) empty.style.display = 'none';
-  container.style.display = 'grid';
-
-  container.innerHTML = sessions.map(s => {
-    const snap = s.cameraSnapshots[0];
-    const warnColor = s.warnings >= 3 ? '#dc2626' : s.warnings >= 2 ? '#f59e0b' : s.warnings >= 1 ? '#eab308' : '#22c55e';
-
-    const warnBadge = s.warnings > 0
-      ? `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${s.warnings}/3</div>`
-      : `<div style="position:absolute;top:10px;left:10px;background:rgba(34,197,94,0.9);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#fff;animation:camPulse 1.5s infinite;display:inline-block;"></span>LIVE</div>`;
-
-    const timeAgo = snap?.timestamp ? (() => {
-      const secs = Math.floor((Date.now() - new Date(snap.timestamp).getTime()) / 1000);
-      if (secs < 60) return secs + 's ago';
-      return Math.floor(secs/60) + 'm ago';
-    })() : '';
-
-    const initial = (s.studentName || '?').charAt(0).toUpperCase();
-
-    return `<div style="position:relative;aspect-ratio:16/9;background:#111827;overflow:hidden;border-radius:4px;">
-      <img src="${escHtml(snap.imageData)}" alt="${escHtml(s.studentName)}"
+function buildCameraGridTile(session, snapshot, index = 0) {
+  const violationLabel = getBehaviorLabel(snapshot?.violationType || 'camera_off');
+  const initial = (session.studentName || '?').charAt(0).toUpperCase();
+  const tile = document.createElement('button');
+  tile.type = 'button';
+  tile.className = 'camera-grid-tile';
+  tile.dataset.tileKey = getCameraGridTileKey(session, snapshot, index);
+  tile.setAttribute('style', 'position:relative;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border-radius:4px;border:1px solid var(--border);padding:0;cursor:pointer;text-align:left;');
+  tile.onclick = () => openCameraGridViolationReview(session.id, snapshot?.timestamp || '');
+  tile.innerHTML = `
+      <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
         style="width:100%;height:100%;object-fit:cover;display:block;"
         onerror="this.style.display='none'" />
-      ${warnBadge}
+      <div class="camera-grid-warn" style="position:absolute;top:10px;right:10px;color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);"></div>
+      <div class="camera-grid-replay" data-replay-ready="false" style="position:absolute;right:10px;bottom:68px;background:rgba(16,185,129,0.92);color:#052e16;font-size:10px;font-weight:800;padding:4px 8px;border-radius:999px;display:none;">Replay ready</div>
+      <div style="position:absolute;top:10px;left:10px;background:rgba(15,23,42,0.76);color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:20px;backdrop-filter:blur(4px);text-transform:uppercase;letter-spacing:0.05em;">${escHtml(violationLabel)}</div>
       <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:26px;height:26px;border-radius:50%;background:#1a4d2a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">${initial}</div>
+          <div style="width:26px;height:26px;border-radius:50%;background:#1a4d2a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">${escHtml(initial)}</div>
           <div style="min-width:0;">
-            <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(s.studentName)}</div>
-            <div style="color:rgba(255,255,255,0.5);font-size:10px;">${escHtml(s.studentId)} · ${escHtml(timeAgo)}</div>
+            <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(session.studentName)}</div>
+            <div style="color:rgba(255,255,255,0.82);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(violationLabel)}</div>
+            <div class="camera-grid-meta" style="color:rgba(255,255,255,0.5);font-size:10px;"></div>
           </div>
         </div>
-      </div>
-    </div>`;
-  }).join('');
+      </div>`;
+  return tile;
+}
+
+// Only the parts that actually change are written, so the snapshot <img> is
+// never re-created and never has to decode again.
+function updateCameraGridTile(tile, session, snapshot) {
+  const warningCount = Math.max(0, getEffectiveSessionWarningCount(session));
+  const warn = tile.querySelector('.camera-grid-warn');
+  if (warn) {
+    const warnColor = warningCount >= 3 ? '#dc2626' : warningCount >= 2 ? '#f59e0b' : '#eab308';
+    const warnText = `\u26a0 ${warningCount}/3`;
+    if (warn.textContent !== warnText) warn.textContent = warnText;
+    // Compared through a dataset value: reading style.background back returns
+    // rgb(), which would never match the hex and so would rewrite every repaint.
+    if (warn.dataset.warnTone !== warnColor) {
+      warn.dataset.warnTone = warnColor;
+      warn.style.background = warnColor;
+    }
+  }
+
+  const replay = tile.querySelector('.camera-grid-replay');
+  if (replay) {
+    const ready = !!getBestEvidenceForSnapshot(session.id, snapshot);
+    if (replay.dataset.replayReady !== String(ready)) {
+      replay.dataset.replayReady = String(ready);
+      replay.style.display = ready ? '' : 'none';
+    }
+  }
+
+  const meta = tile.querySelector('.camera-grid-meta');
+  if (meta) {
+    const text = `${session.studentId} \u00b7 ${formatCameraGridAge(snapshot?.timestamp)}`;
+    if (meta.textContent !== text) meta.textContent = text;
+  }
 }
 
 function renderCameraGrid(examId) {
@@ -8691,16 +8767,20 @@ function renderCameraGrid(examId) {
   const empty = document.getElementById('camera-grid-empty');
   if (!container) return;
 
+  const clearGrid = () => {
+    container.replaceChildren();
+    container.style.display = 'none';
+  };
+
   if (!examId) {
-    container.innerHTML = '';
-    if (empty) { empty.style.display = ''; container.style.display = 'none'; }
+    clearGrid();
+    if (empty) empty.style.display = '';
     return;
   }
 
   const exam = DB.getExam(examId);
   if (!exam?.requireCamera) {
-    container.innerHTML = '';
-    container.style.display = 'none';
+    clearGrid();
     if (empty) {
       empty.style.display = '';
       empty.innerHTML = `
@@ -8712,12 +8792,12 @@ function renderCameraGrid(examId) {
   }
 
   const entries = DB.getSessionsByExam(examId)
-    .flatMap(session => getSessionCameraGridSnapshots(session).map(snapshot => ({ session, snapshot })))
+    .flatMap(session => getSessionCameraGridSnapshots(session)
+      .map((snapshot, index) => ({ session, snapshot, index })))
     .sort((a, b) => new Date(b.snapshot?.timestamp || 0).getTime() - new Date(a.snapshot?.timestamp || 0).getTime());
 
   if (!entries.length) {
-    container.innerHTML = '';
-    container.style.display = 'none';
+    clearGrid();
     if (empty) {
       empty.style.display = '';
       empty.innerHTML = `
@@ -8731,44 +8811,36 @@ function renderCameraGrid(examId) {
   if (empty) empty.style.display = 'none';
   container.style.display = 'grid';
 
-  container.innerHTML = entries.map(({ session, snapshot }) => {
-    const adjustedWarningCount = Math.max(0, getEffectiveSessionWarningCount(session));
-    const warningCount = adjustedWarningCount;
-    const warnColor = warningCount >= 3 ? '#dc2626' : warningCount >= 2 ? '#f59e0b' : '#eab308';
-    const warnBadge = `<div style="position:absolute;top:10px;right:10px;background:${warnColor};color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;backdrop-filter:blur(4px);">⚠ ${warningCount}/3</div>`;
-    const violationLabel = getBehaviorLabel(snapshot?.violationType || 'camera_off');
-    const replayEvidence = getBestEvidenceForSnapshot(session.id, snapshot);
-    const replayBadge = replayEvidence
-      ? `<div style="position:absolute;right:10px;bottom:68px;background:rgba(16,185,129,0.92);color:#052e16;font-size:10px;font-weight:800;padding:4px 8px;border-radius:999px;">Replay ready</div>`
-      : '';
+  // Reconcile rather than rewrite. A live exam repaints this grid on every
+  // violation event - which is exactly when alert modals are on screen - and
+  // replacing innerHTML there threw away every tile, so the snapshots blanked
+  // out and reloaded on each alert.
+  const existingTiles = new Map();
+  Array.from(container.children).forEach((child) => {
+    const key = child?.dataset?.tileKey;
+    if (key) existingTiles.set(key, child);
+  });
 
-    const timeAgo = snapshot?.timestamp ? (() => {
-      const secs = Math.floor((Date.now() - new Date(snapshot.timestamp).getTime()) / 1000);
-      if (secs < 60) return secs + 's ago';
-      return Math.floor(secs / 60) + 'm ago';
-    })() : '';
+  const ordered = [];
+  const seen = new Set();
+  entries.forEach(({ session, snapshot, index }) => {
+    const key = getCameraGridTileKey(session, snapshot, index);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const tile = existingTiles.get(key) || buildCameraGridTile(session, snapshot, index);
+    updateCameraGridTile(tile, session, snapshot);
+    ordered.push(tile);
+  });
 
-    const initial = (session.studentName || '?').charAt(0).toUpperCase();
+  existingTiles.forEach((tile, key) => {
+    if (!seen.has(key)) tile.remove();
+  });
 
-    return `<button type="button" onclick="openCameraGridViolationReview('${session.id}','${escHtml(snapshot?.timestamp || '')}')" style="position:relative;aspect-ratio:16/9;background:var(--surface);overflow:hidden;border-radius:4px;border:1px solid var(--border);padding:0;cursor:pointer;text-align:left;">
-      <img src="${escHtml(snapshot.imageData)}" alt="${escHtml(session.studentName)}"
-        style="width:100%;height:100%;object-fit:cover;display:block;"
-        onerror="this.style.display='none'" />
-      ${warnBadge}
-      ${replayBadge}
-      <div style="position:absolute;top:10px;left:10px;background:rgba(15,23,42,0.76);color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:20px;backdrop-filter:blur(4px);text-transform:uppercase;letter-spacing:0.05em;">${escHtml(violationLabel)}</div>
-      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:10px 12px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:26px;height:26px;border-radius:50%;background:#1a4d2a;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid rgba(255,255,255,0.3);">${initial}</div>
-          <div style="min-width:0;">
-            <div style="color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(session.studentName)}</div>
-            <div style="color:rgba(255,255,255,0.82);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(violationLabel)}</div>
-            <div style="color:rgba(255,255,255,0.5);font-size:10px;">${escHtml(session.studentId)} · ${escHtml(timeAgo)}</div>
-          </div>
-        </div>
-      </div>
-    </button>`;
-  }).join('');
+  ordered.forEach((tile, index) => {
+    if (container.children[index] !== tile) {
+      container.insertBefore(tile, container.children[index] || null);
+    }
+  });
 }
 
 // LIVE describes the exam being monitored, not the polling loop. The poller
@@ -8917,6 +8989,29 @@ function normalizeMonitorSessionRow(row) {
   };
 }
 
+function getMonitorSnapshotKey(snapshot, fallbackIndex = 0) {
+  if (snapshot?.id) return `id:${snapshot.id}`;
+  const timestamp = String(snapshot?.timestamp || '').trim();
+  if (timestamp) {
+    return `time:${timestamp}|${String(snapshot?.kind || '')}|${String(snapshot?.violationType || '')}`;
+  }
+  const imageData = String(snapshot?.imageData || '');
+  return `fallback:${fallbackIndex}|${imageData.length}|${imageData.slice(0, 64)}`;
+}
+
+function mergeMonitorCameraSnapshots(existingSnapshots, incomingSnapshots) {
+  const merged = new Map();
+  (Array.isArray(existingSnapshots) ? existingSnapshots : []).forEach((snapshot, index) => {
+    if (snapshot) merged.set(getMonitorSnapshotKey(snapshot, index), snapshot);
+  });
+  (Array.isArray(incomingSnapshots) ? incomingSnapshots : []).forEach((snapshot, index) => {
+    if (!snapshot) return;
+    const key = getMonitorSnapshotKey(snapshot, index);
+    merged.set(key, { ...(merged.get(key) || {}), ...snapshot });
+  });
+  return [...merged.values()];
+}
+
 function applyMonitorSessionsSnapshot(examId, sessionRows) {
   if (!examId || !window.DB?._read || !window.DB?._write || !DB.KEYS?.sessions) return;
   const current = Array.isArray(window.DB._read(DB.KEYS.sessions, []))
@@ -8936,7 +9031,11 @@ function applyMonitorSessionsSnapshot(examId, sessionRows) {
   normalizedRows.forEach((session) => {
     if (!session?.id) return;
     const previous = mergedById.get(session.id) || {};
-    mergedById.set(session.id, { ...previous, ...session });
+    mergedById.set(session.id, {
+      ...previous,
+      ...session,
+      cameraSnapshots: mergeMonitorCameraSnapshots(previous.cameraSnapshots, session.cameraSnapshots),
+    });
   });
 
   window.DB._write(DB.KEYS.sessions, [...mergedById.values()]);
@@ -9094,6 +9193,7 @@ function renderMonitoringTable(examId) {
   const countEl = document.getElementById('monitor-count');
   const grid = document.getElementById('monitoring-grid');
   syncMonitorSortButton();
+  syncMonitorSearchControls();
 
   if (!examId) {
     countEl.textContent = '0 students';
@@ -9152,18 +9252,26 @@ function renderMonitoringTable(examId) {
   const orphanSessions = persistedSessions.filter(
     session => !rosterStudentIds.has(String(session.studentId || '').trim().toUpperCase())
   );
-  const sessions = [...rosterEntries, ...orphanSessions].sort(compareMonitorSessionsByLastName);
+  const rosterSessions = [...rosterEntries, ...orphanSessions].sort(compareMonitorSessionsByLastName);
+  // The search narrows only the rows on screen. The stats strip keeps counting
+  // the whole room, because that is what a professor watches it for.
+  const searchTerm = monitorSearchTerm.trim().toLowerCase();
+  const sessions = searchTerm
+    ? rosterSessions.filter(s => reportRowMatchesSearch(s.studentName, s.studentId, searchTerm))
+    : rosterSessions;
   const totalQs = exam ? exam.questions.length : 1;
 
-  countEl.textContent = sessions.length + ' student' + (sessions.length !== 1 ? 's' : '');
+  countEl.textContent = searchTerm
+    ? `${sessions.length} of ${rosterSessions.length} students`
+    : rosterSessions.length + ' student' + (rosterSessions.length !== 1 ? 's' : '');
 
   // ── Stats strip ──────────────────────────────────────────
-  const inProgress = sessions.filter(s => !s.submitted && !!s.startTime).length;
-  const submitted  = sessions.filter(s => s.submitted).length;
-  const flagged    = sessions.filter(s => getEffectiveSessionWarningCount(s) >= 2).length;
+  const inProgress = rosterSessions.filter(s => !s.submitted && !!s.startTime).length;
+  const submitted  = rosterSessions.filter(s => s.submitted).length;
+  const flagged    = rosterSessions.filter(s => getEffectiveSessionWarningCount(s) >= 2).length;
 
   const stats = [
-    { color:'blue', value: sessions.length, label:'Total',
+    { color:'blue', value: rosterSessions.length, label:'Total',
       icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` },
     { color:'orange', value: inProgress, label:'In Progress',
       icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
@@ -9187,8 +9295,11 @@ function renderMonitoringTable(examId) {
     </div>`).join('');
 
   if (!sessions.length) {
+    const emptyMessage = rosterSessions.length
+      ? 'No students match your search.'
+      : "No students are enrolled in this exam's course.";
     document.getElementById('monitor-tbody').innerHTML =
-      `<tr><td colspan="6"><div class="empty-state"><p>No students are enrolled in this exam's course.</p></div></td></tr>`;
+      `<tr><td colspan="6"><div class="empty-state"><p>${emptyMessage}</p></div></td></tr>`;
     return;
   }
 
@@ -9475,14 +9586,29 @@ async function toggleCameraExemption() {
 }
 window.toggleCameraExemption = toggleCameraExemption;
 
+// Both of these ask the same question of the professor — may this student sit the
+// exam without webcam monitoring — so both get the Allow/Deny decision.
+const WEBCAM_REQUEST_REPORT_CATEGORIES = new Set([
+  'webcam_consent_decline',
+  'webcam',
+  'face_scan_failed',
+]);
+
 function isProfChatWebcamRequestMessage(message) {
   const category = String(message?.reportCategory || '').trim().toLowerCase();
   return !!(
     message
     && message.senderRole === 'student'
     && message.type === 'report'
-    && (category === 'webcam_consent_decline' || category === 'webcam')
+    && WEBCAM_REQUEST_REPORT_CATEGORIES.has(category)
   );
+}
+
+function profChatReportTagLabel(message) {
+  const category = String(message?.reportCategory || '').trim().toLowerCase();
+  if (category === 'face_scan_failed') return 'Face scan will not complete';
+  if (WEBCAM_REQUEST_REPORT_CATEGORIES.has(category)) return 'Webcam consent declined';
+  return 'Reported a problem';
 }
 
 function isProfChatWebcamDecisionMessage(message) {
@@ -9618,7 +9744,7 @@ function renderProfChatMessages() {
         : '';
       return `<div class="prof-chat-msg report">
         <div class="prof-chat-report-bubble ${webcamRequest ? 'is-webcam-request' : ''}">
-          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${webcamRequest ? 'Webcam consent declined' : 'Reported a problem'}</span>
+          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${escHtml(profChatReportTagLabel(m))}</span>
           <span class="prof-chat-report-copy">${escHtml(m.body || '')}</span>
           ${webcamRequestActions}
         </div>
@@ -9812,18 +9938,20 @@ function refreshOpenStudentLog() {
 async function dismissSessionWarning(sessionId, activityIndex) {
   const session = DB.getSession(sessionId);
   const activity = session?.activities?.[Number(activityIndex)];
-  if (!session || !activity || session.submitted || !session.startTime) {
-    showToast('Warnings can only be dismissed while the student is actively taking the exam.', 'warning');
-    return;
+  if (!session || !activity || !session.startTime) {
+    showToast('Warnings can only be dismissed on an attempt the student has started.', 'warning');
+    return false;
   }
 
   const confirmed = await showConfirm({
     title: 'Dismiss this warning?',
-    message: 'This removes one active warning from the student and marks this activity as dismissed. The original activity stays in the audit log.',
+    message: session.submitted
+      ? 'This removes one warning from the student\'s record and marks this activity as dismissed. The original activity stays in the audit log, and a submitted attempt stays submitted.'
+      : 'This removes one active warning from the student and marks this activity as dismissed. The original activity stays in the audit log.',
     confirmLabel: 'Dismiss warning',
     confirmClass: 'btn btn-danger',
   });
-  if (!confirmed) return;
+  if (!confirmed) return false;
 
   const result = await monitorApiRequest(`/api/monitor/sessions/${encodeURIComponent(sessionId)}/warnings/dismiss`, {
     method: 'PATCH',
@@ -9831,13 +9959,15 @@ async function dismissSessionWarning(sessionId, activityIndex) {
   });
   if (!result.success || !result.session) {
     showToast(result.message || 'Unable to dismiss this warning right now.', 'error');
-    return;
+    return false;
   }
 
   applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
   renderMonitoringSectionLive();
   refreshOpenStudentLog();
-  showToast('Warning dismissed. The student’s active warning count was updated.', 'success');
+  if (currentSection === 'reports') renderReportTable();
+  showToast('Warning dismissed. The student’s warning count was updated.', 'success');
+  return true;
 }
 window.dismissSessionWarning = dismissSessionWarning;
 
@@ -11655,6 +11785,15 @@ function syncReportSelectionUI() {
     count.hidden = selectedVisible.length === 0;
     count.textContent = `${selectedVisible.length} selected`;
   }
+
+  // Granting retakes one row at a time is the slow path. With students ticked,
+  // the same action is offered once for the whole selection.
+  const bulkBtn = document.getElementById('btn-report-bulk-retake');
+  if (bulkBtn) {
+    bulkBtn.hidden = selectedVisible.length === 0;
+    const bulkCount = document.getElementById('report-bulk-retake-count');
+    if (bulkCount) bulkCount.textContent = String(selectedVisible.length);
+  }
 }
 
 function toggleReportRowSelection(sessionId, checked) {
@@ -12831,41 +12970,39 @@ function buildArchivedAttempt(session, attemptNumber, authorizedBy) {
   };
 }
 
-async function allowStudentRetake(sessionId) {
-  const session = DB.getSession(sessionId);
-  if (!session) return;
-  const exam = DB.getExam(session.examId);
-  const priorAttempts = Array.isArray(session.attemptHistory) ? session.attemptHistory : [];
-  const attemptNumber = priorAttempts.length + 1;
-  const ok = await showConfirm(
-    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nAttempt #${attemptNumber} is kept for your records. The retake is saved as attempt #${attemptNumber + 1}.`
-  );
-  if (!ok) return;
+function getRetakeGrantedBy() {
+  const grantingAdmin = Auth.getAdminSession?.() || {};
+  return grantingAdmin.name || grantingAdmin.username || 'Professor';
+}
+
+// A fresh retake restores the original webcam requirement for this exam. The
+// exam row is published and waited on BEFORE any session reset, otherwise the
+// student can see the retake first and relaunch with a stale exemption.
+async function clearRetakeCameraExemptions(exam, studentIds) {
+  if (!exam?.id) return exam;
   let retakeExam = exam;
-  if (exam?.id && window.SupabaseSync?.refreshExams) {
+  if (window.SupabaseSync?.refreshExams) {
     // The exemption may have been changed from another professor tab. Refresh
     // before removing it so the reset is based on the authoritative list.
     await Promise.resolve(SupabaseSync.refreshExams()).catch(() => {});
     retakeExam = DB.getExam(exam.id) || exam;
   }
-  if (retakeExam?.id && session.studentId) {
-    // A fresh retake should restore the original webcam requirement for this exam.
-    // Wait for that exam-row change before publishing the session reset, otherwise
-    // the student can see the retake first and relaunch with a stale exemption.
-    DB.setStudentCameraExempt(retakeExam.id, session.studentId, false);
-    await (window.SupabaseSync?.waitForDocSync?.('exams', retakeExam.id) || Promise.resolve());
-    if (_profChatCtx?.examId === retakeExam.id && _profChatCtx?.studentId === session.studentId) {
-      renderProfCameraRow();
-    }
+  const ids = [...new Set((studentIds || []).filter(Boolean))];
+  if (!retakeExam?.id || !ids.length) return retakeExam;
+  ids.forEach(studentId => DB.setStudentCameraExempt(retakeExam.id, studentId, false));
+  await (window.SupabaseSync?.waitForDocSync?.('exams', retakeExam.id) || Promise.resolve());
+  if (_profChatCtx?.examId === retakeExam.id && ids.includes(_profChatCtx?.studentId)) {
+    renderProfCameraRow();
   }
-  const grantingAdmin = Auth.getAdminSession?.() || {};
-  const grantedBy = grantingAdmin.name || grantingAdmin.username || 'Professor';
+  return retakeExam;
+}
 
-  // Reset EVERY row this student holds for the exam, not only the one whose
-  // button was pressed. Older data can carry more than one session per student
-  // and a single leftover submitted row kept them in the report list as though
-  // the retake had not been granted (#41), while a leftover unsubmitted row
-  // sent a student who had already finished back into the exam (#42).
+// Reset EVERY row this student holds for the exam, not only the one whose button
+// was pressed. Older data can carry more than one session per student, and a
+// single leftover submitted row kept them in the report list as though the
+// retake had not been granted (#41), while a leftover unsubmitted row sent a
+// student who had already finished back into the exam (#42).
+function resetSessionsForRetake(session, grantedBy) {
   const siblingSessions = DB.getSessionsByExam(session.examId)
     .filter(entry => entry.studentId === session.studentId);
   const targets = siblingSessions.length ? siblingSessions : [session];
@@ -12895,10 +13032,61 @@ async function allowStudentRetake(sessionId) {
     DB.updateSession(entry.id, { ...blankAttempt, attemptHistory: history });
     clearViolationAlertsForSession(entry.id);
   });
+}
+
+async function allowStudentRetake(sessionId) {
+  const session = DB.getSession(sessionId);
+  if (!session) return;
+  const exam = DB.getExam(session.examId);
+  const priorAttempts = Array.isArray(session.attemptHistory) ? session.attemptHistory : [];
+  const attemptNumber = priorAttempts.length + 1;
+  const ok = await showConfirm(
+    `Allow ${session.studentName} (${session.studentId}) to retake "${exam ? exam.title : 'this exam'}"?\n\nAttempt #${attemptNumber} is kept for your records. The retake is saved as attempt #${attemptNumber + 1}.`
+  );
+  if (!ok) return;
+  await clearRetakeCameraExemptions(exam, [session.studentId]);
+  resetSessionsForRetake(session, getRetakeGrantedBy());
   showToast(`Retake granted for ${session.studentName}.`, 'success');
   if (currentSection === 'monitoring') renderMonitoringSectionLive();
   renderReportTable();
 }
+
+// The same grant for everyone currently ticked, so putting a whole section back
+// into an exam is one confirmation instead of one button press per student.
+async function allowSelectedRetakes() {
+  const examId = document.getElementById('report-exam-select')?.value || '';
+  if (!examId) return;
+  const targets = getOrderedSubmittedReportSessions(examId)
+    .filter(session => reportSelectedIds.has(session.id));
+  if (!targets.length) {
+    showToast('Tick the students who should retake first.', 'info');
+    return;
+  }
+  const exam = DB.getExam(examId);
+  const plural = targets.length === 1 ? '' : 's';
+  // The confirm dialog renders its message as one paragraph, so the names read
+  // as an inline list rather than as bullets.
+  const named = targets.slice(0, 4).map(entry => entry.studentName || entry.studentId);
+  const listed = named.join(', ')
+    + (targets.length > named.length ? ` and ${targets.length - named.length} more` : '');
+  const ok = await showConfirm({
+    title: 'Allow Retake',
+    message: `Allow ${targets.length} selected student${plural} to retake "${exam ? exam.title : 'this exam'}"?\n\n${listed}.\n\nEvery finished attempt is kept for your records. Each retake is saved as that student's next attempt.`,
+    confirmLabel: 'Allow Retake',
+    confirmClass: 'btn btn-warning',
+  });
+  if (!ok) return;
+  const grantedBy = getRetakeGrantedBy();
+  await clearRetakeCameraExemptions(exam, targets.map(session => session.studentId));
+  targets.forEach(session => resetSessionsForRetake(session, grantedBy));
+  // Those rows leave the results table the moment they are reset, so a stale
+  // selection must not carry over into the next export.
+  clearReportSelection();
+  showToast(`Retake granted for ${targets.length} student${plural}.`, 'success');
+  if (currentSection === 'monitoring') renderMonitoringSectionLive();
+  renderReportTable();
+}
+window.allowSelectedRetakes = allowSelectedRetakes;
 
 // ============================================================
 // SETTINGS
@@ -13144,6 +13332,17 @@ function openModal(id) {
   requestAnimationFrame(() => initCustomDropdowns(modal));
 }
 
+// Dropping a replay has to happen in one place: the clip, the id it was loaded
+// for, and the load token all belong together.
+function releaseViolationReplayClip() {
+  _violationReplayLoadToken += 1;
+  if (_activeViolationReplayObjectUrl) {
+    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
+    _activeViolationReplayObjectUrl = '';
+  }
+  _loadedViolationReplayEvidenceId = '';
+}
+
 function closeModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
@@ -13160,6 +13359,7 @@ function closeModal(id) {
       video.removeAttribute('src');
       video.load?.();
     }
+    releaseViolationReplayClip();
     _activeViolationReview = null;
   }
 }
@@ -13298,6 +13498,21 @@ function escAttr(str) {
   return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function mergeMonitorEvidenceRecords(existingRecords, incomingRecords) {
+  const merged = new Map();
+  (Array.isArray(existingRecords) ? existingRecords : []).forEach((record) => {
+    if (record?.id) merged.set(record.id, record);
+  });
+  (Array.isArray(incomingRecords) ? incomingRecords : []).forEach((record) => {
+    if (!record?.id) return;
+    merged.set(record.id, { ...(merged.get(record.id) || {}), ...record });
+  });
+  return [...merged.values()].sort((a, b) => (
+    new Date(b.createdAt || b.triggeredAt || 0).getTime()
+    - new Date(a.createdAt || a.triggeredAt || 0).getTime()
+  ));
+}
+
 async function refreshViolationEvidence(options = {}) {
   const examId = String(options.examId || monitorExamId || '').trim();
   if (!examId) {
@@ -13312,7 +13527,10 @@ async function refreshViolationEvidence(options = {}) {
     const result = await monitorApiRequest(`/api/monitor/violation-evidence?examId=${encodeURIComponent(examId)}`);
     if (!result.success) return _monitorEvidenceRecords;
     const activeReviewWasWaiting = !!_activeViolationReview?.sessionId && !_activeViolationReview.evidenceId;
-    _monitorEvidenceRecords = Array.isArray(result.evidence) ? result.evidence : [];
+    // A request can begin before a replay upload and finish after its WebSocket
+    // event. Merge the response so that stale/empty HTTP data cannot erase a
+    // newer replay that is already visible in Camera Grid.
+    _monitorEvidenceRecords = mergeMonitorEvidenceRecords(_monitorEvidenceRecords, result.evidence);
     _lastMonitorEvidencePollAt = Date.now();
     if (!options.silent && currentSection === 'monitoring') {
       renderMonitoringSectionLive();
@@ -13362,6 +13580,8 @@ function ensureViolationReviewStyles() {
     .violation-review-meta-label { font-size:11px; font-weight:800; color:var(--text-muted, #6b7280); text-transform:uppercase; letter-spacing:0.04em; }
     .violation-review-meta-value { font-size:13px; font-weight:700; color:var(--text, #111827); margin-top:6px; line-height:1.45; }
     .violation-review-player { width:100%; border-radius:12px; border:1px solid var(--border, #d1d5db); background:#000; }
+    .violation-review-still { display:block; object-fit:contain; max-height:52vh; }
+    .violation-review-still-note { margin-top:8px; font-size:12px; font-weight:700; color:var(--text-muted, #6b7280); }
     .violation-review-empty { padding:18px; border:1px dashed var(--border, #d1d5db); border-radius:12px; color:var(--text-muted, #6b7280); font-size:13px; line-height:1.55; }
     .violation-review-notes { width:100%; min-height:90px; resize:vertical; margin-top:12px; }
     .violation-review-detail { margin:14px 0; font-size:13px; line-height:1.6; color:var(--text, #111827); }
@@ -13409,6 +13629,7 @@ function ensureViolationReviewModal() {
         </div>
         <div style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Last 10 seconds before detection</div>
         <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
+        <img id="violation-review-still" class="violation-review-player violation-review-still" alt="Frame captured when this violation was detected" style="display:none;" />
         <div id="violation-review-empty" class="violation-review-empty">Replay is processing.</div>
         <div id="violation-review-detail" class="violation-review-detail">Violation details appear here.</div>
         <textarea id="violation-review-notes" class="form-control violation-review-notes" placeholder="Optional review notes for this violation"></textarea>
@@ -13429,7 +13650,65 @@ function ensureViolationReviewModal() {
   });
 }
 
+function getActiveViolationReviewActivity() {
+  const session = DB.getSession(_activeViolationReview?.sessionId || '');
+  const index = Number(_activeViolationReview?.activityIndex);
+  if (!session || !Number.isInteger(index) || index < 0) return { session: null, activity: null };
+  return { session, activity: (Array.isArray(session.activities) ? session.activities : [])[index] || null };
+}
+
+// No clip means there is no evidence row to mark, but the professor still has to
+// be able to say "that was an accident". The decision then lands on the warning.
+function renderWarninglessReviewDecisionState() {
+  const { activity } = getActiveViolationReviewActivity();
+  const dismissed = activity?.metadata?.warningDismissed === true;
+
+  const statusBadge = document.getElementById('violation-review-status');
+  if (statusBadge) {
+    statusBadge.textContent = dismissed ? 'Warning dismissed' : 'No replay stored';
+    statusBadge.className = `violation-review-status tone-${dismissed ? 'dismissed' : 'missing'}`;
+  }
+
+  const reviewedEl = document.getElementById('violation-review-reviewed');
+  if (reviewedEl) {
+    reviewedEl.className = `violation-review-reviewed${dismissed ? ' tone-dismissed' : ' hidden'}`;
+    if (dismissed) {
+      reviewedEl.textContent = `\u2713 Warning dismissed as accidental${activity?.metadata?.warningDismissedAt ? ` on ${formatDateTime(activity.metadata.warningDismissedAt)}` : ''}.`;
+    }
+  }
+
+  const dismissBtn = document.getElementById('violation-review-dismiss-btn');
+  if (dismissBtn) {
+    dismissBtn.disabled = dismissed;
+    dismissBtn.className = dismissed
+      ? 'btn btn-secondary violation-review-action-selected'
+      : 'btn btn-danger';
+    dismissBtn.textContent = dismissed ? '\u2713 Warning Dismissed' : 'Dismiss Warning';
+    dismissBtn.onclick = () => dismissWarningFromReview();
+  }
+
+  const confirmBtn = document.getElementById('violation-review-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.textContent = 'Keep Warning';
+    confirmBtn.onclick = () => closeViolationReview();
+  }
+}
+
+async function dismissWarningFromReview() {
+  const context = _activeViolationReview;
+  if (!context?.sessionId) return;
+  const dismissed = await dismissSessionWarning(context.sessionId, context.activityIndex);
+  if (dismissed) closeViolationReview();
+}
+window.dismissWarningFromReview = dismissWarningFromReview;
+
 function renderViolationReviewDecisionState(evidence, options = {}) {
+  if (!evidence && !options.savingStatus) {
+    renderWarninglessReviewDecisionState();
+    return;
+  }
   const reviewStatus = String(evidence?.reviewStatus || 'pending').toLowerCase();
   const savingStatus = String(options.savingStatus || '').toLowerCase();
   const isSaving = ['confirmed', 'dismissed'].includes(savingStatus);
@@ -13461,6 +13740,9 @@ function renderViolationReviewDecisionState(evidence, options = {}) {
 
   const dismissBtn = document.getElementById('violation-review-dismiss-btn');
   const confirmBtn = document.getElementById('violation-review-confirm-btn');
+  // Re-bound every time: the same two buttons also serve the no-clip review.
+  if (dismissBtn) dismissBtn.onclick = () => submitViolationReviewDecision('dismissed');
+  if (confirmBtn) confirmBtn.onclick = () => submitViolationReviewDecision('confirmed');
   if (dismissBtn) {
     dismissBtn.disabled = isSaving || isDismissed;
     dismissBtn.className = isDismissed
@@ -13490,15 +13772,22 @@ function renderViolationReviewDecisionState(evidence, options = {}) {
 }
 window.renderViolationReviewDecisionState = renderViolationReviewDecisionState;
 
-async function openViolationReview(sessionId, activityIndex) {
+async function openViolationReview(sessionId, activityIndex, options = {}) {
   ensureViolationReviewModal();
   const session = DB.getSession(sessionId);
   const activity = Array.isArray(session?.activities) ? session.activities[Number(activityIndex)] : null;
   if (!session || !activity) return;
 
   const evidence = getBestEvidenceForActivity(sessionId, activity);
+  const stillSnapshot = options.snapshot || getSnapshotForActivity(session, activity);
   const rawWarnings = getSessionRawWarningCount(session);
   const adjustedWarnings = getEffectiveSessionWarningCount(session);
+
+  // Distinguish opening a review from repainting the one already on screen: the
+  // repaint must leave anything the professor is part-way through alone.
+  const reviewAlreadyOpen = _activeViolationReview?.sessionId === sessionId
+    && Number(_activeViolationReview?.activityIndex) === Number(activityIndex)
+    && !document.getElementById('modal-violation-review')?.classList.contains('hidden');
 
   _activeViolationReview = {
     sessionId,
@@ -13527,27 +13816,76 @@ async function openViolationReview(sessionId, activityIndex) {
       || 'Violation recorded.',
   );
   const notesEl = document.getElementById('violation-review-notes');
-  if (notesEl) notesEl.value = evidence?.reviewNotes || '';
+  if (notesEl && !reviewAlreadyOpen) notesEl.value = evidence?.reviewNotes || '';
   renderViolationReviewDecisionState(evidence);
 
   const video = document.getElementById('violation-review-video');
+  const still = document.getElementById('violation-review-still');
   const empty = document.getElementById('violation-review-empty');
   const actions = document.getElementById('violation-review-actions');
 
-  if (_activeViolationReplayObjectUrl) {
+  // With no clip to play, the captured frame is the evidence. Showing it is what
+  // lets a professor still judge the violation instead of being told to wait.
+  const showStillFrame = () => {
+    if (!still) return false;
+    if (!stillSnapshot?.imageData) {
+      still.style.display = 'none';
+      still.removeAttribute('src');
+      return false;
+    }
+    if (still.getAttribute('src') !== stillSnapshot.imageData) still.src = stillSnapshot.imageData;
+    still.style.display = '';
+    return true;
+  };
+  const hideStillFrame = () => {
+    if (!still) return;
+    still.style.display = 'none';
+  };
+
+  // Live violations repaint monitoring and re-enter this function for the review
+  // already on screen. Re-loading the same clip there tore the blob out from
+  // under a playing <video>, so the replay emptied every time an alert landed.
+  const alreadyPlayingThisClip = !!evidence?.id
+    && evidence.id === _loadedViolationReplayEvidenceId
+    && !!_activeViolationReplayObjectUrl
+    && video?.getAttribute('src') === _activeViolationReplayObjectUrl;
+
+  if (alreadyPlayingThisClip) {
+    if (empty) empty.style.display = 'none';
+    if (video) video.style.display = '';
+    hideStillFrame();
+    if (actions) actions.style.display = '';
+    openModal('modal-violation-review');
+    return;
+  }
+
+  // Whoever loads last owns the player, so a slow fetch cannot overwrite the
+  // clip a later call already put on screen.
+  const loadToken = ++_violationReplayLoadToken;
+  const releasePreviousClip = () => {
+    if (!_activeViolationReplayObjectUrl) return;
     URL.revokeObjectURL(_activeViolationReplayObjectUrl);
     _activeViolationReplayObjectUrl = '';
-  }
+    _loadedViolationReplayEvidenceId = '';
+  };
+
   if (video) {
-    video.pause?.();
     video.onerror = null;
     video.onloadedmetadata = null;
   }
 
   if (evidence && video && empty) {
     const playbackUrl = await resolveEvidencePlaybackUrl(evidence);
+    if (loadToken !== _violationReplayLoadToken) {
+      // A newer review took over while this clip was downloading.
+      if (playbackUrl) URL.revokeObjectURL(playbackUrl);
+      return;
+    }
     if (playbackUrl) {
+      video.pause?.();
+      releasePreviousClip();
       _activeViolationReplayObjectUrl = playbackUrl;
+      _loadedViolationReplayEvidenceId = evidence.id || '';
       video.src = playbackUrl;
       video.style.display = '';
       video.onerror = () => {
@@ -13560,28 +13898,39 @@ async function openViolationReview(sessionId, activityIndex) {
       };
       video.load?.();
       empty.style.display = 'none';
+      hideStillFrame();
       if (actions) actions.style.display = '';
     } else {
-      if (video) {
-        video.removeAttribute('src');
-        video.style.display = 'none';
-        video.load?.();
-      }
+      video.pause?.();
+      releasePreviousClip();
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      video.load?.();
+      const shown = showStillFrame();
       empty.style.display = '';
-      empty.textContent = 'This replay is temporarily unavailable. Please try again.';
+      empty.textContent = shown
+        ? 'The replay could not be loaded, so the frame captured at detection is shown above.'
+        : 'This replay is temporarily unavailable. Please try again.';
       if (actions) actions.style.display = evidence ? '' : 'none';
     }
   } else {
     if (video) {
+      video.pause?.();
+      releasePreviousClip();
       video.removeAttribute('src');
       video.style.display = 'none';
       video.load?.();
+    } else {
+      releasePreviousClip();
     }
+    const shown = showStillFrame();
     if (empty) {
       empty.style.display = '';
-      empty.textContent = 'The replay is still processing. This view will update automatically when the clip is ready.';
+      empty.textContent = shown
+        ? 'No replay clip was stored for this violation, so the frame captured at detection is shown above.'
+        : 'The replay is still processing. This view will update automatically when the clip is ready.';
     }
-    if (actions) actions.style.display = 'none';
+    if (actions) actions.style.display = '';
   }
 
   openModal('modal-violation-review');
@@ -13595,10 +13944,9 @@ function closeViolationReview() {
     video.removeAttribute('src');
     video.load?.();
   }
-  if (_activeViolationReplayObjectUrl) {
-    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
-    _activeViolationReplayObjectUrl = '';
-  }
+  // Nothing is loading for this player any more, so a download still in flight
+  // must not adopt it when it lands.
+  releaseViolationReplayClip();
   closeModal('modal-violation-review');
 }
 window.closeViolationReview = closeViolationReview;
@@ -13634,13 +13982,16 @@ function openCameraGridViolationReview(sessionId, snapshotTimestamp = '') {
   const snapshot = getSessionSnapshotByTimestamp(session, snapshotTimestamp);
   if (!snapshot) return viewCameraSnapshot(sessionId, snapshotTimestamp);
 
-  const evidence = getBestEvidenceForSnapshot(sessionId, snapshot);
+  // Every tile is a violation the professor has to accept or wave off, so it
+  // opens the review either way. A clip that has not arrived shows the captured
+  // frame instead; what must never happen is a tile that offers no decision.
   const activityIndex = getBestReplayActivityIndex(session, snapshot.violationType, snapshot.timestamp);
-  if (evidence && activityIndex >= 0) {
-    openViolationReview(sessionId, activityIndex);
+  if (activityIndex >= 0) {
+    openViolationReview(sessionId, activityIndex, { snapshot });
     return;
   }
 
+  // No warning row is tied to this frame yet, so there is nothing to decide on.
   viewCameraSnapshot(sessionId, snapshotTimestamp);
 }
 window.openCameraGridViolationReview = openCameraGridViolationReview;

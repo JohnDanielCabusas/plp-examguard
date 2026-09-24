@@ -92,4 +92,66 @@ assert.match(
   'monitoring must re-check the badge on every refresh',
 );
 
+// Camera Grid receives compact session polls and WebSocket replay events in
+// parallel. Neither an older one-item snapshot nor a stale empty evidence
+// response may erase richer data that is already visible.
+const monitorSnapshotState = {};
+const monitorSnapshotHelpers = admin.slice(
+  admin.indexOf('function getMonitorSnapshotKey('),
+  admin.indexOf('function applyMonitorSessionsSnapshot('),
+);
+vm.runInNewContext(
+  `${monitorSnapshotHelpers}\nthis.mergeSnapshots = mergeMonitorCameraSnapshots;`,
+  monitorSnapshotState,
+);
+const storedViolationSnapshot = {
+  timestamp: '2026-09-24T06:00:00.000Z',
+  kind: 'violation',
+  violationType: 'camera_off',
+  imageData: 'data:image/jpeg;base64,violation',
+};
+const compactPollSnapshot = {
+  timestamp: '2026-09-24T05:59:00.000Z',
+  kind: 'periodic',
+  imageData: 'data:image/jpeg;base64,periodic',
+};
+const mergedSnapshots = monitorSnapshotState.mergeSnapshots(
+  [storedViolationSnapshot],
+  [compactPollSnapshot],
+);
+assert.equal(mergedSnapshots.length, 2, 'a compact poll must preserve existing violation snapshots');
+assert.ok(mergedSnapshots.some(snapshot => snapshot.kind === 'violation'));
+assert.equal(
+  monitorSnapshotState.mergeSnapshots([storedViolationSnapshot], []).length,
+  1,
+  'an empty partial poll must not clear Camera Grid snapshots',
+);
+
+const monitorEvidenceState = {};
+const monitorEvidenceHelper = admin.slice(
+  admin.indexOf('function mergeMonitorEvidenceRecords('),
+  admin.indexOf('async function refreshViolationEvidence('),
+);
+vm.runInNewContext(
+  `${monitorEvidenceHelper}\nthis.mergeEvidence = mergeMonitorEvidenceRecords;`,
+  monitorEvidenceState,
+);
+const websocketReplay = {
+  id: 'replay-1',
+  examId: 'exam-1',
+  reviewStatus: 'pending',
+  createdAt: '2026-09-24T06:00:00.000Z',
+};
+assert.equal(
+  monitorEvidenceState.mergeEvidence([websocketReplay], []).length,
+  1,
+  'a stale empty HTTP response must not erase WebSocket replay evidence',
+);
+const reviewedReplay = monitorEvidenceState.mergeEvidence(
+  [websocketReplay],
+  [{ id: 'replay-1', reviewStatus: 'confirmed' }],
+);
+assert.equal(reviewedReplay[0].reviewStatus, 'confirmed', 'fresh evidence fields must still update cached replay records');
+assert.equal(reviewedReplay[0].examId, 'exam-1', 'partial evidence updates must retain existing replay metadata');
+
 console.log('LIVE badge tests passed.');

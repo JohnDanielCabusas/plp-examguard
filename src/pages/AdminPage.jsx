@@ -881,6 +881,29 @@ export default function AdminPage() {
                       </button>
                     </div>
                   </div>
+                  <div className="report-filter-bar monitor-filter-bar">
+                    <div className="report-filter-search">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                      <input
+                        type="search"
+                        id="monitor-filter-search"
+                        placeholder="Search name or student ID"
+                        aria-label="Search sessions by student name or ID"
+                        onInput={(e) => window.setMonitorSearch(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      id="monitor-filter-clear"
+                      className="report-filter-clear"
+                      onClick={() => window.clearMonitorSearch()}
+                      hidden
+                    >
+                      Clear search
+                    </button>
+                  </div>
                   <div className="table-wrapper monitor-table-shell">
                     <table>
                       <thead><tr><th scope="col">Student</th><th scope="col" style={{textAlign:'center'}}>Progress</th><th scope="col" style={{textAlign:'center'}}>Warnings</th><th scope="col" style={{textAlign:'center'}}>Status</th><th scope="col" style={{textAlign:'center'}}>Logs</th><th scope="col" style={{textAlign:'center'}}>Actions</th></tr></thead>
@@ -976,6 +999,19 @@ export default function AdminPage() {
                         <path d="M10 18h4" />
                       </svg>
                       <span id="report-sort-btn-label">Last name A-Z</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-report-bulk-retake"
+                      className="report-bulk-retake-btn"
+                      onClick={() => window.allowSelectedRetakes()}
+                      title="Reset every selected student's submission so they can retake"
+                      hidden
+                    >
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" />
+                      </svg>
+                      Allow Retake (<span id="report-bulk-retake-count">0</span>)
                     </button>
                     <div id="report-summary" className="report-summary hidden">
                       <span className="report-selected-count" id="report-selected-count" hidden />

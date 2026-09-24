@@ -73,21 +73,40 @@ const secondArchive = buildArchivedAttempt(submittedSession, 2, 'Prof. Santos');
 assert.equal(secondArchive.type, 'RETAKE');
 assert.equal(secondArchive.retakeAuthorization.attempt, 3);
 
-// The call site must append to the existing history, never replace it, and must
+// The reset must append to the existing history, never replace it, and must
 // still clear the live fields so the student gets a clean attempt.
-const fnStart = admin.indexOf('async function allowStudentRetake(');
-const fnEnd = admin.indexOf('\n}\n', fnStart);
-const retakeFn = admin.slice(fnStart, fnEnd);
-assert.match(retakeFn, /\[\.\.\.entryPriors,\s*buildArchivedAttempt\(/,
+const resetStart = admin.indexOf('function resetSessionsForRetake(');
+assert.ok(resetStart >= 0, 'the retake reset must live in one shared helper');
+const resetFn = admin.slice(resetStart, admin.indexOf('\n}\n', resetStart));
+assert.match(resetFn, /\[\.\.\.entryPriors,\s*buildArchivedAttempt\(/,
   'history must be appended, not overwritten');
-assert.match(retakeFn, /answers:\s*\{\}/, 'the new attempt still starts clean');
+assert.match(resetFn, /answers:\s*\{\}/, 'the new attempt still starts clean');
 // Every row the student holds for this exam is reset, not just the one whose
 // button was pressed. A single leftover row kept them in the report list as if
 // no retake had been granted, and sent a finished student back into the exam.
-assert.match(retakeFn, /DB\.getSessionsByExam\(session\.examId\)/,
+assert.match(resetFn, /DB\.getSessionsByExam\(session\.examId\)/,
   'the reset must cover every session row for this student');
-assert.match(retakeFn, /targets\.forEach/, 'and apply to each of them');
+assert.match(resetFn, /targets\.forEach/, 'and apply to each of them');
+
+const fnStart = admin.indexOf('async function allowStudentRetake(');
+const fnEnd = admin.indexOf('\n}\n', fnStart);
+const retakeFn = admin.slice(fnStart, fnEnd);
+assert.match(retakeFn, /resetSessionsForRetake\(session,/,
+  'the per-student button must archive through that same helper');
 assert.doesNotMatch(retakeFn, /previous submission, answers, and score will be cleared/,
   'the prompt must no longer promise to destroy the attempt');
+
+// Granting retakes to a whole selection takes the same path, so a bulk grant
+// cannot quietly skip the archiving the single-student button does.
+const bulkStart = admin.indexOf('async function allowSelectedRetakes(');
+assert.ok(bulkStart >= 0, 'Reports must offer a retake for the selected students');
+const bulkFn = admin.slice(bulkStart, admin.indexOf('\n}\n', bulkStart));
+assert.match(bulkFn, /reportSelectedIds\.has\(session\.id\)/,
+  'it acts on the ticked rows only');
+assert.match(bulkFn, /resetSessionsForRetake\(session, grantedBy\)/,
+  'and archives each attempt through the shared helper');
+assert.match(bulkFn, /clearRetakeCameraExemptions\(/,
+  'camera exemptions are cleared before the sessions are reset');
+assert.match(bulkFn, /await showConfirm\(/, 'a bulk reset is confirmed first');
 
 console.log('Retake attempt-history preservation tests passed.');

@@ -217,6 +217,49 @@ app.questionOrder = [];
 app.answers = {};
 app.markedForReview = new Set();
 
+// Question keyboard navigation works from the exam surface without stealing
+// caret/selection keys from typed answers and other interactive controls.
+const realNextQuestion = app.nextQuestion;
+const realPrevQuestion = app.prevQuestion;
+let keyboardDirection = '';
+app._examRuntimeStarted = true;
+app.nextQuestion = () => { keyboardDirection = 'next'; };
+app.prevQuestion = () => { keyboardDirection = 'previous'; };
+const plainTarget = { closest: () => null };
+const keyEvent = (key, target = plainTarget) => ({
+  key,
+  target,
+  preventDefault() { this.defaultPrevented = true; },
+});
+
+let navigationEvent = keyEvent('ArrowLeft');
+assert.equal(app._handleQuestionNavigationKey(navigationEvent), true);
+assert.equal(keyboardDirection, 'previous');
+assert.equal(navigationEvent.defaultPrevented, true);
+
+keyboardDirection = '';
+navigationEvent = keyEvent('ArrowRight');
+assert.equal(app._handleQuestionNavigationKey(navigationEvent), true);
+assert.equal(keyboardDirection, 'next');
+
+keyboardDirection = '';
+navigationEvent = keyEvent('Enter');
+assert.equal(app._handleQuestionNavigationKey(navigationEvent), true);
+assert.equal(keyboardDirection, 'next');
+
+const textTarget = { type: 'text', closest: () => ({}) };
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', textTarget)), false);
+assert.equal(app._handleQuestionNavigationKey(keyEvent('ArrowRight', textTarget)), false);
+assert.equal(keyboardDirection, '');
+
+const radioTarget = { type: 'radio', closest: () => ({}) };
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', radioTarget)), true);
+assert.equal(keyboardDirection, 'next');
+app.nextQuestion = realNextQuestion;
+app.prevQuestion = realPrevQuestion;
+app._examRuntimeStarted = false;
+
 // Free-text handlers and the submission snapshot must preserve the student's
 // exact case, spelling, leading/trailing spaces, and enumeration line values.
 app.questionOrder = [

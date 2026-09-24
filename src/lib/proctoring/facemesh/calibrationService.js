@@ -20,7 +20,28 @@ export class FaceCalibrationSession {
       minimumSamples: 15,
       ...config,
     };
+    this.assisted = false;
     this.reset();
+  }
+
+  // Lower the bar without discarding what the student has already held steady:
+  // the samples and stable time they earned still count, they just now clear a
+  // shorter, more forgiving target.
+  relax(overrides = {}) {
+    this.config = { ...this.config, ...overrides };
+    this.assisted = true;
+    this.invalidSince = null;
+    return this.config;
+  }
+
+  _centerOffsetLimits() {
+    const fallback = Number(this.config.maximumCenterOffset);
+    const x = Number(this.config.maximumCenterOffsetX);
+    const y = Number(this.config.maximumCenterOffsetY);
+    return {
+      x: Number.isFinite(x) ? x : fallback,
+      y: Number.isFinite(y) ? y : fallback,
+    };
   }
 
   reset() {
@@ -95,11 +116,26 @@ export class FaceCalibrationSession {
     if (geometry.width > this.config.maximumFaceWidthRatio) {
       return this._pause('Move slightly farther from the camera.', now);
     }
-    if (
-      Math.abs(geometry.centerX - 0.5) > this.config.maximumCenterOffset
-      || Math.abs(geometry.centerY - 0.5) > this.config.maximumCenterOffset
-    ) {
-      return this._pause('Center your face inside the guide.', now);
+    // "Center your face" on its own left students who believed they were centered
+    // with nothing to act on. Name the direction instead.
+    const centerLimits = this._centerOffsetLimits();
+    const offsetX = Number(geometry.centerX) - 0.5;
+    const offsetY = Number(geometry.centerY) - 0.5;
+    if (Math.abs(offsetX) > centerLimits.x || Math.abs(offsetY) > centerLimits.y) {
+      const horizontal = Math.abs(offsetX) > centerLimits.x;
+      const vertical = Math.abs(offsetY) > centerLimits.y;
+      let hint = 'Center your face inside the guide.';
+      if (vertical && !horizontal) {
+        hint = offsetY < 0
+          ? 'Your face is high in the frame — lower your screen or sit back a little.'
+          : 'Your face is low in the frame — raise your screen or sit up a little.';
+      } else if (horizontal && !vertical) {
+        // The preview is mirrored, so the direction the student sees is flipped.
+        hint = offsetX < 0
+          ? 'Move a little to your right, into the middle of the guide.'
+          : 'Move a little to your left, into the middle of the guide.';
+      }
+      return this._pause(hint, now);
     }
 
     if (this.lastObservationWasValid && this.lastObservationAt !== null) {
@@ -115,6 +151,7 @@ export class FaceCalibrationSession {
     this.lastObservationWasValid = true;
     this.lastSampleAt = now;
     this.failureReason = '';
+    const cues = observation?.poseCues;
     this.samples.push({
       timestampMs: now,
       yaw: Number(pose.yaw),
@@ -125,6 +162,10 @@ export class FaceCalibrationSession {
       centerX: Number(geometry.centerX),
       centerY: Number(geometry.centerY),
       trackingQuality,
+      // The neutral face proportions this camera sees for this student. Head
+      // pitch is later judged against these, not against a fixed figure.
+      noseFraction: Number.isFinite(Number(cues?.noseFraction)) ? Number(cues.noseFraction) : null,
+      faceSpanRatio: Number.isFinite(Number(cues?.faceSpanRatio)) ? Number(cues.faceSpanRatio) : null,
     });
 
     const progress = Math.min(1, this.stableDurationMs / this.config.durationMs);
@@ -141,8 +182,20 @@ export class FaceCalibrationSession {
       return this._restart('Keep your head centered and steady for five seconds.');
     }
 
+    const noseFractions = this.samples
+      .map(sample => sample.noseFraction)
+      .filter(value => Number.isFinite(value));
+    const faceSpanRatios = this.samples
+      .map(sample => sample.faceSpanRatio)
+      .filter(value => Number.isFinite(value));
+
     this.complete = true;
     this.baseline = Object.freeze({
+      assisted: this.assisted === true,
+      // Null when the camera never gave usable landmarks: pitch then falls back to
+      // the euler-only rule rather than comparing against a figure we never saw.
+      baselineNoseFraction: noseFractions.length >= 5 ? average(noseFractions) : null,
+      baselineFaceSpanRatio: faceSpanRatios.length >= 5 ? average(faceSpanRatios) : null,
       baselineYaw: average(yawValues),
       baselinePitch: average(pitchValues),
       baselineRoll: average(this.samples.map(sample => sample.roll)),

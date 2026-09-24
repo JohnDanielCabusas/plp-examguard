@@ -539,4 +539,211 @@ assert.equal(
   'Even a high-confidence stationary remote-shaped shelf must not alert.',
 );
 
+
+// ── Room fixtures must never be reported as a phone ─────────────────────────
+// Each of these was reported as a mobile phone in use. They are all defeated by
+// what a phone in someone's hand looks like and where it is, rather than by
+// asking the model for more confidence — which it was happy to give.
+
+// A wall-mounted air conditioner: wide, and nowhere near the student's face. The
+// person's bounding box covers most of the frame, so 2D overlap with the person
+// says "near person" and cannot be the deciding signal.
+function fixtureDetection(boundingBox, confidence = 0.82) {
+  return {
+    objectClass: 'mobile_phone',
+    rawClass: 'cell phone',
+    confidence,
+    fullFrameConfidence: confidence,
+    verificationConfidence: confidence,
+    verified: true,
+    detectorRole: 'primary',
+    boundingBox,
+    humanContext: {
+      available: true,
+      personDetected: true,
+      nearPerson: true,
+      overlapRatio: 0.4,
+      proximityRatio: 0,
+    },
+  };
+}
+
+function runFixture(boundingBox, { confidence = 0.82, scans = 6, faceContext = null } = {}) {
+  const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+  let events = [];
+  for (let index = 0; index < scans; index += 1) {
+    events = events.concat(policy.evaluate(
+      [fixtureDetection({
+        ...boundingBox,
+        // A fixed object's box is not fixed: on a large item the model shifts it
+        // by tens of pixels between frames as the student moves in front of it or
+        // it reads first the whole unit and then part of it. That instability is
+        // what used to clear the "a phone in use moves" gate.
+        x: boundingBox.x + (index % 2 === 0 ? 0 : 18),
+        y: boundingBox.y + (index % 2 === 0 ? 14 : 0),
+      }, confidence)],
+      { now: 10000 + (index * 700), faceContext, modelVersion: 'test-v1' },
+    ));
+  }
+  return events;
+}
+
+const airconBox = { x: 380, y: 18, width: 210, height: 78, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(airconBox).length,
+  0,
+  'A wall air conditioner must never be reported as a mobile phone.',
+);
+
+// A wide fixture at desk height, away from the face: still not a handset shape.
+const wideShelfBox = { x: 300, y: 250, width: 240, height: 84, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(wideShelfBox).length,
+  0,
+  'A wide object beside the student must not be reported as a mobile phone.',
+);
+
+// A square patch on the wall - a vent, a switch plate, a shadow.
+const squarePatchBox = { x: 120, y: 200, width: 96, height: 92, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(squarePatchBox).length,
+  0,
+  'A square spot must not be reported as a mobile phone.',
+);
+
+// A large appliance close to the camera cannot be a phone in use.
+const largeApplianceBox = { x: 60, y: 90, width: 300, height: 330, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(largeApplianceBox).length,
+  0,
+  'An object filling much of the frame must not be reported as a mobile phone.',
+);
+
+// A tall object taking up a third of the frame - a door frame, a monitor, a
+// cabinet - has phone-like proportions but cannot be a phone in anyone's hand.
+const largePortraitBox = { x: 120, y: 40, width: 260, height: 400, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(largePortraitBox).length,
+  0,
+  'A tall object filling much of the frame must not be reported as a mobile phone.',
+);
+
+// A tall fixture high on the wall - a speaker, a switch box - even at the shape
+// and size of a phone, is not where a phone in use can be.
+const highFixtureBox = { x: 470, y: 8, width: 60, height: 104, frameWidth: 640, frameHeight: 480 };
+assert.equal(
+  runFixture(highFixtureBox).length,
+  0,
+  'A phone-shaped fixture in the top band of the frame must not be reported.',
+);
+
+// The face is what settles it: the same wide box, held where the student's face
+// is, is a phone being watched or filmed and must still be caught.
+const faceBesideLandscapePhone = {
+  capturedAt: 10000,
+  frameWidth: 640,
+  frameHeight: 480,
+  faces: [{ x: 250, y: 120, width: 150, height: 190, nose: { x: 325, y: 215 }, mouth: { x: 325, y: 250 } }],
+};
+const landscapeInHandBox = { x: 300, y: 200, width: 160, height: 80, frameWidth: 640, frameHeight: 480 };
+const landscapeInHandEvents = (() => {
+  const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+  let events = [];
+  for (let index = 0; index < 3; index += 1) {
+    events = events.concat(policy.evaluate(
+      [fixtureDetection({
+        ...landscapeInHandBox,
+        x: landscapeInHandBox.x + (index * 22),
+        y: landscapeInHandBox.y + (index * 9),
+      }, 0.74)],
+      {
+        now: 20000 + (index * 700),
+        faceContext: { ...faceBesideLandscapePhone, capturedAt: 20000 + (index * 700) },
+        modelVersion: 'test-v1',
+      },
+    ));
+  }
+  return events;
+})();
+assert.equal(
+  landscapeInHandEvents.length,
+  1,
+  'A landscape phone held at the student\'s face must still be reported.',
+);
+
+// Whatever is in view while the exam starts up is mapped as furniture and then
+// filtered out for the rest of the attempt. A confident score used to skip that
+// mapping entirely - and a wall unit can read as a phone at 0.88 all day - so the
+// one object the model was surest about was the one never learned.
+//
+// This object is phone-shaped and phone-sized but has no person beside it, which
+// is what separates a fixture from a phone actually in use.
+function detachedFixture(boundingBox, confidence = 0.88) {
+  return {
+    ...fixtureDetection(boundingBox, confidence),
+    humanContext: {
+      available: true,
+      personDetected: true,
+      nearPerson: false,
+      overlapRatio: 0,
+      proximityRatio: 0.6,
+    },
+  };
+}
+
+const confidentFixturePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
+const confidentFixtureBox = { x: 40, y: 190, width: 92, height: 152, frameWidth: 640, frameHeight: 480 };
+let confidentFixtureEvents = [];
+// In view through startup, jittering the way a fixed object's box does.
+for (let index = 0; index < 6; index += 1) {
+  confidentFixtureEvents = confidentFixtureEvents.concat(confidentFixturePolicy.evaluate(
+    [detachedFixture({ ...confidentFixtureBox, x: confidentFixtureBox.x + (index % 2 === 0 ? 0 : 3) })],
+    { now: 30000 + (index * 700), modelVersion: 'test-v1' },
+  ));
+}
+assert.ok(
+  confidentFixturePolicy.calibrationComplete,
+  'startup calibration should have finished by now',
+);
+assert.equal(
+  confidentFixturePolicy._isCalibratedBackground(detachedFixture({ ...confidentFixtureBox })),
+  true,
+  'A confidently scored fixture present at startup must be mapped as background.',
+);
+assert.equal(
+  confidentFixtureEvents.length,
+  0,
+  'A fixture in view at startup must never be reported as a phone.',
+);
+
+// The mapping is not a blanket amnesty for that corner of the frame: a phone the
+// student actually holds up is still reported, because a held phone is kept out
+// of the furniture map in the first place.
+const phoneOverFixturePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
+let phoneOverFixtureEvents = [];
+for (let index = 0; index < 6; index += 1) {
+  phoneOverFixtureEvents = phoneOverFixtureEvents.concat(phoneOverFixturePolicy.evaluate(
+    [detachedFixture({ ...confidentFixtureBox })],
+    { now: 50000 + (index * 700), modelVersion: 'test-v1' },
+  ));
+}
+for (let index = 0; index < 3; index += 1) {
+  phoneOverFixtureEvents = phoneOverFixtureEvents.concat(phoneOverFixturePolicy.evaluate(
+    [detection('mobile_phone', 0.82, {
+      x: 250 + (index * 26),
+      y: 210 + (index * 12),
+      width: 90,
+      height: 150,
+      frameWidth: 640,
+      frameHeight: 480,
+    })],
+    { now: 60000 + (index * 700), modelVersion: 'test-v1' },
+  ));
+}
+assert.equal(
+  phoneOverFixtureEvents.length,
+  1,
+  'A real phone must still be reported on a camera that also shows furniture.',
+);
+
 console.log('YOLO object policy tests passed.');

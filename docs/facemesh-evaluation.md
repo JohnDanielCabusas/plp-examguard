@@ -41,11 +41,51 @@ No participant can appear in more than one output split.
 
 ## Initial thresholds
 
-All thresholds are in `faceMonitoringConfig.js`. Initial values are ±25° yaw,
-−20° upward pitch, +25° downward pitch, 10 seconds for sustained head turns,
-downward direction, or face absence, and four qualified
-looking-away incidents within 60 seconds. These values require pilot
-calibration before production use.
+All thresholds are in `faceMonitoringConfig.js`. The shipped gates are ±25° yaw
+and ±18° pitch (the pitch gates are tighter than this document's original ±20°/
++25° proposal), 10 seconds for sustained head turns, downward direction, or face
+absence, and four qualified looking-away incidents within 60 seconds. These
+values still require pilot calibration before production use.
+
+## Head direction: two signals must agree
+
+Euler pitch from the face transformation matrix is not sufficient on its own to
+call a downward look. It shifts with camera placement, mixes with roll, mixes
+with yaw once the head turns away, and jitters frame to frame — so a student who
+never pitched their head could cross an 18° gate and be reported as looking down.
+
+A second signal is therefore measured from the landmarks in
+`faceLandmarker.worker.js` and carried on each observation as `poseCues`:
+
+- `noseFraction` — where the nose sits along the face's own eye-to-chin axis,
+  divided by that axis's length. Tucking the chin foreshortens the lower face
+  faster than the upper face, so the nose slides measurably further down the
+  axis. Projecting onto the face's own axis makes the figure independent of head
+  roll, of distance from the camera, and of where the face sits in the frame.
+- `faceSpanRatio` — eye-to-chin length against eye span, which shrinks as the
+  face foreshortens in either pitch direction.
+
+Calibration averages both into the baseline (`baselineNoseFraction`,
+`baselineFaceSpanRatio`), so every later comparison is against this student on
+this camera at this angle. `classifyHeadDirection` then decides as follows:
+
+| Situation | Outcome |
+| --- | --- |
+| Pitch past the confirmed gate (13°) and the cue agrees | direction reported |
+| Cue shift alone past the decisive delta (0.085) | direction reported |
+| Pitch alone past 1.8× the gate | direction reported |
+| Pitch past the gate but the cue contradicts it | no direction, treated as noise |
+| Head turned past 20° of yaw | pitch gate ×1.4, cue not trusted |
+| No cue on the frame or in the baseline | original euler-only gate |
+
+The last row keeps baselines recorded before this change, and cameras that never
+yield usable landmarks, working exactly as before.
+
+This is a geometric and logical improvement covered by unit tests in
+`scripts/test-facemesh.mjs`; it is **not** a measured accuracy gain. The
+repository still contains no labelled evaluation data, so the precision, recall
+and false-warnings-per-hour figures described above remain to be collected with
+the procedure in this document.
 
 ## Random Forest boundary
 

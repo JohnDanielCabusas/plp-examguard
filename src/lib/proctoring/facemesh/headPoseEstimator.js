@@ -101,7 +101,27 @@ export function relativePose(pose, baseline, poseConfig = {}) {
   };
 }
 
-export function classifyHeadDirection(relative, poseConfig) {
+// How far this frame's face proportions have moved from the ones calibration
+// recorded. Null whenever either side is missing, which keeps older baselines and
+// cameras that give no usable landmarks on the euler-only rule.
+export function poseCueDeltas(observation, baseline) {
+  const cues = observation?.poseCues;
+  if (!cues || !baseline) return null;
+  const currentNose = Number(cues.noseFraction);
+  const baselineNose = Number(baseline.baselineNoseFraction);
+  if (!Number.isFinite(currentNose) || !Number.isFinite(baselineNose)) return null;
+  const currentSpan = Number(cues.faceSpanRatio);
+  const baselineSpan = Number(baseline.baselineFaceSpanRatio);
+  return {
+    // Positive when the nose has slid down the face's axis, i.e. the chin tucked.
+    noseFractionDelta: currentNose - baselineNose,
+    faceSpanRatioDelta: Number.isFinite(currentSpan) && Number.isFinite(baselineSpan)
+      ? currentSpan - baselineSpan
+      : null,
+  };
+}
+
+export function classifyHeadDirection(relative, poseConfig, cueDeltas = null) {
   if (!relative) return 'HEAD_CENTER';
   const candidates = [];
   const addCandidate = (direction, value, threshold) => {
@@ -114,12 +134,52 @@ export function classifyHeadDirection(relative, poseConfig) {
   if (relative.yaw >= poseConfig.rightYawDegrees) {
     addCandidate('HEAD_RIGHT', relative.yaw, poseConfig.rightYawDegrees);
   }
-  if (relative.pitch <= poseConfig.upPitchDegrees) {
-    addCandidate('HEAD_UP', relative.pitch, poseConfig.upPitchDegrees);
-  }
-  if (relative.pitch >= poseConfig.downPitchDegrees) {
-    addCandidate('HEAD_DOWN', relative.pitch, poseConfig.downPitchDegrees);
-  }
+
+  // A head turned well away from the camera makes the pitch reading unreliable:
+  // the rotation matrix mixes pitch with roll, and turning also slides the nose
+  // along the axis the geometric cue measures. Such a frame has to pitch further
+  // before it counts, and it is never decided on geometry alone.
+  const turnedAway = Math.abs(Number(relative.yaw || 0)) >= Number(poseConfig.yawCouplingDegrees || Infinity);
+  const pitchScale = turnedAway ? Number(poseConfig.yawCoupledPitchScale || 1) : 1;
+  const noseDelta = Number(cueDeltas?.noseFractionDelta);
+  const haveCue = Number.isFinite(noseDelta) && !turnedAway;
+
+  const downGate = Number(poseConfig.downPitchDegrees) * pitchScale;
+  const confirmedDownGate = Number.isFinite(Number(poseConfig.confirmedDownPitchDegrees))
+    ? Number(poseConfig.confirmedDownPitchDegrees) * pitchScale
+    : downGate;
+  const upGate = Number(poseConfig.upPitchDegrees) * pitchScale;
+  const confirmedUpGate = Number.isFinite(Number(poseConfig.confirmedUpPitchDegrees))
+    ? Number(poseConfig.confirmedUpPitchDegrees) * pitchScale
+    : upGate;
+
+  const cueAgreesDown = haveCue && noseDelta >= Number(poseConfig.downNoseFractionDelta ?? Infinity);
+  const cueAgreesUp = haveCue && noseDelta <= Number(poseConfig.upNoseFractionDelta ?? -Infinity);
+  const cueDecidesDown = haveCue && noseDelta >= Number(poseConfig.decisiveNoseFractionDelta ?? Infinity);
+  const cueDecidesUp = haveCue && noseDelta <= -Number(poseConfig.decisiveNoseFractionDelta ?? Infinity);
+
+  // Two agreeing signals are trusted sooner than either alone. A pitch reading the
+  // face's own shape flatly contradicts is treated as noise — that is where the
+  // false "looking down" came from — unless the rotation is so large that it
+  // cannot be anything else.
+  const decisiveScale = Number(poseConfig.decisivePitchScale || 1.8);
+  const pitchDown = relative.pitch >= downGate;
+  const pitchDownConfirmable = relative.pitch >= confirmedDownGate;
+  const pitchDecidesDown = relative.pitch >= downGate * decisiveScale;
+  const downDetected = haveCue
+    ? ((pitchDownConfirmable && cueAgreesDown) || cueDecidesDown || pitchDecidesDown)
+    : pitchDown;
+
+  const pitchUp = relative.pitch <= upGate;
+  const pitchUpConfirmable = relative.pitch <= confirmedUpGate;
+  const pitchDecidesUp = relative.pitch <= upGate * decisiveScale;
+  const upDetected = haveCue
+    ? ((pitchUpConfirmable && cueAgreesUp) || cueDecidesUp || pitchDecidesUp)
+    : pitchUp;
+
+  if (upDetected) addCandidate('HEAD_UP', relative.pitch, confirmedUpGate);
+  if (downDetected) addCandidate('HEAD_DOWN', relative.pitch, confirmedDownGate);
+
   return candidates.reduce(
     (strongest, candidate) => candidate.score > strongest.score ? candidate : strongest,
     { direction: 'HEAD_CENTER', score: 0 },
@@ -129,10 +189,12 @@ export function classifyHeadDirection(relative, poseConfig) {
 export function classifyFaceObservation(observation, baseline, config) {
   const relative = relativePose(observation?.pose, baseline, config.pose);
   const facePresent = observation?.facePresent === true;
+  const cueDeltas = poseCueDeltas(observation, baseline);
   return {
     ...observation,
     facePresent,
     relativePose: relative,
-    headDirection: facePresent ? classifyHeadDirection(relative, config.pose) : null,
+    poseCueDeltas: cueDeltas,
+    headDirection: facePresent ? classifyHeadDirection(relative, config.pose, cueDeltas) : null,
   };
 }

@@ -535,6 +535,28 @@ async function handleFaceIncidentUpsert(req, res, body) {
     ? Math.max(sessionWarningCount, requestedWarningCount)
     : sessionWarningCount;
   const effectiveStudentName = studentName || String(session.student_name || '').trim() || student.name || studentId;
+  const liveIncident = {
+    id: clientIncidentId,
+    ownerAdminId,
+    examId,
+    sessionId,
+    studentId,
+    studentName: effectiveStudentName,
+    violationType: eventType,
+    detail,
+    detectionMetadata,
+    warningCount: effectiveWarningCount,
+    createdAt,
+  };
+
+  // The initial WebSocket alert is real-time UI, so it must not wait for the
+  // incident UPSERT. Later phases still persist normally and update the
+  // monitoring timeline after Supabase confirms them.
+  if (phase === 'start') {
+    broadcastViolationEvent(ownerAdminId, liveIncident);
+    broadcastViolation(ownerAdminId, liveIncident);
+  }
+
   const insertResult = await query(
     `insert into public.violation_events as existing (
        id, owner_admin_id, exam_id, session_id, student_id, student_name, violation_type, detail, detection_metadata, warning_count, created_at
@@ -566,8 +588,10 @@ async function handleFaceIncidentUpsert(req, res, body) {
   if (!insertResult.rows.length) return jsonResponse(res, 409, { success: false, message: 'Incident ID is already in use.' });
 
   const incident = normalizeMonitorViolation(insertResult.rows[0]);
-  broadcastViolationEvent(ownerAdminId, incident);
-  broadcastViolation(ownerAdminId, incident);
+  if (phase !== 'start') {
+    broadcastViolationEvent(ownerAdminId, incident);
+    broadcastViolation(ownerAdminId, incident);
+  }
   return jsonResponse(res, 200, { success: true, incident });
 }
 
@@ -1034,9 +1058,13 @@ async function handleWarningDismissal(req, res, sessionId, body) {
       await client.query('rollback');
       return jsonResponse(res, 404, { success: false, message: 'Exam session not found.' });
     }
-    if (!session.start_time || session.submitted) {
+    // An accidental warning is usually recognised while reading the log after the
+    // attempt, so a submitted session stays correctable. The dismissal is a record
+    // correction: the attempt stays submitted and the audit entries below record
+    // who cleared it and when.
+    if (!session.start_time) {
       await client.query('rollback');
-      return jsonResponse(res, 409, { success: false, message: 'Warnings can only be dismissed while this exam is active.' });
+      return jsonResponse(res, 409, { success: false, message: 'Warnings can only be dismissed on an attempt the student has started.' });
     }
 
     const activities = Array.isArray(session.activities) ? [...session.activities] : [];

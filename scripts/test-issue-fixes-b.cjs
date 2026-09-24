@@ -56,12 +56,18 @@ DB._sessions = [finished, { id: 'live', examId: 'e1', studentId: 's1', submitted
 assert.equal(DB.getStudentSession('e1', 's1').id, 'live', 'an attempt in progress still wins');
 
 // ── #41: Allow Retake must clear every row the student holds ───────────────
-const retakeFn = adminSource.slice(
-  adminSource.indexOf('async function allowStudentRetake('),
-  adminSource.indexOf('\n}\n', adminSource.indexOf('async function allowStudentRetake(')),
+// The reset itself is shared by the per-student button and the bulk grant on a
+// Reports selection, so it is checked where it lives.
+const resetFn = adminSource.slice(
+  adminSource.indexOf('function resetSessionsForRetake('),
+  adminSource.indexOf('\n}\n', adminSource.indexOf('function resetSessionsForRetake(')),
 );
-assert.match(retakeFn, /DB\.getSessionsByExam\(session\.examId\)/, 'every row for the student is gathered');
-assert.match(retakeFn, /targets\.forEach/, 'and every one of them is reset');
+assert.match(resetFn, /DB\.getSessionsByExam\(session\.examId\)/, 'every row for the student is gathered');
+assert.match(resetFn, /targets\.forEach/, 'and every one of them is reset');
+for (const caller of ['async function allowStudentRetake(', 'async function allowSelectedRetakes(']) {
+  const fn = adminSource.slice(adminSource.indexOf(caller), adminSource.indexOf('\n}\n', adminSource.indexOf(caller)));
+  assert.match(fn, /resetSessionsForRetake\(/, `${caller} must reset through the shared helper`);
+}
 
 // ── #37: archiving an exam asks first ──────────────────────────────────────
 const statusFn = adminSource.slice(

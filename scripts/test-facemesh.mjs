@@ -5,9 +5,11 @@ import { FaceEventCorrelator } from '../src/lib/proctoring/facemesh/faceEventCor
 import { resolveFaceMonitoringConfig } from '../src/lib/proctoring/facemesh/faceMonitoringConfig.js';
 import { FaceSessionAggregator } from '../src/lib/proctoring/facemesh/faceSessionAggregator.js';
 import {
+  classifyFaceObservation,
   classifyHeadDirection,
   eulerFromTransformationMatrix,
   estimateEulerFromLandmarks,
+  poseCueDeltas,
   relativePose,
   smoothHeadPose,
 } from '../src/lib/proctoring/facemesh/headPoseEstimator.js';
@@ -81,6 +83,101 @@ assert.equal(
   classifyHeadDirection({ yaw: 27, pitch: 30 }, config.pose),
   'HEAD_DOWN',
 );
+
+// ── Head direction with a second, independent signal ────────────────────────
+// Euler pitch alone misreads downward looks: a camera above the screen, a head
+// that rolls, or plain landmark jitter can all push it past the gate while the
+// face has not actually pitched at all. The face's own proportions settle it —
+// tucking the chin slides the nose down the eye-to-chin axis, whatever the
+// camera angle, because the comparison is against this student's own baseline.
+const down = (pitch, noseFractionDelta, yaw = 0) => classifyHeadDirection(
+  { yaw, pitch },
+  config.pose,
+  { noseFractionDelta },
+);
+
+// Pitch over the old gate, but the face never foreshortened: noise, not a look
+// down. This is the case that used to raise a warning on its own.
+assert.equal(down(20, 0), 'HEAD_CENTER');
+assert.equal(down(20, -0.01), 'HEAD_CENTER');
+// Both signals agree, so it is caught earlier than the euler-only gate allowed.
+assert.equal(down(15, 0.05), 'HEAD_DOWN');
+assert.equal(down(20, 0.05), 'HEAD_DOWN');
+// Foreshortening this strong is conclusive even where euler pitch is unreliable.
+assert.equal(down(4, 0.12), 'HEAD_DOWN');
+// So is a rotation far past the gate, so a poorly captured cue cannot hide a
+// student who is plainly looking down.
+assert.equal(down(40, 0), 'HEAD_DOWN');
+// A turned head makes pitch unreliable and moves the nose along the same axis,
+// so it is reported as the turn it is rather than as a look downward.
+assert.equal(down(20, 0.05, 30), 'HEAD_RIGHT');
+// No cue (an older baseline, or a camera giving no usable landmarks) keeps the
+// original euler-only rule.
+assert.equal(classifyHeadDirection({ yaw: 0, pitch: 20 }, config.pose, null), 'HEAD_DOWN');
+assert.equal(classifyHeadDirection({ yaw: 0, pitch: 20 }, config.pose), 'HEAD_DOWN');
+// Upward looks are judged the same way, in the opposite direction.
+assert.equal(down(-15, -0.05), 'HEAD_UP');
+assert.equal(down(-20, 0), 'HEAD_CENTER');
+
+// The cue is read off the same landmark geometry the worker measures, and is
+// null unless both this frame and the baseline carry it.
+assert.equal(poseCueDeltas({ poseCues: { noseFraction: 0.5 } }, { baselineNoseFraction: 0.45 })
+  .noseFractionDelta.toFixed(2), '0.05');
+assert.equal(poseCueDeltas({ poseCues: { noseFraction: 0.5 } }, {}), null);
+assert.equal(poseCueDeltas({}, { baselineNoseFraction: 0.45 }), null);
+
+// End to end: the same frame is judged differently depending on whether the face
+// actually foreshortened, which is the whole point of the second signal.
+const pitchedObservation = (noseFraction) => ({
+  facePresent: true,
+  pose: { yaw: 0, pitch: -20, roll: 0 },
+  poseCues: { noseFraction, faceSpanRatio: 1.5 },
+});
+const baselineForCues = {
+  baselineYaw: 0, baselinePitch: 0, baselineRoll: 0,
+  baselineNoseFraction: 0.45, baselineFaceSpanRatio: 1.6,
+};
+assert.equal(
+  classifyFaceObservation(pitchedObservation(0.52), baselineForCues, config).headDirection,
+  'HEAD_DOWN',
+);
+assert.equal(
+  classifyFaceObservation(pitchedObservation(0.45), baselineForCues, config).headDirection,
+  'HEAD_CENTER',
+);
+
+const cueCalibration = new FaceCalibrationSession(config.calibration);
+let cueBaseline = null;
+for (let t = 0; t <= 9000; t += 150) {
+  const result = cueCalibration.addObservation({
+    timestampMs: t,
+    facePresent: true,
+    trackingQuality: 0.6,
+    pose: { yaw: 0, pitch: 0, roll: 0 },
+    geometry: { width: 0.24, height: 0.3, centerX: 0.5, centerY: 0.5 },
+    poseCues: { noseFraction: 0.46, faceSpanRatio: 1.62 },
+  });
+  if (result.complete) { cueBaseline = result.baseline; break; }
+}
+assert.ok(cueBaseline, 'calibration with cues must complete');
+assert.ok(Math.abs(cueBaseline.baselineNoseFraction - 0.46) < 0.001);
+assert.ok(Math.abs(cueBaseline.baselineFaceSpanRatio - 1.62) < 0.001);
+
+// A camera that never yields the cue leaves it null rather than inventing one.
+const cuelessCalibration = new FaceCalibrationSession(config.calibration);
+let cuelessBaseline = null;
+for (let t = 0; t <= 9000; t += 150) {
+  const result = cuelessCalibration.addObservation({
+    timestampMs: t,
+    facePresent: true,
+    trackingQuality: 0.6,
+    pose: { yaw: 0, pitch: 0, roll: 0 },
+    geometry: { width: 0.24, height: 0.3, centerX: 0.5, centerY: 0.5 },
+  });
+  if (result.complete) { cuelessBaseline = result.baseline; break; }
+}
+assert.ok(cuelessBaseline, 'calibration without cues must still complete');
+assert.equal(cuelessBaseline.baselineNoseFraction, null);
 
 const smoothedSmallMove = smoothHeadPose(
   { yaw: 0, pitch: 0, roll: 0 },

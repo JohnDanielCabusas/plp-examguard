@@ -82,6 +82,11 @@ const EXAM_WARNING_TIMINGS = Object.freeze({
   // and walk back into the exam untouched, so the lock is time-boxed and each
   // expiry costs a strike.
   fullscreenLockSeconds: 15,
+  // A reconnected student does not drop straight back into the questions. They
+  // get this long to return to the exam, and monitoring resumes when they do -
+  // or when it runs out. Without it, an outage would be a free window to read
+  // notes and slip back in as though nothing happened.
+  offlineResumeSeconds: 15,
   // Screen recording ends the attempt. It is not a strike the student can
   // absorb and carry on from: the recording is still running while they read
   // the warning, so letting the overlay close just hands the questions back to
@@ -226,6 +231,11 @@ const ExamApp = {
   _violationClipChunkMs: 1000,
   _violationClipSegmentMs: 10000,
   _violationClipOverlapMs: 5000,
+  // The last clip cut as the webcam went dark, held for the camera_off warning
+  // that only arrives ten seconds later.
+  _cameraLossClip: null,
+  _cameraLossClipAt: 0,
+  _cameraLossClipPending: false,
   _cameraPrompting: false,  // true while camera permission dialog is open
   _motionInterval: null,    // motion detection interval
   _prevFrameData: null,
@@ -281,6 +291,13 @@ const ExamApp = {
   _faceCalibrationObservationTimer: null,
   _faceCalibrationRuntimeStartedAt: 0,
   _faceCalibrationLastObservationAt: 0,
+  // A scan that will not finish must not trap the student: after a while the bar
+  // is lowered and every way out is offered, including reporting it upward.
+  _faceCalibrationAssistTimer: null,
+  _faceCalibrationAssisted: false,
+  _faceCalibrationHelpVisible: false,
+  _faceCalibrationLastProgress: 0,
+  _faceCalibrationReportSentAt: 0,
   _faceMeshStatus: 'idle',
   _lastFaceMeshObservation: null,
   _faceIncidentRequests: new Map(),
@@ -352,6 +369,16 @@ const ExamApp = {
   _intentionalFullscreenExit: false,
   // ── Connectivity monitor ──
   _connectionState: 'online', // 'online' | 'weak' | 'offline'
+  // The exam is on hold from the moment the connection drops until the student
+  // is back in it. Fixing a network means the Wi-Fi panel, another window, or
+  // leaving fullscreen, none of which may cost a strike.
+  _offlineHoldActive: false,
+  _offlineHoldStartedAt: 0,
+  _offlineHoldWasFullscreen: false,
+  _offlineResumeTimer: null,
+  _offlineResumeToken: 0,
+  _offlineResumeDeadline: 0,
+  _offlineResumeTotalSeconds: 0,
   _connFailStreak: 0,         // consecutive failed probes (debounces flapping before declaring offline)
   _connCheckInterval: null,
   _connOnlineHandler: null,
@@ -794,15 +821,20 @@ const ExamApp = {
     });
   },
 
-  async _capturePreViolationReplayClip(type) {
-    if (!this._isReplayableCameraViolationType(type)) return null;
-    const triggeredAtMs = Date.now();
-    const candidates = (Array.isArray(this._violationClipRecorders) ? this._violationClipRecorders : [])
-      .filter(segment => segment?.recorder?.state === 'recording')
-      .sort((a, b) => a.startedAt - b.startedAt);
-    const segment = candidates[0];
-    if (!segment) return null;
+  // The buffer must always have something recording. Cutting a clip consumes a
+  // segment, and a violation that arrives seconds later needs its own history:
+  // leaving the buffer empty until the spawn timer came round again is what cost
+  // clustered camera violations their replays.
+  _ensureViolationReplaySegment() {
+    if (!this._cameraStream?.active) return;
+    const recording = (Array.isArray(this._violationClipRecorders) ? this._violationClipRecorders : [])
+      .some(item => item?.recorder?.state === 'recording');
+    if (recording) return;
+    try { this._startViolationReplaySegment(); } catch (_) {}
+  },
 
+  async _cutViolationReplaySegment(segment, triggeredAtMs) {
+    if (!segment?.recorder) return null;
     segment.endedAt = triggeredAtMs;
     if (segment.stopTimer) clearTimeout(segment.stopTimer);
     try {
@@ -811,28 +843,78 @@ const ExamApp = {
     } catch (_) {
       return null;
     }
-
     const clipBlob = await segment.finished;
-    if (!clipBlob?.size) return null;
-    const clipStartedAtMs = Number(segment.startedAt || triggeredAtMs);
-    const clipEndedAtMs = triggeredAtMs;
-    const mimeType = clipBlob.type || this._violationClipMimeType || 'video/webm';
+    return clipBlob?.size ? clipBlob : null;
+  },
 
-    if (!this._violationClipRecorders.some(item => item?.recorder?.state === 'recording')) {
-      try { this._startViolationReplaySegment(); } catch (_) {}
+  // A webcam that has stopped cannot be recorded any more, and the warning for it
+  // is raised ten seconds later, by which time every segment has ended. The
+  // footage leading up to the blackout is the only thing that explains it, so it
+  // is cut and held the moment the camera stops being live.
+  _preserveCameraLossReplayClip() {
+    if (this._cameraLossClipPending || this._cameraLossClip) return;
+    this._cameraLossClipPending = true;
+    Promise.resolve(this._capturePreViolationReplayClip('camera_off'))
+      .then((clip) => {
+        this._cameraLossClip = clip || null;
+        this._cameraLossClipAt = clip ? Date.now() : 0;
+      })
+      .catch(() => { this._cameraLossClip = null; })
+      .finally(() => { this._cameraLossClipPending = false; });
+  },
+
+  _takeHeldCameraLossClip(type, triggeredAtMs) {
+    const held = this._cameraLossClip;
+    if (!held) return null;
+    // Only the blackout it was cut for, not some later violation minutes on.
+    const fresh = (triggeredAtMs - Number(this._cameraLossClipAt || 0)) <= 60000;
+    this._cameraLossClip = null;
+    this._cameraLossClipAt = 0;
+    if (!fresh) return null;
+    return { ...held, violationType: type, triggeredAt: new Date(triggeredAtMs).toISOString() };
+  },
+
+  async _capturePreViolationReplayClip(type) {
+    if (!this._isReplayableCameraViolationType(type)) return null;
+    const triggeredAtMs = Date.now();
+    const candidates = (Array.isArray(this._violationClipRecorders) ? this._violationClipRecorders : [])
+      .filter(segment => segment?.recorder?.state === 'recording')
+      .sort((a, b) => a.startedAt - b.startedAt);
+
+    if (!candidates.length) {
+      const held = this._takeHeldCameraLossClip(type, triggeredAtMs);
+      if (held) return held;
     }
 
-    return {
-      evidenceType: 'pre_violation_webcam_clip',
-      violationType: type,
-      mimeType,
-      clipStartedAt: new Date(clipStartedAtMs).toISOString(),
-      clipEndedAt: new Date(clipEndedAtMs).toISOString(),
-      triggeredAt: new Date(triggeredAtMs).toISOString(),
-      durationMs: Math.min(10000, Math.max(0, clipEndedAtMs - clipStartedAtMs)),
-      fileSizeBytes: clipBlob.size,
-      clipBlob,
-    };
+    try {
+      // Oldest first: that segment carries the most pre-violation history. An
+      // encoder that handed back nothing (a webcam that has only just started,
+      // a track that just ended) must not cost this violation its replay while
+      // a younger segment is still holding usable video.
+      for (const segment of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const clipBlob = await this._cutViolationReplaySegment(segment, triggeredAtMs);
+        if (!clipBlob) continue;
+
+        const clipStartedAtMs = Number(segment.startedAt || triggeredAtMs);
+        const clipEndedAtMs = triggeredAtMs;
+        return {
+          evidenceType: 'pre_violation_webcam_clip',
+          violationType: type,
+          mimeType: clipBlob.type || this._violationClipMimeType || 'video/webm',
+          clipStartedAt: new Date(clipStartedAtMs).toISOString(),
+          clipEndedAt: new Date(clipEndedAtMs).toISOString(),
+          triggeredAt: new Date(triggeredAtMs).toISOString(),
+          durationMs: Math.min(10000, Math.max(0, clipEndedAtMs - clipStartedAtMs)),
+          fileSizeBytes: clipBlob.size,
+          clipBlob,
+        };
+      }
+      return null;
+    } finally {
+      // Whatever happened above, the next violation gets a buffer to cut from.
+      this._ensureViolationReplaySegment();
+    }
   },
 
   async _persistViolationReplayEvidence(payload) {
@@ -1144,10 +1226,14 @@ const ExamApp = {
   },
 
   _scheduleFullscreenEnforcement(delayMs = 350) {
+    // While the exam is on hold the student needs to be out of fullscreen to fix
+    // their connection, so nothing may demand it back yet.
+    if (this._isExamOnOfflineHold()) return;
     if (this._fullscreenVerifyTimer) clearTimeout(this._fullscreenVerifyTimer);
     this._fullscreenVerifyTimer = setTimeout(() => {
       this._fullscreenVerifyTimer = null;
       if (!this._examRuntimeStarted) return;
+      if (this._isExamOnOfflineHold()) return;
       if (this._isFullscreenActive()) return;
 
       // The strike overlay doubles as the recovery screen, so stacking the
@@ -3919,7 +4005,9 @@ const ExamApp = {
       message
       && message.senderRole === 'student'
       && message.type === 'report'
-      && (category === 'webcam_consent_decline' || category === 'webcam')
+      // A face scan that will not complete asks the professor the same thing a
+      // declined webcam does, so the same decision answers it.
+      && (category === 'webcam_consent_decline' || category === 'webcam' || category === 'face_scan_failed')
     );
   },
 
@@ -4173,6 +4261,19 @@ const ExamApp = {
       this._hideWebcamWaitNoticeModal();
       this._hideWebcamDeniedDecisionModal();
       this._hideWebcamWaitOverlay();
+      // A student stuck in the face scan is exactly who this exemption is for, so
+      // stop the scan and let them through instead of leaving the modal up.
+      if (this._faceMeshCalibrating) {
+        this._faceCalibrationGeneration++;
+        this._clearFaceCalibrationObservationTimer();
+        this._clearFaceCalibrationAssistTimer();
+        this._faceMeshRuntime?.stop?.();
+        this._faceMeshRuntime = null;
+        this._faceCalibration = null;
+        this._faceMeshCalibrating = false;
+        this._faceMeshUnavailable = true;
+        this._hideFaceCalibrationModal();
+      }
       this._showCameraRequirementNotice('disabled');
       if (!this._examRuntimeStarted) {
         this._beginExamRuntime();
@@ -4505,6 +4606,7 @@ const ExamApp = {
 
     // ── Keyboard shortcuts blocked ───────────────────────────────
     const keyHandler = e => {
+      if (this._handleQuestionNavigationKey(e)) return;
       if (e.key === 'PrintScreen') {
         // The OS-level Win+PrintScreen capture (and PrintScreen alone) fires
         // outside the browser's control — preventDefault() can't stop the
@@ -4801,13 +4903,24 @@ const ExamApp = {
     const status = document.getElementById('face-calibration-status');
     const bar = document.getElementById('face-calibration-progress-bar');
     const retry = document.getElementById('face-calibration-retry');
-    const fallback = document.getElementById('face-calibration-fallback');
     const continueButton = document.getElementById('face-calibration-continue');
+    const report = document.getElementById('face-calibration-report');
     if (status) status.textContent = message;
     if (bar) bar.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
-    if (retry) retry.style.display = options.retry ? '' : 'none';
-    if (fallback) fallback.style.display = options.fallback ? '' : 'none';
+    // Every observation refreshes this row, so a way out that has been offered
+    // has to stick: it used to be wiped by the next frame's status update.
+    const helpOffered = this._faceCalibrationHelpVisible === true;
+    if (retry) retry.style.display = (options.retry || helpOffered) ? '' : 'none';
     if (continueButton) continueButton.style.display = options.continue ? '' : 'none';
+    // Reporting is available for the whole scan, not just after it has failed —
+    // a student whose camera they know is poor should not have to wait it out.
+    if (report) {
+      const reportable = this._faceMeshCalibrating === true || options.report === true;
+      report.style.display = reportable ? '' : 'none';
+      const sent = !!this._faceCalibrationReportSentAt;
+      report.disabled = sent;
+      report.textContent = sent ? 'Reported — waiting for your professor' : 'Report a Problem';
+    }
   },
 
   _setFaceMeshStatus(state, message = '') {
@@ -4821,6 +4934,101 @@ const ExamApp = {
           : state === 'loading' ? 'Starting face scan'
             : 'Face scan off'
     );
+  },
+
+  _clearFaceCalibrationAssistTimer() {
+    if (this._faceCalibrationAssistTimer) {
+      clearTimeout(this._faceCalibrationAssistTimer);
+      this._faceCalibrationAssistTimer = null;
+    }
+  },
+
+  // A scan that never completes locks the student out of the exam altogether, so
+  // it is time-boxed: after this the requirements come down a notch and every way
+  // out is put on screen.
+  _scheduleFaceCalibrationAssist(generation) {
+    this._clearFaceCalibrationAssistTimer();
+    const afterMs = Number(this._faceMeshConfig?.calibration?.assist?.afterMs || 12000);
+    this._faceCalibrationAssistTimer = setTimeout(() => {
+      this._faceCalibrationAssistTimer = null;
+      if (generation !== this._faceCalibrationGeneration || !this._faceMeshCalibrating) return;
+      this._applyFaceCalibrationAssist();
+    }, afterMs);
+  },
+
+  _applyFaceCalibrationAssist() {
+    if (this._faceCalibrationAssisted || !this._faceMeshCalibrating) return;
+    this._faceCalibrationAssisted = true;
+    this._faceCalibrationHelpVisible = true;
+
+    const assist = this._faceMeshConfig?.calibration?.assist;
+    if (assist && typeof this._faceCalibration?.relax === 'function') {
+      const { afterMs, ...thresholds } = assist;
+      this._faceCalibration.relax(thresholds);
+    }
+    this._recordActivity(
+      'face_calibration_assisted',
+      'Face scan did not finish on the strict setting — requirements were relaxed so the student is not blocked from the exam',
+      { source: 'FACEMESH', relaxed: true },
+    );
+    this._setFaceCalibrationStatus(
+      'Still working on the scan. It has been made more forgiving — keep looking at the screen. You can retry, or report the problem so your professor can decide.',
+      this._faceCalibrationLastProgress || 0,
+      { retry: true, report: true },
+    );
+  },
+
+  // What the professor needs to judge whether to let this student sit the exam
+  // with the webcam off.
+  _describeFaceCalibrationTrouble() {
+    const observation = this._lastFaceMeshObservation || {};
+    const geometry = observation.geometry || {};
+    const round = value => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : 'n/a');
+    const lines = [
+      `Face scan status: ${document.getElementById('face-calibration-status')?.textContent || 'unknown'}`,
+      `Face detected: ${observation.facePresent ? 'yes' : 'no'}`,
+      `Tracking quality: ${round(observation.trackingQuality)}`,
+      `Face size in frame: ${round(geometry.width)} wide`,
+      `Face position: ${round(geometry.centerX)} across, ${round(geometry.centerY)} down`,
+      `Relaxed setting applied: ${this._faceCalibrationAssisted ? 'yes' : 'not yet'}`,
+      `Camera: ${this._cameraStream ? 'running' : 'not running'}`,
+    ];
+    return lines.join('\n');
+  },
+
+  reportFaceCalibrationProblem() {
+    if (!this.exam || !this.session) return;
+    if (this._faceCalibrationReportSentAt) return;
+    this._faceCalibrationReportSentAt = Date.now();
+    this._faceCalibrationHelpVisible = true;
+
+    DB.addMessage({
+      ownerAdminId: this.exam.ownerAdminId || null,
+      professorId: this.exam.ownerAdminId || null,
+      studentId: this.session.studentId,
+      studentName: this.session.studentName,
+      examId: this.exam.id,
+      sessionId: this.session.id,
+      senderRole: 'student',
+      type: 'report',
+      reportCategory: 'face_scan_failed',
+      body: `The face scan will not complete, so I cannot start the exam.\n\n${this._describeFaceCalibrationTrouble()}`,
+    });
+    this._recordActivity(
+      'face_scan_help_requested',
+      'Student reported that the pre-exam face scan will not complete',
+      { source: 'FACEMESH' },
+    );
+    this._renderChatMessages();
+    this._updateChatBadge();
+    this._showToast('Sent to your professor.', 'success');
+    this._setFaceCalibrationStatus(
+      'Your professor has been told. Keep the scan running — if they allow it, your exam will open without the webcam. You can keep trying in the meantime.',
+      this._faceCalibrationLastProgress || 0,
+      { retry: true, report: true },
+    );
+    // The professor's decision arrives on the exams row, which realtime can miss.
+    this._startWebcamWaitPoll();
   },
 
   _clearFaceCalibrationObservationTimer() {
@@ -4849,9 +5057,9 @@ const ExamApp = {
       stalledRuntime?.stop?.();
       this._setFaceMeshStatus('error', 'Face scan is not receiving camera frames');
       this._setFaceCalibrationStatus(
-        'The face scan is not receiving camera frames. Check that the camera preview is moving, then retry.',
+        'The face scan is not receiving camera frames. Check that the camera preview is moving, then retry. If it keeps failing, report it so your professor can decide.',
         0,
-        { retry: true, fallback: !!this._cameraStream },
+        { retry: true, report: true },
       );
     }, 2000);
   },
@@ -4859,6 +5067,10 @@ const ExamApp = {
   _prepareFaceCalibration() {
     if (this._faceMeshCalibrating || this._examRuntimeStarted) return;
     this._faceMeshCalibrating = true;
+    this._faceCalibrationAssisted = false;
+    this._faceCalibrationHelpVisible = false;
+    this._faceCalibrationLastProgress = 0;
+    this._faceCalibrationReportSentAt = 0;
     this._showFaceCalibrationModal();
     this._setFaceCalibrationStatus('Starting camera…', 0);
     this.initCamera({ calibrationOnly: true });
@@ -4905,15 +5117,16 @@ const ExamApp = {
       }
       this._setFaceCalibrationStatus('Center your face and keep looking normally at the screen.', 0);
       this._watchForFaceCalibrationObservations(generation);
+      this._scheduleFaceCalibrationAssist(generation);
     } catch (error) {
       runtime?.stop?.();
       if (generation !== this._faceCalibrationGeneration) return;
       if (this._faceMeshRuntime === runtime) this._faceMeshRuntime = null;
       this._setFaceMeshStatus('error');
       this._setFaceCalibrationStatus(
-        `Face scan could not start: ${error?.message || 'unknown error'}`,
+        `Face scan could not start: ${error?.message || 'unknown error'}. Retry, or report it so your professor can decide.`,
         0,
-        { retry: true, fallback: !!this._cameraStream },
+        { retry: true, report: true },
       );
     } finally {
       if (generation === this._faceCalibrationGeneration) this._faceMeshStarting = false;
@@ -4971,6 +5184,7 @@ const ExamApp = {
     if (this._faceMeshCalibrating && this._faceCalibration) {
       this._faceCalibrationLastObservationAt = Date.now();
       const result = this._faceCalibration.addObservation(observation);
+      this._faceCalibrationLastProgress = result.progress || 0;
       this._setFaceCalibrationStatus(result.reason || 'Keep your head centered.', result.progress || 0);
       if (result.complete && result.baseline) this._completeFaceCalibration(result.baseline);
       return;
@@ -5036,13 +5250,17 @@ const ExamApp = {
   _completeFaceCalibration(baseline) {
     if (!this._faceMeshCalibrating) return;
     this._clearFaceCalibrationObservationTimer();
+    this._clearFaceCalibrationAssistTimer();
     this._faceMeshBaseline = baseline;
     this._faceMeshCalibrating = false;
+    this._faceCalibrationHelpVisible = false;
     this._setFaceCalibrationStatus('Calibration complete. Face direction will be compared with this centered position.', 1, { continue: true });
     this._recordActivity('face_calibration_completed', 'Face positioning calibration completed for this exam session', {
       source: 'FACEMESH',
       trackingConfidence: Number(baseline.landmarkTrackingStability || 0),
       sampleCount: Number(baseline.sampleCount || 0),
+      // Recorded because an assisted baseline was measured against a lower bar.
+      assisted: baseline.assisted === true,
     });
   },
 
@@ -5055,6 +5273,9 @@ const ExamApp = {
   retryFaceCalibration() {
     this._faceCalibrationGeneration++;
     this._clearFaceCalibrationObservationTimer();
+    this._clearFaceCalibrationAssistTimer();
+    this._faceCalibrationAssisted = false;
+    this._faceCalibrationLastProgress = 0;
     this._faceMeshRuntime?.stop?.();
     this._faceMeshRuntime = null;
     this._faceCalibration = null;
@@ -5072,22 +5293,6 @@ const ExamApp = {
     this._faceMeshBaseline = null;
     this._faceMeshUnavailable = false;
     this.returnToLogin();
-  },
-
-  continueWithoutFaceMesh() {
-    if (!this._cameraStream) return;
-    this._faceCalibrationGeneration++;
-    this._clearFaceCalibrationObservationTimer();
-    this._faceMeshRuntime?.stop?.();
-    this._faceMeshRuntime = null;
-    this._faceMeshUnavailable = true;
-    this._faceMeshCalibrating = false;
-    this._hideFaceCalibrationModal();
-    this._setFaceMeshStatus('error', 'Standard face detection active');
-    this._recordActivity('face_tracking_unavailable', 'FaceMesh unavailable; standard camera monitoring continued', {
-      source: 'FACEMESH',
-    });
-    this._beginExamRuntime();
   },
 
   _activateFaceMeshMonitoring() {
@@ -6040,6 +6245,7 @@ const ExamApp = {
     }
 
     // Camera is off / blocked / unplugged
+    this._preserveCameraLossReplayClip();
     this._showCameraOffOverlay();
     const statusText = document.getElementById('camera-status-text');
     this._setCameraStatusText('Camera off', { force: true });
@@ -7581,6 +7787,23 @@ const ExamApp = {
     }
     if (this._cameraPrompting && !terminal) return false; // camera permission dialog open — not a violation
 
+    // The exam is on hold while the connection is down. Turning Wi-Fi on and off,
+    // switching provider or opening network settings all pull focus away from a
+    // fullscreen exam, and none of it is cheating. The activity is still recorded
+    // so the professor sees exactly what happened, it just never costs a strike.
+    // Attempt-ending violations are exempt: going offline cannot license one.
+    if (this._isExamOnOfflineHold() && !terminal) {
+      // Paths that keep their own timeline entry (FaceMesh incidents) still own it.
+      if (options.recordActivity !== false) {
+        this._recordActivity(type, detail, {
+          ...(detectionMetadata && typeof detectionMetadata === 'object' ? detectionMetadata : {}),
+          offlineHold: true,
+          countsAsWarning: false,
+        });
+      }
+      return false;
+    }
+
     // Debounce: prevent double-firing within 1500ms (blur + visibilitychange fire together).
     // A violation that ends the attempt is never swallowed by this window just
     // because an unrelated warning landed a moment earlier.
@@ -8594,9 +8817,159 @@ const ExamApp = {
     if (this._connCheckInterval) { clearInterval(this._connCheckInterval); this._connCheckInterval = null; }
     if (this._connOnlineHandler) { window.removeEventListener('online', this._connOnlineHandler); this._connOnlineHandler = null; }
     if (this._connOfflineHandler) { window.removeEventListener('offline', this._connOfflineHandler); this._connOfflineHandler = null; }
+    // The attempt is over. A hold left standing would keep fullscreen
+    // enforcement switched off for the next attempt in this page.
+    this._offlineHoldActive = false;
+    this._offlineHoldStartedAt = 0;
+    this._stopOfflineResumeCountdown();
+    this._hideOfflineResumeGate();
   },
 
   _isOffline() { return this._connectionState === 'offline'; },
+
+  _isExamOnOfflineHold() { return this._offlineHoldActive === true; },
+
+  // Dropping out of fullscreen is deliberate here: the student has to reach the
+  // Wi-Fi panel or their router, and a locked fullscreen exam does not let them.
+  // The offline overlay keeps the questions covered the whole time.
+  _beginOfflineHold() {
+    if (this._offlineHoldActive) return;
+    this._offlineHoldActive = true;
+    this._offlineHoldStartedAt = Date.now();
+    this._offlineHoldWasFullscreen = this._isFullscreenActive();
+
+    this._stopFullscreenEnforcement();
+    this._hideFullscreenLock();
+    this._hideOfflineResumeGate();
+    // A strike overlay already on screen is deliberately left alone. It owns its
+    // own deadline — including the third strike that ends the attempt — and
+    // cancelling that here would turn pulling the network into a way out of it.
+
+    if (this._offlineHoldWasFullscreen) {
+      this._intentionalFullscreenExit = true;
+      try {
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch (_) {}
+    }
+  },
+
+  // Monitoring rules come back on here, not at the moment the network returned:
+  // either the student has returned to the exam or their time to do so ran out.
+  _endOfflineHold(reason) {
+    if (!this._offlineHoldActive) {
+      this._hideOfflineResumeGate();
+      return;
+    }
+    this._offlineHoldActive = false;
+    this._stopOfflineResumeCountdown();
+    this._hideOfflineResumeGate();
+
+    const heldSeconds = Math.max(0, Math.round((Date.now() - (this._offlineHoldStartedAt || Date.now())) / 1000));
+    this._offlineHoldStartedAt = 0;
+    this._intentionalFullscreenExit = false;
+    this._recordActivity(
+      'connection_hold_ended',
+      reason === 'timeout'
+        ? `Exam monitoring resumed after ${heldSeconds}s offline — student did not return within the allowed time`
+        : `Exam resumed by the student after ${heldSeconds}s offline`,
+      { offlineHeldSeconds: heldSeconds, resumeReason: reason || 'student' },
+    );
+    // Back to the standing rule: the exam belongs in fullscreen.
+    this._scheduleFullscreenEnforcement(0);
+  },
+
+  _showOfflineResumeGate() {
+    let overlay = document.getElementById('offline-resume-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'offline-resume-overlay';
+      overlay.className = 'fullscreen-lock-overlay';
+      overlay.innerHTML = `
+        <div class="fullscreen-lock-card" role="dialog" aria-modal="true" aria-labelledby="offline-resume-title">
+          <div class="fullscreen-lock-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          </div>
+          <div class="fullscreen-lock-label">Connection restored</div>
+          <h2 id="offline-resume-title">Ready to Resume</h2>
+          <p>
+            Your answers are saved. Select the button below to return to your exam in fullscreen.
+          </p>
+          <div class="fullscreen-lock-countdown" id="offline-resume-countdown">
+            <span class="fullscreen-lock-countdown-num" id="offline-resume-cd-num">${EXAM_WARNING_TIMINGS.offlineResumeSeconds}</span>
+            <span class="fullscreen-lock-countdown-msg" id="offline-resume-cd-msg">seconds to return before exam monitoring resumes</span>
+          </div>
+          <button id="offline-resume-btn" class="fullscreen-lock-return" data-exam-control="true">
+            Resume Exam
+          </button>
+        </div>`;
+      document.body.appendChild(overlay);
+    } else {
+      overlay.style.display = 'flex';
+    }
+    const button = document.getElementById('offline-resume-btn');
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Resume Exam';
+      button.onclick = () => this.resumeExamAfterOffline();
+    }
+    this._startOfflineResumeCountdown();
+  },
+
+  _hideOfflineResumeGate() {
+    const overlay = document.getElementById('offline-resume-overlay');
+    if (overlay) overlay.style.display = 'none';
+  },
+
+  _stopOfflineResumeCountdown() {
+    if (this._offlineResumeTimer) {
+      clearTimeout(this._offlineResumeTimer);
+      this._offlineResumeTimer = null;
+    }
+    this._offlineResumeToken += 1;
+    this._offlineResumeDeadline = 0;
+    this._offlineResumeTotalSeconds = 0;
+  },
+
+  _startOfflineResumeCountdown() {
+    const numEl = document.getElementById('offline-resume-cd-num');
+    const msgEl = document.getElementById('offline-resume-cd-msg');
+    this._startDeadlineCountdown({
+      timerKey: '_offlineResumeTimer',
+      tokenKey: '_offlineResumeToken',
+      deadlineKey: '_offlineResumeDeadline',
+      totalKey: '_offlineResumeTotalSeconds',
+      totalSeconds: EXAM_WARNING_TIMINGS.offlineResumeSeconds,
+      // A flapping connection must not keep pushing the deadline forward.
+      preserveExisting: true,
+      onUpdate: (remaining) => {
+        if (numEl) numEl.textContent = remaining;
+        if (msgEl) msgEl.textContent = 'seconds to return before exam monitoring resumes';
+      },
+      onExpire: () => {
+        if (this._isOffline()) {
+          // Dropped out again while the gate was up: back to the hold.
+          this._hideOfflineResumeGate();
+          this._showOfflineOverlay();
+          return;
+        }
+        this._endOfflineHold('timeout');
+      },
+    });
+  },
+
+  resumeExamAfterOffline() {
+    const button = document.getElementById('offline-resume-btn');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Returning to exam...';
+    }
+    this.requestFullscreen().then(() => {
+      // The hold ends either way. If fullscreen was refused, the standing
+      // fullscreen lock takes over, which is the ordinary rule for that.
+      this._endOfflineHold('student');
+    });
+  },
 
   // Same-origin requests (e.g. this app's own dev/hosting server) can succeed over the
   // OS loopback interface even with Wi-Fi fully off, which would make this probe lie.
@@ -8630,12 +9003,20 @@ const ExamApp = {
     this._connectionState = state;
     this._updateConnectionIndicator(state);
     if (state === 'offline' && prev !== 'offline') {
+      this._beginOfflineHold();
       this._showOfflineOverlay();
-      this._recordActivity('connection_lost', 'Internet connection lost — exam frozen until reconnect');
+      this._recordActivity('connection_lost', 'Internet connection lost — exam on hold until reconnect');
     } else if (state !== 'offline' && prev === 'offline') {
       this._hideOfflineOverlay();
       this._recordActivity('connection_restored', 'Internet connection restored — resyncing answers');
       this._resyncSessionState();
+      // A student who asked to submit while offline is on their way out, so the
+      // resync submits instead of sending them back into the questions.
+      if (this._offlineHoldActive && !this._pendingManualSubmit && this._examRuntimeStarted) {
+        this._showOfflineResumeGate();
+      } else if (this._offlineHoldActive) {
+        this._endOfflineHold(this._pendingManualSubmit ? 'submitting' : 'not-started');
+      }
     }
   },
 
@@ -8662,7 +9043,7 @@ const ExamApp = {
     if (detail) {
       detail.textContent = this._pendingManualSubmit
         ? 'Your exam will submit automatically once you’re back online.'
-        : 'Your answers are saved. The exam will resume automatically once you’re back online.';
+        : 'Your answers are saved. Your exam is on hold, so fixing your connection will not be counted as a violation.';
     }
     overlay.style.display = 'flex';
   },
@@ -8816,6 +9197,34 @@ const ExamApp = {
     if (this.currentQuestionIndex > 0) {
       this.showQuestion(this.currentQuestionIndex - 1);
     }
+  },
+
+  _handleQuestionNavigationKey(event) {
+    if (!event || !this._examRuntimeStarted || event.defaultPrevented || event.isComposing) return false;
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+
+    const key = event.key;
+    if (!['ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) return false;
+
+    const target = event.target;
+    const closest = selector => target && typeof target.closest === 'function' ? target.closest(selector) : null;
+    const isFormControl = !!closest('input, textarea, select, button, a, [contenteditable="true"], [contenteditable=""], .CodeMirror');
+
+    // Arrow keys retain their normal caret, option, and radio-group behavior
+    // whenever the student is interacting with an answer control.
+    if ((key === 'ArrowLeft' || key === 'ArrowRight') && isFormControl) return false;
+
+    // Enter advances from the question itself and from selected-choice inputs,
+    // but remains available for typed answers, dropdowns, links, and buttons.
+    if (key === 'Enter' && isFormControl) {
+      const inputType = String(target?.type || '').toLowerCase();
+      if (inputType !== 'radio' && inputType !== 'checkbox') return false;
+    }
+
+    event.preventDefault?.();
+    if (key === 'ArrowLeft') this.prevQuestion();
+    else this.nextQuestion();
+    return true;
   },
 
   toggleMarkReview() {

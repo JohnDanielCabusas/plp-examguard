@@ -1004,7 +1004,7 @@ export default function ExamPage() {
             <div className="confirm-actions">
               <button id="face-calibration-exit" type="button" className="btn btn-secondary examv2-interactive" onClick={() => window.ExamApp.cancelFaceCalibration()}>Exit Exam</button>
               <button id="face-calibration-retry" type="button" className="btn btn-secondary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.retryFaceCalibration()}>Retry</button>
-              <button id="face-calibration-fallback" type="button" className="btn btn-secondary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.continueWithoutFaceMesh()}>Use Standard Camera Monitoring</button>
+              <button id="face-calibration-report" type="button" className="btn btn-secondary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.reportFaceCalibrationProblem()}>Report a Problem</button>
               <button id="face-calibration-continue" type="button" className="btn btn-primary examv2-interactive" style={{ display: 'none' }} onClick={() => window.ExamApp.finishFaceCalibrationLaunch()}>Continue to Exam</button>
             </div>
           </div>

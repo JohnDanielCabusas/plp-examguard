@@ -26,8 +26,21 @@ const POLICY_RULES = Object.freeze({
     frameEdgeMarginRatio: 0.025,
     frameEdgeHitCount: 3,
     frameEdgeMinimumMovement: 0.15,
-    minimumAspectRatio: 1.5,
+    // Phones are held upright far more often than not, and a portrait box is the
+    // one shape a room's fixtures rarely produce. Landscape candidates are kept
+    // to the proportions a real handset actually has, because most wide
+    // rectangles in a room are an air conditioner, a vent, a frame or a shelf.
+    minimumAspectRatio: 1.45,
+    // A phone seen edge-on or cropped by a close-up scan is a narrow sliver, so
+    // the portrait band stays wide. The restriction that matters is below.
     maximumAspectRatio: 4.2,
+    maximumLandscapeAspectRatio: 2.6,
+    // A phone cannot occupy this much of a webcam frame without being pressed
+    // against the lens, which the camera-obstruction rules already cover.
+    maximumAreaRatio: 0.28,
+    // Nothing sitting in the top band of the frame, away from the student's face,
+    // is a phone in use — that is where wall fixtures live.
+    upperFrameBandRatio: 0.35,
     backgroundHitCount: 4,
     backgroundMinimumMovement: 0.18,
     minimumPhoneMovement: 0.04,
@@ -102,11 +115,44 @@ function phoneAspectRatio(boundingBox) {
   return Math.max(width, height) / Math.min(width, height);
 }
 
-function hasPlausiblePhoneShape(detection, rule = POLICY_RULES.mobile_phone) {
+function isPortraitBox(boundingBox) {
+  return Number(boundingBox?.height || 0) >= Number(boundingBox?.width || 0);
+}
+
+// A box sitting entirely in the top band of the frame, with the student's face
+// nowhere near it, is a wall fixture rather than a phone in anyone's hand. The
+// face exemption keeps a phone raised to the ear or held up to the screen.
+function isUpperFrameFixture(detection, rule, context = {}) {
+  const box = detection?.boundingBox;
+  const frameHeight = Number(box?.frameHeight || 0);
+  const band = Number(rule?.upperFrameBandRatio || 0);
+  if (!box || frameHeight <= 0 || band <= 0) return false;
+  const bottom = (Number(box.y || 0) + Number(box.height || 0)) / frameHeight;
+  if (bottom > band) return false;
+  return !isDetectionNearFreshFace(detection, context);
+}
+
+function hasPlausiblePhoneShape(detection, rule = POLICY_RULES.mobile_phone, context = {}) {
   if (detection?.objectClass !== 'mobile_phone' || !detection?.boundingBox) return false;
   const aspectRatio = phoneAspectRatio(detection.boundingBox);
-  return aspectRatio >= Number(rule.minimumAspectRatio || 0)
-    && aspectRatio <= Number(rule.maximumAspectRatio || Infinity);
+  if (aspectRatio < Number(rule.minimumAspectRatio || 0)) return false;
+  if (aspectRatio > Number(rule.maximumAspectRatio || Infinity)) return false;
+
+  if (normalizedBoundingBoxArea(detection.boundingBox) > Number(rule.maximumAreaRatio ?? Infinity)) {
+    return false;
+  }
+
+  if (!isPortraitBox(detection.boundingBox)) {
+    // Wide candidates get the narrower band a real handset has, and are only
+    // believed when the student's own face places them in their hands: a person
+    // bounding box overlapping a fixture on the wall behind them does not.
+    if (aspectRatio > Number(rule.maximumLandscapeAspectRatio ?? Infinity)) return false;
+    if (!isDetectionNearFreshFace(detection, context)) return false;
+  }
+
+  if (isUpperFrameFixture(detection, rule, context)) return false;
+
+  return true;
 }
 
 function isClearlySizedPhone(detection, rule = POLICY_RULES.mobile_phone, context = {}) {
@@ -114,7 +160,7 @@ function isClearlySizedPhone(detection, rule = POLICY_RULES.mobile_phone, contex
   const areaRatio = normalizedBoundingBoxArea(detection.boundingBox);
   return areaRatio >= Number(rule.minimumStationaryAreaRatio || Infinity)
     && !isFrameEdgeBound(detection.boundingBox, rule.frameEdgeMarginRatio)
-    && hasPlausiblePhoneShape(detection, rule)
+    && hasPlausiblePhoneShape(detection, rule, context)
     && handheldAssociation(detection, context) === true;
 }
 
@@ -252,10 +298,13 @@ export class YoloObjectPolicy {
       .filter(detection => (
         detection?.boundingBox
         && detection?.detectorRole !== 'phone-specialist'
+        // A confident score is not evidence that something is not furniture: a
+        // wall unit can read as a phone at 0.8 all day. Only a detection that
+        // genuinely looks like a held phone is kept out of the background map,
+        // so a fixture in view at startup is learned and then ignored for the
+        // rest of the attempt however strongly it scores.
         && !isClearlySizedPhone(detection, POLICY_RULES[detection?.objectClass], context)
-        && Number.isFinite(POLICY_RULES[detection?.objectClass]?.calibrationBypassConfidence)
-        && Number(detection.confidence || 0)
-          < POLICY_RULES[detection.objectClass].calibrationBypassConfidence
+        && !!POLICY_RULES[detection?.objectClass]
       ))
       .forEach(detection => {
         const regions = this.calibrationRegions.get(detection.objectClass) || [];
@@ -388,7 +437,10 @@ export class YoloObjectPolicy {
         && !rule.allowedRawClasses.includes(String(detection?.rawClass || ''))
       ) return false;
       if (rule?.requiresVerification && detection?.verified !== true) return false;
-      if (detection?.objectClass === 'mobile_phone' && !hasPlausiblePhoneShape(detection, rule)) return false;
+      if (
+        detection?.objectClass === 'mobile_phone'
+        && !hasPlausiblePhoneShape(detection, rule, { ...context, now })
+      ) return false;
       if (isLikelyFacialFeatureFalsePositive(detection, { ...context, now })) return false;
       if (specialistCalibrating && detection?.detectorRole === 'phone-specialist') {
         return isClearlySizedPhone(detection, rule, { ...context, now });

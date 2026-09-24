@@ -48,6 +48,39 @@ function geometryFromLandmarks(landmarks, geometryConfig) {
   };
 }
 
+// A second, independent read on head pitch, taken from the face's own
+// proportions rather than from the rotation matrix.
+//
+// Everything is measured along the face's eye-to-chin axis and divided by that
+// axis's own length, so the result does not change when the head rolls, when the
+// student sits closer, or when the camera is mounted high or low: it describes
+// the face's shape, not its place in the frame. As the chin tucks toward the
+// chest the lower face foreshortens faster than the upper face, so the nose
+// slides measurably further down that axis. Compared against the value
+// calibration recorded for this student on this camera, that shift is what
+// confirms a look downward.
+function poseCuesFromLandmarks(landmarks) {
+  const leftEye = landmarks?.[33];
+  const rightEye = landmarks?.[263];
+  const nose = landmarks?.[1];
+  const chin = landmarks?.[152];
+  if (!leftEye || !rightEye || !nose || !chin) return null;
+  const eyeMidX = (leftEye.x + rightEye.x) / 2;
+  const eyeMidY = (leftEye.y + rightEye.y) / 2;
+  const axisX = chin.x - eyeMidX;
+  const axisY = chin.y - eyeMidY;
+  const axisLengthSquared = (axisX * axisX) + (axisY * axisY);
+  if (!(axisLengthSquared > 1e-8)) return null;
+  const axisLength = Math.sqrt(axisLengthSquared);
+  const eyeSpan = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+  return {
+    // 0 at the eye line, 1 at the chin.
+    noseFraction: (((nose.x - eyeMidX) * axisX) + ((nose.y - eyeMidY) * axisY)) / axisLengthSquared,
+    // Eye-to-chin length against eye span: shrinks as the face foreshortens.
+    faceSpanRatio: eyeSpan > 1e-4 ? axisLength / eyeSpan : null,
+  };
+}
+
 function calculateTrackingQuality(landmarks, geometry) {
   const points = TRACKED_LANDMARKS.map(index => landmarks[index]).filter(Boolean);
   if (points.length !== TRACKED_LANDMARKS.length || !geometry?.width || !geometry?.height) {
@@ -142,6 +175,7 @@ function infer(message) {
           trackingQuality: 0,
           geometry: null,
           pose: null,
+          poseCues: null,
           backend,
           inferenceMs: performance.now() - startedAt,
           frameWidth: message.frameWidth,
@@ -170,6 +204,7 @@ function infer(message) {
         trackingQuality,
         geometry,
         pose,
+        poseCues: poseCuesFromLandmarks(landmarks),
         partiallyVisible: geometry?.partiallyVisible === true,
         nearFrameEdge: geometry?.nearFrameEdge === true,
         tooClose: geometry?.tooClose === true,
