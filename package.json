@@ -26,6 +26,7 @@
     "test:violation-decisions": "node scripts/smoke-test-violation-decisions.mjs",
     "test:offline-hold": "node scripts/smoke-test-offline-hold.mjs",
     "test:face-scan": "node scripts/smoke-test-face-scan-escape.mjs",
+    "test:monitor-status": "node scripts/smoke-test-monitor-status-alerts.mjs",
     "test:answer-sheet": "node scripts/test-answer-sheet.cjs",
     "test:export-menu": "node scripts/test-export-menu.cjs",
     "test:live-badges": "node scripts/test-live-badges.cjs",

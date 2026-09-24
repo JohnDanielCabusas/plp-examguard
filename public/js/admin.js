@@ -1032,6 +1032,44 @@ function isMonitorRowViolationFresh(sessionId) {
   return true;
 }
 
+// A live alert is only worth showing while the attempt it belongs to is still
+// running. Checked when an alert is queued AND again when it is about to be
+// shown, because a queue built during the exam could otherwise keep popping
+// after the student submitted or the professor closed the exam.
+function isViolationAlertStillLive(entry) {
+  if (!entry) return false;
+  const session = entry.sessionId ? DB.getSession(entry.sessionId) : null;
+  // The attempt is over. Whatever this was, it belongs in the log, not on screen.
+  if (session?.submitted) return false;
+  const exam = entry.examId ? DB.getExam(entry.examId) : null;
+  // Unknown exam means the row has not synced yet, which is not evidence that it
+  // finished — only a status we can actually read is allowed to suppress.
+  if (exam && String(exam.status || '').toLowerCase() !== 'active') return false;
+  return true;
+}
+
+// Drop everything queued for an attempt or an exam that is no longer live, so a
+// backlog cannot outlive the thing it was about.
+function pruneStaleViolationAlerts() {
+  const before = _violationAlertQueue.length;
+  _violationAlertQueue = _violationAlertQueue.filter((entry) => {
+    if (isViolationAlertStillLive(entry)) return true;
+    if (entry?.id) _queuedViolationAlertIds.delete(entry.id);
+    return false;
+  });
+  const activeWentStale = !!_activeViolationAlert && !isViolationAlertStillLive(_activeViolationAlert);
+  if (activeWentStale) {
+    if (_activeViolationAlert?.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+    _activeViolationAlert = null;
+  }
+  if (activeWentStale) {
+    showNextViolationAlert();
+    if (!_activeViolationAlert) renderViolationAlertModal();
+  } else if (before !== _violationAlertQueue.length) {
+    renderViolationAlertModal();
+  }
+}
+
 function buildViolationAlertEntry(session, activity) {
   const exam = session?.examId ? DB.getExam(session.examId) : null;
   return {
@@ -1078,6 +1116,11 @@ function renderViolationAlertModal() {
   const modalId = 'modal-violation-alert';
   const modal = document.getElementById(modalId);
   if (!modal) return;
+  // The attempt may have ended while this alert sat on screen.
+  if (_activeViolationAlert && !isViolationAlertStillLive(_activeViolationAlert)) {
+    if (_activeViolationAlert.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+    _activeViolationAlert = null;
+  }
   if (!_activeViolationAlert) {
     closeModal(modalId);
     return;
@@ -1134,9 +1177,17 @@ function renderViolationAlertModal() {
 }
 
 function showNextViolationAlert() {
-  if (_activeViolationAlert || !_violationAlertQueue.length) return;
-  _activeViolationAlert = _violationAlertQueue.shift();
-  renderViolationAlertModal();
+  if (_activeViolationAlert) return;
+  while (_violationAlertQueue.length) {
+    const next = _violationAlertQueue.shift();
+    if (!isViolationAlertStillLive(next)) {
+      if (next?.id) _queuedViolationAlertIds.delete(next.id);
+      continue;
+    }
+    _activeViolationAlert = next;
+    renderViolationAlertModal();
+    return;
+  }
 }
 
 function acknowledgeViolationAlert() {
@@ -1204,6 +1255,13 @@ function queueViolationAlert(entry) {
   // has been shown once it can never pop up again for the same underlying event.
   if (readDismissedNotificationIds().has(String(entry.id))) return;
   if (_alertedViolationIds.has(entry.id)) return;
+  // Late arrivals for a finished attempt or a closed exam are recorded, never
+  // shown: an alert that turns up after the fact is noise a professor cannot act
+  // on, and it was appearing over whatever they had moved on to.
+  if (!isViolationAlertStillLive(entry)) {
+    _alertedViolationIds.add(entry.id);
+    return;
+  }
   if (_queuedViolationAlertIds.has(entry.id) || _activeViolationAlert?.id === entry.id) return;
 
   _alertedViolationIds.add(entry.id);
@@ -1392,26 +1450,33 @@ function refreshViolationAlerts(options = {}) {
 
   sessions.forEach(session => {
     const alertActivities = getAlertableSessionActivities(session);
-    const seen = _seenViolationActivityBySession.get(session.id) || new Set();
+    const seen = _seenViolationActivityBySession.get(session.id);
+    // A session reaching this professor for the first time arrives with its whole
+    // history. Marking that history as seen is what stops it being replayed as a
+    // burst of popups minutes or hours after the fact — only what happens from
+    // now on is worth interrupting them for.
+    const firstSightOfSession = !seen;
+    const seenSignatures = seen || new Set();
 
-    if (!_violationAlertSeeded || seedOnly) {
-      alertActivities.forEach(activity => seen.add(getViolationActivitySignature(activity)));
-      _seenViolationActivityBySession.set(session.id, seen);
+    if (!_violationAlertSeeded || seedOnly || firstSightOfSession) {
+      alertActivities.forEach(activity => seenSignatures.add(getViolationActivitySignature(activity)));
+      _seenViolationActivityBySession.set(session.id, seenSignatures);
       return;
     }
+    const seenSet = seenSignatures;
 
     alertActivities.forEach(activity => {
       const signature = getViolationActivitySignature(activity);
-      if (seen.has(signature)) return;
+      if (seenSet.has(signature)) return;
       if (wasRecentViolationEventForActivity(session.id, activity)) {
-        seen.add(signature);
+        seenSet.add(signature);
         return;
       }
-      seen.add(signature);
+      seenSet.add(signature);
       queueViolationAlert(buildViolationAlertEntry(session, activity));
     });
 
-    _seenViolationActivityBySession.set(session.id, seen);
+    _seenViolationActivityBySession.set(session.id, seenSet);
   });
 
   Array.from(_seenViolationActivityBySession.keys()).forEach(sessionId => {
@@ -1419,6 +1484,9 @@ function refreshViolationAlerts(options = {}) {
   });
 
   if (!_violationAlertSeeded || seedOnly) _violationAlertSeeded = true;
+  // A submitted attempt or a closed exam cannot alert any more, so anything
+  // already waiting for one is dropped rather than shown later.
+  pruneStaleViolationAlerts();
 }
 
 // Surface Supabase sync failures visibly
@@ -6176,6 +6244,8 @@ async function setExamStatus(id, status) {
     });
     DB.updateExam(id, { status: 'closed', closedAt: new Date().toISOString() });
     updateExamDeadlineDisplays();
+    // Nothing from a closed exam may still surface on screen.
+    pruneStaleViolationAlerts();
     showToast('Exam closed.', 'success');
   } else if (status === 'archived') {
     // Archiving takes the exam out of every working list at once, so it asks
@@ -9189,6 +9259,46 @@ window.addEventListener('beforeunload', () => {
   stopViolationEventStream();
 });
 
+// One key for both sides of the roster-to-session pairing.
+function monitorStudentKey(studentId) {
+  return String(studentId || '').trim().toUpperCase();
+}
+
+// With more than one row for a student, the attempt in progress is the one the
+// professor needs to see.
+function pickLiveMonitorSession(a, b) {
+  const score = (session) => {
+    if (!session) return -1;
+    if (!session.submitted && hasMonitorExamActivity(session)) return 3;
+    if (!session.submitted) return 2;
+    return 1;
+  };
+  const scoreA = score(a);
+  const scoreB = score(b);
+  if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
+  const recency = (session) => {
+    const raw = session?.endTime || session?.startTime || session?.createdAt || null;
+    const time = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
+  };
+  return recency(b) > recency(a) ? b : a;
+}
+
+// Evidence that this attempt is actually under way. A start time is the usual
+// signal, but it is one field written by the student's own browser: a failed or
+// not-yet-synced write left a student who was answering questions showing as
+// "Not Started". Answers, warnings and a monitoring timeline are equally proof
+// that somebody is in there, and a granted retake clears all of them together,
+// so a reset attempt still reads as not started.
+function hasMonitorExamActivity(session) {
+  if (!session) return false;
+  if (session.startTime) return true;
+  if (Object.keys(session.answers || {}).length > 0) return true;
+  if (Number(session.warnings || 0) > 0) return true;
+  return (Array.isArray(session.activities) ? session.activities : [])
+    .some(activity => activity?.type !== 'browser_exam_end');
+}
+
 function renderMonitoringTable(examId) {
   const countEl = document.getElementById('monitor-count');
   const grid = document.getElementById('monitoring-grid');
@@ -9208,9 +9318,22 @@ function renderMonitoringTable(examId) {
   const exam = DB.getExam(examId);
   const persistedSessions = DB.getSessionsByExam(examId);
   const excludedStudentIds = new Set(exam?.excludedStudentIds || []);
+  // The roster and the session rows have to be paired on the same key. They used
+  // to be compared one way for the roster (exactly) and another for the orphan
+  // sweep (trimmed and upper-cased), so a student ID that differed only in case
+  // or spacing matched neither: their live attempt was filtered out as "already
+  // on the roster" while the roster showed an empty placeholder reading
+  // "Not Started".
+  const sessionsByStudentKey = new Map();
+  persistedSessions.forEach((session) => {
+    const key = monitorStudentKey(session?.studentId);
+    if (!key) return;
+    const existing = sessionsByStudentKey.get(key);
+    sessionsByStudentKey.set(key, existing ? pickLiveMonitorSession(existing, session) : session);
+  });
   const rosterEntries = exam?.subjectId
     ? getExamAttendanceStudents(exam.subjectId).map(student => {
-        const session = DB.getStudentSession(examId, student.studentId);
+        const session = sessionsByStudentKey.get(monitorStudentKey(student.studentId)) || null;
         // A student cleared to sit the exam after being marked absent is here to
         // be watched like anyone else, and the professor needs to see why they
         // are in the room at all (#35).
@@ -9246,11 +9369,9 @@ function renderMonitoringTable(examId) {
         };
       })
     : [];
-  const rosterStudentIds = new Set(
-    rosterEntries.map(entry => String(entry.studentId || '').trim().toUpperCase())
-  );
+  const rosterStudentIds = new Set(rosterEntries.map(entry => monitorStudentKey(entry.studentId)));
   const orphanSessions = persistedSessions.filter(
-    session => !rosterStudentIds.has(String(session.studentId || '').trim().toUpperCase())
+    session => !rosterStudentIds.has(monitorStudentKey(session.studentId))
   );
   const rosterSessions = [...rosterEntries, ...orphanSessions].sort(compareMonitorSessionsByLastName);
   // The search narrows only the rows on screen. The stats strip keeps counting
@@ -9266,7 +9387,7 @@ function renderMonitoringTable(examId) {
     : rosterSessions.length + ' student' + (rosterSessions.length !== 1 ? 's' : '');
 
   // ── Stats strip ──────────────────────────────────────────
-  const inProgress = rosterSessions.filter(s => !s.submitted && !!s.startTime).length;
+  const inProgress = rosterSessions.filter(s => !s.submitted && hasMonitorExamActivity(s)).length;
   const submitted  = rosterSessions.filter(s => s.submitted).length;
   const flagged    = rosterSessions.filter(s => getEffectiveSessionWarningCount(s) >= 2).length;
 
@@ -9337,11 +9458,15 @@ function renderMonitoringTable(examId) {
         ${unread ? `<span class="ms-chat-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
       </button>` : '';
 
+    // Anyone with an attempt under way reads as In Progress, whether or not their
+    // start time has reached us: answers, warnings or a monitoring timeline are
+    // the same proof that somebody is sitting the exam.
+    const examUnderway = !s.submitted && hasMonitorExamActivity(s);
     const statusBadgeHtml = s.submitted
       ? (s.autoSubmitted
           ? '<span class="ms-badge ms-badge-amber">Auto-Submitted</span>'
           : '<span class="ms-badge ms-badge-green">Submitted</span>')
-      : s.startTime
+      : examUnderway
         ? (s.monitorLateAuthorized
             ? '<span class="ms-badge ms-badge-blue" title="Marked absent for the scheduled sitting and cleared by you to take it late">In Progress &middot; Late Sitting</span>'
             : '<span class="ms-badge ms-badge-blue">In Progress</span>')
@@ -9387,7 +9512,7 @@ function renderMonitoringTable(examId) {
           <div class="ms-action-main">
             ${s.submitted
               ? '<span class="ms-action-status">Submitted</span>'
-              : s.startTime && s.id
+              : examUnderway && s.id
                 ? `<button class="tbl-btn tbl-btn-archive tbl-btn-plain" onclick="forceSubmitStudent('${s.id}')">Force Submit</button>`
                 : '<span class="ms-action-status">—</span>'}
           </div>
