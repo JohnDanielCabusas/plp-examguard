@@ -1188,6 +1188,24 @@ const SupabaseSync = {
     }
   },
 
+  // Deletes a whole student↔professor thread for one exam by filter rather than
+  // by id, so rows this device never cached (sent from another tab, or before a
+  // pull) go too. A missing messages table is a no-op, not an error.
+  async deleteMessagesForExamStudent(examId, studentId) {
+    if (!this._client || !examId || !studentId || this._messagesSupported === false) return;
+    const { error } = await this._client.from('messages').delete()
+      .eq('exam_id', examId)
+      .eq('student_id', studentId);
+    if (!error) return;
+    if (this._isMissingMessagesTableError(error)) {
+      this._messagesSupported = false;
+      return;
+    }
+    console.error('[SupabaseSync] deleteMessagesForExamStudent:', error.message || error);
+    this._emitSyncError('messages', error);
+    throw error;
+  },
+
   // ── JS → DB normalizers ─────────────────────────────────────
 
   _jsToDbSettings(d) {

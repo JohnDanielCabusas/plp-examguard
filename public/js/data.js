@@ -1308,6 +1308,22 @@ const DB = {
     }
     return newMessage;
   },
+  // Removes one student's whole thread for an exam — the professor's Clear Chat,
+  // and every retake, so a new attempt never opens on the last attempt's
+  // conversation. The local copy goes first so the UI repaints at once; the
+  // returned promise settles when Supabase has deleted the rows.
+  clearMessagesForExamStudent(examId, studentId) {
+    if (!examId || !studentId) return Promise.resolve();
+    const messages = this._read(this.KEYS.messages, []);
+    const kept = messages.filter(m => !(m.examId === examId && m.studentId === studentId));
+    if (kept.length !== messages.length) {
+      this._write(this.KEYS.messages, kept);
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table: 'messages' } }));
+      }
+    }
+    return Promise.resolve(SupabaseSync.deleteMessagesForExamStudent?.(examId, studentId));
+  },
   // Marks the other party's messages in a thread as read (senderRole = whoever we're
   // reading FROM). Best-effort sync of each touched row.
   markMessagesRead(examId, studentId, fromSenderRole) {

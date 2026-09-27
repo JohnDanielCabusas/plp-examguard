@@ -6289,6 +6289,7 @@ async function reopenExam(id) {
       });
       clearViolationAlertsForSession(s.id);
     });
+    clearChatsForRetake(id, sessions.map(s => s.studentId));
     const startedAt = new Date().toISOString();
     DB.updateExam(id, {
       status: 'active',
@@ -9605,7 +9606,10 @@ function _ensureProfChatDrawer() {
           <div class="prof-chat-meta" id="prof-chat-meta"></div>
         </div>
       </div>
-      <button type="button" class="prof-chat-close" onclick="closeStudentChat()" aria-label="Close chat">&#10005;</button>
+      <div class="prof-chat-header-actions">
+        <button type="button" class="prof-chat-clear" id="prof-chat-clear" onclick="clearProfChat()" title="Delete every message in this conversation">Clear Chat</button>
+        <button type="button" class="prof-chat-close" onclick="closeStudentChat()" aria-label="Close chat">&#10005;</button>
+      </div>
     </div>
     <div class="prof-chat-camera-row" id="prof-chat-camera-row"></div>
     <div class="prof-chat-body" id="prof-chat-body"></div>
@@ -9650,6 +9654,46 @@ function openStudentChat(examId, studentId, sessionId) {
   // Do the same for the per-student webcam override so the toggle never opens
   // with a stale action after a missed realtime event.
   refreshProfCameraFromSync();
+}
+
+async function clearProfChat() {
+  if (!_profChatCtx) return;
+  const { examId, studentId, studentName } = _profChatCtx;
+  if (!DB.getMessagesForExamStudent(examId, studentId).length) {
+    showToast('There are no messages to clear.', 'info');
+    return;
+  }
+  const ok = await showConfirm({
+    title: 'Clear Chat',
+    message: `Delete every message between you and ${studentName} for this exam? The student's copy is cleared too. This cannot be undone.`,
+    confirmLabel: 'Clear Chat',
+  });
+  if (!ok) return;
+  const clearBtn = document.getElementById('prof-chat-clear');
+  if (clearBtn) clearBtn.disabled = true;
+  try {
+    await DB.clearMessagesForExamStudent(examId, studentId);
+    showToast('Chat cleared.', 'success');
+  } catch {
+    // The local copy is already gone; the next pull brings back whatever the
+    // server kept, so the professor is never shown a thread that looks cleared.
+    showToast('Could not clear the chat on the server. Please try again.', 'error');
+    refreshProfChatFromSync();
+  } finally {
+    if (clearBtn) clearBtn.disabled = false;
+  }
+  if (_profChatCtx?.examId === examId && _profChatCtx?.studentId === studentId) renderProfChatMessages();
+  renderMonitoringTable(monitorExamId);
+  refreshMessageNotifications();
+}
+window.clearProfChat = clearProfChat;
+
+// A retake starts with an empty conversation. Failures are reported but never
+// block the retake itself.
+function clearChatsForRetake(examId, studentIds) {
+  const ids = [...new Set((studentIds || []).filter(Boolean))];
+  return Promise.all(ids.map(studentId => DB.clearMessagesForExamStudent(examId, studentId)))
+    .catch(() => showToast('Retake granted, but the previous chat could not be cleared.', 'warning'));
 }
 
 function closeStudentChat() {
@@ -13171,6 +13215,7 @@ async function allowStudentRetake(sessionId) {
   if (!ok) return;
   await clearRetakeCameraExemptions(exam, [session.studentId]);
   resetSessionsForRetake(session, getRetakeGrantedBy());
+  clearChatsForRetake(session.examId, [session.studentId]);
   showToast(`Retake granted for ${session.studentName}.`, 'success');
   if (currentSection === 'monitoring') renderMonitoringSectionLive();
   renderReportTable();
@@ -13204,6 +13249,7 @@ async function allowSelectedRetakes() {
   const grantedBy = getRetakeGrantedBy();
   await clearRetakeCameraExemptions(exam, targets.map(session => session.studentId));
   targets.forEach(session => resetSessionsForRetake(session, grantedBy));
+  clearChatsForRetake(examId, targets.map(session => session.studentId));
   // Those rows leave the results table the moment they are reset, so a stale
   // selection must not carry over into the next export.
   clearReportSelection();

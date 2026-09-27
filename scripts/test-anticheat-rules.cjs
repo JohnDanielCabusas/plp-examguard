@@ -162,6 +162,7 @@ const pressKey = init => {
   let prevented = false;
   onKeyDown({
     key: init.key,
+    code: init.code,
     metaKey: !!init.metaKey,
     altKey: !!init.altKey,
     shiftKey: !!init.shiftKey,
@@ -203,5 +204,35 @@ assert.deepEqual(raised, [], 'plain letters are not capture attempts');
 raised.length = 0;
 pressKey({ key: 'v', ctrlKey: true });
 assert.deepEqual(raised, [], 'Ctrl+V is handled by the paste rule, not the capture rule');
+
+// ── macOS: metaKey is Cmd, and Shift changes e.key on the digit row ─────────
+sandbox.navigator = { platform: 'MacIntel', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' };
+keyHandlers.length = 0;
+app.initAntiCheat();
+const onMacKeyDown = keyHandlers[keyHandlers.length - 1];
+const pressMacKey = init => onMacKeyDown({
+  key: init.key,
+  code: init.code,
+  metaKey: !!init.metaKey,
+  altKey: !!init.altKey,
+  shiftKey: !!init.shiftKey,
+  ctrlKey: !!init.ctrlKey,
+  target: {},
+  preventDefault() {},
+});
+
+raised.length = 0;
+pressMacKey({ key: 'g', code: 'KeyG', metaKey: true });
+pressMacKey({ key: 'r', code: 'KeyR', metaKey: true, altKey: true });
+assert.deepEqual(raised, [], 'Cmd+G (Find Next) and Cmd+Alt+R are not Windows capture shortcuts on a Mac');
+
+raised.length = 0;
+pressMacKey({ key: '#', code: 'Digit3', metaKey: true, shiftKey: true });
+pressMacKey({ key: '%', code: 'Digit5', metaKey: true, shiftKey: true });
+assert.deepEqual(raised, ['screenshot', 'screenshot'], 'Cmd+Shift+3/5 are caught by physical key even though e.key is shifted');
+
+raised.length = 0;
+assert.doesNotThrow(() => pressMacKey({ key: undefined, metaKey: true }), 'a keydown with no key (autofill) must not throw');
+delete sandbox.navigator;
 
 console.log('Anti-cheat clipboard, fullscreen, review-gating and capture-hotkey tests passed.');

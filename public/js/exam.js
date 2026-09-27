@@ -1034,6 +1034,11 @@ const ExamApp = {
     });
   },
 
+  _isMacPlatform() {
+    if (typeof navigator === 'undefined') return false;
+    return /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || '');
+  },
+
   _isFullscreenActive() {
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
   },
@@ -4432,12 +4437,17 @@ const ExamApp = {
   // ============================================================
   initAntiCheat(options = {}) {
     this.destroyAntiCheat({ preserveCamera: options.preserveCamera === true });
+    const isMac = this._isMacPlatform();
+    // Last focus state the blur/focus events reported. The backstop poll below
+    // only acts when the real state drifts from it, i.e. when an event was missed.
+    let focusSeen = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
     // ── Window blur (focus lost to another app) ──────────────────
     // Use 250ms delay so that pressing Alt/Win/Ctrl alone (which causes a
     // momentary blur) does NOT trigger a warning. Only a real app switch
     // that persists beyond 250ms counts.
     const blurHandler = () => {
+      focusSeen = false;
       if (this._blurTimer) clearTimeout(this._blurTimer);
       this._blurTimer = setTimeout(() => {
         this._blurTimer = null;
@@ -4456,6 +4466,7 @@ const ExamApp = {
 
     // ── Window focus restored ────────────────────────────────────
     const focusHandler = () => {
+      focusSeen = true;
       if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
       this.cancelCountdown(); // keep any read notice inside the original 10s deadline
       // Coming back from another application must land the student back in
@@ -4464,6 +4475,18 @@ const ExamApp = {
       this._scheduleFullscreenEnforcement();
     };
     window.addEventListener('focus', focusHandler);
+
+    // macOS can move focus without a window blur: swiping to another Space or
+    // desktop, or Mission Control, may leave the browser as the active app, so
+    // the blur event never arrives. Poll once a second and feed any missed
+    // change through the same handlers, so it is judged by the same rules.
+    if (typeof document.hasFocus === 'function') {
+      this._focusBackstopTimer = setInterval(() => {
+        const focused = document.hasFocus();
+        if (focused === focusSeen) return;
+        if (focused) focusHandler(); else blurHandler();
+      }, 1000);
+    }
 
     // ── Tab switch (document hidden) ─────────────────────────────
     const visHandler = () => {
@@ -4628,11 +4651,14 @@ const ExamApp = {
       // external recorder such as OBS, because no browser API reports that the
       // screen is being captured.
       const pressed = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      const code = typeof e.code === 'string' ? e.code : '';
       // Win+Alt+R toggles recording: that is the attempt ending. Win+G only
       // opens the capture overlay, which is a strike but not proof that
       // anything is being recorded, and a stray Windows-key combination must
       // not cost a student their whole exam.
-      if (e.metaKey && e.altKey && pressed === 'r') {
+      // On a Mac, metaKey is Cmd: Cmd+G is Find Next and Cmd+Alt+R is not a
+      // recording shortcut, so these Windows-key rules only apply elsewhere.
+      if (!isMac && e.metaKey && e.altKey && (pressed === 'r' || code === 'KeyR')) {
         e.preventDefault();
         // The same key both starts and stops recording, and the operating
         // system acts on it whatever this page does about the event. If the
@@ -4646,19 +4672,24 @@ const ExamApp = {
         this.issueWarning('screen_record', 'Screen recording shortcut detected');
         return;
       }
-      if (e.metaKey && pressed === 'g') {
+      if (!isMac && e.metaKey && (pressed === 'g' || code === 'KeyG')) {
         e.preventDefault();
         this.issueWarning('screen_record_panel', 'Screen capture overlay shortcut detected');
         return;
       }
-      if (e.metaKey && e.shiftKey && ['s', '3', '4', '5'].includes(pressed)) {
+      // Match the physical key as well: with Shift held a Mac reports Cmd+Shift+3
+      // as '#', so e.key alone never matched. macOS usually takes Cmd+Shift+3/4
+      // before the page sees them; Cmd+Shift+5's toolbar is caught as a blur.
+      const captureKey = ['s', '3', '4', '5'].includes(pressed)
+        || ['KeyS', 'Digit3', 'Digit4', 'Digit5'].includes(code);
+      if (e.metaKey && e.shiftKey && captureKey) {
         e.preventDefault();
         this.issueWarning('screenshot', 'Screen capture shortcut detected');
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(e.key.toLowerCase())) {
-        const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','u','s'].includes(pressed)) {
+        const key = pressed;
         const editable = this._isEditableTarget(e.target);
 
         if (key === 'c') {
@@ -7466,6 +7497,7 @@ const ExamApp = {
     if (this._blurTimer) { clearTimeout(this._blurTimer); this._blurTimer = null; }
     if (this._visTimer) { clearTimeout(this._visTimer); this._visTimer = null; }
     if (this._fsLossTimer) { clearTimeout(this._fsLossTimer); this._fsLossTimer = null; }
+    if (this._focusBackstopTimer) { clearInterval(this._focusBackstopTimer); this._focusBackstopTimer = null; }
     if (this._pendingFullscreenRecovery) {
       clearTimeout(this._pendingFullscreenRecovery);
       this._pendingFullscreenRecovery = null;
@@ -7955,7 +7987,7 @@ const ExamApp = {
       titleEl.textContent = 'SCREEN RECORDING DETECTED';
       subEl.textContent   = this._recordingGraceUsed
         ? 'Recording the exam is not allowed. You already stopped once this attempt, so your exam is being submitted.'
-        : 'Stop the recording now to continue. Use the recording shortcut (Win+Alt+R), or stop it however you started it and select the button below. You get one chance.';
+        : `Stop the recording now to continue. Use the recording shortcut (${this._isMacPlatform() ? 'Cmd+Ctrl+Esc' : 'Win+Alt+R'}), or stop it however you started it and select the button below. You get one chance.`;
     } else if (this.warnings >= 3) {
       titleEl.textContent = 'FINAL WARNING!';
       subEl.textContent   = 'Maximum violations reached. Your exam is being submitted now.';
