@@ -245,6 +245,9 @@ export class FaceLandmarkerRuntime {
         requestId,
         bitmap,
         timestampMs,
+        // The cadence the jitter thresholds were tuned for. The worker scales
+        // frame-to-frame movement to it when frames arrive further apart.
+        intervalMs: Math.round(1000 / this.config.inferenceFps),
         frameWidth: this.video.videoWidth || bitmap.width,
         frameHeight: this.video.videoHeight || bitmap.height,
         geometryConfig: this.config.geometry,

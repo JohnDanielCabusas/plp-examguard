@@ -130,14 +130,26 @@ When the active detector is the COCO baseline, the browser also starts the
 staged TUKLAS model as a slower phone-only specialist after primary monitoring
 is ready. Only its `mobile_phone` output is consumed. This improves coverage of
 phone backs, cases, dark screens, and partial views. Specialist candidates still require crop
-verification and temporal confirmation. Small or ambiguous candidates require
-actual object movement, while a clearly sized stationary phone requires an extra
-confirmed frame before a violation is issued. Objects pinned to a frame edge
-cannot use the stationary-phone shortcut and must move substantially into the
-scene, preventing shelves and wall fixtures from confirming as phones. Square
-candidates are rejected, and phone-shaped candidates away from the detected
-student require four observations plus substantial movement. The worker keeps
-person detections as validation context only; they never become violations.
+verification and temporal confirmation.
+
+Every report, from either model and at any confidence, requires the object to
+have visibly travelled. One scan fixes where it was; the next two must both find
+it clear of that spot, in the same direction, by at least 3% of the frame's
+longer side and 12% of the object's own length. Only the distance both edges of
+the box cover together counts, so a box that grows, shrinks or is read first as a
+whole unit and then as part of it is not movement, and each model is compared
+only with its own earlier readings. This is what separates a phone in a hand
+from an air conditioner, a switch plate or a picture frame whose box merely
+wobbles; the previous rule measured the furthest the box centre had ever strayed
+and was cleared by a few pixels of wobble. A phone raised between scans and then
+held almost perfectly still is therefore not reported until it moves.
+
+Objects pinned to a frame edge must travel further (15%), and phone-shaped
+candidates away from the detected student require four observations and 18%.
+The specialist has no person class, so it places its candidates against the
+people the general model reported within the last 2.5 seconds. Square candidates
+are rejected. The worker keeps person detections as validation context only;
+they never become violations.
 The specialist has its own short
 calibration window for stable shelf and furniture regions, and can verify up to
 three phone candidates so a false shelf candidate does not hide a real phone

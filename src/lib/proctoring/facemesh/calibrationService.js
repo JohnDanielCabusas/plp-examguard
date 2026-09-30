@@ -13,10 +13,16 @@ function robustRange(values) {
   return range(sorted.slice(trimCount, sorted.length - trimCount));
 }
 
+// Gaps longer than this say the pipeline stalled, not how fast frames normally
+// come, so they are left out of the cadence estimate.
+const CADENCE_STALL_MS = 10000;
+
 export class FaceCalibrationSession {
   constructor(config) {
     this.config = {
       transientInvalidToleranceMs: 900,
+      cadenceToleranceMultiplier: 2.5,
+      maximumTransientInvalidToleranceMs: 4000,
       minimumSamples: 15,
       ...config,
     };
@@ -55,6 +61,39 @@ export class FaceCalibrationSession {
     this.failureReason = '';
     this.complete = false;
     this.baseline = null;
+    // How far apart frames actually arrive on this device, valid or not.
+    this.typicalGapMs = null;
+  }
+
+  // The bar has to reflect whichever requirement is still holding the scan
+  // back. Progress used to be time alone, so on a slow device it reached the
+  // end and then sat at full while the sample count quietly caught up.
+  _progress() {
+    const timeProgress = this.stableDurationMs / Math.max(1, Number(this.config.durationMs) || 1);
+    const sampleProgress = this.samples.length / Math.max(1, Number(this.config.minimumSamples) || 1);
+    return Math.max(0, Math.min(1, timeProgress, sampleProgress));
+  }
+
+  _observeCadence(now) {
+    const previous = this.lastObservationAt;
+    if (previous === null || !Number.isFinite(previous)) return;
+    const gap = now - previous;
+    if (!(gap > 0) || gap >= CADENCE_STALL_MS) return;
+    this.typicalGapMs = this.typicalGapMs === null
+      ? gap
+      : (this.typicalGapMs * 0.7) + (gap * 0.3);
+  }
+
+  // A dropped frame is only "transient" relative to how often frames come. At
+  // ten frames a second, 900 ms is nine missed frames; at two frames a second it
+  // is less than two, and one skipped frame was enough to start the scan over.
+  _transientToleranceMs() {
+    const floor = Number(this.config.transientInvalidToleranceMs) || 0;
+    const multiplier = Number(this.config.cadenceToleranceMultiplier) || 0;
+    const cap = Number(this.config.maximumTransientInvalidToleranceMs);
+    const cadence = this.typicalGapMs === null ? 0 : this.typicalGapMs * multiplier;
+    const tolerance = Math.max(floor, cadence);
+    return Number.isFinite(cap) && cap > 0 ? Math.min(cap, tolerance) : tolerance;
   }
 
   _restart(reason) {
@@ -70,7 +109,7 @@ export class FaceCalibrationSession {
   _pause(reason, now) {
     if (this.invalidSince === null) this.invalidSince = now;
     const invalidForMs = Math.max(0, now - this.invalidSince);
-    if (invalidForMs >= this.config.transientInvalidToleranceMs) {
+    if (invalidForMs >= this._transientToleranceMs()) {
       this._restart(reason);
     }
     this.lastObservationAt = now;
@@ -78,7 +117,7 @@ export class FaceCalibrationSession {
     this.failureReason = reason;
     return {
       complete: false,
-      progress: Math.min(1, this.stableDurationMs / this.config.durationMs),
+      progress: this._progress(),
       reason,
     };
   }
@@ -90,6 +129,7 @@ export class FaceCalibrationSession {
       ? NaN
       : Number(rawTimestamp);
     const now = Number.isFinite(suppliedTimestamp) ? suppliedTimestamp : performance.now();
+    this._observeCadence(now);
     const geometry = observation?.geometry;
     const pose = observation?.pose;
     const geometryIsValid = geometry && [
@@ -100,7 +140,12 @@ export class FaceCalibrationSession {
     ].every(value => Number.isFinite(Number(value)));
     const poseIsValid = pose && [pose.yaw, pose.pitch, pose.roll]
       .every(value => Number.isFinite(Number(value)));
-    if (!observation?.facePresent || !geometryIsValid || !poseIsValid) {
+    // "Fully visible" told a student whose face the model had not found at all
+    // to adjust something that was already right. Say what actually happened.
+    if (!observation?.facePresent) {
+      return this._pause('No face detected yet. Face the camera directly and make sure your face is well lit.', now);
+    }
+    if (!geometryIsValid || !poseIsValid) {
       return this._pause('Keep your face fully visible inside the guide.', now);
     }
     if (observation.partiallyVisible || observation.nearFrameEdge) {
@@ -108,7 +153,7 @@ export class FaceCalibrationSession {
     }
     const trackingQuality = Number(observation.trackingQuality);
     if (!Number.isFinite(trackingQuality) || trackingQuality < this.config.minimumTrackingQuality) {
-      return this._pause('Improve the lighting and keep your face unobstructed.', now);
+      return this._pause('Hold still for a moment. If this keeps showing, improve the lighting on your face.', now);
     }
     if (geometry.width < this.config.minimumFaceWidthRatio) {
       return this._pause('Move slightly closer to the camera.', now);
@@ -140,8 +185,10 @@ export class FaceCalibrationSession {
 
     if (this.lastObservationWasValid && this.lastObservationAt !== null) {
       const sampleGapMs = now - this.lastObservationAt;
-      if (sampleGapMs >= 0 && sampleGapMs <= this.config.maximumSampleGapMs) {
-        this.stableDurationMs += sampleGapMs;
+      // A late frame still shows the student held steady for at least the cap.
+      // Skipping it outright meant a slow device could never accumulate time.
+      if (sampleGapMs >= 0) {
+        this.stableDurationMs += Math.min(sampleGapMs, Number(this.config.maximumSampleGapMs) || sampleGapMs);
       }
     }
 
@@ -168,7 +215,7 @@ export class FaceCalibrationSession {
       faceSpanRatio: Number.isFinite(Number(cues?.faceSpanRatio)) ? Number(cues.faceSpanRatio) : null,
     });
 
-    const progress = Math.min(1, this.stableDurationMs / this.config.durationMs);
+    const progress = this._progress();
     if (
       this.stableDurationMs < this.config.durationMs
       || this.samples.length < this.config.minimumSamples

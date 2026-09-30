@@ -86,7 +86,7 @@ All tunable values are centralized in
 | Rule | Initial value |
 | --- | ---: |
 | Inference rate | Up to 15 FPS (one in-flight frame at a time, 640 px maximum input side) |
-| Calibration | 5 seconds |
+| Calibration | 5 seconds of steady frames and at least 15 samples; late frames credited up to 1.5 s each; a missing face is tolerated for 0.9 s or 2.5 frame intervals (whichever is longer, up to 4 s) |
 | Left/right yaw | below -25 degrees / above +25 degrees |
 | Up/down pitch | below -18 degrees / above +18 degrees |
 | Positioning warning | 3 seconds |

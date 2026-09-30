@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { FaceCalibrationSession } from '../src/lib/proctoring/facemesh/calibrationService.js';
+import { createTrackingQualityMeter } from '../src/lib/proctoring/facemesh/trackingQuality.js';
 import { requestCameraStream } from '../src/lib/proctoring/facemesh/cameraAccess.js';
 import { FaceEventCorrelator } from '../src/lib/proctoring/facemesh/faceEventCorrelator.js';
 import { resolveFaceMonitoringConfig } from '../src/lib/proctoring/facemesh/faceMonitoringConfig.js';
@@ -57,8 +58,8 @@ assert.equal(config.inferenceFps, 10);
 assert.equal(config.maximumInferenceDimension, 480);
 assert.equal(config.randomForest.handInferenceIntervalMs, 300);
 assert.equal(config.minFaceDetectionConfidence, 0.5);
-assert.equal(config.minFacePresenceConfidence, 0.45);
-assert.equal(config.minTrackingConfidence, 0.45);
+assert.equal(config.minFacePresenceConfidence, 0.35);
+assert.equal(config.minTrackingConfidence, 0.35);
 assert.equal(config.pose.pitchDirectionMultiplier, -1);
 const relative = relativePose(
   { yaw: 35, pitch: 3, roll: 2 },
@@ -257,6 +258,93 @@ for (const time of [600, 1000, 1600]) {
 }
 assert.equal(calibrationResult.progress, 0, 'A persistently missing face must reset calibration.');
 assert.equal(lostFaceCalibration.samples.length, 0);
+
+// A laptop on the CPU model delivers a frame every two seconds or so. Every gap
+// used to be discarded as "too long", so the bar never moved for a student who
+// was doing everything right. Late frames are now credited up to the cap and
+// the scan finishes once enough of them have been collected.
+const slowCalibration = new FaceCalibrationSession(config.calibration);
+let slowResult = null;
+let slowProgressMoved = false;
+for (let time = 0; time <= 60000; time += 2000) {
+  const previousProgress = slowResult?.progress || 0;
+  slowResult = slowCalibration.addObservation(stableObservation(time));
+  if (slowResult.progress > previousProgress) slowProgressMoved = true;
+  if (slowResult.complete) break;
+}
+assert.ok(slowProgressMoved, 'The bar must move on a slow device.');
+assert.equal(slowResult.complete, true, 'A slow but steady device must finish the scan.');
+assert.equal(slowResult.baseline.sampleCount, config.calibration.minimumSamples);
+
+// At that rate one dropped frame is a two-second hole. The fixed 900 ms tolerance
+// treated that as the face being gone and started over.
+const slowDropCalibration = new FaceCalibrationSession(config.calibration);
+for (let time = 0; time <= 10000; time += 2000) {
+  slowDropCalibration.addObservation(stableObservation(time));
+}
+const earnedSamples = slowDropCalibration.samples.length;
+assert.ok(earnedSamples >= 5);
+const droppedFrame = slowDropCalibration.addObservation({
+  ...stableObservation(12000),
+  facePresent: false,
+  geometry: null,
+  pose: null,
+});
+assert.equal(droppedFrame.reason, 'No face detected yet. Face the camera directly and make sure your face is well lit.');
+assert.equal(slowDropCalibration.samples.length, earnedSamples, 'One missed frame at a slow rate must not erase progress.');
+const resumedFrame = slowDropCalibration.addObservation(stableObservation(14000));
+assert.equal(slowDropCalibration.samples.length, earnedSamples + 1);
+assert.ok(resumedFrame.progress > 0);
+
+// The tolerance does not grow without bound: a face that stays missing still
+// resets, even on a slow device.
+for (const time of [16000, 18000, 20000, 22000]) {
+  calibrationResult = slowDropCalibration.addObservation({
+    ...stableObservation(time),
+    facePresent: false,
+    geometry: null,
+    pose: null,
+  });
+}
+assert.equal(calibrationResult.progress, 0, 'A face missing for many frames must still reset.');
+
+// The bar tracks whichever requirement is still outstanding. Time alone used
+// to fill it while the sample count was still short, which looked stuck.
+const sampleBoundCalibration = new FaceCalibrationSession({ ...config.calibration, durationMs: 1000, minimumSamples: 10 });
+let sampleBoundResult = null;
+for (const time of [0, 1500, 3000]) {
+  sampleBoundResult = sampleBoundCalibration.addObservation(stableObservation(time));
+}
+assert.ok(sampleBoundCalibration.stableDurationMs >= 1000, 'Stable time is complete here.');
+assert.ok(sampleBoundResult.progress <= 0.3, 'Progress must not read as full while samples are still short.');
+assert.equal(sampleBoundResult.complete, false);
+
+// Landmark jitter is scored against the cadence the thresholds were tuned for.
+// The same small movement over a long frame gap is a still face, not an
+// unstable one.
+const jitterLandmarks = shift => {
+  const points = [];
+  for (let index = 0; index < 300; index += 1) points.push({ x: 0.5, y: 0.5 });
+  [1, 10, 33, 61, 152, 263, 291].forEach(index => { points[index] = { x: 0.5 + shift, y: 0.5 + shift }; });
+  return points;
+};
+const meterGeometry = { width: 0.3, height: 0.4, centerX: 0.5, centerY: 0.5 };
+const fastMeter = createTrackingQualityMeter();
+fastMeter.measure(jitterLandmarks(0), meterGeometry, 0, 100);
+const fastQuality = fastMeter.measure(jitterLandmarks(0.016), meterGeometry, 100, 100);
+const slowMeter = createTrackingQualityMeter();
+slowMeter.measure(jitterLandmarks(0), meterGeometry, 0, 100);
+const slowQuality = slowMeter.measure(jitterLandmarks(0.016), meterGeometry, 400, 100);
+assert.ok(fastQuality < config.calibration.minimumTrackingQuality, 'That much movement in one tenth of a second is unstable.');
+assert.ok(slowQuality > fastQuality, 'Spread over four tenths of a second it scores steadier.');
+assert.ok(slowQuality >= config.calibration.minimumTrackingQuality, 'A still face on a slow device must pass the gate.');
+const stalledMeter = createTrackingQualityMeter();
+stalledMeter.measure(jitterLandmarks(0), meterGeometry, 0, 100);
+const stalledQuality = stalledMeter.measure(jitterLandmarks(0.016), meterGeometry, 5000, 100);
+assert.ok(Math.abs(stalledQuality - slowQuality) < 1e-9, 'Credit for a long gap stops at four intervals.');
+const untimedMeter = createTrackingQualityMeter();
+untimedMeter.measure(jitterLandmarks(0), meterGeometry);
+assert.ok(Math.abs(untimedMeter.measure(jitterLandmarks(0.016), meterGeometry) - fastQuality) < 1e-9, 'Without timestamps the score is unchanged.');
 
 const briefEvents = [];
 const briefEngine = new FaceTemporalRuleEngine({

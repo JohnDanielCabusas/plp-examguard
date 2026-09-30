@@ -42,10 +42,17 @@ events.push(...policy.evaluate(
   { now: 1000, modelVersion: 'test-v1', backend: 'wasm' },
 ));
 assert.equal(events.length, 0, 'A single phone-shaped frame must not issue a violation.');
+// A phone in a hand travels. One scan fixes where it was, and the next two have
+// to find it clear of that spot - here 26 px further each time, a phone being
+// lifted or turned. A few pixels of drift is what a wall fixture's box does.
 events.push(...policy.evaluate([detection('mobile_phone', 0.9, {
-  x: 219, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+  x: 236, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
 })], { now: 2000, modelVersion: 'test-v1', backend: 'wasm' }));
-assert.equal(events.length, 1, 'A clear phone must confirm on a repeated frame.');
+assert.equal(events.length, 0, 'One displaced frame is not yet proof that the object moved.');
+events.push(...policy.evaluate([detection('mobile_phone', 0.9, {
+  x: 262, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+})], { now: 3000, modelVersion: 'test-v1', backend: 'wasm' }));
+assert.equal(events.length, 1, 'A clear phone must confirm once it has visibly moved.');
 assert.equal(events[0].violationType, 'restricted_phone');
 assert.equal(events[0].policyDecision, 'warning');
 assert.equal(events[0].modelVersion, 'test-v1');
@@ -55,18 +62,19 @@ assert.equal(events.length, 1, 'A continuously visible object must not emit dupl
 
 policy.evaluate([], { now: 12000 });
 const resetEvents = [];
-resetEvents.push(...policy.evaluate([detection('mobile_phone')], { now: 13000 }));
-resetEvents.push(...policy.evaluate([detection('mobile_phone', 0.9, {
-  x: 219, y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
-})], { now: 13500 }));
+for (let index = 0; index < 3; index += 1) {
+  resetEvents.push(...policy.evaluate([detection('mobile_phone', 0.9, {
+    x: 210 + (index * 26), y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+  })], { now: 13000 + (index * 500) }));
+}
 assert.equal(resetEvents.length, 1, 'An object may emit again only after a confirmed absence.');
 
 const shadowPolicy = new YoloObjectPolicy({ enabled: true, mode: 'shadow', calibrationMs: 0 });
 let shadowEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   shadowEvents = shadowEvents.concat(
     shadowPolicy.evaluate([detection('mobile_phone', 0.9, {
-      x: 210 + (index * 9), y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+      x: 210 + (index * 26), y: 150, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
     })], { now: 1000 + (index * 1000) }),
   );
 }
@@ -83,12 +91,12 @@ assert.equal(lowConfidenceEvents.length, 0, 'Low-confidence phone candidates mus
 
 const movingPhonePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
 let movingPhoneEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   movingPhoneEvents = movingPhoneEvents.concat(
     movingPhonePolicy.evaluate([
       detection('mobile_phone', 0.35, {
-        x: 210 + (index * 8),
-        y: 170 + (index * 4),
+        x: 210 + (index * 24),
+        y: 170 + (index * 12),
         width: 82,
         height: 145,
         frameWidth: 640,
@@ -100,7 +108,7 @@ for (let index = 0; index < 2; index += 1) {
 assert.equal(
   movingPhoneEvents.length,
   1,
-  'A verified lower-confidence handheld phone must confirm after two moving scans.',
+  'A verified lower-confidence handheld phone must confirm once it has clearly moved.',
 );
 
 const unverifiedPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
@@ -148,11 +156,11 @@ assert.equal(
 
 const faceOverlapPhonePolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
 let faceOverlapPhoneEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   const now = 5000 + (index * 500);
   faceOverlapPhoneEvents = faceOverlapPhoneEvents.concat(faceOverlapPhonePolicy.evaluate([
     detection('mobile_phone', 0.82, {
-      x: 315 + (index * 12),
+      x: 300 + (index * 30),
       y: 155,
       width: 130,
       height: 205,
@@ -220,11 +228,11 @@ assert.equal(
 
 const realPhoneBox = { x: 220, y: 180, width: 90, height: 150, frameWidth: 640, frameHeight: 480 };
 let calibratedEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   calibratedEvents = calibratedEvents.concat(
     calibratedPolicy.evaluate([detection('mobile_phone', 0.75, {
       ...realPhoneBox,
-      x: realPhoneBox.x + (index * 9),
+      x: realPhoneBox.x + (index * 26),
     })], { now: 8000 + (index * 1000) }),
   );
 }
@@ -232,11 +240,11 @@ assert.equal(calibratedEvents.length, 1, 'A phone entering after calibration mus
 
 const fastPathPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce' });
 let fastPathEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   fastPathEvents = fastPathEvents.concat(
     fastPathPolicy.evaluate([detection('mobile_phone', 0.8, {
       ...realPhoneBox,
-      x: realPhoneBox.x + (index * 9),
+      x: realPhoneBox.x + (index * 26),
     })], { now: 1000 + (index * 500) }),
   );
 }
@@ -245,13 +253,13 @@ assert.equal(fastPathEvents[0].policyDecision, 'warning');
 
 const phoneBackSpecialistPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
 let phoneBackEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   phoneBackEvents = phoneBackEvents.concat(
     phoneBackSpecialistPolicy.evaluate([
       {
         ...detection('mobile_phone', 0.35, {
           ...realPhoneBox,
-          x: realPhoneBox.x + (index * 9),
+          x: realPhoneBox.x + (index * 26),
         }),
         rawClass: 'mobile_phone',
         detectorRole: 'phone-specialist',
@@ -273,7 +281,7 @@ for (let index = 0; index < 3; index += 1) {
     startupPhoneSpecialistPolicy.evaluate([{
       ...detection('mobile_phone', 0.35, {
         ...realPhoneBox,
-        x: realPhoneBox.x + (index * 9),
+        x: realPhoneBox.x + (index * 26),
       }),
       rawClass: 'mobile_phone',
       detectorRole: 'phone-specialist',
@@ -303,7 +311,7 @@ for (let index = 0; index < 3; index += 1) {
     mixedDetectorPhonePolicy.evaluate([{
       ...detection('mobile_phone', 0.35, {
         ...realPhoneBox,
-        x: realPhoneBox.x + (index * 9),
+        x: realPhoneBox.x + (index * 26),
       }),
       rawClass: 'mobile_phone',
       detectorRole: 'phone-specialist',
@@ -316,7 +324,7 @@ for (let index = 0; index < 3; index += 1) {
 assert.equal(
   mixedDetectorPhoneEvents.length,
   1,
-  'Repeated specialist evidence must confirm a steady phone even when a stronger primary candidate owns the track.',
+  'Repeated specialist evidence must confirm a moving phone even when a stronger primary candidate owns the track.',
 );
 
 const tiledPartialPhonePolicy = new YoloObjectPolicy({
@@ -325,13 +333,13 @@ const tiledPartialPhonePolicy = new YoloObjectPolicy({
   calibrationMs: 0,
 });
 let tiledPartialPhoneEvents = [];
-for (let index = 0; index < 2; index += 1) {
+for (let index = 0; index < 3; index += 1) {
   tiledPartialPhoneEvents = tiledPartialPhoneEvents.concat(
     tiledPartialPhonePolicy.evaluate([
       {
         ...detection('mobile_phone', 0.36, {
           ...realPhoneBox,
-          x: realPhoneBox.x + (index * 9),
+          x: realPhoneBox.x + (index * 26),
           width: 42,
         }),
         rawClass: 'mobile_phone',
@@ -744,6 +752,206 @@ assert.equal(
   phoneOverFixtureEvents.length,
   1,
   'A real phone must still be reported on a camera that also shows furniture.',
+);
+
+// ── A box that wobbles is not an object that moved ──────────────────────────
+// Every fixture below sits where a phone could be: phone-shaped, phone-sized,
+// at desk height, overlapping the student. None of the shape or position rules
+// can reject it, and each one used to be reported within a few scans because
+// its box shifted by a handful of pixels from one scan to the next.
+function wobbleSource(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return (state / 4294967296) - 0.5;
+  };
+}
+
+function runScans(scans, makeDetection, { stepMs = 600, startAt = 100000, role = 'primary', policy = null } = {}) {
+  const activePolicy = policy || new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+  let events = [];
+  for (let index = 0; index < scans; index += 1) {
+    const found = makeDetection(index);
+    events = events.concat(activePolicy.evaluate(
+      found ? [].concat(found) : [],
+      { now: startAt + (index * stepMs), detectorRole: role, modelVersion: 'test-v1' },
+    ));
+  }
+  return { events, policy: activePolicy };
+}
+
+const deskFixtureBox = { x: 470, y: 200, width: 70, height: 120, frameWidth: 640, frameHeight: 480 };
+function wobblingBox(base, random, position = 8, size = 6) {
+  return {
+    ...base,
+    x: base.x + (random() * 2 * position),
+    y: base.y + (random() * 2 * position),
+    width: base.width + (random() * 2 * size),
+    height: base.height + (random() * 2 * size),
+  };
+}
+
+// Ten minutes of scans, several different wobble sequences.
+for (const seed of [1, 2, 3, 4, 5]) {
+  const random = wobbleSource(seed);
+  assert.equal(
+    runScans(1000, () => fixtureDetection(wobblingBox(deskFixtureBox, random), 0.82)).events.length,
+    0,
+    'A phone-sized fixture beside the student must not be reported because its box wobbles.',
+  );
+}
+
+// The same fixture through the phone-back model, which cannot see people and
+// so used to treat everything it found as possibly held.
+for (const seed of [6, 7, 8]) {
+  const random = wobbleSource(seed);
+  assert.equal(
+    runScans(1000, () => ({
+      ...fixtureDetection(wobblingBox(deskFixtureBox, random), 0.82),
+      rawClass: 'mobile_phone',
+      detectorRole: 'phone-specialist',
+      humanContext: { available: false, personDetected: false, nearPerson: false, overlapRatio: 0, proximityRatio: null },
+    }), { role: 'phone-specialist' }).events.length,
+    0,
+    'A wobbling fixture must not be reported by the phone-back model either.',
+  );
+}
+
+// Read first as the whole unit and then as part of it: the top edge jumps by
+// forty pixels while the bottom edge stays where it is. The centre of the box
+// moves a long way; the object has not moved at all.
+assert.equal(
+  runScans(60, index => fixtureDetection({
+    ...deskFixtureBox,
+    y: Math.floor(index / 4) % 2 ? 240 : 200,
+    height: Math.floor(index / 4) % 2 ? 122 : 162,
+  }, 0.82)).events.length,
+  0,
+  'A box that grows and shrinks around a fixed object must not count as movement.',
+);
+
+// One wild reading among steady ones.
+assert.equal(
+  runScans(40, index => fixtureDetection({
+    ...deskFixtureBox,
+    x: deskFixtureBox.x + (index % 9 === 8 ? 34 : 0),
+  }, 0.82)).events.length,
+  0,
+  'A single stray box must not be taken for the object moving.',
+);
+
+// Both models looking at one fixture, each drawing its own slightly different
+// box. Alternating between the two is not the object travelling.
+assert.equal(
+  runScans(80, index => {
+    const specialist = index % 3 !== 0;
+    return {
+      ...fixtureDetection(specialist
+        ? { ...deskFixtureBox, x: deskFixtureBox.x + 26, y: deskFixtureBox.y + 14, width: 66, height: 116 }
+        : deskFixtureBox, 0.82),
+      rawClass: specialist ? 'mobile_phone' : 'cell phone',
+      detectorRole: specialist ? 'phone-specialist' : 'primary',
+    };
+  }).events.length,
+  0,
+  'Two detectors disagreeing about a fixture\'s box must not read as movement.',
+);
+
+// What has to keep working: a phone that sat still and is then picked up.
+const heldThenMoved = runScans(12, index => detection('mobile_phone', 0.74, {
+  x: 300 + (index >= 6 ? 40 : 0),
+  y: 250 + (index % 2),
+  width: 78,
+  height: 132,
+  frameWidth: 640,
+  frameHeight: 480,
+}));
+assert.equal(heldThenMoved.events.length, 1, 'A phone that rests and is then moved must be reported.');
+assert.ok(heldThenMoved.events[0].frameHits >= 3);
+
+// And one that creeps: no single step is large, but it ends up somewhere else.
+assert.equal(
+  runScans(14, index => detection('mobile_phone', 0.74, {
+    x: 300 + (index * 6), y: 250, width: 78, height: 132, frameWidth: 640, frameHeight: 480,
+  })).events.length,
+  1,
+  'A phone drifting slowly across the frame must be reported once it has clearly travelled.',
+);
+
+// ── The phone-back model borrows the general model's view of who is there ────
+// It has no person class, so on its own it cannot tell a phone in a hand from a
+// fixture across the room. The general model scans the same picture moments
+// earlier and its people are used to place what the phone-back model finds.
+const studentBox = { x: 200, y: 120, width: 240, height: 360, frameWidth: 640, frameHeight: 480 };
+const personDetection = { rawClass: 'person', contextClass: 'person', confidence: 0.9, boundingBox: studentBox };
+function specialistPhone(box, confidence = 0.6) {
+  return {
+    objectClass: 'mobile_phone',
+    rawClass: 'mobile_phone',
+    confidence,
+    fullFrameConfidence: confidence,
+    verificationConfidence: confidence,
+    verified: true,
+    detectorRole: 'phone-specialist',
+    boundingBox: { ...box, frameWidth: 640, frameHeight: 480 },
+    humanContext: { available: false, personDetected: false, nearPerson: false, overlapRatio: 0, proximityRatio: null },
+  };
+}
+
+function runWithPeople(phoneBoxAt, scans) {
+  const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+  const reportedAt = [];
+  for (let index = 0; index < scans; index += 1) {
+    const now = 200000 + (index * 600);
+    policy.evaluate([personDetection], { now: now - 200, detectorRole: 'primary' });
+    const events = policy.evaluate([specialistPhone(phoneBoxAt(index))], { now, detectorRole: 'phone-specialist' });
+    if (events.length) reportedAt.push(index);
+  }
+  return reportedAt;
+}
+
+// In the student's hands: reported as soon as it has moved on two scans.
+assert.deepEqual(
+  runWithPeople(index => ({ x: 280 + (index * 26), y: 300, width: 78, height: 132 }), 6),
+  [2],
+  'A phone the specialist finds inside the student\'s outline is treated as held.',
+);
+
+// The same motion across the room from the student: held to the stricter
+// standard for objects nobody is near, so it takes longer to be believed.
+assert.deepEqual(
+  runWithPeople(index => ({ x: 20 + (index * 26), y: 300, width: 60, height: 104 }), 6),
+  [3],
+  'A phone-shaped object away from the student needs more evidence, even from the specialist.',
+);
+
+// A general model with no person class must not be read as "nobody is here".
+const noPersonClassPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+noPersonClassPolicy.evaluate([], { now: 300000, detectorRole: 'primary' });
+assert.equal(
+  noPersonClassPolicy._peopleContext(300100).available,
+  false,
+  'An empty result from a model that may not detect people says nothing about who is present.',
+);
+noPersonClassPolicy.evaluate([personDetection], { now: 300400, detectorRole: 'primary' });
+assert.equal(noPersonClassPolicy._peopleContext(300500).available, true);
+assert.equal(
+  noPersonClassPolicy._peopleContext(310000).available,
+  false,
+  'A person seen long ago no longer places anything.',
+);
+
+// ── What the student is shown ───────────────────────────────────────────────
+// The camera chip reads "Checking phone" while a candidate is being weighed.
+// Over a fixture that never moves it stayed that way for the whole exam.
+const chipPolicy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+runScans(3, () => fixtureDetection(deskFixtureBox, 0.82), { policy: chipPolicy });
+assert.equal(chipPolicy.getDetectionProgress().length, 1, 'A new candidate is shown as being checked.');
+runScans(6, () => fixtureDetection(deskFixtureBox, 0.82), { policy: chipPolicy, startAt: 100000 + (3 * 600) });
+assert.equal(
+  chipPolicy.getDetectionProgress().length,
+  0,
+  'A candidate that has stayed put is no longer shown as being checked.',
 );
 
 console.log('YOLO object policy tests passed.');

@@ -7,17 +7,34 @@ const BASE_CONFIG = Object.freeze({
   maximumInferenceDimension: 480,
   initTimeoutMs: 30000,
   minFaceDetectionConfidence: 0.5,
-  minFacePresenceConfidence: 0.45,
-  minTrackingConfidence: 0.45,
+  // Presence and tracking decide whether MediaPipe keeps following a face it
+  // has already found. At 0.45 a dim or low-contrast webcam kept dropping the
+  // student's face between frames, which the scan reported as "no face".
+  // Detection itself stays at 0.5 so reflections and posters are not picked up
+  // as a second person.
+  minFacePresenceConfidence: 0.35,
+  minTrackingConfidence: 0.35,
   calibration: Object.freeze({
     durationMs: 5000,
     // Calibration runs on real webcams where an occasional delayed or noisy
     // frame is normal. Brief invalid frames pause progress; they do not erase
     // an otherwise stable five-second sample window.
+    //
+    // A valid frame that arrives late is credited up to this much of the gap.
+    // It used to be credited nothing, so a laptop on the CPU model, where every
+    // gap was long, could hold a centred face forever and never fill the bar.
     maximumSampleGapMs: 1500,
+    // The tolerance below is a floor. The session measures how far apart frames
+    // actually arrive and widens it to this many frame intervals (capped), so a
+    // single dropped frame at a slow rate no longer wipes the progress.
     transientInvalidToleranceMs: 900,
+    cadenceToleranceMultiplier: 2.5,
+    maximumTransientInvalidToleranceMs: 4000,
     minimumSamples: 15,
-    minimumTrackingQuality: 0.45,
+    // The baseline is an average of at least fifteen frames, so per-frame
+    // jitter mostly cancels out; 0.45 rejected ordinary cheap webcams with the
+    // prompt about lighting while the student sat perfectly still.
+    minimumTrackingQuality: 0.35,
     minimumFaceWidthRatio: 0.15,
     maximumFaceWidthRatio: 0.58,
     maximumCenterOffset: 0.2,

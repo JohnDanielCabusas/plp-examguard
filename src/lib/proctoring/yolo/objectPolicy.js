@@ -10,22 +10,31 @@ const POLICY_RULES = Object.freeze({
     violationType: 'restricted_phone',
     label: 'Mobile phone',
     allowedRawClasses: ['cell phone', 'mobile_phone'],
-    hitCount: 2,
-    fastHitCount: 2,
-    fastConfidence: 0.78,
+    // One scan to know where the object was and two more to see that it left.
+    hitCount: 3,
     windowMs: 5500,
     absenceResetMs: 6000,
     minimumPeakConfidence: 0.3,
     minimumAverageConfidence: 0.26,
     calibrationBypassConfidence: 0.7,
-    strongConfidence: 0.7,
-    minimumMovementForWeakConfidence: 0.05,
-    specialistMinimumMovement: 0.05,
-    specialistStationaryHitCount: 3,
     minimumStationaryAreaRatio: 0.025,
     frameEdgeMarginRatio: 0.025,
     frameEdgeHitCount: 3,
     frameEdgeMinimumMovement: 0.15,
+    // A phone in use travels; a fixture's box only wobbles. Both used to be
+    // measured the same way - the furthest the box centre had ever strayed from
+    // where it was first seen - and a few pixels of wobble on an air conditioner
+    // or a switch plate cleared a 4% bar within seconds. Travel is now judged on
+    // the two newest scans against where the object had been sitting, and has to
+    // be this share of the frame's longer side as well as of the object itself.
+    movementWindowMs: 12000,
+    movementHistoryLimit: 48,
+    minimumMovementFrameRatio: 0.03,
+    // Scans older than this no longer say who is in the picture.
+    peopleContextMs: 2500,
+    // A candidate that has sat still for this many scans is no longer shown to
+    // the student as something being checked.
+    settledHitCount: 6,
     // Phones are held upright far more often than not, and a portrait box is the
     // one shape a room's fixtures rarely produce. Landscape candidates are kept
     // to the proportions a real handset actually has, because most wide
@@ -43,7 +52,7 @@ const POLICY_RULES = Object.freeze({
     upperFrameBandRatio: 0.35,
     backgroundHitCount: 4,
     backgroundMinimumMovement: 0.18,
-    minimumPhoneMovement: 0.04,
+    minimumPhoneMovement: 0.12,
     requiresVerification: true,
   },
 });
@@ -63,12 +72,108 @@ function bestDetectionForClass(detections, objectClass) {
     .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0] || null;
 }
 
-function requiredHitsForTrack(rule, track) {
-  const peakConfidence = Number(track.bestDetection?.confidence || 0);
-  if (peakConfidence >= Number(rule.fastConfidence || Infinity)) {
-    return Number(rule.fastHitCount || rule.hitCount || 1);
-  }
+function requiredHitsForTrack(rule) {
   return Number(rule.hitCount || 1);
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function boxEdges(boundingBox) {
+  const left = Number(boundingBox?.x || 0);
+  const top = Number(boundingBox?.y || 0);
+  return {
+    left,
+    top,
+    right: left + Number(boundingBox?.width || 0),
+    bottom: top + Number(boundingBox?.height || 0),
+  };
+}
+
+// Where the object had been sitting: the middle of its earlier boxes, edge by
+// edge, so one odd reading among them does not move the reference.
+function anchorEdges(boundingBoxes) {
+  const edges = boundingBoxes.map(boxEdges);
+  return {
+    left: median(edges.map(edge => edge.left)),
+    top: median(edges.map(edge => edge.top)),
+    right: median(edges.map(edge => edge.right)),
+    bottom: median(edges.map(edge => edge.bottom)),
+  };
+}
+
+// How far the object itself travelled along one axis. When a box grows, shrinks
+// or is read first as the whole unit and then as part of it, one edge moves and
+// the other stays put, or they move apart. Only the distance both edges cover in
+// the same direction is the object going somewhere.
+function sharedShift(startDelta, endDelta) {
+  if (!startDelta || !endDelta || Math.sign(startDelta) !== Math.sign(endDelta)) return 0;
+  return Math.sign(startDelta) * Math.min(Math.abs(startDelta), Math.abs(endDelta));
+}
+
+function rigidShift(anchor, boundingBox) {
+  const edges = boxEdges(boundingBox);
+  return {
+    x: sharedShift(edges.left - anchor.left, edges.right - anchor.right),
+    y: sharedShift(edges.top - anchor.top, edges.bottom - anchor.bottom),
+  };
+}
+
+// Travel the track has actually shown, in lengths of the object itself; zero
+// when there is none worth the name.
+//
+// The two newest scans are compared with where the object had been before them.
+// Both have to be clear of that spot, in the same direction, by more than the
+// frame-size floor. A still object never does that: its box wobbles back and
+// forth around one place, so consecutive readings disagree about the direction
+// or stay inside the floor. Each detector is judged on its own readings, because
+// the two models draw slightly different boxes around the same object and
+// alternating between them would otherwise look like motion.
+function trackMovement(positions, detectorRole, rule) {
+  const own = positions.filter(position => position.role === detectorRole && position.boundingBox);
+  if (own.length < 3) return 0;
+  const recent = own.slice(-2);
+  const anchor = anchorEdges(own.slice(0, -2).map(position => position.boundingBox));
+  const newest = recent[1].boundingBox;
+  const frameSide = Math.max(Number(newest.frameWidth || 0), Number(newest.frameHeight || 0));
+  const floor = frameSide * Number(rule.minimumMovementFrameRatio || 0);
+  const shifts = recent.map(position => rigidShift(anchor, position.boundingBox));
+  const distances = shifts.map(shift => Math.hypot(shift.x, shift.y));
+  const shortest = Math.min(...distances);
+  if (!(shortest > 0) || shortest < floor) return 0;
+  if ((shifts[0].x * shifts[1].x) + (shifts[0].y * shifts[1].y) <= 0) return 0;
+  const objectScale = Math.max(anchor.right - anchor.left, anchor.bottom - anchor.top, 1);
+  return shortest / objectScale;
+}
+
+// The same test the detector applies when it can see people itself: the object
+// overlaps a person, or sits right beside one.
+function isNearAnyPerson(boundingBox, people = []) {
+  if (!boundingBox || !people.length) return false;
+  const boxArea = Math.max(1, Number(boundingBox.width || 0) * Number(boundingBox.height || 0));
+  const box = boxEdges(boundingBox);
+  const centerX = (box.left + box.right) / 2;
+  const centerY = (box.top + box.bottom) / 2;
+  return people.some(rawPerson => {
+    const scaleX = Number(boundingBox.frameWidth || 0) / Number(rawPerson.frameWidth || boundingBox.frameWidth || 1) || 1;
+    const scaleY = Number(boundingBox.frameHeight || 0) / Number(rawPerson.frameHeight || boundingBox.frameHeight || 1) || 1;
+    const person = {
+      left: Number(rawPerson.x || 0) * scaleX,
+      top: Number(rawPerson.y || 0) * scaleY,
+      right: (Number(rawPerson.x || 0) + Number(rawPerson.width || 0)) * scaleX,
+      bottom: (Number(rawPerson.y || 0) + Number(rawPerson.height || 0)) * scaleY,
+    };
+    const overlap = Math.max(0, Math.min(box.right, person.right) - Math.max(box.left, person.left))
+      * Math.max(0, Math.min(box.bottom, person.bottom) - Math.max(box.top, person.top));
+    if (overlap / boxArea >= 0.15) return true;
+    const gapX = Math.max(person.left - centerX, 0, centerX - person.right);
+    const gapY = Math.max(person.top - centerY, 0, centerY - person.bottom);
+    const personScale = Math.max(1, person.right - person.left, person.bottom - person.top);
+    return Math.hypot(gapX, gapY) / personScale <= 0.08;
+  });
 }
 
 function intersectionOverUnion(a, b) {
@@ -228,6 +333,12 @@ function handheldAssociation(detection, context = {}) {
   }
   if (isDetectionNearFreshFace(detection, context)) return true;
   if (humanContext?.available) return false;
+  // The phone-back model knows only phones and mice, so it cannot say whether
+  // anyone is near what it found and every object it reported was treated as
+  // possibly in someone's hand. The general model scans the same picture a
+  // moment earlier and does see people; its answer is used here.
+  const people = context.peopleContext;
+  if (people?.available) return isNearAnyPerson(detection?.boundingBox, people.boxes);
   return null;
 }
 
@@ -291,6 +402,33 @@ export class YoloObjectPolicy {
     this.specialistCalibrationStartedAt = 0;
     this.specialistCalibrationComplete = false;
     this.specialistCalibrationRegions = new Map();
+    this.peopleBoxes = [];
+    this.peopleScannedAt = 0;
+    this.peopleContextKnown = false;
+  }
+
+  // People arrive only in the general model's results. They are kept for a
+  // moment so the phone-back model's findings can be placed against them.
+  _rememberPeople(detections, context, now) {
+    if (context.detectorRole === 'phone-specialist') return;
+    const people = detections.filter(detection => detection?.contextClass === 'person' && detection?.boundingBox);
+    // A model without a person class returns none either, which must not be
+    // read as an empty room. It is known to see people once it has reported one,
+    // or once it has said so on a phone candidate.
+    if (people.length || detections.some(detection => detection?.humanContext?.available === true)) {
+      this.peopleContextKnown = true;
+    }
+    if (!this.peopleContextKnown) return;
+    this.peopleBoxes = people.map(person => ({ ...person.boundingBox }));
+    this.peopleScannedAt = now;
+  }
+
+  _peopleContext(now) {
+    const maximumAge = Number(POLICY_RULES.mobile_phone.peopleContextMs || 0);
+    const fresh = this.peopleContextKnown
+      && this.peopleScannedAt > 0
+      && Math.abs(now - this.peopleScannedAt) <= maximumAge;
+    return { available: fresh, boxes: fresh ? this.peopleBoxes : [] };
   }
 
   _collectCalibrationDetections(detections, context = {}) {
@@ -379,14 +517,21 @@ export class YoloObjectPolicy {
 
   getDetectionProgress() {
     return [...this.tracks.entries()]
-      .filter(([, track]) => !track.emitted)
+      .filter(([objectClass, track]) => {
+        if (track.emitted) return false;
+        // Something that has been scanned this many times without going anywhere
+        // is part of the room. Showing "checking phone" over it for the whole
+        // exam told the student they were suspected of something.
+        const settledAfter = Number(POLICY_RULES[objectClass]?.settledHitCount || Infinity);
+        return !((track.positions || []).length >= settledAfter && !(track.movement > 0));
+      })
       .map(([objectClass, track]) => {
         const rule = POLICY_RULES[objectClass];
         return {
           objectClass,
           objectLabel: rule?.label || objectClass,
           hits: track.hits.length,
-          requiredHits: requiredHitsForTrack(rule || {}, track),
+          requiredHits: requiredHitsForTrack(rule || {}),
           confidence: Number(track.bestDetection?.confidence || 0),
         };
       });
@@ -405,9 +550,11 @@ export class YoloObjectPolicy {
     if (!this.config.enabled) return [];
     const now = Number(context.now || Date.now());
     if (!this.firstEvaluationAt) this.firstEvaluationAt = now;
+    this._rememberPeople(detections, context, now);
+    const policyContext = { ...context, now, peopleContext: this._peopleContext(now) };
     const calibrating = !this.calibrationComplete && now - this.firstEvaluationAt < this.calibrationMs;
     if (calibrating) {
-      this._collectCalibrationDetections(detections, { ...context, now });
+      this._collectCalibrationDetections(detections, policyContext);
     }
     if (!calibrating && !this.calibrationComplete) this._finishCalibration();
 
@@ -421,7 +568,7 @@ export class YoloObjectPolicy {
       && now - this.specialistCalibrationStartedAt < this.specialistCalibrationMs
     );
     if (specialistCalibrating) {
-      this._collectSpecialistCalibrationDetections(detections, { ...context, now });
+      this._collectSpecialistCalibrationDetections(detections, policyContext);
     }
     if (
       isSpecialistResult
@@ -439,14 +586,14 @@ export class YoloObjectPolicy {
       if (rule?.requiresVerification && detection?.verified !== true) return false;
       if (
         detection?.objectClass === 'mobile_phone'
-        && !hasPlausiblePhoneShape(detection, rule, { ...context, now })
+        && !hasPlausiblePhoneShape(detection, rule, policyContext)
       ) return false;
-      if (isLikelyFacialFeatureFalsePositive(detection, { ...context, now })) return false;
+      if (isLikelyFacialFeatureFalsePositive(detection, policyContext)) return false;
       if (specialistCalibrating && detection?.detectorRole === 'phone-specialist') {
-        return isClearlySizedPhone(detection, rule, { ...context, now });
+        return isClearlySizedPhone(detection, rule, policyContext);
       }
       if (!calibrating || !Number.isFinite(rule?.calibrationBypassConfidence)) return true;
-      if (isClearlySizedPhone(detection, rule, { ...context, now })) return true;
+      if (isClearlySizedPhone(detection, rule, policyContext)) return true;
       return Number(detection.confidence || 0) >= rule.calibrationBypassConfidence;
     });
     const confirmed = [];
@@ -455,18 +602,15 @@ export class YoloObjectPolicy {
       const detection = bestDetectionForClass(policyDetections, objectClass);
       const prior = this.tracks.get(objectClass) || {
         hits: [],
-        specialistHits: [],
         confidences: [],
+        positions: [],
+        movement: 0,
         firstSeenAt: 0,
         lastSeenAt: 0,
         emitted: false,
         bestDetection: null,
         bestDetectionAt: 0,
-        bestSpecialistDetection: null,
-        bestSpecialistDetectionAt: 0,
         lastBoundingBox: null,
-        originBoundingBox: null,
-        maxMovement: 0,
       };
 
       if (!detection) {
@@ -474,8 +618,6 @@ export class YoloObjectPolicy {
           this.tracks.delete(objectClass);
         } else if (prior.lastSeenAt) {
           prior.hits = prior.hits.filter(timestamp => now - timestamp <= rule.windowMs);
-          prior.specialistHits = (prior.specialistHits || [])
-            .filter(timestamp => now - timestamp <= rule.windowMs);
           prior.confidences = prior.confidences.filter(item => now - item.timestamp <= rule.windowMs);
           this.tracks.set(objectClass, prior);
         }
@@ -496,33 +638,27 @@ export class YoloObjectPolicy {
         : Math.min(2500, rule.windowMs / 2);
       if (!prior.lastSeenAt || gapMs > maximumTrackingGap || changedRegion) {
         prior.hits = [];
-        prior.specialistHits = [];
         prior.confidences = [];
+        prior.positions = [];
+        prior.movement = 0;
         prior.firstSeenAt = now;
         prior.emitted = false;
         prior.bestDetection = null;
         prior.bestDetectionAt = 0;
-        prior.bestSpecialistDetection = null;
-        prior.bestSpecialistDetectionAt = 0;
-        prior.originBoundingBox = detection.boundingBox || null;
-        prior.maxMovement = 0;
       }
 
       prior.lastSeenAt = now;
-      if (prior.originBoundingBox && detection.boundingBox) {
-        const originCenterX = prior.originBoundingBox.x + (prior.originBoundingBox.width / 2);
-        const originCenterY = prior.originBoundingBox.y + (prior.originBoundingBox.height / 2);
-        const currentCenterX = detection.boundingBox.x + (detection.boundingBox.width / 2);
-        const currentCenterY = detection.boundingBox.y + (detection.boundingBox.height / 2);
-        const distance = Math.hypot(currentCenterX - originCenterX, currentCenterY - originCenterY);
-        const objectScale = Math.max(prior.originBoundingBox.width, prior.originBoundingBox.height, 1);
-        prior.maxMovement = Math.max(prior.maxMovement, distance / objectScale);
+      const detectorRole = detection.detectorRole || 'primary';
+      if (detection.boundingBox) {
+        const movementWindowMs = Number(rule.movementWindowMs || rule.windowMs);
+        prior.positions = [
+          ...(prior.positions || []).filter(position => now - position.timestamp <= movementWindowMs),
+          { timestamp: now, role: detectorRole, boundingBox: detection.boundingBox },
+        ].slice(-Number(rule.movementHistoryLimit || 48));
       }
+      prior.movement = trackMovement(prior.positions || [], detectorRole, rule);
       prior.lastBoundingBox = detection.boundingBox || null;
       prior.hits = [...prior.hits.filter(timestamp => now - timestamp <= rule.windowMs), now];
-      prior.specialistHits = (prior.specialistHits || [])
-        .filter(timestamp => now - timestamp <= rule.windowMs);
-      if (detection.detectorRole === 'phone-specialist') prior.specialistHits.push(now);
       prior.confidences = [
         ...prior.confidences.filter(item => now - item.timestamp <= rule.windowMs),
         { timestamp: now, value: Number(detection.confidence || 0) },
@@ -531,72 +667,36 @@ export class YoloObjectPolicy {
         prior.bestDetection = null;
         prior.bestDetectionAt = 0;
       }
-      if (prior.bestSpecialistDetectionAt && now - prior.bestSpecialistDetectionAt > rule.windowMs) {
-        prior.bestSpecialistDetection = null;
-        prior.bestSpecialistDetectionAt = 0;
-      }
       if (!prior.bestDetection || detection.confidence > prior.bestDetection.confidence) {
         prior.bestDetection = detection;
         prior.bestDetectionAt = now;
-      }
-      if (
-        detection.detectorRole === 'phone-specialist'
-        && (
-          !prior.bestSpecialistDetection
-          || detection.confidence > prior.bestSpecialistDetection.confidence
-        )
-      ) {
-        prior.bestSpecialistDetection = detection;
-        prior.bestSpecialistDetectionAt = now;
       }
       this.tracks.set(objectClass, prior);
 
       const averageConfidence = prior.confidences.reduce((sum, item) => sum + item.value, 0) / prior.confidences.length;
       const peakConfidence = Number(prior.bestDetection?.confidence || 0);
-      if (prior.emitted || prior.hits.length < requiredHitsForTrack(rule, prior)) return;
+      if (prior.emitted || prior.hits.length < requiredHitsForTrack(rule)) return;
       if (peakConfidence < Number(rule.minimumPeakConfidence || 0)) return;
       if (averageConfidence < Number(rule.minimumAverageConfidence || 0)) return;
       const edgeBoundPhone = objectClass === 'mobile_phone'
         && isFrameEdgeBound(prior.bestDetection?.boundingBox, rule.frameEdgeMarginRatio);
       if (edgeBoundPhone && prior.hits.length < Number(rule.frameEdgeHitCount || Infinity)) return;
-      const specialistDetection = prior.bestDetection?.detectorRole === 'phone-specialist';
-      const phoneEvidenceDetection = prior.bestSpecialistDetection || prior.bestDetection;
-      const stationaryPhoneEvidenceIsClear = isClearlySizedPhone(
-        phoneEvidenceDetection,
-        rule,
-        { ...context, now },
-      );
+      // Judged where the object is now, not where it scored highest: a phone
+      // lifted from the desk into the student's hand has joined them.
       const separatedFromStudent = objectClass === 'mobile_phone'
-        && handheldAssociation(phoneEvidenceDetection, { ...context, now }) === false;
+        && handheldAssociation(detection, policyContext) === false;
       if (separatedFromStudent && prior.hits.length < Number(rule.backgroundHitCount || Infinity)) return;
-      const specialistStationaryEvidence = (prior.specialistHits || []).length > 0
-        && stationaryPhoneEvidenceIsClear
-        && prior.specialistHits.length >= Number(rule.specialistStationaryHitCount || Infinity);
-      // Static wall and desk items can repeatedly resemble a phone to both the
-      // general and specialist models. A prohibited phone in use moves with a
-      // hand; require a small but meaningful displacement before enforcement,
-      // regardless of model confidence or detector count.
-      const stationaryPhoneCandidate = objectClass === 'mobile_phone'
-        && prior.maxMovement < Number(rule.minimumPhoneMovement || 0);
-      if (stationaryPhoneCandidate) return;
-      const smallPhoneNeedsMovement = objectClass === 'mobile_phone' && !stationaryPhoneEvidenceIsClear;
-      const movementRequiredDetection = smallPhoneNeedsMovement
-        || edgeBoundPhone
-        || separatedFromStudent
-        || (specialistDetection && !specialistStationaryEvidence);
-      const minimumMovement = separatedFromStudent
+      // Static wall and desk items repeatedly resemble a phone to both models,
+      // often with high confidence. A prohibited phone in use moves with a hand,
+      // so every report needs the object to have clearly travelled, however sure
+      // the model is and however many scans agree. Objects at the frame edge or
+      // away from the student have to travel further still.
+      const requiredMovement = separatedFromStudent
         ? Number(rule.backgroundMinimumMovement || Infinity)
         : edgeBoundPhone
-        ? Number(rule.frameEdgeMinimumMovement || Infinity)
-        : movementRequiredDetection
-          ? Number(rule.specialistMinimumMovement || Infinity)
-          : Number(rule.minimumMovementForWeakConfidence || 0);
-      const weakConfidenceNeedsMovement = peakConfidence < Number(rule.strongConfidence || 0)
-        && !specialistStationaryEvidence;
-      if (
-        prior.maxMovement < minimumMovement
-        && (movementRequiredDetection || weakConfidenceNeedsMovement)
-      ) return;
+          ? Number(rule.frameEdgeMinimumMovement || Infinity)
+          : Number(rule.minimumPhoneMovement || Infinity);
+      if (objectClass === 'mobile_phone' && !(prior.movement >= requiredMovement)) return;
       prior.emitted = true;
       const confirmationMs = Math.max(0, now - prior.firstSeenAt);
       confirmed.push({
