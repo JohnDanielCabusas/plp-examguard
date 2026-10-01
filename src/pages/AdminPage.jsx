@@ -88,6 +88,17 @@ export default function AdminPage() {
     window.runAIGenerate();
   };
 
+  // Same request again: in Custom mode that means the prompt that produced the
+  // batch on screen, even if the composer has been edited since.
+  const handleGenerateAgain = () => {
+    if (aiMode === 'custom' && lastSubmittedPrompt) {
+      setAiCustomPrompt(lastSubmittedPrompt);
+      const hiddenPrompt = document.getElementById('ai-custom-prompt');
+      if (hiddenPrompt) hiddenPrompt.value = lastSubmittedPrompt;
+    }
+    window.regenerateAIQuestions();
+  };
+
   const handleUsePinnedPrompt = (prompt) => {
     setAiMode('custom');
     setAiCustomPrompt(prompt);
@@ -101,8 +112,10 @@ export default function AdminPage() {
     // Generation swaps the Generate button out for Import Selected — restore it so the edited prompt can be resent.
     const genBtn = document.getElementById('ai-gen-btn');
     const importBtn = document.getElementById('ai-import-btn');
+    const regenBtn = document.getElementById('ai-regen-btn');
     if (genBtn) genBtn.style.display = 'flex';
     if (importBtn) importBtn.style.display = 'none';
+    if (regenBtn) regenBtn.style.display = 'none';
     requestAnimationFrame(() => document.getElementById('ai-custom-prompt-custom')?.focus());
   };
 
@@ -265,6 +278,16 @@ export default function AdminPage() {
   // freshly-mounted node's file chips after switching modes.
   useEffect(() => {
     window.renderAIFileChips?.();
+    // The footer buttons remount too, but the preview above them does not —
+    // keep Import / Generate Again showing while a batch is still on screen.
+    if (document.getElementById('ai-preview')?.style.display === 'flex') {
+      const genBtn = document.getElementById('ai-gen-btn');
+      const importBtn = document.getElementById('ai-import-btn');
+      const regenBtn = document.getElementById('ai-regen-btn');
+      if (genBtn) genBtn.style.display = 'none';
+      if (importBtn) importBtn.style.display = 'inline-flex';
+      if (regenBtn) regenBtn.style.display = 'inline-flex';
+    }
   }, [aiMode]);
 
   useEffect(() => {
@@ -1864,6 +1887,11 @@ export default function AdminPage() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
                     Generate with AI
                   </button>
+                  <button id="ai-regen-btn" type="button" onClick={handleGenerateAgain} className="ai-quick-action" title="Discard these questions and generate a new set"
+                    style={{ display:'none', height:'42px', padding:'0 18px', background:aiTheme.toggleIdleBg, border:`1.5px solid ${aiTheme.toggleBorder}`, borderRadius:'12px', cursor:'pointer', color:aiTheme.toggleIdleText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Generate Again
+                  </button>
                   <button id="ai-import-btn" onClick={() => window.importAIQuestions()} className="ai-quick-action ai-quick-generate-btn"
                     style={{ display:'none', height:'42px', padding:'0 18px', background:aiTheme.primaryBg, border:'none', borderRadius:'12px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>
                     Import Selected
@@ -1957,6 +1985,11 @@ export default function AdminPage() {
                           onMouseLeave={(e) => { e.currentTarget.style.transform='none'; }}>
                           Generate with AI
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={aiTheme.primaryText} strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                        </button>
+                        <button id="ai-regen-btn" type="button" onClick={handleGenerateAgain} title="Discard these questions and generate a new set"
+                          style={{ display:'none', height:'38px', padding:'0 16px', background:aiTheme.toggleIdleBg, border:`1.5px solid ${aiTheme.toggleBorder}`, borderRadius:'999px', cursor:'pointer', color:aiTheme.toggleIdleText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center', gap:'7px' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                          Generate Again
                         </button>
                         <button id="ai-import-btn" onClick={() => window.importAIQuestions()}
                           style={{ display:'none', height:'38px', padding:'0 16px', background:aiTheme.primaryBg, border:'none', borderRadius:'999px', cursor:'pointer', color:aiTheme.primaryText, fontWeight:700, fontSize:'13px', flexShrink:0, whiteSpace:'nowrap', alignItems:'center', justifyContent:'center' }}>

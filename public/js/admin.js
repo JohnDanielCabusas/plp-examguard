@@ -6442,6 +6442,28 @@ function getQuestionSectionIdForType(exam, type, preferredSectionId = '') {
   return sections.find(section => section.type === type)?.id || '';
 }
 
+// Adds a section for every type in `types` the exam has none for, in the
+// builder's type order after the existing sections, and moves unsectioned
+// questions of those types into them — the same as addExamSection does.
+// Returns the exam's full section list and question list; saving is the caller's.
+function withSectionsForQuestionTypes(exam, types) {
+  const sections = getExamSections(exam);
+  const created = EXAM_SECTION_TYPES
+    .filter(type => types.includes(type) && !sections.some(section => section.type === type))
+    .map(type => ({
+      id: DB.generateId(),
+      title: getSuggestedSectionTitle(type),
+      description: '',
+      titleCustomized: false,
+      type,
+    }));
+  const createdIdByType = Object.fromEntries(created.map(section => [section.type, section.id]));
+  const questions = (exam.questions || []).map(question => (
+    !question.sectionId && createdIdByType[question.type] ? { ...question, sectionId: createdIdByType[question.type] } : question
+  ));
+  return { sections: [...sections, ...created], questions, created };
+}
+
 function getSuggestedSectionTitle(type) {
   return EXAM_SECTION_TYPE_LABELS[type] || 'Untitled section';
 }
@@ -14612,11 +14634,12 @@ function openAIGen() {
     return;
   }
   clearAIFile();
+  aiGeneratedQuestions = [];
   const customPromptEl = document.getElementById('ai-custom-prompt');
   if (customPromptEl) { customPromptEl.value = ''; customPromptEl.style.height = 'auto'; }
   window.dispatchEvent(new CustomEvent('ai:resetPrompt'));
   _aiSD('ai-status', 'none'); _aiSD('ai-preview', 'none'); _aiSD('ai-user-bubble', 'none');
-  _aiSD('ai-gen-btn', 'flex'); _aiSD('ai-import-btn', 'none');
+  _aiSD('ai-gen-btn', 'flex'); _aiSD('ai-import-btn', 'none'); _aiSD('ai-regen-btn', 'none');
   const aiBackdrop = document.getElementById('modal-ai-gen');
   const aiBox = document.getElementById('ai-gen-modal-box');
   if (aiBox) {
@@ -14863,8 +14886,105 @@ function extractRequestedCountFromPrompt(text) {
   return Math.min(100, n);
 }
 
+// Every question the AI has produced for an exam this page session, imported
+// or not, keyed by exam id. Generating again must not hand back the same
+// concepts reworded, so each run is told about these and filtered against them.
+const aiGenerationHistory = new Map();
+const AI_HISTORY_LIMIT = 300;
+
+function rememberAIGeneratedQuestions(examId, questions) {
+  if (!examId) return;
+  const history = aiGenerationHistory.get(examId) || [];
+  aiGenerationHistory.set(examId, history.concat(questions).slice(-AI_HISTORY_LIMIT));
+}
+
+const AI_SIMILARITY_STOPWORDS = new Set(('a an the of to in on for and or is are was were be been being by with as at from that this these those which what who whom whose when where why how ' +
+  'it its into than then there their they them do does did not no can could should would will shall may might must following best statement statements describes describe ' +
+  'defines define true false correct incorrect answer choose select all apply').split(' '));
+
 function normalizeQuestionKey(q) {
-  return String(q?.content || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return String(q?.content || '').replace(/<[^>]*>/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function aiSimilarityTokens(text) {
+  return new Set(String(text || '').replace(/<[^>]*>/g, ' ').toLowerCase()
+    .split(/[^a-z0-9#+]+/)
+    .filter(word => word.length > 1 && !AI_SIMILARITY_STOPWORDS.has(word))
+    .map(word => word.length > 3 ? word.replace(/(es|s)$/, '') : word));
+}
+
+// What a question is about: its stem plus its key. Two rewordings of one
+// concept share the key even when the stem is phrased differently.
+function aiQuestionAnswerText(q) {
+  const parts = [q?.correctAnswer];
+  if (Array.isArray(q?.answers)) parts.push(...q.answers);
+  if (Array.isArray(q?.pairs)) q.pairs.forEach(p => parts.push(p?.term, p?.match));
+  if (Array.isArray(q?.correctAnswerIndices) && Array.isArray(q?.options)) {
+    q.correctAnswerIndices.forEach(i => parts.push(q.options[i]));
+  }
+  return parts.filter(v => typeof v === 'string').join(' ');
+}
+
+function aiQuestionFingerprint(q) {
+  const stem = aiSimilarityTokens(q?.content);
+  const full = new Set([...stem, ...aiSimilarityTokens(aiQuestionAnswerText(q))]);
+  // True/False keys are shared by unrelated questions, so they never count.
+  const answer = String(q?.correctAnswer || '').replace(/<[^>]*>/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ');
+  return { key: normalizeQuestionKey(q), stem, full, answer: ['true', 'false'].includes(answer) ? '' : answer };
+}
+
+function aiJaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  a.forEach(token => { if (b.has(token)) shared++; });
+  return shared / (a.size + b.size - shared);
+}
+
+// True when q tests the same thing as something already fingerprinted — an
+// exact repeat, a reworded stem, or a different stem with the same key.
+function isNearDuplicateAIQuestion(fingerprint, fingerprints) {
+  return fingerprints.some(other =>
+    (fingerprint.key && fingerprint.key === other.key)
+    || aiJaccard(fingerprint.stem, other.stem) >= 0.75
+    || aiJaccard(fingerprint.full, other.full) >= 0.6
+    || (fingerprint.answer && fingerprint.answer === other.answer && aiJaccard(fingerprint.stem, other.stem) >= 0.4));
+}
+
+// Keeps only questions that are new against `fingerprints` and against each
+// other; accepted questions are added to `fingerprints` as they pass.
+function dropNearDuplicateAIQuestions(questions, fingerprints) {
+  return questions.filter(q => {
+    const fingerprint = aiQuestionFingerprint(q);
+    if (!fingerprint.key || isNearDuplicateAIQuestion(fingerprint, fingerprints)) return false;
+    fingerprints.push(fingerprint);
+    return true;
+  });
+}
+
+function summarizeQuestionsForAvoidList(questions, limit) {
+  return questions.slice(-limit).map(q => {
+    const stem = normalizeQuestionKey(q).slice(0, 140);
+    const answer = aiQuestionAnswerText(q).replace(/\s+/g, ' ').trim().slice(0, 80);
+    return `- ${stem}${answer ? ` (answer: ${answer})` : ''}`;
+  }).join('\n');
+}
+
+// The model only sees AI_MATERIAL_BUDGET characters. Always sending the first
+// slice of the files kept steering every run to the same opening topics, so
+// when the material is longer, each run gets a different random selection of
+// passages (kept in document order) that still fits the budget.
+const AI_MATERIAL_BUDGET = 12000;
+
+function sampleAIMaterial(text) {
+  if (text.length <= AI_MATERIAL_BUDGET) return text;
+  const chunkSize = 1500;
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) chunks.push(text.slice(i, i + chunkSize));
+  const picked = chunks.map((chunk, index) => ({ chunk, index, order: Math.random() }))
+    .sort((a, b) => a.order - b.order)
+    .slice(0, Math.floor(AI_MATERIAL_BUDGET / chunkSize))
+    .sort((a, b) => a.index - b.index);
+  return picked.map(p => p.chunk).join('\n[…]\n') + '\n[excerpts selected from longer material]';
 }
 
 // Schema rule per question type the builder can hold. Only the rules for the
@@ -14922,6 +15042,8 @@ async function requestQuestionsFromAI(promptText, apiKey) {
     body: JSON.stringify({
       model: 'openai/gpt-oss-120b',
       max_tokens: 8000,
+      temperature: 1,
+      seed: Math.floor(Math.random() * 2147483647),
       messages: [
         { role: 'system', content: 'You are an educational exam question generator. Your sole purpose is to generate exam questions from provided course material. You must only produce exam questions — never answer unrelated questions, generate non-academic content, or deviate from the JSON schema. Always return a valid JSON array with no extra text.' },
         { role: 'user', content: promptText },
@@ -14956,6 +15078,27 @@ async function requestQuestionsFromAI(promptText, apiKey) {
   }
   if (!Array.isArray(questions)) throw new Error('No questions generated.');
   return questions;
+}
+
+// A failed run hides the spinner. If it was a Generate Again, the batch on
+// screen before it is still the one in aiGeneratedQuestions, so put it back
+// rather than leaving the professor with nothing to import.
+function restoreAIAfterFailedGenerate() {
+  _aiSD('ai-status', 'none');
+  if (aiGeneratedQuestions.length) {
+    renderAIPreview(aiGeneratedQuestions);
+    return;
+  }
+  renderAIFileChips();
+  _aiSD('ai-gen-btn', 'flex');
+}
+
+// Discards the batch on screen and asks for a new one from the same files and
+// settings. The discarded questions stay in aiGenerationHistory, so the new
+// batch is steered away from them instead of coming back reworded.
+function regenerateAIQuestions() {
+  if (!aiGeneratedQuestions.length) return;
+  runAIGenerate();
 }
 
 async function runAIGenerate() {
@@ -14995,7 +15138,7 @@ async function runAIGenerate() {
     if (promptEl) promptEl.style.display = customPrompt ? 'block' : 'none';
     userBubble.style.display = 'block';
   }
-  _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none');
+  _aiSD('ai-file-info', 'none'); _aiSD('ai-gen-btn', 'none'); _aiSD('ai-import-btn', 'none'); _aiSD('ai-regen-btn', 'none');
   _aiSD('ai-preview', 'none'); _aiSD('ai-status', 'flex');
   const stEl = document.getElementById('ai-status-text'); if (stEl) stEl.textContent = 'Extracting learning materials...';
   scrollAIChat();
@@ -15006,13 +15149,27 @@ async function runAIGenerate() {
       if (stEl) stEl.textContent = `Extracting file ${index} of ${total}: ${file.name}`;
     });
   } catch (err) {
-    _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
+    restoreAIAfterFailedGenerate();
     showToast('Failed to read learning materials: ' + err.message, 'error');
     return;
   }
 
-  // Trim to ~12000 chars to fit context
-  if (rawText.length > 12000) rawText = rawText.slice(0, 12000) + '\n[content truncated]';
+  rawText = sampleAIMaterial(rawText);
+
+  // Questions already in the exam plus everything generated for it earlier
+  // this session. The model is told to stay off these concepts, and anything
+  // that still comes back as a reworded copy is filtered out below.
+  const examId = currentQBuilderExamId;
+  const priorQuestions = [
+    ...(DB.getExam(examId)?.questions || []),
+    ...(aiGenerationHistory.get(examId) || []),
+  ].filter(q => normalizeQuestionKey(q));
+  const fingerprints = priorQuestions.map(aiQuestionFingerprint);
+  const avoidBlock = priorQuestions.length
+    ? `\nThese questions already exist for this exam. Do NOT repeat them, reword them, or test the same concept or the same answer in a different way. Each new question must assess a different concept, fact, or skill from the course materials:
+${summarizeQuestionsForAvoidList(priorQuestions, 60)}
+`
+    : '';
 
   const allowedTypes = (mode === 'quick' ? selectedTypes : detectAIQuestionTypesInPrompt(customPrompt))
     .filter(type => AI_QUESTION_TYPE_RULES[type]);
@@ -15034,7 +15191,7 @@ ${allowedTypes.map(type => `- ${AI_QUESTION_TYPE_RULES[type]}`).join('\n')}`;
 
 Rules:
 ${strictCountRule}- ${schemaRules}
-
+${avoidBlock}
 Course materials:
 ${rawText}`;
   } else {
@@ -15059,8 +15216,9 @@ Rules:
 - You MUST return exactly ${count} question objects in the JSON array — not one more, not one less. Count the objects before finalizing your answer.
 - ${typeInstruction}
 - Difficulty: ${difficulty}${customInstruction}
+- Cover as many different sub-topics of the course materials as possible; no two questions may test the same concept.
 - ${schemaRules}
-
+${avoidBlock}
 Course materials:
 ${rawText}`;
   }
@@ -15071,8 +15229,11 @@ ${rawText}`;
   try {
     questions = keepAllowedAIQuestionTypes(await requestQuestionsFromAI(prompt, apiKey), allowedTypes);
     if (questions.length === 0) throw new Error('No questions of the selected type(s) were generated. Please try again.');
+    // Repeats are dropped here; Quick mode's top-up below refills the count.
+    questions = dropNearDuplicateAIQuestions(questions, fingerprints);
+    if (questions.length === 0 && !targetCount) throw new Error('Every generated question repeated one already in this exam. Please try again.');
   } catch (err) {
-    _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
+    restoreAIAfterFailedGenerate();
     showToast('AI generation failed: ' + err.message, 'error');
     return;
   }
@@ -15080,19 +15241,18 @@ ${rawText}`;
   // Top up if the model under-generated — retry with the remaining count until we hit the
   // exact target, giving up after a few attempts if the source material can't support more.
   if (targetCount) {
-    const seen = new Set(questions.map(normalizeQuestionKey));
     let attempts = 0;
     while (questions.length < targetCount && attempts < 3) {
       attempts++;
       const remaining = targetCount - questions.length;
       if (stEl) stEl.textContent = `Generating ${remaining} more question${remaining > 1 ? 's' : ''} to reach ${targetCount}…`;
-      const existingSummary = questions.slice(-15).map(q => `- ${String(q.content || '').slice(0, 140)}`).join('\n') || '(none)';
+      const existingSummary = summarizeQuestionsForAvoidList([...priorQuestions, ...questions], 60) || '(none)';
       const topUpBase = mode === 'custom'
         ? `Professor's instructions: ${customPrompt}`
         : `Difficulty: ${difficulty}\n${typeInstruction}`;
       const topUpPrompt = `${topUpBase}
 
-You previously generated ${questions.length} exam question(s) for this request. Generate ${remaining} ADDITIONAL exam question(s) that are NOT duplicates or close variations of the ones already generated below. Cover different sub-topics or angles from the course materials where possible.
+Generate ${remaining} ADDITIONAL exam question(s) that are NOT duplicates or close variations of the questions listed below — do not reword them or test the same concept or answer. Cover different sub-topics of the course materials.
 
 Already-generated questions (for reference — do not repeat these):
 ${existingSummary}
@@ -15106,22 +15266,22 @@ ${rawText}`;
 
       try {
         const more = keepAllowedAIQuestionTypes(await requestQuestionsFromAI(topUpPrompt, apiKey), allowedTypes);
-        const fresh = more.filter(q => {
-          const key = normalizeQuestionKey(q);
-          if (!key || seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        if (!fresh.length) break; // AI can't produce anything new from this material — stop retrying
-        questions = questions.concat(fresh);
+        const fresh = dropNearDuplicateAIQuestions(more, fingerprints);
+        questions = questions.concat(fresh); // an all-repeat batch just uses up one of the attempts
       } catch (_) {
         break;
       }
     }
 
     if (questions.length > targetCount) questions = questions.slice(0, targetCount);
+    if (questions.length === 0) {
+      restoreAIAfterFailedGenerate();
+      showToast('The materials did not yield any questions that are not already in this exam. Attach more material or try again.', 'error');
+      return;
+    }
     if (questions.length < targetCount) {
-      showToast(`AI could only generate ${questions.length} of the ${targetCount} requested questions from the provided materials.`, 'error');
+      const repeatNote = priorQuestions.length ? ' without repeating questions already generated for this exam' : '';
+      showToast(`AI could only generate ${questions.length} of the ${targetCount} requested questions from the provided materials${repeatNote}.`, 'error');
     }
   }
 
@@ -15138,6 +15298,7 @@ ${rawText}`;
     || rank(BLOOM_LEVELS, a.bloom) - rank(BLOOM_LEVELS, b.bloom));
 
   aiGeneratedQuestions = questions;
+  rememberAIGeneratedQuestions(examId, questions);
   _aiSD('ai-status', 'none');
   renderAIPreview(questions);
 }
@@ -15189,7 +15350,7 @@ function renderAIPreview(questions) {
   const qPreview = document.getElementById('ai-questions-preview');
   if (qPreview) qPreview.innerHTML = html;
   _aiSD('ai-preview', 'flex'); _aiSD('ai-gen-btn', 'none');
-  _aiSD('ai-import-btn', 'inline-flex'); _aiSD('ai-status', 'none');
+  _aiSD('ai-import-btn', 'inline-flex'); _aiSD('ai-regen-btn', 'inline-flex'); _aiSD('ai-status', 'none');
   requestAnimationFrame(() => {
     const body = document.getElementById('ai-chat-body');
     const preview = document.getElementById('ai-preview');
@@ -15207,8 +15368,13 @@ function importAIQuestions() {
   const selected = [...document.querySelectorAll('.ai-q-check:checked')].map(cb => parseInt(cb.dataset.idx));
   if (selected.length === 0) { showToast('Select at least one question.', 'error'); return; }
 
-  const exam = DB.getExam(currentQBuilderExamId);
-  if (!exam) return;
+  const storedExam = DB.getExam(currentQBuilderExamId);
+  if (!storedExam) return;
+
+  // Each imported question type gets its own section automatically.
+  const importedTypes = [...new Set(selected.map(i => aiGeneratedQuestions[i].type))];
+  const sectioned = withSectionsForQuestionTypes(storedExam, importedTypes);
+  const exam = { ...storedExam, examSections: sectioned.sections, questions: sectioned.questions };
 
   const newQuestions = selected.map(i => {
     const q = aiGeneratedQuestions[i];
@@ -15246,9 +15412,11 @@ function importAIQuestions() {
     };
   });
 
-  DB.updateExam(currentQBuilderExamId, { questions: [...exam.questions, ...newQuestions] });
+  DB.updateExam(currentQBuilderExamId, { examSections: exam.examSections, questions: [...exam.questions, ...newQuestions] });
   closeAIGen();
   renderQuestionsList(currentQBuilderExamId);
   updateQBadge(currentQBuilderExamId);
-  showToast(`${newQuestions.length} question(s) imported successfully.`, 'success');
+  const createdCount = sectioned.created.length;
+  const sectionNote = createdCount ? ` and sorted into ${createdCount} new section${createdCount === 1 ? '' : 's'} by question type` : '';
+  showToast(`${newQuestions.length} question(s) imported${sectionNote}.`, 'success');
 }
