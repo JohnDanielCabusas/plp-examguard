@@ -810,6 +810,15 @@ const DB = {
   _normalizeSectionValue(value) {
     return String(value || '').trim().replace(/^section\s+/i, '').toUpperCase();
   },
+  // Students type their program as free text at first setup, so "BS IT",
+  // "bs-cs" or "BS Computer Science" must still match a course's BSIT/BSCS.
+  normalizeProgramValue(value) {
+    const compact = String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
+    if (!compact) return '';
+    if (compact === 'IT' || compact.startsWith('BSIT') || compact.includes('INFORMATIONTECHNOLOGY')) return 'BSIT';
+    if (compact === 'CS' || compact.startsWith('BSCS') || compact.includes('COMPUTERSCIENCE')) return 'BSCS';
+    return compact;
+  },
   // Mirrors admin.js's getStudentYearSectionParts: prefer the combined
   // "Y-SECTION" field (set once by admin.js when both are known), falling
   // back to the separate yearLevel/section fields.
@@ -828,6 +837,11 @@ const DB = {
   // matches what the course card displays as its target year(s)/section(s).
   isStudentEligibleForCourse(student, subject) {
     if (String(subject?.manageAccess || '').trim().toLowerCase() === 'everyone') return true;
+
+    // Courses saved before the Program field existed have no program and
+    // fall through to the year/section rules alone.
+    const subjectProgram = this.normalizeProgramValue(subject?.program);
+    if (subjectProgram && this.normalizeProgramValue(student?.program) !== subjectProgram) return false;
 
     const rawYears = Array.isArray(subject?.yearLevels) && subject.yearLevels.length
       ? subject.yearLevels

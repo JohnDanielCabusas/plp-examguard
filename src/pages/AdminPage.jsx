@@ -1460,7 +1460,17 @@ export default function AdminPage() {
               <textarea className="form-control" id="subj-desc" rows="2" maxLength={100} placeholder="Brief description…" onInput={() => window.updateCharCounter('subj-desc', 'subj-desc-counter', 100)} />
               <div className="char-counter" id="subj-desc-counter">0/100</div>
             </div>
-            <div className="form-group"><label>School Year *</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
+            <div className="form-row cols-2">
+              <div className="form-group"><label>School Year *</label><input type="text" className="form-control" id="subj-school-year" placeholder="e.g. 2025-2026" maxLength={9} /></div>
+              <div className="form-group">
+                <label>Program *</label>
+                <select className="form-control" id="subj-program" defaultValue="">
+                  <option value="">Select Program</option>
+                  <option value="BSIT">BSIT</option>
+                  <option value="BSCS">BSCS</option>
+                </select>
+              </div>
+            </div>
             <div className="form-row cols-2" style={{ marginBottom: 0 }}>
               <div className="form-group">
                 <label>Year Level *</label>
@@ -1491,7 +1501,7 @@ export default function AdminPage() {
                 <option value="everyone">EVERYONE</option>
               </select>
               <p className="text-muted" id="subj-manage-access-hint" style={{ fontSize: '12px', marginTop: '6px' }}>
-                Only students whose year level and section match this course can self-enroll.
+                Only students whose program, year level and section match this course can self-enroll.
               </p>
             </div>
             <div className="form-group" style={{ marginTop: '14px' }}>

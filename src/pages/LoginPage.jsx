@@ -15,6 +15,8 @@ const DEPARTMENT_OPTIONS = [
   'College of Engineering (COE)',
   'College of Nursing (CON)',
 ];
+
+const PROGRAM_OPTIONS = ['BSIT', 'BSCS'];
 const EYE_CLOSED = (
   <>
     <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
@@ -735,7 +737,7 @@ export default function LoginPage() {
     if (yr < 18 || yr > 35) { setStep2bError('Invalid Student ID year.'); return; }
     if (!/^[1-4]-[A-Z]$/.test(yearSection)) { setStep2bError('Year & section must use the format 3-B.'); return; }
     if (!department) { setStep2bError('Please select your department.'); return; }
-    if (!program) { setStep2bError('Please enter your program, such as BSIT or BSCS.'); return; }
+    if (!program) { setStep2bError('Please select your program.'); return; }
     if (!password) { setStep2bError('Please create a password.'); return; }
     if (password.length < 6) { setStep2bError('Password must be at least 6 characters.'); return; }
     if (password !== confirm) { setStep2bError('Passwords do not match.'); return; }
@@ -1167,10 +1169,11 @@ export default function LoginPage() {
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-setup-program">Program</label>
-                    <input type="text" className="form-control" id="student-setup-program" ref={setupProgramRef}
-                      placeholder="e.g. BSIT or BSCS" autoComplete="off"
-                      onInput={(e) => { e.target.value = e.target.value.toUpperCase(); }}
-                      onKeyDown={(e) => { if (e.key === 'Enter') setupPassRef.current?.focus(); }} />
+                    <select className="form-control" id="student-setup-program" ref={setupProgramRef} defaultValue=""
+                      onKeyDown={(e) => { if (e.key === 'Enter') setupPassRef.current?.focus(); }}>
+                      <option value="">Select your program</option>
+                      {PROGRAM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label htmlFor="student-setup-pass">Create Password</label>

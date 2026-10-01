@@ -331,7 +331,11 @@ export default function ExamPage() {
                       </div>
                       <div className="settings-field" style={{ margin: 0 }}>
                         <div className="settings-field-label">Program</div>
-                        <input type="text" className="form-control" id="stg-program" placeholder="e.g. BSIT" autoComplete="off" />
+                        <select className="form-control" id="stg-program" defaultValue="">
+                          <option value="">Select program</option>
+                          <option value="BSIT">BSIT</option>
+                          <option value="BSCS">BSCS</option>
+                        </select>
                       </div>
                     </div>
                     <div className="settings-field">

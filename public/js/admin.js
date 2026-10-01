@@ -2849,7 +2849,7 @@ function renderSubjects() {
     const years    = (Array.isArray(s.yearLevels) && s.yearLevels.length) ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     const sections = s.sections   || [];
     const courseName = formatCourseNameDisplay(s.name);
-    const yearSectionMeta = buildCourseYearSectionMeta(years, sections, c2);
+    const yearSectionMeta = buildCourseYearSectionMeta(years, sections, c2, DB.normalizeProgramValue(s.program));
 
     const examCount    = allExams.filter(e => e.subjectId === s.id && e.status !== 'archived').length;
     const studentCount = allStudents.filter(st => (st.enrolledSubjects || []).includes(s.id)).length;
@@ -2911,7 +2911,7 @@ function renderSubjects() {
   }).join('');
 }
 
-function buildCourseYearSectionMeta(years, sections, accentColor) {
+function buildCourseYearSectionMeta(years, sections, accentColor, program = '') {
   const normalizedYears = (Array.isArray(years) ? years : [])
     .map(year => yearLabelToNumber(year))
     .map(year => String(year || '').trim())
@@ -2937,6 +2937,7 @@ function buildCourseYearSectionMeta(years, sections, accentColor) {
   } else {
     values = normalizedSections;
   }
+  if (program) values = values.length ? values.map(value => `${program} ${value}`) : [program];
 
   const seen = new Set();
   const items = values
@@ -3178,7 +3179,7 @@ function syncSubjectManageAccessHint() {
   if (!hintField) return;
   hintField.textContent = mode === 'everyone'
     ? 'Any year level or section can self-enroll in this course using the enrollment code.'
-    : 'Only students whose year level and section match this course can self-enroll.';
+    : 'Only students whose program, year level and section match this course can self-enroll.';
 }
 window.syncSubjectManageAccessHint = syncSubjectManageAccessHint;
 
@@ -3220,6 +3221,7 @@ function openSubjectModal(id) {
   document.getElementById('subj-year-level').value = '';
   document.getElementById('subj-section').value = '';
   document.getElementById('subj-school-year').value = '';
+  document.getElementById('subj-program').value = '';
   document.getElementById('subj-manage-access').value = 'restrict';
   syncSubjectManageAccessHint();
   document.getElementById('subj-enroll-code').value = generateEnrollmentCode();
@@ -3236,6 +3238,7 @@ function openSubjectModal(id) {
     updateCharCounter('subj-desc', 'subj-desc-counter', 100);
     document.getElementById('subj-enroll-code').value = s.enrollmentCode || generateEnrollmentCode();
     document.getElementById('subj-school-year').value = s.schoolYear || '';
+    document.getElementById('subj-program').value = DB.normalizeProgramValue(s.program);
     const savedYears = Array.isArray(s.yearLevels) && s.yearLevels.length ? s.yearLevels : (s.yearLevel ? [s.yearLevel] : []);
     document.getElementById('subj-year-level').value = yearLabelToNumber(savedYears[0] || '');
     document.getElementById('subj-section').value = formatCourseSectionsInputValue(s.sections || []);
@@ -3258,12 +3261,14 @@ function saveSubject() {
   const sections = normalizeCourseSectionsInput(document.getElementById('subj-section').value);
   const yearLevel = normalizedYear ? yearNumberToLabel(normalizedYear) : '';
   const schoolYear = document.getElementById('subj-school-year').value.trim();
+  const program = DB.normalizeProgramValue(document.getElementById('subj-program').value);
   const manageAccess = normalizeSubjectManageAccess(document.getElementById('subj-manage-access').value);
 
   const missingFields = [];
   if (!code) missingFields.push('course code');
   if (!name) missingFields.push('course name');
   if (!schoolYear) missingFields.push('school year');
+  if (!program) missingFields.push('program');
   if (!rawYearLevel) missingFields.push('year level');
   if (!sections.length) missingFields.push('section');
   if (missingFields.length) {
@@ -3284,10 +3289,10 @@ function saveSubject() {
   }
 
   if (id) {
-    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, manageAccess });
+    DB.updateSubject(id, { code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, program, manageAccess });
     showToast('Course updated successfully.', 'success');
   } else {
-    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, manageAccess });
+    DB.addSubject({ code, name, description, enrollmentCode, yearLevel, yearLevels, sections, schoolYear, program, manageAccess });
     showToast('Course added successfully.', 'success');
   }
   closeModal('modal-subject');

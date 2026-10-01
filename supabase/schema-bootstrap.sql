@@ -102,6 +102,10 @@ alter table if exists public.subjects add column if not exists school_year text;
 alter table if exists public.subjects add column if not exists manage_access text;
 update public.subjects set manage_access = 'restrict' where manage_access is null or btrim(coalesce(manage_access, '')) = '';
 alter table if exists public.subjects alter column manage_access set default 'restrict';
+-- Degree program (BSIT / BSCS) the course is offered to. When manage_access is
+-- 'restrict', only students whose program matches may self-enroll. Null on
+-- courses created before this column existed, which skips the program check.
+alter table if exists public.subjects add column if not exists program text;
 
 -- Exams may optionally require an access code. When blank, students can open
 -- the exam directly from their course page; when present, the code remains

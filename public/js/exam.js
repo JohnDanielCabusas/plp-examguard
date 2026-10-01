@@ -2006,7 +2006,8 @@ const ExamApp = {
     const departmentEl = document.getElementById('stg-department');
     if (departmentEl) departmentEl.value = sess.department || (student ? (student.department || '') : '');
     const programEl = document.getElementById('stg-program');
-    if (programEl) programEl.value = sess.program || (student ? (student.program || '') : '');
+    // Older accounts typed their program as free text; map it onto the dropdown.
+    if (programEl) programEl.value = DB.normalizeProgramValue(sess.program || (student ? (student.program || '') : ''));
     // clear messages
     ['stg-profile-msg','stg-pass-msg'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
     ['stg-cur-pass','stg-new-pass','stg-confirm-pass'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -2044,7 +2045,7 @@ const ExamApp = {
     const yearSectionMatch = yearSection.match(/^([1-5])-([A-Z])$/);
     if (!yearSectionMatch) { this._showToast('Year & section must use the format 3-B.', 'error', { variant: 'settings' }); return; }
     if (!department) { this._showToast('Please select your department.', 'error', { variant: 'settings' }); return; }
-    if (!program) { this._showToast('Please enter your program.', 'error', { variant: 'settings' }); return; }
+    if (!program) { this._showToast('Please select your program.', 'error', { variant: 'settings' }); return; }
     const yearMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year', '5': '5th Year' };
     const yearLevel = yearMap[yearSectionMatch[1]] || '';
     const section = `Section ${yearSectionMatch[2]}`;
@@ -3003,11 +3004,14 @@ const ExamApp = {
           ? subject.yearLevels
           : (subject.yearLevel ? [subject.yearLevel] : []);
         const sections = (subject.sections || []).map(s => DB._normalizeSectionValue(s)).filter(Boolean);
+        const program = DB.normalizeProgramValue(subject.program);
         const reqParts = [];
+        if (program) reqParts.push(program);
         if (years.length) reqParts.push(years.join('/'));
         if (sections.length) reqParts.push('Section ' + sections.join('/'));
         const reqText = reqParts.length ? ` This course is only open to ${reqParts.join(', ')}.` : '';
-        setEnrollStatus(msgEl, `Your year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
+        const mismatch = program ? 'program/year level/section' : 'year level/section';
+        setEnrollStatus(msgEl, `Your ${mismatch} doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
       } else {
         DB.updateStudent(student.id, { enrolledSubjects: [...enrolled, subject.id] });
         setEnrollStatus(msgEl, `Successfully enrolled in "${subject.name}"!`, 'success', { autoClearMs: 4000 });
