@@ -4205,41 +4205,53 @@ function getSharePreviewTargetSubjectId(share) {
   return nameMatch?.id || subjects[0]?.id || '';
 }
 
-function buildExamShareQuestionAnswerHtml(question) {
+// The answer key for any question type, as escaped HTML. Each type keeps its
+// answer in a different field (correctAnswerIndices, answers, pairs, ...), so
+// reading correctAnswer alone shows nothing for most of them.
+function buildQuestionAnswerKeyHtml(question) {
   const options = Array.isArray(question?.options) ? question.options : [];
   const answers = Array.isArray(question?.answers) ? question.answers : [];
   const pairs = Array.isArray(question?.pairs) ? question.pairs : [];
+
+  if (question?.type === 'checkbox') {
+    const correctIndices = Array.isArray(question?.correctAnswerIndices) ? question.correctAnswerIndices : [];
+    const labels = correctIndices.map(index => options[index]).filter(Boolean);
+    return labels.length ? labels.map(label => escHtml(label)).join(', ') : 'No correct options recorded.';
+  }
+  if (question?.type === 'enumeration') {
+    return answers.length ? answers.map(answer => escHtml(answer)).join(', ') : 'No expected answers recorded.';
+  }
+  if (question?.type === 'identification') {
+    const acceptedAnswers = getIdentificationAcceptedAnswers(question);
+    return acceptedAnswers.length ? acceptedAnswers.map(answer => escHtml(answer)).join(' / ') : 'No accepted answers recorded.';
+  }
+  if (question?.type === 'matching') {
+    return pairs.length
+      ? pairs.map(pair => `${escHtml(pair.term || '')} → ${escHtml(pair.match || '')}`).join('<br>')
+      : 'No answer pairs recorded.';
+  }
+  if (question?.type === 'essay') {
+    return question?.rubric ? `Rubric: ${escHtml(question.rubric)}` : 'Essay question — manual grading required.';
+  }
+  if (question?.type === 'coding') {
+    const parts = [];
+    if (question?.language) parts.push(`Language: ${escHtml(question.language)}`);
+    if (question?.expectedOutput) parts.push(`Expected output: ${escHtml(question.expectedOutput)}`);
+    if (question?.rubric) parts.push(`Rubric: ${escHtml(question.rubric)}`);
+    return parts.join('<br>') || 'Coding question.';
+  }
+  return question?.correctAnswer ? escHtml(question.correctAnswer) : 'No answer recorded.';
+}
+
+function buildExamShareQuestionAnswerHtml(question) {
+  const options = Array.isArray(question?.options) ? question.options : [];
 
   let detailHtml = '';
   if (options.length) {
     detailHtml += `<div class="share-preview-options">${options.map((option, index) => `<div class="share-preview-option">${String.fromCharCode(65 + index)}. ${escHtml(option)}</div>`).join('')}</div>`;
   }
 
-  let answerHtml = '';
-  if (question?.type === 'checkbox') {
-    const correctIndices = Array.isArray(question?.correctAnswerIndices) ? question.correctAnswerIndices : [];
-    const labels = correctIndices.map(index => options[index]).filter(Boolean);
-    answerHtml = labels.length ? labels.map(label => escHtml(label)).join(', ') : 'No correct options recorded.';
-  } else if (question?.type === 'enumeration') {
-    answerHtml = answers.length ? answers.map(answer => escHtml(answer)).join(', ') : 'No expected answers recorded.';
-  } else if (question?.type === 'identification') {
-    const acceptedAnswers = getIdentificationAcceptedAnswers(question);
-    answerHtml = acceptedAnswers.length ? acceptedAnswers.map(answer => escHtml(answer)).join(' / ') : 'No accepted answers recorded.';
-  } else if (question?.type === 'matching') {
-    answerHtml = pairs.length
-      ? pairs.map(pair => `${escHtml(pair.term || '')} → ${escHtml(pair.match || '')}`).join('<br>')
-      : 'No answer pairs recorded.';
-  } else if (question?.type === 'essay') {
-    answerHtml = question?.rubric ? `Rubric: ${escHtml(question.rubric)}` : 'Essay question — manual grading required.';
-  } else if (question?.type === 'coding') {
-    const parts = [];
-    if (question?.language) parts.push(`Language: ${escHtml(question.language)}`);
-    if (question?.expectedOutput) parts.push(`Expected output: ${escHtml(question.expectedOutput)}`);
-    if (question?.rubric) parts.push(`Rubric: ${escHtml(question.rubric)}`);
-    answerHtml = parts.join('<br>') || 'Coding question.';
-  } else {
-    answerHtml = question?.correctAnswer ? escHtml(question.correctAnswer) : 'No answer recorded.';
-  }
+  const answerHtml = buildQuestionAnswerKeyHtml(question);
 
   return `
     <div class="share-preview-question">
@@ -14855,6 +14867,51 @@ function normalizeQuestionKey(q) {
   return String(q?.content || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Schema rule per question type the builder can hold. Only the rules for the
+// types the professor asked for go into the prompt — listing every type
+// invites the model to mix in ones that were never selected.
+const AI_QUESTION_TYPE_RULES = {
+  mcq: 'For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.',
+  checkbox: 'For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.',
+  tf: 'For "tf": options = ["True","False"]; correctAnswer = "True" or "False".',
+  identification: 'For "identification": options = []; acceptedAnswers = array of equivalent accepted answer strings; correctAnswer = the first accepted answer.',
+  enumeration: 'For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.',
+  matching: 'For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.',
+  essay: 'For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.',
+  coding: 'For "coding": options = []; correctAnswer = ""; language = "python"|"javascript"|"java"|"cpp"|"c"; starterCode = starter code string; expectedOutput = expected output string; rubric = grading notes; points = 20.',
+};
+
+const AI_QUESTION_TYPE_PATTERNS = {
+  mcq: /\bmcqs?\b|multiple[\s-]*choice/i,
+  checkbox: /check[\s-]*box(es)?|select all that apply/i,
+  tf: /true\s*(?:or|\/|-|and)?\s*false|\bt\s*\/\s*f\b/i,
+  identification: /identification/i,
+  enumeration: /enumerat/i,
+  matching: /matching/i,
+  essay: /\bessays?\b/i,
+  coding: /\bcoding\b|programming\s+(?:problem|exercise|challenge|task)s?/i,
+};
+
+// Custom mode has no type chips, so read the types from the professor's text.
+// No type named → every type the builder supports is allowed.
+function detectAIQuestionTypesInPrompt(text) {
+  const found = Object.keys(AI_QUESTION_TYPE_PATTERNS).filter(type => AI_QUESTION_TYPE_PATTERNS[type].test(text || ''));
+  return found.length ? found : Object.keys(AI_QUESTION_TYPE_RULES);
+}
+
+// The model sometimes spells a type its own way ("multiple_choice", "True/False").
+function normalizeAIQuestionType(type) {
+  const compact = String(type || '').toLowerCase().replace(/[^a-z]/g, '');
+  const aliases = { multiplechoice: 'mcq', checkboxes: 'checkbox', truefalse: 'tf', trueorfalse: 'tf', matchingtype: 'matching' };
+  return aliases[compact] || compact;
+}
+
+function keepAllowedAIQuestionTypes(questions, allowedTypes) {
+  return questions
+    .map(q => ({ ...q, type: normalizeAIQuestionType(q?.type) }))
+    .filter(q => allowedTypes.includes(q.type));
+}
+
 async function requestQuestionsFromAI(promptText, apiKey) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -14957,19 +15014,15 @@ async function runAIGenerate() {
   // Trim to ~12000 chars to fit context
   if (rawText.length > 12000) rawText = rawText.slice(0, 12000) + '\n[content truncated]';
 
+  const allowedTypes = (mode === 'quick' ? selectedTypes : detectAIQuestionTypesInPrompt(customPrompt))
+    .filter(type => AI_QUESTION_TYPE_RULES[type]);
   const schemaRules = `Return ONLY a valid JSON array with no other text, explanation, or markdown.
 Each question object schema:
-  { "type": "mcq"|"checkbox"|"tf"|"identification"|"enumeration"|"matching"|"essay"|"coding", "content": "...", "options": [...], "correctAnswer": "...", "acceptedAnswers": [...], "answers": [...], "pairs": [...], "points": 1, "difficulty": "easy"|"medium"|"hard", "bloom": "remember"|"understand"|"apply"|"analyze"|"evaluate"|"create" }
+  { "type": ${allowedTypes.map(type => `"${type}"`).join('|')}, "content": "...", "options": [...], "correctAnswer": "...", "acceptedAnswers": [...], "answers": [...], "pairs": [...], "points": 1, "difficulty": "easy"|"medium"|"hard", "bloom": "remember"|"understand"|"apply"|"analyze"|"evaluate"|"create" }
+- "type": ONLY these values are allowed: ${allowedTypes.join(', ')}. Never use any other question type.
 - "difficulty": REQUIRED on every question. Your best estimate of how hard it is for a typical student — "easy" (recall/definition), "medium" (application/understanding), or "hard" (analysis/multi-step reasoning). This is a provisional label; the system refines it from real student results later.
 - "bloom": REQUIRED on every question. The Bloom's Taxonomy cognitive level the question assesses: "remember" (recall facts), "understand" (explain concepts), "apply" (use in new situations), "analyze" (compare/break down), "evaluate" (justify/critique), or "create" (design/produce). Aim for a spread across levels — not every question should be "remember".
-- For "mcq": options = array of 4 strings; correctAnswer must match one option exactly.
-- For "checkbox": options = array of 4-6 strings; correctAnswerIndices = array of 0-based indices of correct options; points = 2.
-- For "tf": options = ["True","False"]; correctAnswer = "True" or "False".
-- For "identification": options = []; acceptedAnswers = array of equivalent accepted answer strings; correctAnswer = the first accepted answer.
-- For "enumeration": options = []; answers = array of expected answer strings (3-6 items); correctAnswer = ""; partialScoring = true; points = 5.
-- For "matching": options = []; pairs = array of {term, match} objects (4-6 pairs); correctAnswer = ""; partialScoring = true; points = 5.
-- For "essay": options = []; correctAnswer = ""; rubric = grading guidance string; minWords = 0; points = 10.
-- For "coding": options = []; correctAnswer = ""; language = "python"|"javascript"|"java"|"cpp"|"c"; starterCode = starter code string; expectedOutput = expected output string; rubric = grading notes; points = 20.`;
+${allowedTypes.map(type => `- ${AI_QUESTION_TYPE_RULES[type]}`).join('\n')}`;
 
   let typeInstruction = null;
   let prompt;
@@ -15016,8 +15069,8 @@ ${rawText}`;
 
   let questions;
   try {
-    questions = await requestQuestionsFromAI(prompt, apiKey);
-    if (questions.length === 0) throw new Error('No questions generated.');
+    questions = keepAllowedAIQuestionTypes(await requestQuestionsFromAI(prompt, apiKey), allowedTypes);
+    if (questions.length === 0) throw new Error('No questions of the selected type(s) were generated. Please try again.');
   } catch (err) {
     _aiSD('ai-status', 'none'); _aiSD('ai-gen-btn', 'flex');
     showToast('AI generation failed: ' + err.message, 'error');
@@ -15052,7 +15105,7 @@ Course materials:
 ${rawText}`;
 
       try {
-        const more = await requestQuestionsFromAI(topUpPrompt, apiKey);
+        const more = keepAllowedAIQuestionTypes(await requestQuestionsFromAI(topUpPrompt, apiKey), allowedTypes);
         const fresh = more.filter(q => {
           const key = normalizeQuestionKey(q);
           if (!key || seen.has(key)) return false;
@@ -15072,9 +15125,17 @@ ${rawText}`;
     }
   }
 
-  // Sort: MCQ → True/False → Identification
-  const typeOrder = { mcq: 0, tf: 1, identification: 2 };
-  questions.sort((a, b) => (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3));
+  // Keep each question type in one block (same order as the builder's "add
+  // question" bar), and sort each block by its difficulty label: easy → medium
+  // → hard, then by Bloom level. Array.sort is stable, so ties keep AI order.
+  const typeOrder = ['mcq', 'checkbox', 'tf', 'identification', 'enumeration', 'matching', 'essay', 'coding'];
+  const difficultyOrder = ['easy', 'medium', 'hard'];
+  const rank = (list, value) => { const i = list.indexOf(value); return i === -1 ? list.length : i; };
+  questions.sort((a, b) =>
+    rank(typeOrder, a.type) - rank(typeOrder, b.type)
+    || String(a.type || '').localeCompare(String(b.type || ''))
+    || rank(difficultyOrder, a.difficulty) - rank(difficultyOrder, b.difficulty)
+    || rank(BLOOM_LEVELS, a.bloom) - rank(BLOOM_LEVELS, b.bloom));
 
   aiGeneratedQuestions = questions;
   _aiSD('ai-status', 'none');
@@ -15118,8 +15179,8 @@ function renderAIPreview(questions) {
             <span>${groupNum[q.type]}. ${escHtml(q.content)}</span>
             <span style="flex-shrink:0;display:flex;gap:5px;">${BLOOM_LEVELS.includes(q.bloom) ? bloomBadge(q.bloom) : ''}${['easy','medium','hard'].includes(q.difficulty) ? difficultyBadge(q.difficulty) : ''}</span>
           </div>
-          ${q.type === 'mcq' ? `<div class="ai-q-options">${q.options.map((o, oi) => `<span><span class="ai-q-option-letter">${String.fromCharCode(65+oi)}.</span> ${escHtml(o)}</span>`).join('')}</div>` : ''}
-          <div class="ai-q-correct">✓ ${escHtml(q.type === 'identification' ? formatIdentificationAcceptedAnswers(q) : q.correctAnswer)}</div>
+          ${['mcq', 'checkbox'].includes(q.type) && Array.isArray(q.options) ? `<div class="ai-q-options">${q.options.map((o, oi) => `<span><span class="ai-q-option-letter">${String.fromCharCode(65+oi)}.</span> ${escHtml(o)}</span>`).join('')}</div>` : ''}
+          <div class="ai-q-correct" style="display:flex;gap:4px;"><span>✓</span><span>${buildQuestionAnswerKeyHtml(q)}</span></div>
         </div>
       </label>
     </div>`;
