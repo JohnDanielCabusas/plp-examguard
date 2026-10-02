@@ -70,26 +70,36 @@ if (!window.AppErrorUtils) {
   })();
 }
 
+// Page boot waits on the session check; never let a stalled server hold the loading screen.
+const SESSION_CHECK_TIMEOUT_MS = 12000;
+
 const Auth = {
   ADMIN_RESET_KEY: 'acs_admin_reset',
   STUDENT_VERIFY_KEY: 'acs_student_email_verify',
   STUDENT_RESET_KEY: 'acs_student_reset',
 
-  async _post(path, payload) {
+  async _post(path, payload, { timeoutMs = 0 } = {}) {
     let response;
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
       response = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload || {}),
+        signal: controller?.signal,
       });
     } catch (error) {
-      const message = window.AppErrorUtils.toUserMessage(error, 'Unable to reach the authentication server.', { context: 'auth' });
+      // A stalled server is treated like a dropped connection, so callers fall back to the cached session.
+      const failure = error?.name === 'AbortError' ? new Error('ETIMEDOUT: authentication server did not respond') : error;
+      const message = window.AppErrorUtils.toUserMessage(failure, 'Unable to reach the authentication server.', { context: 'auth' });
       return {
         success: false,
-        connectivityIssue: window.AppErrorUtils.isConnectivityIssue(error),
+        connectivityIssue: window.AppErrorUtils.isConnectivityIssue(failure),
         message,
       };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     const data = await response.json().catch(() => ({}));
@@ -187,7 +197,7 @@ const Auth = {
   },
 
   async validateAdminSession() {
-    const result = await this._post('/api/auth/professor/session', {});
+    const result = await this._post('/api/auth/professor/session', {}, { timeoutMs: SESSION_CHECK_TIMEOUT_MS });
     if (result?.connectivityIssue) return this.getAdminSession();
     if (!result?.success || !result.admin) {
       this.clearAdminSession();
@@ -259,7 +269,7 @@ const Auth = {
   },
 
   async validateStudentSession() {
-    const result = await this._post('/api/auth/student/session', {});
+    const result = await this._post('/api/auth/student/session', {}, { timeoutMs: SESSION_CHECK_TIMEOUT_MS });
     if (result?.connectivityIssue) return this.getStudentSession();
     if (!result?.success || !result.session) {
       this.clearStudentSession();
@@ -482,7 +492,7 @@ const Auth = {
   },
 
   async validateSysAdminSession() {
-    const result = await this._post('/api/auth/sysadmin/session', {});
+    const result = await this._post('/api/auth/sysadmin/session', {}, { timeoutMs: SESSION_CHECK_TIMEOUT_MS });
     if (result?.connectivityIssue) return this.getSysAdminSession();
     if (!result?.success || !result.session) {
       this.clearSysAdminSession();

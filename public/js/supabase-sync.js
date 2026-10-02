@@ -7,6 +7,8 @@
 // runs as part of the React bundle (before any useEffect fires).
 // ============================================================
 
+const INITIAL_LOAD_READY_TIMEOUT_MS = 15000;
+
 const SupabaseSync = {
   _client: null,
   _channel: null,
@@ -275,14 +277,27 @@ const SupabaseSync = {
       }
       this._client = client;
 
+      // If Supabase is slow, open the page anyway; the pull keeps going and fills the cache when it lands.
+      let openedEarly = false;
+      const readyWatchdog = setTimeout(() => {
+        console.warn('[SupabaseSync] Initial load is slow; showing the page while data keeps loading.');
+        openedEarly = true;
+        this._emitReady();
+      }, INITIAL_LOAD_READY_TIMEOUT_MS);
+
       try {
         await this._pullFromSupabase();
+        if (openedEarly) {
+          ['settings', 'professors', 'students', 'subjects', 'exams', 'sessions', 'messages', 'exam_shares']
+            .forEach(table => this._notifyDataChanged(table));
+        }
         this._setupListeners();
         this._setupCrossTabSignals();
       } catch (e) {
         console.warn('[SupabaseSync] Error loading data from Supabase:', e.message || e);
         this._emitSyncError('connection', e, 'Unable to load the latest data right now.');
       } finally {
+        clearTimeout(readyWatchdog);
         this._emitReady();
         this._hydrateDeferredTables();
       }
