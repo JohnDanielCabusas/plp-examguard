@@ -1258,6 +1258,10 @@ export default function SuperAdminPage() {
             </nav>
 
             <div className="sidebar-footer">
+              <div className="sidebar-wordmark" aria-label="TUKLAS">
+                <span className="sidebar-wordmark-name">TUKLAS</span>
+                <span className="sidebar-wordmark-sub">Online Examination System</span>
+              </div>
               <button className="sidebar-signout-btn" onClick={doLogout}>
                 {ICONS.signout}
                 <span className="nav-item-label">Sign Out</span>

@@ -337,8 +337,14 @@ function getSubmissionStatusBadge(session) {
   const text = getSubmissionStatusText(session);
   if (text === 'Submitted') return '<span class="badge badge-success">Submitted</span>';
   if (text === 'Pending') return '<span class="badge badge-secondary">Pending</span>';
-  if (text === 'Force-Submitted (Professor)') return `<span class="badge badge-danger">${escHtml(text)}</span>`;
-  return `<span class="badge badge-warning">${escHtml(text)}</span>`;
+  // "Auto-Submitted (Warnings)" may wrap in a narrow table, but only before the
+  // reason — never at the hyphen, which left "Auto-" alone on its own line.
+  const [status, reason] = text.split(/ (?=\()/);
+  const body = reason
+    ? `<span class="badge-part">${escHtml(status)}</span> <span class="badge-part">${escHtml(reason)}</span>`
+    : escHtml(text);
+  const tone = text === 'Force-Submitted (Professor)' ? 'badge-danger' : 'badge-warning';
+  return `<span class="badge ${tone}">${body}</span>`;
 }
 
 const BEHAVIOR_LABELS = {

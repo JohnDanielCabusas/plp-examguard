@@ -1729,7 +1729,6 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   text-indent: .22em;
   line-height: 1.1;
 }
-[data-theme="dark"] .login-system-name { color: #6ee7a8; }
 
 
 .login-logo img {
@@ -1777,6 +1776,59 @@ h1, h2, h3, h4, h5 { font-weight: 600; line-height: 1.3; }
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* Header reads as two groups: the school (Filipino name with its English
+   name directly under it), then — past a short gold rule — the system
+   itself (TUKLAS and what it is). It used to run school name, TUKLAS,
+   description, English name, so the school's own name was split around the
+   product. `.login-logo p` also outranked `.login-system-name`, shrinking
+   TUKLAS to 13px grey; the selectors below are scoped to win. The card is
+   white in both themes, so the colours are fixed rather than theme tokens
+   (dark mode turned TUKLAS mint and this text pale grey, on white). */
+.login-school {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.login-logo .login-tagline {
+  margin-top: 1px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #4b5563;
+}
+.login-product {
+  position: relative;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.login-product::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 36px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent, #C8A217);
+  transform: translateX(-50%);
+}
+.login-logo .login-system-name {
+  margin: 0;
+  color: #14532d;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .3em;
+  text-indent: .3em;
+  line-height: 1.15;
+}
+.login-logo .login-system-desc {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4b5563;
 }
 
 /* Tab Switcher */
@@ -2362,34 +2414,61 @@ textarea.form-control {
   flex-shrink: 0;
 }
 
-/* Product wordmark above Sign Out (#44). */
-.sidebar-wordmark {
+/* Product wordmark above Sign Out (#44) — professor, student and system-admin
+   sidebars share these rules (.portal-wordmark is the student portal's).
+   Left-aligned like everything else in the sidebar (a centred lockup fought
+   the left-aligned nav and Sign Out). Both lines start on the Sign Out
+   icon's edge (12px footer padding + 1px border + 14px button padding), in
+   the same small caps, so they read as one mark; a gold bar down the left —
+   the active nav item's accent — sits on the button's outer edge and ties
+   the two lines together. */
+.sidebar-wordmark,
+.portal-wordmark {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 2px 14px 12px;
+  align-items: flex-start;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 1px 0 1px 15px;
   overflow: hidden;
   white-space: nowrap;
+  text-align: left;
 }
-.sidebar-wordmark-name {
-  color: #d9e6dd;
-  font-size: 15px;
+.sidebar-wordmark::before,
+.portal-wordmark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent, #C8A217);
+}
+.sidebar-wordmark-name,
+.portal-wordmark-name {
+  color: #e6efe8;
+  font-size: 14px;
   font-weight: 800;
-  letter-spacing: .26em;
+  letter-spacing: .3em;
   line-height: 1;
 }
-.sidebar-wordmark-sub {
+.sidebar-wordmark-sub,
+.portal-wordmark-sub {
   color: rgba(217,230,221,0.55);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .02em;
-  line-height: 1.3;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  line-height: 1;
 }
 /* Collapsed to the icon rail there is no room for a wordmark. */
 .sidebar.collapsed .sidebar-wordmark {
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
+  margin-bottom: 0;
   opacity: 0;
 }
 
@@ -7277,9 +7356,10 @@ body.exam-page {
     flex-wrap: wrap;
   }
 
+  /* Left-aligned like the wordmark above it and the professor panel's
+     Sign Out — centring it here made the footer mix two alignments. */
   .portal-signout-btn {
     width: 100%;
-    justify-content: center;
   }
 
   .portal-content { padding: 18px 16px 32px; }
@@ -7771,36 +7851,14 @@ body.exam-page {
   flex-shrink: 0;
 }
 
-/* Product wordmark above Sign Out, matching the professor panel (#44). */
-.portal-wordmark {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px 12px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-/* Identical to .sidebar-wordmark-name / -sub in the professor panel — one
-   product, one wordmark. */
-.portal-wordmark-name {
-  color: #d9e6dd;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: .26em;
-  line-height: 1;
-}
-.portal-wordmark-sub {
-  color: rgba(217,230,221,0.55);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .02em;
-  line-height: 1.3;
-}
-/* No room for a wordmark on the icon rail. */
+/* Product wordmark above Sign Out: styled together with the professor
+   panel's .sidebar-wordmark (#44) — one product, one wordmark.
+   No room for a wordmark on the icon rail. */
 .portal-sidebar.collapsed .portal-wordmark {
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
+  margin-bottom: 0;
   opacity: 0;
 }
 
@@ -9070,13 +9128,37 @@ body.exam-page {
 }
 .exam-page .face-calibration-dialog :is(.confirm-title, .confirm-message) { margin: 0; }
 .exam-page .face-calibration-dialog .confirm-message { max-width: none; }
-.exam-page .face-calibration-dialog .confirm-actions { flex-direction: row; }
+.exam-page .face-calibration-dialog .confirm-actions { flex-direction: row; align-items: stretch; }
 .exam-page .face-calibration-dialog .confirm-actions .btn {
   flex: 1 1 150px;
   width: auto;
   min-width: 0;
+  min-height: 48px;
   white-space: normal;
 }
+.face-calibration-report-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.face-calibration-report-link {
+  padding: 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: #15803d;
+  cursor: pointer;
+}
+.face-calibration-report-link:hover:not(:disabled) { text-decoration: underline; }
+.face-calibration-report-link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 4px; }
+.face-calibration-report-link:disabled { color: var(--text-muted); font-weight: 500; cursor: default; }
+[data-theme="dark"] .face-calibration-report-link:not(:disabled) { color: #4ade80; }
 .exam-page .face-calibration-dialog #face-calibration-fallback { flex-basis: 100%; }
 @media (max-height: 620px) {
   .exam-page .face-calibration-dialog .confirm-dialog { padding: 16px; gap: 8px; }
@@ -17066,6 +17148,20 @@ body.exam-page {
 [data-theme="dark"] .face-positioning-warning-label { color: #e2b83f; }
 [data-theme="dark"] .face-positioning-warning-message { color: #e3eae5; }
 [data-theme="dark"] .exam-page .toast { border-color: #35443b; background: rgba(21,29,24,0.98); }
+[data-theme="dark"] .toast.toast-settings {
+  border-color: #35443b;
+  background: rgba(21,29,24,0.98);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+}
+[data-theme="dark"] .toast.toast-settings.success { border-left-color: #22c55e; }
+[data-theme="dark"] .toast.toast-settings.error { border-left-color: #f87171; }
+[data-theme="dark"] .toast.toast-settings.warning { border-left-color: #fbbf24; }
+[data-theme="dark"] .toast.toast-settings.info { border-left-color: #60a5fa; }
+[data-theme="dark"] .toast.toast-settings .toast-settings-icon { background: rgba(34,197,94,0.16); color: #4ade80; }
+[data-theme="dark"] .toast.toast-settings.error .toast-settings-icon { background: rgba(248,113,113,0.16); color: #fca5a5; }
+[data-theme="dark"] .toast.toast-settings.warning .toast-settings-icon { background: rgba(251,191,36,0.16); color: #fcd34d; }
+[data-theme="dark"] .toast.toast-settings.info .toast-settings-icon { background: rgba(96,165,250,0.16); color: #93c5fd; }
+[data-theme="dark"] .toast.toast-settings .toast-message { color: #eef5f0; }
 
 @keyframes examPopupBackdropIn { from { opacity: 0; } }
 @keyframes examPopupIn {
@@ -17257,6 +17353,142 @@ label.theme-switch,
     overflow: hidden;
     text-overflow: ellipsis;
     vertical-align: bottom;
+  }
+
+  /* Words stay whole at every zoom, with the sidebar open or collapsed.
+     The global `td, th { overflow-wrap: anywhere }` lets a cell break between
+     any two letters, so once the card got narrower than the table needed
+     (125% zoom with the sidebar open) the browser squeezed the Time column
+     to one character and spelled "AUG 12 3:00 PM" down the page. With words
+     kept whole, each column has a real minimum width: the columns tighten
+     to that, and only past it does the table scroll sideways inside its
+     card. Timestamps stay on one line; a status badge may break only before
+     its reason: "Auto-Submitted" / "(Warnings)". */
+  #report-card th,
+  #report-card td {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  #report-card th,
+  #report-card .report-session-date,
+  #report-card .report-session-range,
+  #report-card .report-session-label,
+  #report-card .report-session-value,
+  #report-card td.report-status-cell .badge-part {
+    white-space: nowrap;
+  }
+  #report-card td.report-status-cell .badge-part {
+    display: inline-block;
+  }
+  #report-card table {
+    min-width: 0;
+  }
+  #report-card th.report-session-cell,
+  #report-card td.report-session-cell,
+  #report-card th.report-status-cell,
+  #report-card td.report-status-cell {
+    width: auto;
+  }
+
+  /* Sized against the card, not the window, so it reacts to the sidebar
+     opening and closing as well as to zoom. A narrower card gets tighter
+     cell padding (16px a side across ten columns was ~320px) and lets
+     status badges take two lines, which together keep the whole table —
+     Actions included — inside the card down to ~1100px. */
+  #report-card {
+    container: report-card / inline-size;
+  }
+  @container report-card (max-width: 1480px) {
+    /* !important only because a global `th { padding: … !important }` would
+       otherwise keep the header cells at 16px. */
+    #report-card th,
+    #report-card td {
+      padding-left: 8px !important;
+      padding-right: 8px !important;
+    }
+    #report-card td.report-status-cell .badge {
+      white-space: normal;
+    }
+    #report-tbody td[data-label="Name"] strong {
+      max-width: 170px;
+    }
+  }
+
+  /* Below that, ten columns no longer fit (150%+ zoom with the sidebar open),
+     and a sideways-scrolling table hides Time, Submitted and Actions. Each
+     student becomes a labelled card instead — the same treatment phones get —
+     laid out in a grid so a mid-width card is not one very tall column.
+     Checkbox and rank share the top line; divider and empty-state rows span
+     the full width. */
+  @container report-card (max-width: 1199px) {
+    #report-card .table-wrapper table,
+    #report-card .table-wrapper tbody,
+    #report-card .table-wrapper td {
+      display: block;
+      width: auto;
+    }
+    #report-card .table-wrapper thead { display: none; }
+    #report-card .table-wrapper tbody {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+    #report-card .table-wrapper tbody > tr:has(> td[colspan]) {
+      grid-column: 1 / -1;
+    }
+    #report-card .table-wrapper tr {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--white);
+    }
+    #report-card .table-wrapper td {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      padding: 9px 14px !important;
+      border-bottom: 1px solid var(--border);
+      text-align: right;
+      white-space: normal;
+    }
+    #report-card .table-wrapper td:last-child { border-bottom: none; }
+    #report-card .table-wrapper td::before {
+      content: attr(data-label);
+      margin-right: auto;
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      text-align: left;
+    }
+    #report-card .table-wrapper td[data-label=""]::before,
+    #report-card .table-wrapper td:not([data-label])::before { display: none; }
+    #report-card .table-wrapper td[colspan] { justify-content: flex-start; text-align: left; }
+    #report-card .table-wrapper td.report-check-cell {
+      grid-column: 1;
+      padding-right: 0 !important;
+    }
+    #report-card .table-wrapper td.report-check-cell + td { grid-column: 2; }
+    #report-card .table-wrapper .report-session-time {
+      align-items: flex-end;
+      text-align: right;
+    }
+    /* A name stays on one line and trails off rather than wrapping. */
+    #report-card .table-wrapper td[data-label="Name"] {
+      flex-wrap: nowrap;
+      white-space: nowrap;
+    }
+    #report-tbody td[data-label="Name"] strong {
+      min-width: 0;
+      max-width: none;
+    }
   }
 }
 
@@ -17873,6 +18105,87 @@ td, th, .cell-ellipsis { overflow-wrap: anywhere; }
 }
 .course-card-enroll .course-enroll-label::after {
   content: ':';
+}
+
+/* --- Enroll row: one line at every zoom -----------------------------------
+   The row is always   ENROLL CODE: [CODE]  |  (icon) [1-B]
+   It used to overlap on narrow cards: the year/section block would not
+   shrink, so the code slid under the divider. A grid of stretchy columns
+   could only trade that for the opposite problem — empty space after the
+   section pill on wider cards. So each card is now exactly as wide as its
+   enroll row: zoom changes how many cards fit on a line, never the inside of
+   a card. The header is left out of the measurement (contain: inline-size),
+   so a long course title wraps instead of widening the card. The left group
+   never shrinks; extra section pills wrap inside the right block. */
+.course-cards-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 20px;
+}
+.course-cards-grid > .course-card {
+  flex: 0 0 auto;
+  width: fit-content;
+  max-width: 100%;
+}
+.course-cards-grid > .course-card .course-card-header {
+  contain: inline-size;
+}
+.course-cards-grid > .course-empty {
+  flex: 1 1 100%;
+}
+@media (max-width: 480px) {
+  .course-cards-grid { justify-content: center; }
+}
+.course-card-enroll,
+.course-card-enroll-group {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+/* Packed to the left with fixed gaps: `space-between` pushed the section to
+   the far edge on wide cards and left a hole in the middle of the row. */
+.course-card-enroll {
+  justify-content: flex-start;
+  gap: 14px;
+}
+.course-card-enroll-group {
+  flex: 0 0 auto;
+  width: auto;
+}
+.course-year-section-wrap {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  margin-left: 0;
+  gap: 10px;
+}
+.course-card-enroll .course-year-section-pills {
+  min-width: 0;
+  justify-content: flex-start;
+}
+.course-enroll-divider {
+  height: 24px;
+}
+.course-card-enroll .enroll-code-tag {
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-height: 0; /* ≤768px gives every button 40px, which turned the pill into a block */
+}
+/* A phone narrower than the row: tighten the spacing rather than break the
+   line. */
+@media (max-width: 380px) {
+  .course-card-body { padding-inline: 14px; }
+  .course-card-enroll,
+  .course-year-section-wrap { gap: 6px; }
+  .course-card-enroll .course-enroll-label { letter-spacing: 0; }
+  .course-card-enroll .enroll-code-tag { padding-inline: 8px; letter-spacing: 0.5px; }
+}
+/* The light-mode tint (8% dark green) is invisible on a dark card, which left
+   the code looking like loose text rather than a copy button. */
+[data-theme="dark"] .enroll-code-tag:not(.enroll-code-tag-on-color) {
+  background: rgba(34,197,94,0.12);
+  color: #4ade80;
 }
 
 /* The action row carried `border-top: 1px solid #eef2f7` — a hardcoded

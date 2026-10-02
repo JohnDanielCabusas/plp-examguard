@@ -3004,12 +3004,9 @@ const ExamApp = {
         if (missing.length) {
           setEnrollStatus(msgEl, `This course isn't open for enrollment yet — your instructor still needs to set its ${missing.join(', ')}. Please contact your instructor.`, 'error', { autoClearMs: 5500 });
         } else {
-          const years = Array.isArray(subject.yearLevels) && subject.yearLevels.length
-            ? subject.yearLevels
-            : [subject.yearLevel];
-          const sections = subject.sections.map(s => DB._normalizeSectionValue(s)).filter(Boolean);
-          const reqText = ` This course is only open to ${DB.normalizeProgramValue(subject.program)}, ${years.join('/')}, Section ${sections.join('/')}.`;
-          setEnrollStatus(msgEl, `Your program/year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
+          // Never name the course's program/year/section here: a student could
+          // simply change their profile to match it and walk in.
+          setEnrollStatus(msgEl, `Your program/year level/section doesn't match this course's requirements. Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
         }
       } else {
         DB.updateStudent(student.id, { enrolledSubjects: [...enrolled, subject.id] });
@@ -4951,9 +4948,13 @@ const ExamApp = {
     if (report) {
       const reportable = this._faceMeshCalibrating === true || options.report === true;
       report.style.display = reportable ? '' : 'none';
+      const reportRow = document.getElementById('face-calibration-report-row');
+      if (reportRow) reportRow.style.display = reportable ? '' : 'none';
       const sent = !!this._faceCalibrationReportSentAt;
+      const prompt = document.getElementById('face-calibration-report-prompt');
+      if (prompt) prompt.style.display = sent ? 'none' : '';
       report.disabled = sent;
-      report.textContent = sent ? 'Reported — waiting for your professor' : 'Report a Problem';
+      report.textContent = sent ? 'Reported — waiting for your professor' : 'Report it';
     }
   },
 
