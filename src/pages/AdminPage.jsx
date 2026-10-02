@@ -1728,7 +1728,7 @@ export default function AdminPage() {
                   <div>
                     <div style={{ fontSize:'11px', fontWeight:800, color:aiTheme.textMuted, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'10px' }}>Question Types</div>
                     <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                      {[['mcq','Multiple Choice',true],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false],['coding','Coding',false]].map(([val,label,checked]) => (
+                      {[['mcq','Multiple Choice',true],['checkbox','Checkboxes',false],['tf','True / False',true],['identification','Identification',true],['enumeration','Enumeration',false],['matching','Matching',false],['essay','Essay',false],['coding','Coding',false]].map(([val,label,checked]) => (
                         <label key={val} style={{ cursor:'pointer', userSelect:'none' }}>
                           <input type="checkbox" className="ai-type-cb" value={val} defaultChecked={checked} style={{ display:'none' }} />
                           <span style={{ display:'inline-block', padding:'8px 16px', borderRadius:'10px', fontSize:'13px', fontWeight:700, border:`1.5px solid ${aiTheme.toggleBorder}`, color:checked?aiTheme.primaryText:aiTheme.toggleIdleText, background:checked?aiTheme.primaryBg:aiTheme.toggleIdleBg, boxShadow: checked ? 'none' : `inset 0 0 0 1px ${aiTheme.accentBorder}`, transition:'all 0.15s', userSelect:'none' }}

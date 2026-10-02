@@ -3000,18 +3000,17 @@ const ExamApp = {
       if (enrolled.includes(subject.id)) {
         setEnrollStatus(msgEl, `You're already enrolled in "${subject.name}".`, 'info', { autoClearMs: 4000 });
       } else if (!DB.isStudentEligibleForCourse(student, subject)) {
-        const years = Array.isArray(subject.yearLevels) && subject.yearLevels.length
-          ? subject.yearLevels
-          : (subject.yearLevel ? [subject.yearLevel] : []);
-        const sections = (subject.sections || []).map(s => DB._normalizeSectionValue(s)).filter(Boolean);
-        const program = DB.normalizeProgramValue(subject.program);
-        const reqParts = [];
-        if (program) reqParts.push(program);
-        if (years.length) reqParts.push(years.join('/'));
-        if (sections.length) reqParts.push('Section ' + sections.join('/'));
-        const reqText = reqParts.length ? ` This course is only open to ${reqParts.join(', ')}.` : '';
-        const mismatch = program ? 'program/year level/section' : 'year level/section';
-        setEnrollStatus(msgEl, `Your ${mismatch} doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
+        const missing = DB.getCourseMissingRestrictFields(subject);
+        if (missing.length) {
+          setEnrollStatus(msgEl, `This course isn't open for enrollment yet — your instructor still needs to set its ${missing.join(', ')}. Please contact your instructor.`, 'error', { autoClearMs: 5500 });
+        } else {
+          const years = Array.isArray(subject.yearLevels) && subject.yearLevels.length
+            ? subject.yearLevels
+            : [subject.yearLevel];
+          const sections = subject.sections.map(s => DB._normalizeSectionValue(s)).filter(Boolean);
+          const reqText = ` This course is only open to ${DB.normalizeProgramValue(subject.program)}, ${years.join('/')}, Section ${sections.join('/')}.`;
+          setEnrollStatus(msgEl, `Your program/year level/section doesn't match this course's requirements.${reqText} Please contact your instructor if this seems wrong.`, 'error', { autoClearMs: 5500 });
+        }
       } else {
         DB.updateStudent(student.id, { enrolledSubjects: [...enrolled, subject.id] });
         setEnrollStatus(msgEl, `Successfully enrolled in "${subject.name}"!`, 'success', { autoClearMs: 4000 });

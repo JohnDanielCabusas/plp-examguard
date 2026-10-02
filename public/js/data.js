@@ -831,45 +831,52 @@ const DB = {
       section: this._normalizeSectionValue(student?.section || ''),
     };
   },
-  // A course can restrict enrollment to specific year levels and/or sections
-  // (subject.yearLevels / subject.sections). Mirrors admin.js's
-  // buildCourseYearSectionMeta pairing rules so "eligible to enroll" always
-  // matches what the course card displays as its target year(s)/section(s).
+  // A RESTRICT course is open only to students whose program, year level and
+  // section all match it exactly. Mirrors admin.js's buildCourseYearSectionMeta
+  // pairing rules so "eligible to enroll" always matches what the course card
+  // displays as its target year(s)/section(s).
   isStudentEligibleForCourse(student, subject) {
     if (String(subject?.manageAccess || '').trim().toLowerCase() === 'everyone') return true;
+    if (this.getCourseMissingRestrictFields(subject).length) return false;
 
-    // Courses saved before the Program field existed have no program and
-    // fall through to the year/section rules alone.
-    const subjectProgram = this.normalizeProgramValue(subject?.program);
-    if (subjectProgram && this.normalizeProgramValue(student?.program) !== subjectProgram) return false;
+    const subjectProgram = this.normalizeProgramValue(subject.program);
+    if (this.normalizeProgramValue(student?.program) !== subjectProgram) return false;
 
+    const { years, sections } = this._getCourseYearsAndSections(subject);
+    const { year: studentYear, section: studentSection } = this.getStudentEffectiveYearSection(student);
+
+    let pairs;
+    if (years.length === sections.length) {
+      pairs = years.map((y, i) => [y, sections[i]]);
+    } else if (years.length === 1) {
+      pairs = sections.map(s => [years[0], s]);
+    } else if (sections.length === 1) {
+      pairs = years.map(y => [y, sections[0]]);
+    } else {
+      pairs = years.flatMap(y => sections.map(s => [y, s]));
+    }
+    return pairs.some(([y, s]) => y === studentYear && !!studentSection && s === studentSection);
+  },
+  _getCourseYearsAndSections(subject) {
     const rawYears = Array.isArray(subject?.yearLevels) && subject.yearLevels.length
       ? subject.yearLevels
       : (subject?.yearLevel ? [subject.yearLevel] : []);
     const rawSections = Array.isArray(subject?.sections) ? subject.sections : [];
-
-    const years = rawYears.map(y => this._yearLabelToNumber(y)).filter(Boolean);
-    const sections = rawSections.map(s => this._normalizeSectionValue(s)).filter(Boolean);
-
-    if (!years.length && !sections.length) return true;
-
-    const { year: studentYear, section: studentSection } = this.getStudentEffectiveYearSection(student);
-
-    if (years.length && sections.length) {
-      let pairs;
-      if (years.length === sections.length) {
-        pairs = years.map((y, i) => [y, sections[i]]);
-      } else if (years.length === 1) {
-        pairs = sections.map(s => [years[0], s]);
-      } else if (sections.length === 1) {
-        pairs = years.map(y => [y, sections[0]]);
-      } else {
-        pairs = years.flatMap(y => sections.map(s => [y, s]));
-      }
-      return pairs.some(([y, s]) => y === studentYear && !!studentSection && s === studentSection);
-    }
-    if (years.length) return years.includes(studentYear);
-    return sections.includes(studentSection);
+    return {
+      years: rawYears.map(y => this._yearLabelToNumber(y)).filter(Boolean),
+      sections: rawSections.map(s => this._normalizeSectionValue(s)).filter(Boolean),
+    };
+  },
+  // Courses saved before the Program field existed have no program. A RESTRICT
+  // course can't be matched exactly without all three, so nobody may
+  // self-enroll until the professor edits the course and fills them in.
+  getCourseMissingRestrictFields(subject) {
+    const { years, sections } = this._getCourseYearsAndSections(subject);
+    const missing = [];
+    if (!this.normalizeProgramValue(subject?.program)) missing.push('program');
+    if (!years.length) missing.push('year level');
+    if (!sections.length) missing.push('section');
+    return missing;
   },
   findStudentConflict({ studentId, email, excludeId = null } = {}) {
     const normalizedStudentId = this._normalizeStudentIdValue(studentId);

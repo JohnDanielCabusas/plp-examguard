@@ -15003,7 +15003,7 @@ const AI_QUESTION_TYPE_RULES = {
 
 const AI_QUESTION_TYPE_PATTERNS = {
   mcq: /\bmcqs?\b|multiple[\s-]*choice/i,
-  checkbox: /check[\s-]*box(es)?|select all that apply/i,
+  checkbox: /check[\s-]*box(es)?|select all that apply|multiple[\s-]*(?:answer|response)s?\b/i,
   tf: /true\s*(?:or|\/|-|and)?\s*false|\bt\s*\/\s*f\b/i,
   identification: /identification/i,
   enumeration: /enumerat/i,

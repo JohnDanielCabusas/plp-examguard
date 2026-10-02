@@ -104,7 +104,8 @@ update public.subjects set manage_access = 'restrict' where manage_access is nul
 alter table if exists public.subjects alter column manage_access set default 'restrict';
 -- Degree program (BSIT / BSCS) the course is offered to. When manage_access is
 -- 'restrict', only students whose program matches may self-enroll. Null on
--- courses created before this column existed, which skips the program check.
+-- courses created before this column existed; a 'restrict' course with no
+-- program accepts no self-enrollment until the professor sets one.
 alter table if exists public.subjects add column if not exists program text;
 
 -- Exams may optionally require an access code. When blank, students can open
