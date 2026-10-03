@@ -8,6 +8,8 @@
 // ============================================================
 
 const INITIAL_LOAD_READY_TIMEOUT_MS = 15000;
+const BRANDING_LOGO_PATH = '/api/branding/logo';
+const PUBLIC_SETTINGS_COLUMNS = 'id, school_name, department, admin_name, admin_email';
 
 const SupabaseSync = {
   _client: null,
@@ -320,10 +322,10 @@ const SupabaseSync = {
       try {
         const { data: settings } = await client
           .from('settings')
-          .select('id, school_name, logo_url, department, admin_name, admin_email')
+          .select(PUBLIC_SETTINGS_COLUMNS)
           .eq('id', 'main')
           .maybeSingle();
-        if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+        if (settings) this._writeLocal('acs_settings', this._dbToJsPublicSettings(settings));
       } catch (e) {
         console.warn('[SupabaseSync] Error loading public settings:', e.message || e);
       } finally {
@@ -388,7 +390,7 @@ const SupabaseSync = {
     if (student?.studentId && !sysadmin) {
       const { data: settings } = await c
         .from('settings')
-        .select('id, school_name, logo_url, department, admin_name, admin_email')
+        .select(PUBLIC_SETTINGS_COLUMNS)
         .eq('id', 'main')
         .maybeSingle();
 
@@ -410,7 +412,7 @@ const SupabaseSync = {
         ? await c.from('exams').select('*').in('subject_id', subjectIds).order('created_at')
         : { data: [] };
 
-      if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+      if (settings) this._writeLocal('acs_settings', this._dbToJsPublicSettings(settings));
       this._writeLocal('acs_students', studentRow ? [this._dbToJsStudent(studentRow)] : []);
       this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
@@ -846,11 +848,24 @@ const SupabaseSync = {
 
   // ── Refresh helpers ─────────────────────────────────────────
 
+  // A student only ever sees their own enrolled courses, so every student-side
+  // refresh is scoped to them. Unscoped, each portal poll downloaded every course
+  // and every exam (questions included) in the system, which overloaded Supabase.
+  _studentEnrolledSubjectIds(studentId) {
+    const own = this._localArray('acs_students').find(s => s.studentId === studentId);
+    return Array.isArray(own?.enrolledSubjects) ? own.enrolledSubjects.filter(Boolean) : [];
+  },
+
   async refreshSubjects() {
     if (!this._client) return;
-    const { admin, sysadmin } = this._getSessions();
+    const { admin, sysadmin, student } = this._getSessions();
     let query = this._client.from('subjects').select('*');
     if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+    else if (student?.studentId && !sysadmin) {
+      const subjectIds = this._studentEnrolledSubjectIds(student.studentId);
+      if (!subjectIds.length) { this._writeLocal('acs_subjects', []); return; }
+      query = query.in('id', subjectIds);
+    }
     const { data: subjects } = await query;
     if (subjects) {
       this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
@@ -859,13 +874,41 @@ const SupabaseSync = {
 
   async refreshExams() {
     if (!this._client) return;
-    const { admin, sysadmin } = this._getSessions();
+    const { admin, sysadmin, student } = this._getSessions();
     let query = this._client.from('exams').select('*');
     if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+    else if (student?.studentId && !sysadmin) {
+      const subjectIds = this._studentEnrolledSubjectIds(student.studentId);
+      if (!subjectIds.length) { this._writeLocal('acs_exams', []); return; }
+      query = query.in('subject_id', subjectIds);
+    }
     const { data: exams } = await query;
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
+  },
+
+  // Re-pulls a single exam row into the cache, for screens that only care about
+  // the exam the student is waiting on or taking.
+  async refreshExam(examId) {
+    if (!this._client || !examId) return;
+    const { data } = await this._client.from('exams').select('*').eq('id', examId).maybeSingle();
+    if (!data) return;
+    const [normalized] = this._dbToJsExamsPreservingLocal([data]);
+    const exams = this._localArray('acs_exams');
+    const index = exams.findIndex(exam => exam.id === normalized.id);
+    if (index >= 0) exams[index] = normalized;
+    else exams.push(normalized);
+    this._writeLocal('acs_exams', exams);
+  },
+
+  // Cheap status probe (a few bytes) for the waiting room's fast poll; the full
+  // exam row is only re-pulled when this reports a change.
+  async fetchExamStatus(examId) {
+    if (!this._client || !examId) return null;
+    const { data, error } = await this._client.from('exams').select('id, status').eq('id', examId).maybeSingle();
+    if (error || !data) return null;
+    return data.status || null;
   },
 
   async refreshExamShares() {
@@ -937,9 +980,15 @@ const SupabaseSync = {
 
   async refreshProfessors() {
     if (!this._client) return;
-    const { admin, sysadmin } = this._getSessions();
+    const { admin, sysadmin, student } = this._getSessions();
     let query = this._client.from('professors').select('id, username, name, email, department, created_at');
     if (admin?.id && !sysadmin) query = query.eq('id', admin.id);
+    else if (student?.studentId && !sysadmin) {
+      // Students only need the professors who teach their courses (course People tab).
+      const ownerIds = [...new Set(this._localArray('acs_subjects').map(s => s.ownerAdminId).filter(Boolean))];
+      if (!ownerIds.length) return;
+      query = query.in('id', ownerIds);
+    }
     const { data } = await query;
     if (data) this._writeLocal('acs_professors', data.map(r => this._dbToJsAdmin(r)));
   },
@@ -1224,7 +1273,7 @@ const SupabaseSync = {
   // ── JS → DB normalizers ─────────────────────────────────────
 
   _jsToDbSettings(d) {
-    return {
+    const row = {
       id: 'main',
       school_name: d.schoolName || '',
       logo_url: d.logoUrl || null,
@@ -1233,6 +1282,9 @@ const SupabaseSync = {
       admin_email: d.adminEmail || null,
       claude_api_key: d.claudeApiKey || null,
     };
+    // A cache holding the served logo path never saw the real logo; leave the stored one alone.
+    if (d.logoUrl === BRANDING_LOGO_PATH) delete row.logo_url;
+    return row;
   },
 
   _jsToDbSysAdmin(d) {
@@ -1505,6 +1557,12 @@ const SupabaseSync = {
   },
 
   // ── DB → JS normalizers ─────────────────────────────────────
+
+  // Login page and student portal: the logo is served (and cached) by our own
+  // server instead of shipping the ~374 KB data URI out of Supabase every time.
+  _dbToJsPublicSettings(r) {
+    return { ...this._dbToJsSettings(r), logoUrl: BRANDING_LOGO_PATH };
+  },
 
   _dbToJsSettings(r) {
     return {

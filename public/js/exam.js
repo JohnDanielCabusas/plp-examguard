@@ -115,6 +115,13 @@ const VIOLATION_SNAPSHOT_WIDTH = 640;
 const VIOLATION_SNAPSHOT_HEIGHT = 480;
 const VIOLATION_SNAPSHOT_QUALITY = 0.78;
 
+// Portal and course-view catch-up poll. Each tick re-reads the student's courses,
+// exams and sessions from Supabase, so with a full class online it must stay slow.
+const STUDENT_PORTAL_POLL_MS = 10000;
+// The waiting room probes exam status every 3s; the full exam row and sessions
+// are re-pulled every N ticks (or immediately when the status changes).
+const WAITING_FULL_REFRESH_TICKS = 5;
+
 // Capture hardware that screen recorders and streaming suites register with the
 // operating system. Matched case-insensitively against media-device labels.
 //
@@ -1874,8 +1881,8 @@ const ExamApp = {
       // granting a retake. Pull the latest exam row before a fresh attempt starts
       // so we don't relaunch using a stale cached exemption and leave the camera off.
       const needsFreshExamRules = !!(exam.requireCamera && (!this.session || !this.session.startTime));
-      if (needsFreshExamRules && window.SupabaseSync?.refreshExams) {
-        Promise.resolve(window.SupabaseSync.refreshExams())
+      if (needsFreshExamRules && window.SupabaseSync?.refreshExam) {
+        Promise.resolve(window.SupabaseSync.refreshExam(exam.id))
           .catch(() => {})
           .then(() => {
             const latestExam = DB.getExam(exam.id);
@@ -2329,7 +2336,7 @@ const ExamApp = {
     // Keep polling while this course view stays open, so a professor's restriction/
     // attendance changes show up here without the student needing to manually refresh.
     if (this._courseInterval) clearInterval(this._courseInterval);
-    this._courseInterval = setInterval(refreshCourseState, 5000);
+    this._courseInterval = setInterval(() => { if (!document.hidden) refreshCourseState(); }, STUDENT_PORTAL_POLL_MS);
   },
 
   showCourseTab(tab) {
@@ -2660,16 +2667,16 @@ const ExamApp = {
     // local cache) so a professor flipping an exam to ready/active, or allowing a
     // retake, still shows up here even if the realtime socket silently dropped.
     this._dashInterval = setInterval(() => {
+      if (document.hidden) return;
       Promise.all([
         sync?.refreshExams?.(),
         sync?.refreshSessions?.(),
         sync?.refreshSubjects?.(),
         sync?.refreshStudents?.(),
-        sync?.refreshProfessors?.(),
       ])
         .catch(() => {})
         .then(() => this._renderDashboard(Auth.getStudentSession()));
-    }, 5000);
+    }, STUDENT_PORTAL_POLL_MS);
 
     const route = this._readPortalRoute();
     if (route.view === 'settings') {
@@ -3260,12 +3267,24 @@ const ExamApp = {
   startWaitingPoll() {
     this._stopSessionSyncPolling();
     this.stopPoll();
+    let ticksSinceFullRefresh = 0;
     this.pollInterval = setInterval(async () => {
       // Re-fetch from Supabase, not just the local cache, so the exam still
-      // auto-starts here even if the realtime socket silently dropped.
+      // auto-starts here even if the realtime socket silently dropped. Each tick
+      // only probes this exam's status; the full exam row and the student's
+      // sessions are re-pulled when the status changes, or every
+      // WAITING_FULL_REFRESH_TICKS ticks to catch attendance changes.
       const sync = window.SupabaseSync;
-      await Promise.all([sync?.refreshExams?.(), sync?.refreshSessions?.()]).catch(() => {});
-      const latestExam = DB.getExam(this.exam.id);
+      const examId = this.exam.id;
+      const remoteStatus = await Promise.resolve(sync?.fetchExamStatus?.(examId)).catch(() => null);
+      ticksSinceFullRefresh += 1;
+      const statusChanged = !!remoteStatus && remoteStatus !== DB.getExam(examId)?.status;
+      if (statusChanged || ticksSinceFullRefresh >= WAITING_FULL_REFRESH_TICKS) {
+        ticksSinceFullRefresh = 0;
+        await Promise.all([sync?.refreshExam?.(examId), sync?.refreshSessions?.()]).catch(() => {});
+      }
+      if (!this.exam || this.exam.id !== examId) return;
+      const latestExam = DB.getExam(examId);
       if (!latestExam) return;
       this.exam = latestExam;
       this._preloadYoloObjectModel();
@@ -4907,7 +4926,7 @@ const ExamApp = {
     this._webcamWaitPoll = setInterval(async () => {
       if (!this.exam || !this.session) return;
       try {
-        if (window.SupabaseSync?.refreshExams) await window.SupabaseSync.refreshExams();
+        if (window.SupabaseSync?.refreshExam) await window.SupabaseSync.refreshExam(this.exam.id);
       } catch (_) { /* best-effort — next tick retries */ }
       this._syncCameraExemptionState();
     }, 10000);

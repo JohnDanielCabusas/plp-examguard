@@ -8,6 +8,7 @@ const { forwardEnvironment } = require('./server/environment.cjs');
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
 const { handleMonitorRoute } = require('./server/monitor-route.cjs');
+const { handleBrandingRoute } = require('./server/branding-route.cjs');
 const { handleRandomForestRoute } = require('./server/random-forest-route.cjs');
 const { handleMonitorWebSocketUpgrade } = require('./server/monitor-websocket.cjs');
 
@@ -91,6 +92,10 @@ export default defineConfig(({ mode }) => {
               || pathname.startsWith('/api/statistics/random-forest')
             ) {
               handleRandomForestRoute(req, res);
+              return;
+            }
+            if (pathname === '/api/branding/logo') {
+              handleBrandingRoute(req, res);
               return;
             }
             if (pathname === '/api/email/send-verification') {
