@@ -90,6 +90,16 @@ sync._client = { from(table) {
   failure = null;
   await sync.refreshSessionDetails('e1');
 
+  const pending = { id: 'pending-insert', examId: 'e1', studentId: 'student-1', answers: { q1: 'pending-answer' }, detailsLoaded: true };
+  cache.get('acs_sessions').push(pending);
+  sync._docSyncChains.set('sessions:pending-insert', Promise.resolve());
+  await sync.refreshSessions();
+  assert.ok(cache.get('acs_sessions').some(row => row.id === pending.id), 'a summary refresh retains a queued new attempt');
+  await sync.refreshSessionDetails('e1');
+  assert.ok(cache.get('acs_sessions').some(row => row.id === pending.id), 'detail hydration retains a queued new attempt');
+  sync._docSyncChains.delete('sessions:pending-insert');
+  await sync.refreshSessions();
+
   role = { student: null, admin: { id: 'prof-1' }, sysadmin: null };
   await sync.refreshSessions({ examId: 'e1', summary: true });
   assert.equal(requests.at(-1).filters.find(([key]) => key === 'exam_id')[1], 'e1');

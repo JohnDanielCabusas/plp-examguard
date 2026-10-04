@@ -13,6 +13,15 @@ const PUBLIC_SETTINGS_COLUMNS = 'id, school_name, department, admin_name, admin_
 // Polling must never download embedded camera images or archived attempts.
 const SESSION_SUMMARY_COLUMNS = 'id, exam_id, exam_code, student_id, student_name, year_level, section, year_section, department, program, start_time, end_time, warnings, score, max_score, submitted, auto_submitted, submit_reason, score_released, owner_admin_id, created_at';
 const EXAM_SUMMARY_COLUMNS = 'id, subject_id, title, description, time_limit, code, status, shuffle_questions, shuffle_answers, require_camera, require_ai_detection, allow_review, scoring_released, target_year_levels, target_sections, owner_admin_id, started_at, closed_at, excluded_student_ids, created_at';
+const SESSION_FIELD_COLUMNS = {
+  examId: 'exam_id', examCode: 'exam_code', studentId: 'student_id', studentName: 'student_name',
+  yearLevel: 'year_level', section: 'section', yearSection: 'year_section', department: 'department', program: 'program',
+  startTime: 'start_time', endTime: 'end_time', answers: 'answers', warnings: 'warnings', activities: 'activities',
+  score: 'score', maxScore: 'max_score', submitted: 'submitted', autoSubmitted: 'auto_submitted',
+  submitReason: 'submit_reason', scoreReleased: 'score_released', essayGrades: 'essay_grades',
+  aiDetections: 'ai_detections', cameraSnapshots: 'camera_snapshots', attemptHistory: 'attempt_history', ownerAdminId: 'owner_admin_id',
+};
+
 
 const SupabaseSync = {
   _client: null,
@@ -43,6 +52,10 @@ const SupabaseSync = {
   // stale state on other clients.
   _docSyncChains: new Map(),
   _refreshRequests: new Map(),
+  _snapshotUploads: new Map(),
+  _refreshCache: new Map(),
+  _dashboardSummaryCache: null,
+  _rowDetailLoads: new Map(),
   // Exam IDs whose excluded_student_ids value is known to NOT have made it to Supabase yet
   // (e.g. PostgREST's schema cache was briefly stale and rejected the column). While an id
   // is in this set, realtime/pull updates for that exam must not trust the incoming
@@ -168,6 +181,8 @@ const SupabaseSync = {
   // Lets the UI react to a realtime push the instant it lands, instead of
   // waiting for the next section poll — see admin.js's 'acsDataChanged' listener.
   _notifyDataChanged(table) {
+    if (['subjects', 'students', 'professors', 'settings'].includes(table)) this._refreshCache.clear();
+    this._dashboardSummaryCache = null;
     if (typeof document === 'undefined') return;
     document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
   },
@@ -374,11 +389,11 @@ const SupabaseSync = {
       ] = await Promise.all([
         c.from('settings').select('*').eq('id', 'main').maybeSingle(),
         c.from('professors').select('id, username, name, email, department, created_at').eq('id', admin.id),
-        c.from('subjects').select('*').eq('owner_admin_id', admin.id).order('created_at'),
-        c.from('exams').select('*').eq('owner_admin_id', admin.id).order('created_at'),
-        c.from('sessions').select('*').eq('owner_admin_id', admin.id).order('created_at'),
+        this._readAllPages(() => c.from('subjects').select('*').eq('owner_admin_id', admin.id)),
+        this._readAllPages(() => c.from('exams').select('*').eq('owner_admin_id', admin.id)),
+        this._readAllPages(() => c.from('sessions').select('*').eq('owner_admin_id', admin.id)),
       ]);
-      const { data: students } = await this._studentsQueryForAdmin(c, admin.id, (subjects || []).map(s => s.id));
+      const { data: students } = await this._readAllPages(() => this._studentsQueryForAdmin(c, admin.id, (subjects || []).map(s => s.id)));
 
       if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
       this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
@@ -407,13 +422,13 @@ const SupabaseSync = {
       const enrolledSubjectIds = Array.isArray(studentRow?.enrolled_subjects) ? studentRow.enrolled_subjects : [];
       const [{ data: subjects }, { data: sessions }] = await Promise.all([
         enrolledSubjectIds.length
-          ? c.from('subjects').select('*').in('id', enrolledSubjectIds).order('created_at')
+          ? this._readAllPages(() => c.from('subjects').select('*').in('id', enrolledSubjectIds))
           : Promise.resolve({ data: [] }),
-        c.from('sessions').select(SESSION_SUMMARY_COLUMNS).eq('student_id', student.studentId).order('created_at'),
+        this._readAllPages(() => c.from('sessions').select(SESSION_SUMMARY_COLUMNS).eq('student_id', student.studentId)),
       ]);
       const subjectIds = (subjects || []).map(subjectRow => subjectRow.id);
       const { data: exams } = subjectIds.length
-        ? await c.from('exams').select(this._examSummaryColumns()).in('subject_id', subjectIds).order('created_at')
+        ? await this._readAllPages(() => c.from('exams').select(this._examSummaryColumns()).in('subject_id', subjectIds))
         : { data: [] };
 
       if (settings) this._writeLocal('acs_settings', this._dbToJsPublicSettings(settings));
@@ -439,9 +454,9 @@ const SupabaseSync = {
       c.from('superadmin').select('id, username, name, email, department').eq('id', 'main').maybeSingle(),
       c.from('professors').select('id, username, name, email, department, created_at'),
       c.from('students').select('id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at'),
-      c.from('subjects').select('*').order('created_at'),
-      c.from('exams').select('*').order('created_at'),
-      c.from('sessions').select('*').order('created_at'),
+      this._readAllPages(() => c.from('subjects').select('*')),
+      this._readAllPages(() => c.from('exams').select('*')),
+      this._readAllPages(() => c.from('sessions').select('*')),
     ]);
 
     // First-run: if Supabase is empty, push local seeds up instead of wiping them
@@ -870,6 +885,78 @@ const SupabaseSync = {
     return request;
   },
 
+  // Collect required cache data in bounded requests. Publish only once every
+  // page succeeds, so an error cannot replace a complete cache with half a list.
+  async _readAllPages(factory, pageSize = 200) {
+    const collected = [];
+    for (let offset = 0; ; offset += pageSize) {
+      let request = factory();
+      if (typeof request.range !== 'function') return this._refreshRead(request);
+      request = request.order('id').range(offset, offset + pageSize - 1);
+      const result = await this._refreshRead(request);
+      if (!Array.isArray(result.data)) throw new Error('Unable to load the full record list.');
+      collected.push(...result.data);
+      if (result.data.length < pageSize) return { data: collected, error: null };
+    }
+  },
+
+  async refreshSessionRows(sessionIds, { force = false } = {}) {
+    const ids = [...new Set(sessionIds.filter(Boolean))].sort();
+    if (!this._client || !ids.length) return;
+    const key = `${this._refreshScope()}:${ids.join(',')}`;
+    const lastLoaded = this._rowDetailLoads.get(key);
+    if (!force && lastLoaded && Date.now() - lastLoaded < 20000) return;
+    await this._coalesceRefresh(`row-details:${key}`, async () => {
+      const { admin, student, sysadmin } = this._getSessions();
+      const { data } = await this._readAllPages(() => {
+        let query = this._client.from('sessions').select('*').in('id', ids);
+        if (!sysadmin && admin?.id) query = query.eq('owner_admin_id', admin.id);
+        else if (!sysadmin && student?.studentId) query = query.eq('student_id', student.studentId);
+        return query;
+      });
+      const current = this._localArray('acs_sessions');
+      const byId = new Map(current.map(row => [row.id, row]));
+      for (const row of data) byId.set(row.id, this._dbToJsSession(row));
+      this._writeLocal('acs_sessions', [...byId.values()]);
+      this._rowDetailLoads.set(key, Date.now());
+      if (this._rowDetailLoads.size > 100) this._rowDetailLoads.delete(this._rowDetailLoads.keys().next().value);
+    });
+  },
+
+  _refreshScope() {
+    const { admin, student, sysadmin } = this._getSessions();
+    return sysadmin ? 'system' : admin ? `professor:${admin.id}` : student ? `student:${student.studentId}` : 'anonymous';
+  },
+
+  async _refreshRead(request) {
+    const result = await request;
+    if (result.error) throw result.error;
+    return result;
+  },
+
+  _cachedRefresh(table, operation, force = false) {
+    const key = `${table}:${this._refreshScope()}`;
+    const cached = this._refreshCache.get(key);
+    if (!force && cached && Date.now() - cached.at < 60000) return Promise.resolve();
+    return this._coalesceRefresh(`cached:${key}`, async () => {
+      await operation();
+      this._refreshCache.set(key, { at: Date.now() });
+    });
+  },
+
+  async refreshDashboardSummary({ force = false } = {}) {
+    const scope = this._refreshScope();
+    const cached = this._dashboardSummaryCache;
+    if (!force && cached?.scope === scope && Date.now() - cached.at < 30000) return cached.summary;
+    return this._coalesceRefresh(`dashboard-summary:${scope}`, async () => {
+      const response = await fetch('/api/monitor/dashboard-summary', { credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error('Dashboard totals could not load.');
+      this._dashboardSummaryCache = { scope, summary: result.summary, at: Date.now() };
+      return result.summary;
+    });
+  },
+
   _examSummaryColumns() {
     const optional = [
       ['_examCameraExemptSupported', 'camera_exempt_student_ids'],
@@ -884,7 +971,12 @@ const SupabaseSync = {
     return Array.isArray(own?.enrolledSubjects) ? own.enrolledSubjects.filter(Boolean) : [];
   },
 
-  async refreshSubjects() {
+  refreshSubjects({ force = false } = {}) {
+    if (!this._client) return Promise.resolve();
+    return this._cachedRefresh('refreshSubjects', () => this._refreshSubjects(), force);
+  },
+
+  async _refreshSubjects() {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
     let query = this._client.from('subjects').select('*');
@@ -894,7 +986,7 @@ const SupabaseSync = {
       if (!subjectIds.length) { this._writeLocal('acs_subjects', []); return; }
       query = query.in('id', subjectIds);
     }
-    const { data: subjects } = await query;
+    const { data: subjects } = await this._refreshRead(query);
     if (subjects) {
       this._writeLocal('acs_subjects', subjects.map(r => this._dbToJsSubject(r)));
     }
@@ -903,15 +995,17 @@ const SupabaseSync = {
   async refreshExams({ summary = false } = {}) {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
-    let query = this._client.from('exams').select(summary || (student && !admin && !sysadmin) ? this._examSummaryColumns() : '*');
-    if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
-    else if (student?.studentId && !sysadmin) {
-      const subjectIds = this._studentEnrolledSubjectIds(student.studentId);
-      if (!subjectIds.length) { this._writeLocal('acs_exams', []); return; }
-      query = query.in('subject_id', subjectIds);
+    if (student?.studentId && !admin && !sysadmin && !this._studentEnrolledSubjectIds(student.studentId).length) {
+      this._writeLocal('acs_exams', []);
+      return;
     }
     const scope = sysadmin ? 'system' : admin?.id || student?.studentId || 'anonymous';
-    const { data: exams } = await this._coalesceRefresh(`exams:${scope}:${summary}`, () => query);
+    const { data: exams } = await this._coalesceRefresh(`exams:${scope}:${summary}`, () => this._readAllPages(() => {
+      let page = this._client.from('exams').select(summary || (student && !admin && !sysadmin) ? this._examSummaryColumns() : '*');
+      if (admin?.id && !sysadmin) page = page.eq('owner_admin_id', admin.id);
+      else if (student?.studentId && !sysadmin) page = page.in('subject_id', this._studentEnrolledSubjectIds(student.studentId));
+      return page;
+    }));
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
@@ -959,12 +1053,15 @@ const SupabaseSync = {
       ...[['_sessionEssayGradesSupported', 'essay_grades'], ['_sessionAiDetectionsSupported', 'ai_detections'], ['_sessionAttemptHistorySupported', 'attempt_history']]
         .filter(([flag]) => this[flag] !== false).map(([, column]) => column)].join(', ');
     const columns = summary || (student && !admin && !sysadmin) ? SESSION_SUMMARY_COLUMNS : report ? reportColumns : '*';
-    let query = this._client.from('sessions').select(columns);
-    if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
-    else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
-    if (examId) query = query.eq('exam_id', examId);
-    const scope = sysadmin ? 'system' : admin?.id || student?.studentId || 'anonymous';
-    const { data: sessions } = await this._coalesceRefresh(`sessions:${scope}:${examId || '*'}:${summary}:${report}`, () => query);
+    const factory = () => {
+      let query = this._client.from('sessions').select(columns);
+      if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+      else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
+      if (examId) query = query.eq('exam_id', examId);
+      return query;
+    };
+    const scope = this._refreshScope();
+    const { data: sessions } = await this._coalesceRefresh(`sessions:${scope}:${examId || '*'}:${summary}:${report}`, () => this._readAllPages(factory));
     if (sessions) {
       const localSessions = this._localArray('acs_sessions');
       const localById = new Map(localSessions.map(session => [session.id, session]));
@@ -974,9 +1071,12 @@ const SupabaseSync = {
           ? normalized
           : this._mergeIncomingSessionWithLocal(normalized, localById.get(normalized.id));
       });
+      const incomingIds = new Set(mergedSessions.map(session => session.id));
+      const pending = localSessions.filter(session => (!examId || session.examId === examId)
+        && !incomingIds.has(session.id) && this._docSyncChains.has(this._docSyncKey('sessions', session.id)));
       this._writeLocal('acs_sessions', examId
-        ? [...localSessions.filter(session => session.examId !== examId), ...mergedSessions]
-        : mergedSessions);
+        ? [...localSessions.filter(session => session.examId !== examId), ...mergedSessions, ...pending]
+        : [...mergedSessions, ...pending]);
     }
   },
 
@@ -985,28 +1085,36 @@ const SupabaseSync = {
     const { student, admin, sysadmin } = this._getSessions();
     if (!student?.studentId || admin || sysadmin) return;
     const { data, error } = await this._coalesceRefresh(`session-details:${student.studentId}:${examId}`, () =>
-      this._client.from('sessions').select('*').eq('student_id', student.studentId).eq('exam_id', examId));
+      this._readAllPages(() => this._client.from('sessions').select('*').eq('student_id', student.studentId).eq('exam_id', examId)));
     if (error) throw error;
     if (!data) throw new Error('Unable to load your saved exam attempt. Please retry.');
     const current = this._localArray('acs_sessions');
     // Read cache after awaiting: local saves may have arrived while the request ran.
     const byId = new Map(current.map(session => [session.id, session]));
     const details = data.map(row => this._mergeIncomingSessionWithLocal(this._dbToJsSession(row), byId.get(row.id)));
-    this._writeLocal('acs_sessions', [...current.filter(session => session.examId !== examId), ...details]);
+    const ids = new Set(details.map(session => session.id));
+    const pending = current.filter(session => session.examId === examId && !ids.has(session.id)
+      && this._docSyncChains.has(this._docSyncKey('sessions', session.id)));
+    this._writeLocal('acs_sessions', [...current.filter(session => session.examId !== examId), ...details, ...pending]);
   },
 
-  async refreshStudents() {
+  refreshStudents({ force = false } = {}) {
+    if (!this._client) return Promise.resolve();
+    return this._cachedRefresh('refreshStudents', () => this._refreshStudents(), force);
+  },
+
+  async _refreshStudents() {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
     const cols = 'id, student_id, name, email, year_level, section, year_section, department, program, enrolled_subjects, owner_admin_id, archived, archived_at, created_at, updated_at';
     if (admin?.id && !sysadmin) {
       const mySubjectIds = (window.DB?.getSubjects?.() || []).map(s => s.id);
-      const { data } = await this._studentsQueryForAdmin(this._client, admin.id, mySubjectIds);
+      const { data } = await this._refreshRead(this._studentsQueryForAdmin(this._client, admin.id, mySubjectIds));
       if (data) this._writeLocal('acs_students', data.map(r => this._dbToJsStudent(r)));
       return;
     }
     if (student?.studentId && !sysadmin) {
-      const { data: ownRow } = await this._client.from('students').select(cols).eq('student_id', student.studentId).maybeSingle();
+      const { data: ownRow } = await this._refreshRead(this._client.from('students').select(cols).eq('student_id', student.studentId).maybeSingle());
       const enrolledSubjectIds = Array.isArray(ownRow?.enrolled_subjects) ? ownRow.enrolled_subjects : [];
       if (!ownRow) {
         this._writeLocal('acs_students', []);
@@ -1019,10 +1127,10 @@ const SupabaseSync = {
         // here. Use one containment clause per subject and explicitly include the
         // current student so the portal never "loses" its own account record.
         const subjectClauses = enrolledSubjectIds.map(id => `enrolled_subjects.cs.["${id}"]`);
-        const { data } = await this._client
+        const { data } = await this._refreshRead(this._client
           .from('students')
           .select(cols)
-          .or([`student_id.eq.${student.studentId}`, ...subjectClauses].join(','));
+          .or([`student_id.eq.${student.studentId}`, ...subjectClauses].join(',')));
         if (Array.isArray(data) && data.length) classmates = data;
       }
 
@@ -1032,11 +1140,16 @@ const SupabaseSync = {
       this._writeLocal('acs_students', uniqueRows.map(r => this._dbToJsStudent(r)));
       return;
     }
-    const { data } = await this._client.from('students').select(cols);
+    const { data } = await this._refreshRead(this._client.from('students').select(cols));
     if (data) this._writeLocal('acs_students', data.map(r => this._dbToJsStudent(r)));
   },
 
-  async refreshProfessors() {
+  refreshProfessors({ force = false } = {}) {
+    if (!this._client) return Promise.resolve();
+    return this._cachedRefresh('refreshProfessors', () => this._refreshProfessors(), force);
+  },
+
+  async _refreshProfessors() {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
     let query = this._client.from('professors').select('id, username, name, email, department, created_at');
@@ -1047,7 +1160,7 @@ const SupabaseSync = {
       if (!ownerIds.length) return;
       query = query.in('id', ownerIds);
     }
-    const { data } = await query;
+    const { data } = await this._refreshRead(query);
     if (data) this._writeLocal('acs_professors', data.map(r => this._dbToJsAdmin(r)));
   },
 
@@ -1146,13 +1259,77 @@ const SupabaseSync = {
     return this._docSyncChains.get(this._docSyncKey(table, id)) || Promise.resolve();
   },
 
-  syncDoc(table, data) {
+  async _externalizeSnapshotValue(value, sessionId) {
+    if (Array.isArray(value)) return Promise.all(value.map(item => this._externalizeSnapshotValue(item, sessionId)));
+    if (!value || typeof value !== 'object') return value;
+    const next = { ...value };
+    if (typeof value.imageData === 'string' && value.imageData.startsWith('data:image/')) {
+      const key = `${sessionId}:${value.imageData}`;
+      let pending = this._snapshotUploads.get(key);
+      if (!pending) {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+        pending = fetch('/api/monitor/snapshots', {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          ...(controller ? { signal: controller.signal } : {}),
+          body: JSON.stringify({ sessionId, imageData: value.imageData }),
+        }).then(async response => {
+          const result = await response.json();
+          if (!response.ok || !result.success || !result.snapshot?.imageData) throw new Error('Snapshot upload could not finish.');
+          return result.snapshot;
+        }).catch(error => { this._snapshotUploads.delete(key); throw error; })
+          .finally(() => { if (timeout) clearTimeout(timeout); });
+        this._snapshotUploads.set(key, pending);
+        if (this._snapshotUploads.size > 64) this._snapshotUploads.delete(this._snapshotUploads.keys().next().value);
+      }
+      try { Object.assign(next, await pending); }
+      catch (_) {
+        // Save the original embedded image rather than publishing a broken
+        // reference. Future image/history writes can retry externalizing it.
+        this._emitSyncError('snapshots', new Error('Image storage is unavailable. Evidence is being retained in the exam record.'));
+      }
+    }
+    for (const key of Object.keys(value)) {
+      if (key !== 'imageData' && value[key] && typeof value[key] === 'object') next[key] = await this._externalizeSnapshotValue(value[key], sessionId);
+    }
+    return next;
+  },
+
+  syncDoc(table, data, { fields = null } = {}) {
     if (!this._client || !data?.id) return;
     if (table === 'messages' && this._messagesSupported === false) return;
-    const row = this._jsToDb(table, data);
+    let row = this._jsToDb(table, data);
     if (!row) return;
-    this._enqueueDocSync(table, data.id, async () => {
+    const patch = table === 'sessions' && Array.isArray(fields);
+    if (patch) {
+      const columns = new Set(['id', ...fields.map(field => SESSION_FIELD_COLUMNS[field]).filter(Boolean)]);
+      row = Object.fromEntries(Object.entries(row).filter(([column]) => columns.has(column)));
+    }
+    this._refreshCache.clear();
+    this._dashboardSummaryCache = null;
+    return this._enqueueDocSync(table, data.id, async () => {
       try {
+        if (table === 'sessions') {
+          for (const column of ['camera_snapshots', 'attempt_history']) {
+            if (column in row) row[column] = await this._externalizeSnapshotValue(row[column], data.id);
+          }
+        }
+        const writeRow = async candidate => {
+          if (!patch) return this._client.from(table).upsert(candidate, { onConflict: 'id' });
+          // Selecting only the ID verifies that a patch really reached a row.
+          const result = await this._client.from(table).update(candidate).eq('id', data.id).select('id');
+          if (!result.error && !result.data?.length) {
+            // A delayed new-session creation may have failed. Recover with the
+            // complete local record; never create a row from a partial patch.
+            if (data.detailsLoaded === false) throw new Error('Reload the saved attempt before retrying this change.');
+            const full = this._jsToDb(table, data);
+            for (const column of ['camera_snapshots', 'attempt_history']) {
+              if (column in full) full[column] = await this._externalizeSnapshotValue(full[column], data.id);
+            }
+            return this._client.from(table).upsert(full, { onConflict: 'id' });
+          }
+          return result;
+        };
         // Professors are only ever CREATED server-side (server/auth-service.cjs), which
         // hashes and sets the required `password` column. Client-side syncs of a
         // professor (e.g. a professor editing their own settings) never carry a
@@ -1166,7 +1343,7 @@ const SupabaseSync = {
         } else {
           // onConflict:'id' ensures we always UPDATE existing rows by primary key,
           // avoiding false conflicts on unique columns like exams.code
-          ({ error } = await this._client.from(table).upsert(row, { onConflict: 'id' }));
+          ({ error } = await writeRow(row));
         }
         if (!error && table === 'exams') {
           // This write included excluded_student_ids and Postgres accepted it —
@@ -1180,63 +1357,63 @@ const SupabaseSync = {
           if (this._isMissingSessionEssayGradesError(table, retryError) && this._sessionEssayGradesSupported !== false) {
             this._sessionEssayGradesSupported = false;
             retryRow = this._withoutSessionEssayGrades(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingSessionAiDetectionsError(table, retryError) && this._sessionAiDetectionsSupported !== false) {
             this._sessionAiDetectionsSupported = false;
             retryRow = this._withoutSessionAiDetections(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingSessionCameraSnapshotsError(table, retryError) && this._sessionCameraSnapshotsSupported !== false) {
             this._sessionCameraSnapshotsSupported = false;
             retryRow = this._withoutSessionCameraSnapshots(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingSessionAttemptHistoryError(table, retryError) && this._sessionAttemptHistorySupported !== false) {
             this._sessionAttemptHistorySupported = false;
             retryRow = this._withoutSessionAttemptHistory(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingExamCameraExemptError(table, retryError) && this._examCameraExemptSupported !== false) {
             this._examCameraExemptSupported = false;
             retryRow = this._withoutExamCameraExempt(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingExamLateExamError(table, retryError) && this._examLateExamSupported !== false) {
             this._examLateExamSupported = false;
             retryRow = this._withoutExamLateExam(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingExamPoliciesError(table, retryError) && this._examPoliciesSupported !== false) {
             this._examPoliciesSupported = false;
             retryRow = this._withoutExamPolicies(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingExamSectionsError(table, retryError) && this._examSectionsSupported !== false) {
             this._examSectionsSupported = false;
             retryRow = this._withoutExamSections(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
           if (this._isMissingExamObjectMonitoringError(table, retryError) && this._examObjectMonitoringSupported !== false) {
             this._examObjectMonitoringSupported = false;
             retryRow = this._withoutExamObjectMonitoring(retryRow);
-            ({ error: retryError } = await this._client.from(table).upsert(retryRow, { onConflict: 'id' }));
+            ({ error: retryError } = await writeRow(retryRow));
             if (!retryError) return;
             continue;
           }
@@ -1252,7 +1429,7 @@ const SupabaseSync = {
           // stale copy of excluded_student_ids.
           this._examIdsWithUnsyncedExclusions.add(row.id);
           const fallbackRow = this._withoutExamExcludedStudentIds(row);
-          const { error: retryError } = await this._client.from(table).upsert(fallbackRow, { onConflict: 'id' });
+          const { error: retryError } = await writeRow(fallbackRow);
           if (!retryError) {
             // The rest of the exam saved, but the present/absent list specifically did NOT
             // reach Supabase this time — say so, instead of letting the generic "saved"

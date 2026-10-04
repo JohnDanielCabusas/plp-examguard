@@ -1761,8 +1761,8 @@ const ExamApp = {
     await Promise.all([
       sync?.refreshExams?.(),
       sync?.refreshSessions?.(),
-      sync?.refreshStudents?.(),
-      sync?.refreshSubjects?.(),
+      sync?.refreshStudents?.({ force: true }),
+      sync?.refreshSubjects?.({ force: true }),
     ]).catch(() => {});
     const selectedExam = this._resolveExamFromSession(studentSession);
     if (selectedExam && sync?._client) {

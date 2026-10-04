@@ -16,7 +16,10 @@ const {
   forbid,
   getCurrentProfessorSession,
   getCurrentStudentSession,
+  getCurrentSysAdminSession,
 } = require('./auth-route.cjs');
+
+const { storeSnapshot, readSnapshot, decodeSnapshot } = require('./snapshot-assets.cjs');
 
 const DEFAULT_VIOLATION_LIMIT = 50;
 const MAX_VIOLATION_LIMIT = 200;
@@ -1144,14 +1147,99 @@ async function handleMonitorStream(req, res) {
   res.on('close', cleanup);
 }
 
+async function authorizeSnapshotSession(req, sessionId) {
+  const { rows } = await query(`select s.student_id, coalesce(s.owner_admin_id,e.owner_admin_id) owner_admin_id
+    from public.sessions s left join public.exams e on e.id=s.exam_id where s.id=$1`, [sessionId]);
+  if (!rows[0]) return false;
+  const student = await getCurrentStudentSession(req);
+  if (student?.studentId === rows[0].student_id) return true;
+  const professor = await getCurrentProfessorSession(req);
+  if (professor?.id === rows[0].owner_admin_id) return true;
+  return !!(await getCurrentSysAdminSession(req));
+}
+
+async function handleSnapshotUpload(req, res) {
+  let body;
+  try { body = await readSnapshotBody(req); }
+  catch (error) { jsonResponse(res, error.status || 400, { success: false, message: error.message }); return true; }
+  const sessionId = String(body?.sessionId || '').trim();
+  if (!sessionId || !(await authorizeSnapshotSession(req, sessionId))) { forbid(res); return true; }
+  try { decodeSnapshot(body?.imageData); }
+  catch (error) { jsonResponse(res, 400, { success: false, message: error.message }); return true; }
+  const snapshot = await storeSnapshot(sessionId, body.imageData);
+  jsonResponse(res, 200, { success: true, snapshot });
+  return true;
+}
+
+function readSnapshotBody(req) {
+  return new Promise((resolve, reject) => {
+    let bytes = 0;
+    const chunks = [];
+    req.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > 3 * 1024 * 1024) {
+        const error = new Error('Snapshot request is too large.'); error.status = 413;
+        reject(error);
+      } else chunks.push(chunk);
+    });
+    req.on('error', reject);
+    req.on('end', () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (_) { reject(new Error('Invalid snapshot request.')); }
+    });
+  });
+}
+
+async function handleSnapshotFile(req, res, id) {
+  const { rows } = await query('select session_id from public.camera_snapshot_assets where id=$1', [id]);
+  if (!rows[0] || !(await authorizeSnapshotSession(req, rows[0].session_id))) { forbid(res); return true; }
+  const etag = `"${id}"`;
+  const headers = { 'Cache-Control': 'private, max-age=300', 'ETag': etag, 'X-Content-Type-Options': 'nosniff' };
+  if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return true; }
+  const snapshot = await readSnapshot(id);
+  if (!snapshot) { jsonResponse(res, 404, { success: false, message: 'Snapshot unavailable.' }); return true; }
+  res.writeHead(200, { ...headers, 'Content-Type': snapshot.mime_type, 'Content-Length': snapshot.data.length });
+  res.end(snapshot.data);
+  return true;
+}
+
+async function handleDashboardSummary(req, res) {
+  const admin = await getCurrentProfessorSession(req);
+  if (!admin) { forbid(res); return true; }
+  const { rows } = await query(`select
+    (select count(*)::integer from public.subjects where owner_admin_id=$1) subjects,
+    (select count(*)::integer from public.students st where not coalesce(st.archived,false)
+      and exists (select 1 from public.subjects sub where sub.owner_admin_id=$1
+        and st.enrolled_subjects @> jsonb_build_array(sub.id))) students,
+    (select count(*)::integer from public.exams where owner_admin_id=$1) exams,
+    (select count(*)::integer from public.exams where owner_admin_id=$1 and status='active') as "activeExams",
+    (select count(*)::integer from public.sessions s left join public.exams e on e.id=s.exam_id
+      where coalesce(s.owner_admin_id,e.owner_admin_id)=$1 and s.submitted) submissions`, [admin.id]);
+  jsonResponse(res, 200, { success: true, summary: rows[0] });
+  return true;
+}
+
 async function handleMonitorRoute(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
+  const snapshotFileMatch = pathname.match(/^\/api\/monitor\/snapshots\/([a-f0-9]{64})\/file$/);
   const evidenceReviewMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/review$/);
   const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
   const warningDismissalMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/warnings\/dismiss$/);
 
   try {
+    if (pathname === '/api/monitor/snapshots') {
+      if (req.method !== 'POST') return methodNotAllowed(res);
+      return await handleSnapshotUpload(req, res);
+    }
+    if (snapshotFileMatch) {
+      if (req.method !== 'GET') return methodNotAllowed(res);
+      return await handleSnapshotFile(req, res, snapshotFileMatch[1]);
+    }
+    if (pathname === '/api/monitor/dashboard-summary') {
+      if (req.method !== 'GET') return methodNotAllowed(res);
+      return await handleDashboardSummary(req, res);
+    }
     if (pathname === '/api/monitor/incident') {
       if (req.method !== 'POST') return methodNotAllowed(res);
       let body;

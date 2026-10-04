@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 function getStorageConfig() {
   const url = String(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
   const key = String(
@@ -27,10 +29,13 @@ function encodeObjectPath(bucket, objectPath) {
   return `${encodedBucket}/${encodedPath}`;
 }
 
-function storageHeaders(key, extra = {}) {
+function storageHeaders(key, extra = {}, bucket = '') {
   return {
     apikey: key,
     Authorization: `Bearer ${key}`,
+    ...(bucket === 'camera-snapshots' && process.env.SUPABASE_DB_PASSWORD ? {
+      'x-examguard-storage-key': crypto.createHmac('sha256', process.env.SUPABASE_DB_PASSWORD).update('examguard-private-snapshot-storage-v1').digest('hex'),
+    } : {}),
     ...extra,
   };
 }
@@ -47,7 +52,7 @@ async function uploadStorageObject(bucket, objectPath, data, mimeType) {
     headers: storageHeaders(key, {
       'Content-Type': mimeType || 'application/octet-stream',
       'x-upsert': 'true',
-    }),
+    }, bucket),
     body: data,
   });
 
@@ -61,7 +66,7 @@ async function uploadStorageObject(bucket, objectPath, data, mimeType) {
 
 async function downloadStorageObject(bucket, objectPath, range = '') {
   const { url, key } = getStorageConfig();
-  const headers = storageHeaders(key);
+  const headers = storageHeaders(key, {}, bucket);
   if (range) headers.Range = range;
 
   const response = await fetch(`${url}/storage/v1/object/${encodeObjectPath(bucket, objectPath)}`, {

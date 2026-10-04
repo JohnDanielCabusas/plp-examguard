@@ -901,4 +901,5 @@ module.exports = {
   forbid,
   getCurrentProfessorSession,
   getCurrentStudentSession,
+  getCurrentSysAdminSession,
 };

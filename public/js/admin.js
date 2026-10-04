@@ -2376,7 +2376,25 @@ async function doLogout() {
 // ============================================================
 // DASHBOARD
 // ============================================================
+let _dashboardTotals = null;
+let _dashboardTotalsPending = false;
+let _dashboardTotalsLoadedAt = 0;
+function refreshDashboardTotals() {
+  const sync = window.SupabaseSync;
+  if (!sync?.refreshDashboardSummary || _dashboardTotalsPending || Date.now() - _dashboardTotalsLoadedAt < 30000) return;
+  _dashboardTotalsPending = true;
+  sync.refreshDashboardSummary().then(summary => {
+    _dashboardTotals = summary;
+    _dashboardTotalsLoadedAt = Date.now();
+    if (currentSection === 'dashboard') renderDashboard();
+  }).catch(() => {
+    // Retain the complete local fallback rather than showing zero totals.
+    _dashboardTotalsLoadedAt = Date.now();
+  }).finally(() => { _dashboardTotalsPending = false; });
+}
+
 function renderDashboard() {
+  refreshDashboardTotals();
   const subjects = DB.getSubjects();
   const exams = DB.getExams();
   const sessions = DB.getSessions();
@@ -2405,11 +2423,11 @@ function renderDashboard() {
   if (refreshEl) refreshEl.textContent = 'Updated ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   document.getElementById('dash-stats').innerHTML = `
-    <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${subjects.length}</div><div class="stat-label">Courses</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-value">${students.length}</div><div class="stat-label">Students</div></div></div>
-    <div class="stat-card"><div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-value">${exams.length}</div><div class="stat-label">Total Exams</div></div></div>
-    <div class="stat-card" data-state="${activeExams.length ? 'live' : 'idle'}"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
-    <div class="stat-card"><div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="stat-value">${submittedSessions.length}</div><div class="stat-label">Submissions</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="stat-value">${_dashboardTotals?.subjects ?? subjects.length}</div><div class="stat-label">Courses</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-value">${_dashboardTotals?.students ?? students.length}</div><div class="stat-label">Students</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-value">${_dashboardTotals?.exams ?? exams.length}</div><div class="stat-label">Total Exams</div></div></div>
+    <div class="stat-card" data-state="${activeExams.length ? 'live' : 'idle'}"><div class="stat-icon red"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div><div><div class="stat-value">${_dashboardTotals?.activeExams ?? activeExams.length}</div><div class="stat-label">Active Exams</div></div></div>
+    <div class="stat-card"><div class="stat-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div><div class="stat-value">${_dashboardTotals?.submissions ?? submittedSessions.length}</div><div class="stat-label">Submissions</div></div></div>
   `;
 
   renderAnalytics(exams, sessions, students);
@@ -3759,11 +3777,20 @@ function renderStudentExamHistoryCard(entry) {
   `;
 }
 
+const studentHistoryPages = new Map();
+function changeStudentHistoryPage(studentId, direction) {
+  studentHistoryPages.set(studentId, Math.max(0, (studentHistoryPages.get(studentId) || 0) + direction));
+  viewStudentHistory(studentId);
+}
+window.changeStudentHistoryPage = changeStudentHistoryPage;
 function viewStudentHistory(studentId) {
   const student = DB.getStudentById(studentId);
   if (!student) return;
 
   const history = getStudentExamHistory(student).filter(entry => entry.session);
+  const historyPage = pageWindow(history, studentHistoryPages.get(studentId) || 0, 10);
+  studentHistoryPages.set(studentId, historyPage.page);
+  window.SupabaseSync?.refreshSessionRows?.(historyPage.rows.map(entry => entry.session.id)).catch(() => {});
   const titleEl = document.getElementById('modal-student-history-title');
   const bodyEl = document.getElementById('modal-student-history-body');
   if (!titleEl || !bodyEl) return;
@@ -3788,8 +3815,9 @@ function viewStudentHistory(studentId) {
           <div style="font-size:12px;color:var(--text-muted);">${history.length} exam${history.length !== 1 ? 's' : ''} taken across this student's courses</div>
         </div>
         ${history.length
-          ? `<div style="display:grid;gap:10px;">${groupStudentHistoryByCourse(history).map(renderStudentCourseHistoryAccordion).join('')}</div>`
+          ? `<div style="display:grid;gap:10px;">${groupStudentHistoryByCourse(historyPage.rows).map(renderStudentCourseHistoryAccordion).join('')}</div>`
           : `<div class="empty-state"><p>This student hasn't taken any exams yet.</p></div>`}
+        ${historyPage.pages > 1 ? `<div style="display:flex;align-items:center;gap:12px;margin-top:16px;"><button class="btn btn-secondary btn-sm" ${historyPage.page === 0 ? 'disabled' : ''} onclick="changeStudentHistoryPage('${escAttr(studentId)}',-1)">Previous</button><span>Page ${historyPage.page + 1} of ${historyPage.pages}</span><button class="btn btn-secondary btn-sm" ${historyPage.page + 1 >= historyPage.pages ? 'disabled' : ''} onclick="changeStudentHistoryPage('${escAttr(studentId)}',1)">Next</button></div>` : ''}
       </div>
     </div>
   `;
@@ -11384,10 +11412,11 @@ function startReports() {
     const examId = document.getElementById('report-exam-select')?.value;
     Promise.all([
       sync?.refreshExams?.({ summary: true }),
-      examId ? sync?.refreshSessions?.({ examId, report: true }) : Promise.resolve(),
+      examId ? sync?.refreshSessions?.({ examId, summary: true }) : Promise.resolve(),
     ]).catch(() => {}).then(() => {
       if (currentSection !== 'reports') return;
       renderReportsSectionLive();
+      refreshVisibleReportDetails().catch(() => {});
     });
   };
   refresh();
@@ -12399,6 +12428,44 @@ async function copyReportScores() {
 }
 window.copyReportScores = copyReportScores;
 
+const reportPagination = { page: 0, size: 25, key: '' };
+function pageWindow(rows, page, size = 25) {
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const current = Math.max(0, Math.min(page, pages - 1));
+  return { rows: rows.slice(current * size, (current + 1) * size), page: current, pages, offset: current * size, total: rows.length };
+}
+function getReportPageRows(rows, examId) {
+  const key = `${examId}:${JSON.stringify(reportFilters)}:${reportNameSort}`;
+  if (reportPagination.key !== key) { reportPagination.key = key; reportPagination.page = 0; }
+  const result = pageWindow(rows, reportPagination.page, reportPagination.size);
+  reportPagination.page = result.page;
+  return result;
+}
+function renderReportPager(result) {
+  const tbody = document.getElementById('report-tbody');
+  const host = tbody?.closest('table')?.parentElement;
+  if (!host) return;
+  let pager = document.getElementById('report-pagination');
+  if (!pager) { pager = document.createElement('div'); pager.id = 'report-pagination'; host.appendChild(pager); }
+  pager.hidden = result.pages <= 1;
+  pager.style.cssText = 'display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:16px;';
+  if (pager.hidden) { pager.style.display = 'none'; return; }
+  pager.innerHTML = `<button class="btn btn-secondary btn-sm" ${result.page === 0 ? 'disabled' : ''} onclick="changeReportPage(-1)">Previous</button><span>Page ${result.page + 1} of ${result.pages} ? ${result.total} submissions</span><button class="btn btn-secondary btn-sm" ${result.page + 1 >= result.pages ? 'disabled' : ''} onclick="changeReportPage(1)">Next</button>`;
+}
+function changeReportPage(direction) {
+  reportPagination.page = Math.max(0, reportPagination.page + direction);
+  renderReportTable();
+  refreshVisibleReportDetails().catch(() => showToast('Unable to refresh this page. Previously loaded results are retained.', 'warning'));
+}
+window.changeReportPage = changeReportPage;
+async function refreshVisibleReportDetails({ force = false } = {}) {
+  const examId = document.getElementById('report-exam-select')?.value;
+  if (!examId) return;
+  const page = getReportPageRows(getOrderedSubmittedReportSessions(examId), examId);
+  await window.SupabaseSync?.refreshSessionRows?.(page.rows.map(row => row.id), { force });
+  if (currentSection === 'reports' && document.getElementById('report-exam-select')?.value === examId) renderReportTable();
+}
+
 function renderReportTable() {
   syncReportSortButton();
   const examId = document.getElementById('report-exam-select').value;
@@ -12418,6 +12485,7 @@ function renderReportTable() {
     document.getElementById('report-summary').classList.add('hidden');
     document.getElementById('report-absent-count')?.classList.add('hidden');
     document.getElementById('report-tbody').innerHTML = '';
+    document.getElementById('report-pagination')?.remove();
     releaseBtn.textContent = 'Release Scores';
     releaseBtn.className = 'btn btn-success';
     releaseBtn.onclick = releaseScores;
@@ -12449,6 +12517,8 @@ function renderReportTable() {
 
   const sorted = getOrderedSubmittedReportSessions(examId);
   const sessions = sorted;
+  const page = getReportPageRows(sorted, examId);
+  renderReportPager(page);
 
   const absentStudents = filterReportAbsentStudents(getExamAbsentStudents(exam));
   const absentRowsHtml = renderReportAbsentRows(absentStudents);
@@ -12483,7 +12553,8 @@ function renderReportTable() {
   // against whatever survived the current filters.
   requestAnimationFrame(syncReportSelectionUI);
 
-  document.getElementById('report-tbody').innerHTML = sorted.map((s, i) => {
+  document.getElementById('report-tbody').innerHTML = page.rows.map((s, index) => {
+    const i = page.offset + index;
     const warningCount = getEffectiveSessionWarningCount(s);
     const submissionStatus = getSubmissionStatusBadge(s);
     const sessionTimeHtml = renderReportSessionTime(s);

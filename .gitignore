@@ -15,3 +15,5 @@ ml/random_forest/artifacts/*.tmp
 *.pt
 ml/yolo/*.onnx
 weights/
+
+.data/

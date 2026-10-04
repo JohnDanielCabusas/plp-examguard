@@ -1256,7 +1256,7 @@ const DB = {
     const updated = sessions.find(s => s.id === id);
     if (updated) {
       SupabaseSync.broadcastLocalChange?.('sessions', updated, 'UPSERT');
-      SupabaseSync.syncDoc('sessions', updated);
+      SupabaseSync.syncDoc('sessions', updated, { fields: Object.keys(updates) });
     }
   },
 
