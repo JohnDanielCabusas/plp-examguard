@@ -578,6 +578,10 @@ export default function AdminPage() {
                   <span className="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                   <input type="text" id="student-search" placeholder="Search students…" onInput={() => window.filterStudents()} />
                 </div>
+                <button type="button" id="students-sort-btn" className="monitor-sort-btn" title="Sort students by last name" onClick={() => window.toggleStudentsNameSort?.()}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4" /></svg>
+                  <span id="students-sort-btn-label">Last name A-Z</span>
+                </button>
               </div>
               <div className="card">
                 <div className="card-body" style={{ padding: 0 }}>

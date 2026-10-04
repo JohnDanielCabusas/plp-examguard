@@ -10,6 +10,9 @@
 const INITIAL_LOAD_READY_TIMEOUT_MS = 15000;
 const BRANDING_LOGO_PATH = '/api/branding/logo';
 const PUBLIC_SETTINGS_COLUMNS = 'id, school_name, department, admin_name, admin_email';
+// Polling must never download embedded camera images or archived attempts.
+const SESSION_SUMMARY_COLUMNS = 'id, exam_id, exam_code, student_id, student_name, year_level, section, year_section, department, program, start_time, end_time, warnings, score, max_score, submitted, auto_submitted, submit_reason, score_released, owner_admin_id, created_at';
+const EXAM_SUMMARY_COLUMNS = 'id, subject_id, title, description, time_limit, code, status, shuffle_questions, shuffle_answers, require_camera, require_ai_detection, allow_review, scoring_released, target_year_levels, target_sections, owner_admin_id, started_at, closed_at, excluded_student_ids, created_at';
 
 const SupabaseSync = {
   _client: null,
@@ -39,6 +42,7 @@ const SupabaseSync = {
   // draft -> ready on the same exam) cannot reach Supabase out of order and resurrect
   // stale state on other clients.
   _docSyncChains: new Map(),
+  _refreshRequests: new Map(),
   // Exam IDs whose excluded_student_ids value is known to NOT have made it to Supabase yet
   // (e.g. PostgREST's schema cache was briefly stale and rejected the column). While an id
   // is in this set, realtime/pull updates for that exam must not trust the incoming
@@ -405,11 +409,11 @@ const SupabaseSync = {
         enrolledSubjectIds.length
           ? c.from('subjects').select('*').in('id', enrolledSubjectIds).order('created_at')
           : Promise.resolve({ data: [] }),
-        c.from('sessions').select('*').eq('student_id', student.studentId).order('created_at'),
+        c.from('sessions').select(SESSION_SUMMARY_COLUMNS).eq('student_id', student.studentId).order('created_at'),
       ]);
       const subjectIds = (subjects || []).map(subjectRow => subjectRow.id);
       const { data: exams } = subjectIds.length
-        ? await c.from('exams').select('*').in('subject_id', subjectIds).order('created_at')
+        ? await c.from('exams').select(this._examSummaryColumns()).in('subject_id', subjectIds).order('created_at')
         : { data: [] };
 
       if (settings) this._writeLocal('acs_settings', this._dbToJsPublicSettings(settings));
@@ -514,6 +518,11 @@ const SupabaseSync = {
     const existingById = new Map(this._localArray('acs_exams').map(e => [e.id, e]));
     return (rawRows || []).map(r => {
       const normalized = this._dbToJsExam(r);
+      const cached = existingById.get(r.id);
+      for (const [column, field] of [['questions', 'questions'], ['exam_sections', 'examSections'], ['exam_policies', 'examPolicies']]) {
+        if (!(column in r) && cached) normalized[field] = cached[field];
+      }
+      normalized.detailsLoaded = 'questions' in r || cached?.detailsLoaded === true;
       if (!('excluded_student_ids' in r) || this._examIdsWithUnsyncedExclusions.has(normalized.id)) {
         const prior = existingById.get(normalized.id);
         if (prior && Array.isArray(prior.excludedStudentIds)) {
@@ -851,6 +860,25 @@ const SupabaseSync = {
   // A student only ever sees their own enrolled courses, so every student-side
   // refresh is scoped to them. Unscoped, each portal poll downloaded every course
   // and every exam (questions included) in the system, which overloaded Supabase.
+  // Share overlapping requests, but never cache a failed read or delay a manual refresh.
+  _coalesceRefresh(key, operation) {
+    if (this._refreshRequests.has(key)) return this._refreshRequests.get(key);
+    const request = Promise.resolve().then(operation).finally(() => {
+      if (this._refreshRequests.get(key) === request) this._refreshRequests.delete(key);
+    });
+    this._refreshRequests.set(key, request);
+    return request;
+  },
+
+  _examSummaryColumns() {
+    const optional = [
+      ['_examCameraExemptSupported', 'camera_exempt_student_ids'],
+      ['_examLateExamSupported', 'late_exam_student_ids'],
+      ['_examObjectMonitoringSupported', 'object_monitoring'],
+    ].filter(([flag]) => this[flag] !== false).map(([, column]) => column);
+    return [EXAM_SUMMARY_COLUMNS, ...optional].join(', ');
+  },
+
   _studentEnrolledSubjectIds(studentId) {
     const own = this._localArray('acs_students').find(s => s.studentId === studentId);
     return Array.isArray(own?.enrolledSubjects) ? own.enrolledSubjects.filter(Boolean) : [];
@@ -872,17 +900,18 @@ const SupabaseSync = {
     }
   },
 
-  async refreshExams() {
+  async refreshExams({ summary = false } = {}) {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
-    let query = this._client.from('exams').select('*');
+    let query = this._client.from('exams').select(summary || (student && !admin && !sysadmin) ? this._examSummaryColumns() : '*');
     if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
     else if (student?.studentId && !sysadmin) {
       const subjectIds = this._studentEnrolledSubjectIds(student.studentId);
       if (!subjectIds.length) { this._writeLocal('acs_exams', []); return; }
       query = query.in('subject_id', subjectIds);
     }
-    const { data: exams } = await query;
+    const scope = sysadmin ? 'system' : admin?.id || student?.studentId || 'anonymous';
+    const { data: exams } = await this._coalesceRefresh(`exams:${scope}:${summary}`, () => query);
     if (exams) {
       this._writeLocal('acs_exams', this._dbToJsExamsPreservingLocal(exams));
     }
@@ -890,10 +919,14 @@ const SupabaseSync = {
 
   // Re-pulls a single exam row into the cache, for screens that only care about
   // the exam the student is waiting on or taking.
-  async refreshExam(examId) {
+  async refreshExam(examId, { requireDetails = false, summary = false } = {}) {
     if (!this._client || !examId) return;
-    const { data } = await this._client.from('exams').select('*').eq('id', examId).maybeSingle();
-    if (!data) return;
+    const { data, error } = await this._coalesceRefresh(`exam-details:${examId}:${summary}`, () =>
+      this._client.from('exams').select(summary ? this._examSummaryColumns() : '*').eq('id', examId).maybeSingle());
+    if (error || !data) {
+      if (requireDetails) throw error || new Error('Unable to load the selected exam.');
+      return;
+    }
     const [normalized] = this._dbToJsExamsPreservingLocal([data]);
     const exams = this._localArray('acs_exams');
     const index = exams.findIndex(exam => exam.id === normalized.id);
@@ -919,22 +952,47 @@ const SupabaseSync = {
   // (e.g. "Allow Retake") and students mutate while taking an exam — both
   // sides need this refetched, not just re-rendered from a stale cache, in
   // case the realtime socket silently dropped.
-  async refreshSessions() {
+  async refreshSessions({ examId = null, summary = false, report = false } = {}) {
     if (!this._client) return;
     const { admin, sysadmin, student } = this._getSessions();
-    let query = this._client.from('sessions').select('*');
+    const reportColumns = [SESSION_SUMMARY_COLUMNS, 'answers', 'activities',
+      ...[['_sessionEssayGradesSupported', 'essay_grades'], ['_sessionAiDetectionsSupported', 'ai_detections'], ['_sessionAttemptHistorySupported', 'attempt_history']]
+        .filter(([flag]) => this[flag] !== false).map(([, column]) => column)].join(', ');
+    const columns = summary || (student && !admin && !sysadmin) ? SESSION_SUMMARY_COLUMNS : report ? reportColumns : '*';
+    let query = this._client.from('sessions').select(columns);
     if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
     else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
-    const { data: sessions } = await query;
+    if (examId) query = query.eq('exam_id', examId);
+    const scope = sysadmin ? 'system' : admin?.id || student?.studentId || 'anonymous';
+    const { data: sessions } = await this._coalesceRefresh(`sessions:${scope}:${examId || '*'}:${summary}:${report}`, () => query);
     if (sessions) {
       const localSessions = this._localArray('acs_sessions');
       const localById = new Map(localSessions.map(session => [session.id, session]));
       const mergedSessions = sessions.map(row => {
         const normalized = this._dbToJsSession(row);
-        return this._mergeIncomingSessionWithLocal(normalized, localById.get(normalized.id));
+        return summary || (student && !admin && !sysadmin)
+          ? normalized
+          : this._mergeIncomingSessionWithLocal(normalized, localById.get(normalized.id));
       });
-      this._writeLocal('acs_sessions', mergedSessions);
+      this._writeLocal('acs_sessions', examId
+        ? [...localSessions.filter(session => session.examId !== examId), ...mergedSessions]
+        : mergedSessions);
     }
+  },
+
+  async refreshSessionDetails(examId) {
+    if (!this._client || !examId) return;
+    const { student, admin, sysadmin } = this._getSessions();
+    if (!student?.studentId || admin || sysadmin) return;
+    const { data, error } = await this._coalesceRefresh(`session-details:${student.studentId}:${examId}`, () =>
+      this._client.from('sessions').select('*').eq('student_id', student.studentId).eq('exam_id', examId));
+    if (error) throw error;
+    if (!data) throw new Error('Unable to load your saved exam attempt. Please retry.');
+    const current = this._localArray('acs_sessions');
+    // Read cache after awaiting: local saves may have arrived while the request ran.
+    const byId = new Map(current.map(session => [session.id, session]));
+    const details = data.map(row => this._mergeIncomingSessionWithLocal(this._dbToJsSession(row), byId.get(row.id)));
+    this._writeLocal('acs_sessions', [...current.filter(session => session.examId !== examId), ...details]);
   },
 
   async refreshStudents() {
@@ -1396,6 +1454,11 @@ const SupabaseSync = {
     if (this._examObjectMonitoringSupported !== false) {
       row.object_monitoring = this._normalizeObjectMonitoring(d.objectMonitoring);
     }
+    if (d.detailsLoaded === false) {
+      delete row.questions;
+      delete row.exam_sections;
+      delete row.exam_policies;
+    }
     return row;
   },
 
@@ -1436,6 +1499,9 @@ const SupabaseSync = {
     }
     if (this._sessionAttemptHistorySupported !== false) {
       row.attempt_history = Array.isArray(d.attemptHistory) ? d.attemptHistory : [];
+    }
+    if (d.detailsLoaded === false) {
+      for (const column of ['answers', 'activities', 'essay_grades', 'ai_detections', 'camera_snapshots', 'attempt_history']) delete row[column];
     }
     return row;
   },
@@ -1646,6 +1712,7 @@ const SupabaseSync = {
       requireAIDetection: !!r.require_ai_detection,
       allowReview: !!r.allow_review,
       scoringReleased: !!r.scoring_released,
+      detailsLoaded: 'questions' in r,
       questions: Array.isArray(r.questions) ? r.questions : [],
       examSections: Array.isArray(r.exam_sections) ? r.exam_sections : [],
       examPolicies: Array.isArray(r.exam_policies) ? r.exam_policies.map(policy => String(policy ?? '').trim()).filter(Boolean) : [],
@@ -1665,6 +1732,7 @@ const SupabaseSync = {
   },
 
   _dbToJsSession(r) {
+    // Summary reads omit large fields. Omission preserves cache; explicit {} / [] clears it.
     const localSession = this._localArray('acs_sessions').find(session => session.id === r.id);
     const essayGrades = ('essay_grades' in r && this._sessionEssayGradesSupported !== false)
       ? this._normalizeSessionEssayGrades(r.essay_grades)
@@ -1682,9 +1750,10 @@ const SupabaseSync = {
       program: r.program || '',
       startTime: r.start_time || null,
       endTime: r.end_time || null,
-      answers: r.answers || {},
+      detailsLoaded: 'answers' in r || localSession?.detailsLoaded === true,
+      answers: 'answers' in r ? (r.answers || {}) : (localSession?.answers || {}),
       warnings: r.warnings || 0,
-      activities: Array.isArray(r.activities) ? r.activities : [],
+      activities: 'activities' in r ? (Array.isArray(r.activities) ? r.activities : []) : (localSession?.activities || []),
       score: r.score ?? null,
       maxScore: r.max_score ?? null,
       submitted: !!r.submitted,
@@ -1692,9 +1761,9 @@ const SupabaseSync = {
       submitReason: r.submit_reason || null,
       scoreReleased: !!r.score_released,
       essayGrades,
-      aiDetections: r.ai_detections || {},
-      cameraSnapshots: Array.isArray(r.camera_snapshots) ? r.camera_snapshots : [],
-      attemptHistory: Array.isArray(r.attempt_history) ? r.attempt_history : [],
+      aiDetections: 'ai_detections' in r ? (r.ai_detections || {}) : (localSession?.aiDetections || {}),
+      cameraSnapshots: 'camera_snapshots' in r ? (Array.isArray(r.camera_snapshots) ? r.camera_snapshots : []) : (localSession?.cameraSnapshots || []),
+      attemptHistory: 'attempt_history' in r ? (Array.isArray(r.attempt_history) ? r.attempt_history : []) : (localSession?.attemptHistory || []),
       ownerAdminId: r.owner_admin_id || '',
       createdAt: r.created_at || null,
     };

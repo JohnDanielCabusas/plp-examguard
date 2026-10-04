@@ -15414,6 +15414,16 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .prof-msg-popup-icon { width: 18px; height: 18px; line-height: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: currentColor; }
 .prof-msg-popup-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .prof-msg-popup-text b { font-weight: 800; }
+.prof-msg-popup-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.prof-msg-popup-close {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.prof-msg-popup-close:hover { background: var(--surface-2); color: var(--text); }
+.prof-msg-popup-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.enrolled-students-toolbar { display: flex; justify-content: flex-end; padding: 0 20px 16px; }
 
 /* Topbar theme toggle — sliding sun/moon switch (system palette: gold=light, green=dark) */
 .theme-switch { display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }

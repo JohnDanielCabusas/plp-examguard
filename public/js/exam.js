@@ -117,7 +117,7 @@ const VIOLATION_SNAPSHOT_QUALITY = 0.78;
 
 // Portal and course-view catch-up poll. Each tick re-reads the student's courses,
 // exams and sessions from Supabase, so with a full class online it must stay slow.
-const STUDENT_PORTAL_POLL_MS = 10000;
+const STUDENT_PORTAL_POLL_MS = 30000;
 // The waiting room probes exam status every 3s; the full exam row and sessions
 // are re-pulled every N ticks (or immediately when the status changes).
 const WAITING_FULL_REFRESH_TICKS = 5;
@@ -1764,6 +1764,15 @@ const ExamApp = {
       sync?.refreshStudents?.(),
       sync?.refreshSubjects?.(),
     ]).catch(() => {});
+    const selectedExam = this._resolveExamFromSession(studentSession);
+    if (selectedExam && sync?._client) {
+      try {
+        await Promise.all([sync.refreshExam(selectedExam.id, { requireDetails: true }), sync.refreshSessionDetails(selectedExam.id)]);
+      } catch (_) {
+        this._showError('Unable to load your exam and saved answers. Please try again.');
+        return;
+      }
+    }
     const refreshAutoSubmit = this._consumePendingRefreshAutoSubmit(studentSession);
 
     if (refreshAutoSubmit?.exam && refreshAutoSubmit?.session) {
@@ -2426,7 +2435,7 @@ const ExamApp = {
 
         const chips = [
           `<span class="course-meta-chip">${this._portalLabel('clipboard', this._formatExamCardDate(primaryDate), { size: 13, gap: 6 })}</span>`,
-          `<span class="course-meta-chip">${e.questions.length} questions</span>`,
+          e.detailsLoaded === false ? '' : `<span class="course-meta-chip">${e.questions.length} questions</span>`,
           `<span class="course-meta-chip">${e.timeLimit} min</span>`,
         ];
         if (e.requireCamera) {
@@ -2763,7 +2772,7 @@ const ExamApp = {
         const requiresAccessCode = this._isExamLockedByCode(e);
         const metaItems = [
           `<span class="dash-meta-item">${_esc(subj.name)}</span>`,
-          `<span class="dash-meta-item">${e.questions.length} question${e.questions.length === 1 ? '' : 's'}</span>`,
+          e.detailsLoaded === false ? '' : `<span class="dash-meta-item">${e.questions.length} question${e.questions.length === 1 ? '' : 's'}</span>`,
           `<span class="dash-meta-item">${e.timeLimit} min</span>`,
         ];
         if (e.requireCamera) {
@@ -2840,7 +2849,7 @@ const ExamApp = {
         }
 
         const metaParts = [
-          `<span>${_esc(`${e.questions.length} questions`)}</span>`,
+          e.detailsLoaded === false ? '' : `<span>${_esc(`${e.questions.length} questions`)}</span>`,
           `<span>${_esc(`${e.timeLimit} min`)}</span>`,
         ];
         if (e.requireCamera) metaParts.push(this._portalLabel('camera', 'Camera', { size: 13, gap: 5 }));
@@ -3281,7 +3290,7 @@ const ExamApp = {
       const statusChanged = !!remoteStatus && remoteStatus !== DB.getExam(examId)?.status;
       if (statusChanged || ticksSinceFullRefresh >= WAITING_FULL_REFRESH_TICKS) {
         ticksSinceFullRefresh = 0;
-        await Promise.all([sync?.refreshExam?.(examId), sync?.refreshSessions?.()]).catch(() => {});
+        await Promise.all([sync?.refreshExam?.(examId, { summary: true }), sync?.refreshSessions?.({ examId })]).catch(() => {});
       }
       if (!this.exam || this.exam.id !== examId) return;
       const latestExam = DB.getExam(examId);
@@ -3300,34 +3309,8 @@ const ExamApp = {
 
       if (latestExam.status === 'active') {
         this.stopPoll();
-        if (!this.session) {
-          if (existingSession && !existingSession.submitted) {
-            this.session = existingSession;
-            this.warnings = existingSession.warnings || 0;
-            this.answers = existingSession.answers || {};
-          } else if (!existingSession) {
-            const student = studentSession ? DB.getStudent(studentSession.studentId) : null;
-            this.session = DB.addSession({
-              examId: this.exam.id,
-              examCode: this.exam.code,
-              studentId: studentSession.studentId,
-              studentName: studentSession.studentName || studentSession.studentId,
-              yearLevel: studentSession.yearLevel || (student ? student.yearLevel : ''),
-              section: studentSession.section || (student ? student.section : ''),
-              startTime: null,
-              endTime: null,
-              answers: {},
-              warnings: 0,
-              activities: [],
-              score: null,
-              maxScore: this.exam.questions.reduce((sum, q) => sum + q.points, 0),
-              submitted: false,
-              autoSubmitted: false,
-              scoreReleased: false,
-            });
-          }
-        }
-        this.startExam();
+        this._startExamFlow(studentSession);
+        return;
       } else if (latestExam.status === 'closed' || latestExam.status === 'archived') {
         this.stopPoll();
         this.returnToLogin(); // return to dashboard
@@ -4926,7 +4909,7 @@ const ExamApp = {
     this._webcamWaitPoll = setInterval(async () => {
       if (!this.exam || !this.session) return;
       try {
-        if (window.SupabaseSync?.refreshExam) await window.SupabaseSync.refreshExam(this.exam.id);
+        if (window.SupabaseSync?.refreshExam) await window.SupabaseSync.refreshExam(this.exam.id, { summary: true });
       } catch (_) { /* best-effort — next tick retries */ }
       this._syncCameraExemptionState();
     }, 10000);

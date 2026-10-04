@@ -21,6 +21,8 @@ let floatingTimerDismissedExamId = null;
 let floatingTimerDragState = null;
 const expiringExamIds = new Set();
 let reportNameSort = 'asc';
+let studentsNameSort = 'asc';
+let enrolledNameSort = 'asc';
 let reportInterval = null;
 let sectionPollInterval = null;
 let currentQBuilderExamId = null;
@@ -2069,16 +2071,22 @@ function showProfMessagePopup(title, detail, kind) {
   if (!host) { host = document.createElement('div'); host.id = 'prof-msg-popups'; document.body.appendChild(host); }
   const pop = document.createElement('div');
   pop.className = `prof-msg-popup${kind === 'report' ? ' is-report' : ''}`;
-  pop.innerHTML = `<span class="prof-msg-popup-icon">${kind === 'report' ? '⚠️' : '💬'}</span>
-    <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>`;
   pop.innerHTML = `<span class="prof-msg-popup-icon">${getProfMessagePopupIcon(kind)}</span>
-    <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>`;
-  host.appendChild(pop);
-  requestAnimationFrame(() => pop.classList.add('show'));
-  setTimeout(() => {
+    <span class="prof-msg-popup-text"><b>${escHtml(title)}</b>${detail ? `<br>${escHtml(detail)}` : ''}</span>
+    <button type="button" class="prof-msg-popup-close" aria-label="Dismiss notification" title="Dismiss notification"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>`;
+  let dismissed = false;
+  let dismissTimer;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    clearTimeout(dismissTimer);
     pop.classList.remove('show');
     setTimeout(() => pop.remove(), 300);
-  }, 3000);
+  };
+  pop.querySelector('.prof-msg-popup-close').addEventListener('click', dismiss);
+  host.appendChild(pop);
+  requestAnimationFrame(() => { if (!dismissed) pop.classList.add('show'); });
+  dismissTimer = setTimeout(dismiss, 3000);
 }
 
 // Pop a top-right notification for any not-yet-announced unread student message
@@ -2781,7 +2789,8 @@ function viewEnrolledStudents(subjectId) {
   if (!subj) return;
   if (currentCourseDetailId !== subjectId) currentEnrolledTab = 'students';
   currentCourseDetailId = subjectId;
-  const students = DB.getAllStudentsRaw().filter(s => !s.archived && (s.enrolledSubjects || []).includes(subjectId));
+  const students = DB.getAllStudentsRaw().filter(s => !s.archived && (s.enrolledSubjects || []).includes(subjectId))
+    .sort((a, b) => compareStudentsByLastName(a, b, enrolledNameSort));
   const exams    = DB.getExams().filter(e => e.subjectId === subjectId && e.status !== 'archived');
 
   document.getElementById('course-detail-name').textContent = formatCourseNameDisplay(subj.name);
@@ -2850,7 +2859,15 @@ function viewEnrolledStudents(subjectId) {
         Exams <span class="exam-q-badge" style="background:#0f2d1a;">${exams.length}</span>
       </button>
     </div>
-    <div id="etab-students">${studentsHtml}</div>
+    <div id="etab-students">
+      <div class="enrolled-students-toolbar">
+        <button type="button" class="monitor-sort-btn" id="enrolled-sort-btn" onclick="toggleEnrolledNameSort()" title="Sort students by last name">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+          <span>Last name ${enrolledNameSort === 'desc' ? 'Z-A' : 'A-Z'}</span>
+        </button>
+      </div>
+      ${studentsHtml}
+    </div>
     <div id="etab-exams" class="hidden">${examsHtml}</div>`;
 
   switchEnrolledTab(currentEnrolledTab);
@@ -3780,7 +3797,35 @@ function viewStudentHistory(studentId) {
   openModal('modal-student-history');
 }
 
+function getStudentLastName(student) {
+  const explicit = String(student.lastName || student.last_name || student.surname || '').trim();
+  if (explicit) return explicit;
+  const name = String(student.name || '').trim();
+  return name.includes(',') ? name.split(',')[0].trim() : getMonitorLastName(name);
+}
+
+function compareStudentsByLastName(a, b, sortDirection) {
+  const direction = sortDirection === 'desc' ? -1 : 1;
+  return (getStudentLastName(a).localeCompare(getStudentLastName(b), undefined, { sensitivity: 'base' })
+    || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+    || String(a.studentId || '').localeCompare(String(b.studentId || ''))) * direction;
+}
+
+function toggleStudentsNameSort() {
+  studentsNameSort = studentsNameSort === 'asc' ? 'desc' : 'asc';
+  filterStudents();
+}
+window.toggleStudentsNameSort = toggleStudentsNameSort;
+
+function toggleEnrolledNameSort() {
+  enrolledNameSort = enrolledNameSort === 'asc' ? 'desc' : 'asc';
+  if (currentCourseDetailId) viewEnrolledStudents(currentCourseDetailId);
+}
+window.toggleEnrolledNameSort = toggleEnrolledNameSort;
+
 function renderStudents(filter) {
+  const sortLabel = document.getElementById('students-sort-btn-label');
+  if (sortLabel) sortLabel.textContent = studentsNameSort === 'desc' ? 'Last name Z-A' : 'Last name A-Z';
   // Only show students enrolled in at least one of this professor's courses
   const mySubjectIds = new Set(DB.getSubjects().map(s => s.id));
   let students = DB.getAllStudentsRaw().filter(s => !s.archived).filter(s =>
@@ -3842,6 +3887,7 @@ function renderStudents(filter) {
   if (sectionFilter) students = students.filter(s => getStudentSectionDisplay(s) === sectionFilter);
   if (programFilter) students = students.filter(s => (s.program || '') === programFilter);
   if (courseFilter) students = students.filter(s => (s.enrolledSubjects || []).includes(courseFilter));
+  students.sort((a, b) => compareStudentsByLastName(a, b, studentsNameSort));
 
   const tbody = document.getElementById('students-tbody');
   if (!students.length) {
@@ -9055,10 +9101,11 @@ function toggleMonitorNameSort() {
 function startMonitoring() {
   stopMonitoring();
   const refresh = () => {
+    if (document.hidden) return;
     const sync = window.SupabaseSync;
     Promise.all([
-      sync?.refreshExams?.(),
-      sync?.refreshSessions?.(),
+      sync?.refreshExams?.({ summary: true }),
+      monitorExamId ? sync?.refreshSessions?.({ examId: monitorExamId, summary: true }) : Promise.resolve(),
       sync?.refreshStudents?.(),
     ]).catch(() => {}).then(() => {
       if (currentSection !== 'monitoring') return;
@@ -11332,10 +11379,12 @@ function loadReportExams() {
 function startReports() {
   stopReports();
   const refresh = () => {
+    if (document.hidden) return;
     const sync = window.SupabaseSync;
+    const examId = document.getElementById('report-exam-select')?.value;
     Promise.all([
-      sync?.refreshExams?.(),
-      sync?.refreshSessions?.(),
+      sync?.refreshExams?.({ summary: true }),
+      examId ? sync?.refreshSessions?.({ examId, report: true }) : Promise.resolve(),
     ]).catch(() => {}).then(() => {
       if (currentSection !== 'reports') return;
       renderReportsSectionLive();
