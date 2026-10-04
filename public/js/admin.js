@@ -43,6 +43,7 @@ let _seenViolationActivityBySession = new Map();
 let _violationAlertSeeded = false;
 let _monitorViolationFlashExpirations = new Map();
 let _violationSoundMuted = false;
+let _violationPopupsPaused = false;
 let _violationAudioContext = null;
 let _violationAudioPrimed = false;
 let _violationPollInterval = null;
@@ -459,6 +460,9 @@ const CRITICAL_VIOLATION_TYPES = new Set([
   'restricted_phone',
 ]);
 const VIOLATION_SOUND_PREF_KEY = 'acs_violation_sound_muted';
+const VIOLATION_POPUP_PREF_KEY = 'acs_violation_popups_paused';
+const VIOLATION_POPUP_ICON_ON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M12 12v3M12 17h.01"/></svg>`;
+const VIOLATION_POPUP_ICON_OFF = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h10a2 2 0 0 1 2 2v10M15 20H5a2 2 0 0 1-2-2V6M8 9h13M3 3l18 18"/></svg>`;
 const VIOLATION_SOUND_ICON_ON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
 const VIOLATION_SOUND_ICON_OFF = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
 // The /api/monitor/socket WebSocket delivers violations instantly; this poll is only the
@@ -920,13 +924,14 @@ function readViolationSoundPreference() {
 
 function syncViolationSoundToggle() {
   const btn = document.getElementById('violation-sound-toggle');
-  const label = document.getElementById('violation-sound-label');
   const icon = document.getElementById('violation-sound-icon');
-  if (!btn || !label || !icon) return;
+  if (!btn || !icon) return;
 
   btn.classList.toggle('is-muted', _violationSoundMuted);
-  btn.title = _violationSoundMuted ? 'Unmute alert sounds' : 'Mute alert sounds';
-  label.textContent = _violationSoundMuted ? 'Unmute' : 'Mute';
+  const hint = _violationSoundMuted ? 'Unmute alert sounds' : 'Mute alert sounds';
+  btn.dataset.tooltip = hint;
+  btn.setAttribute('aria-label', hint);
+  btn.setAttribute('aria-pressed', String(_violationSoundMuted));
   icon.innerHTML = _violationSoundMuted ? VIOLATION_SOUND_ICON_OFF : VIOLATION_SOUND_ICON_ON;
 }
 
@@ -943,6 +948,46 @@ function toggleViolationSound(force) {
   setViolationSoundMuted(next);
 }
 window.toggleViolationSound = toggleViolationSound;
+
+function readViolationPopupPreference() {
+  try {
+    return localStorage.getItem(VIOLATION_POPUP_PREF_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function syncViolationPopupToggle() {
+  const btn = document.getElementById('violation-popup-toggle');
+  const icon = document.getElementById('violation-popup-icon');
+  if (!btn || !icon) return;
+  const hint = _violationPopupsPaused ? 'Resume violation popups' : 'Pause violation popups';
+  btn.classList.toggle('is-muted', _violationPopupsPaused);
+  btn.dataset.tooltip = hint;
+  btn.setAttribute('aria-label', hint);
+  btn.setAttribute('aria-pressed', String(_violationPopupsPaused));
+  icon.innerHTML = _violationPopupsPaused ? VIOLATION_POPUP_ICON_OFF : VIOLATION_POPUP_ICON_ON;
+}
+
+function setViolationPopupsPaused(paused) {
+  _violationPopupsPaused = !!paused;
+  try {
+    localStorage.setItem(VIOLATION_POPUP_PREF_KEY, _violationPopupsPaused ? '1' : '0');
+  } catch (_) {}
+  if (_violationPopupsPaused) {
+    // Keep bell notifications available; only discard the popup backlog.
+    _violationAlertQueue = [];
+    _activeViolationAlert = null;
+    _queuedViolationAlertIds.clear();
+    renderViolationAlertModal();
+  }
+  syncViolationPopupToggle();
+}
+
+function toggleViolationPopups(force) {
+  setViolationPopupsPaused(typeof force === 'boolean' ? force : !_violationPopupsPaused);
+}
+window.toggleViolationPopups = toggleViolationPopups;
 
 function getViolationAudioContext() {
   if (_violationAudioContext) return _violationAudioContext;
@@ -1129,7 +1174,7 @@ function renderViolationAlertModal() {
     if (_activeViolationAlert.id) _queuedViolationAlertIds.delete(_activeViolationAlert.id);
     _activeViolationAlert = null;
   }
-  if (!_activeViolationAlert) {
+  if (_violationPopupsPaused || !_activeViolationAlert) {
     closeModal(modalId);
     return;
   }
@@ -1185,7 +1230,7 @@ function renderViolationAlertModal() {
 }
 
 function showNextViolationAlert() {
-  if (_activeViolationAlert) return;
+  if (_violationPopupsPaused || _activeViolationAlert) return;
   while (_violationAlertQueue.length) {
     const next = _violationAlertQueue.shift();
     if (!isViolationAlertStillLive(next)) {
@@ -1278,25 +1323,27 @@ function queueViolationAlert(entry) {
   // popups: if their alert is already on screen, refresh it in place with the newest
   // incident; if one is already waiting in the queue, replace it. The professor should
   // only ever see one alert per student at a time, and it should always be the latest.
-  if (_activeViolationAlert?.sessionId === entry.sessionId) {
-    _queuedViolationAlertIds.delete(_activeViolationAlert.id);
-    _queuedViolationAlertIds.add(entry.id);
-    _activeViolationAlert = entry;
-  } else {
-    const existingIndex = _violationAlertQueue.findIndex(item => item.sessionId === entry.sessionId);
-    if (existingIndex >= 0) {
-      _queuedViolationAlertIds.delete(_violationAlertQueue[existingIndex].id);
-      _violationAlertQueue.splice(existingIndex, 1);
+  if (!_violationPopupsPaused) {
+    if (_activeViolationAlert?.sessionId === entry.sessionId) {
+      _queuedViolationAlertIds.delete(_activeViolationAlert.id);
+      _queuedViolationAlertIds.add(entry.id);
+      _activeViolationAlert = entry;
+    } else {
+      const existingIndex = _violationAlertQueue.findIndex(item => item.sessionId === entry.sessionId);
+      if (existingIndex >= 0) {
+        _queuedViolationAlertIds.delete(_violationAlertQueue[existingIndex].id);
+        _violationAlertQueue.splice(existingIndex, 1);
+      }
+      _queuedViolationAlertIds.add(entry.id);
+      _violationAlertQueue.push(entry);
     }
-    _queuedViolationAlertIds.add(entry.id);
-    _violationAlertQueue.push(entry);
-  }
 
-  // Put the popup on screen before local notification bookkeeping or a large
-  // monitoring-table repaint. Session caches can contain webcam snapshots, so
-  // those synchronous operations must never sit in front of the live alert.
-  if (_activeViolationAlert) renderViolationAlertModal();
-  else showNextViolationAlert();
+    // Put the popup on screen before local notification bookkeeping or a large
+    // monitoring-table repaint. Session caches can contain webcam snapshots, so
+    // those synchronous operations must never sit in front of the live alert.
+    if (_activeViolationAlert) renderViolationAlertModal();
+    else showNextViolationAlert();
+  }
   playViolationSound().catch(() => {});
 
   addBellNotification({
@@ -1529,6 +1576,7 @@ document.addEventListener('dbReady', function init() {
     refreshAdminIdentity();
     loadSettings();
     syncViolationSoundToggle();
+    syncViolationPopupToggle();
     return;
   }
   adminBootstrapped = true;
@@ -1536,6 +1584,7 @@ document.addEventListener('dbReady', function init() {
   const session = Auth.getAdminSession();
   const settings = DB.getSettings();
   setViolationSoundMuted(readViolationSoundPreference());
+  setViolationPopupsPaused(readViolationPopupPreference());
   refreshViolationAlerts({ seedOnly: true });
 
   // Sidebar and topbar user info

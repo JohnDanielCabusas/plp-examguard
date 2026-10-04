@@ -15444,14 +15444,18 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .topbar-bell:hover { background: var(--surface-2, #eef0ee); color: var(--text, #1a1a1a); }
 .topbar-bell-badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface, #fff); }
 .topbar-sound-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
   border: 1px solid var(--border, #d1d5db);
   background: var(--surface, #fff);
   color: var(--text, #1f2937);
   border-radius: 999px;
   height: 40px;
-  padding: 0 12px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   cursor: pointer;
   font-size: 12px;
@@ -15471,8 +15475,39 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   align-items: center;
   justify-content: center;
 }
-.topbar-sound-btn-label {
+.topbar-sound-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translate(-50%, -4px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 10;
+  transition: opacity .15s ease, transform .15s ease, visibility .15s ease;
+}
+.topbar-sound-btn:hover::after,
+.topbar-sound-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+.topbar-sound-btn:focus-visible {
+  outline: 2px solid var(--primary, #16a34a);
+  outline-offset: 3px;
+}
+.topbar-sound-btn:active {
+  transform: translateY(1px);
 }
 /* ── Notifications dropdown ───────────────────────
    Opens with a short fade-and-rise. It cannot use .hidden/display:none, which

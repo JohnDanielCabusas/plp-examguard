@@ -410,7 +410,9 @@ export default function AdminPage() {
                   type="button"
                   className="topbar-sound-btn"
                   id="violation-sound-toggle"
-                  title="Mute alert sounds"
+                  aria-label="Mute alert sounds"
+                  aria-pressed="false"
+                  data-tooltip="Mute alert sounds"
                   onClick={() => window.toggleViolationSound?.()}
                 >
                 <span className="topbar-sound-btn-icon" id="violation-sound-icon" aria-hidden="true">
@@ -420,7 +422,24 @@ export default function AdminPage() {
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
                   </svg>
                 </span>
-                <span className="topbar-sound-btn-label" id="violation-sound-label">Sound On</span>
+              </button>
+
+              <button
+                type="button"
+                className="topbar-sound-btn"
+                id="violation-popup-toggle"
+                aria-label="Pause violation popups"
+                aria-pressed="false"
+                data-tooltip="Pause violation popups"
+                onClick={() => window.toggleViolationPopups?.()}
+              >
+                <span className="topbar-sound-btn-icon" id="violation-popup-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M3 9h18M12 12v3" />
+                    <path d="M12 17h.01" />
+                  </svg>
+                </span>
               </button>
 
               {/* Notifications bell */}

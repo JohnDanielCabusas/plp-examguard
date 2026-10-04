@@ -126,7 +126,6 @@ try {
     window.SupabaseSync = null;
     window.showToast = () => {};
     window.playViolationSound = () => Promise.resolve();
-    window.addBellNotification = () => {};
     window.readDismissedNotificationIds = () => new Set();
     window.rememberDismissedNotificationIds = () => {};
     window.monitorApiRequest = () => Promise.resolve({ success: true });
@@ -303,6 +302,57 @@ try {
     lateSession.freshAlerted,
     `A new violation on that session must still alert: ${JSON.stringify(lateSession)}`,
   );
+
+  const popupControls = await page.evaluate(() => {
+    const controls = document.createElement('div');
+    controls.innerHTML = `
+      <button id="violation-sound-toggle" class="topbar-sound-btn"><span id="violation-sound-icon"></span></button>
+      <button id="violation-popup-toggle" class="topbar-sound-btn"><span id="violation-popup-icon"></span></button>`;
+    document.body.append(controls);
+    setViolationSoundMuted(true);
+    toggleViolationPopups(true);
+    const modal = document.getElementById('modal-violation-alert');
+    const closedCurrent = modal.classList.contains('hidden');
+    const bellBefore = _bellNotifs.length;
+    const event = {
+      id: 'popup-paused-event', sessionId: 's5', examId: 'e1', studentId: '24-0009',
+      studentName: 'Ellen Park', type: 'tab_switch', detail: 'Paused popup',
+      at: new Date().toISOString(), warningCount: 3,
+    };
+    queueViolationAlert(event);
+    const hiddenDuringPause = modal.classList.contains('hidden');
+    const bellRecorded = _bellNotifs.length === bellBefore + 1;
+    const persisted = readViolationPopupPreference();
+    const pausedHint = document.getElementById('violation-popup-toggle').dataset.tooltip;
+    const pausedPressed = document.getElementById('violation-popup-toggle').getAttribute('aria-pressed');
+    toggleViolationPopups(false);
+    queueViolationAlert(event); // A duplicate of the suppressed event must stay suppressed.
+    showNextViolationAlert();
+    const noBacklog = modal.classList.contains('hidden');
+    queueViolationAlert({ ...event, id: 'popup-resumed-event', detail: 'Fresh popup' });
+    return {
+      closedCurrent, hiddenDuringPause, bellRecorded, persisted, pausedHint, pausedPressed, noBacklog,
+      freshShown: !modal.classList.contains('hidden'),
+      soundIndependent: _violationSoundMuted,
+      resumedHint: document.getElementById('violation-popup-toggle').dataset.tooltip,
+      soundHint: document.getElementById('violation-sound-toggle').dataset.tooltip,
+      iconOnly: !controls.textContent.trim(),
+    };
+  });
+  check(popupControls.closedCurrent && popupControls.hiddenDuringPause, 'Pausing must close the current popup and suppress incoming popups.');
+  check(popupControls.bellRecorded, 'Suppressed violations must still reach the notification bell.');
+  check(popupControls.persisted, 'The popup preference must persist.');
+  check(popupControls.noBacklog && popupControls.freshShown, 'Resuming must show fresh violations without replaying suppressed events.');
+  check(popupControls.soundIndependent, 'Popup controls must leave sound preferences independent.');
+  check(popupControls.iconOnly && popupControls.pausedPressed === 'true'
+    && popupControls.pausedHint === 'Resume violation popups'
+    && popupControls.resumedHint === 'Pause violation popups'
+    && popupControls.soundHint === 'Unmute alert sounds', 'Icon controls must have accurate accessible states and hints.');
+
+  await page.evaluate(() => acknowledgeAllViolationAlerts());
+  await page.locator('#violation-popup-toggle').hover();
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('violation-popup-toggle'), '::after').opacity === '1');
+  check(await page.locator('#violation-popup-toggle').evaluate(btn => getComputedStyle(btn, '::after').content.includes('Pause violation popups')), 'The themed hover hint must describe the popup action.');
 
   check(!errors.length, `Page errors: ${errors.join(' | ')}`);
   if (failures.length) {
