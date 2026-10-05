@@ -56,6 +56,9 @@ const SupabaseSync = {
   _refreshCache: new Map(),
   _dashboardSummaryCache: null,
   _rowDetailLoads: new Map(),
+  _messageRefreshState: new Map(),
+  _activeMessageScope: null,
+  _messageUpdatedAtSupported: true,
   // Exam IDs whose excluded_student_ids value is known to NOT have made it to Supabase yet
   // (e.g. PostgREST's schema cache was briefly stale and rejected the column). While an id
   // is in this set, realtime/pull updates for that exam must not trust the incoming
@@ -482,25 +485,52 @@ const SupabaseSync = {
   // own thread (student_id). Silently no-ops if the table isn't deployed yet.
   async _pullMessages({ ownerAdminId, studentId } = {}) {
     if (!this._client || this._messagesSupported === false) return false;
-    try {
-      let query = this._client.from('messages').select('*').order('created_at');
-      if (ownerAdminId) query = query.eq('owner_admin_id', ownerAdminId);
-      else if (studentId) query = query.eq('student_id', studentId);
-      const { data, error } = await query;
-      if (error) {
+    const context = this._getSessions();
+    const owner = ownerAdminId || (!context.sysadmin ? context.admin?.id : null);
+    const student = studentId || (!owner && !context.sysadmin ? context.student?.studentId : null);
+    if (!owner && !student && !context.sysadmin) return false;
+    const scope = owner ? `owner:${owner}` : student ? `student:${student}` : 'system';
+    return this._coalesceRefresh(`messages:${scope}`, async () => {
+      try {
+        const state = this._messageRefreshState.get(scope);
+        const incremental = this._messageUpdatedAtSupported !== false && this._activeMessageScope === scope
+          && state?.watermark && Date.now() - state.lastFull < 60000;
+        const { data } = await this._readAllPages(() => {
+          let query = this._client.from('messages').select('*');
+          if (owner) query = query.eq('owner_admin_id', owner);
+          else if (student) query = query.eq('student_id', student);
+          // Inclusive boundary includes edits sharing the latest timestamp.
+          if (incremental) query = query.gte('updated_at', state.watermark);
+          return query;
+        });
+        const currentMessages = this._localArray('acs_messages');
+        const byId = new Map((incremental ? currentMessages : []).map(row => [row.id, row]));
+        for (const row of data) byId.set(row.id, this._dbToJsMessage(row));
+        // A full reconciliation discovers deletes, without dropping messages
+        // whose insertion is still queued on this device.
+        for (const row of currentMessages) {
+          if (!byId.has(row.id) && this._docSyncChains.has(this._docSyncKey('messages', row.id))) byId.set(row.id, row);
+        }
+        const nextMessages = [...byId.values()].sort((a, b) =>
+          new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          || String(a.id).localeCompare(String(b.id)));
+        const changed = this._messageListSignature(currentMessages) !== this._messageListSignature(nextMessages);
+        this._writeLocal('acs_messages', nextMessages);
+        let watermark = incremental ? state.watermark : null;
+        for (const row of data) {
+          if (row.updated_at && (!watermark || new Date(row.updated_at) > new Date(watermark))) watermark = row.updated_at;
+        }
+        this._messageRefreshState.set(scope, { watermark, lastFull: incremental ? state.lastFull : Date.now() });
+        this._activeMessageScope = scope;
+        if (changed) this._notifyDataChanged('messages');
+        return changed;
+      } catch (error) {
         if (this._isMissingMessagesTableError(error)) this._messagesSupported = false;
+        if (String(error?.message || '').includes('updated_at')) this._messageUpdatedAtSupported = false;
+        // Failed pages retain the previous complete message list and cursor.
         return false;
       }
-      const nextMessages = (data || []).map(r => this._dbToJsMessage(r));
-      const currentMessages = this._localArray('acs_messages');
-      const changed = this._messageListSignature(currentMessages) !== this._messageListSignature(nextMessages);
-      this._writeLocal('acs_messages', nextMessages);
-      if (changed) this._notifyDataChanged('messages');
-      return changed;
-    } catch (e) {
-      if (this._isMissingMessagesTableError(e)) this._messagesSupported = false;
-      return false;
-    }
+    });
   },
 
   async _pullExamShares({ professorId } = {}) {
@@ -583,14 +613,16 @@ const SupabaseSync = {
     this._deferredHydrationPromise = (async () => {
       try {
         const { admin, sysadmin, student } = this._getSessions();
-        let query = this._client
-          .from('logs')
-          .select('*')
-          .order('created_at');
-        if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
-        if (student?.studentId && !sysadmin && !admin?.id) query = query.eq('student_id', student.studentId);
-        const { data: logs } = await query;
-        this._writeLocal('acs_logs', (logs || []).map(r => this._dbToJsLog(r)));
+        if (!admin && !sysadmin && !student) return;
+        const { data: logs } = await this._readAllPages(() => {
+          let query = this._client.from('logs').select('*');
+          if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
+          else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
+          return query;
+        });
+        logs.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+          || String(a.id).localeCompare(String(b.id)));
+        this._writeLocal('acs_logs', logs.map(r => this._dbToJsLog(r)));
       } catch (e) {
         console.warn('[SupabaseSync] Error hydrating deferred tables:', e.message || e);
       }
@@ -1167,11 +1199,12 @@ const SupabaseSync = {
   async refreshProfessorActivityLog() {
     if (!this._client) return;
     try {
-      const { data } = await this._client
+      const { data, error } = await this._client
         .from('professor_activity_log')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(200);
+      if (error) throw error;
       this._writeLocal('acs_professor_activity_log', (data || []).map(r => this._dbToJsProfessorActivityLog(r)));
     } catch (e) {
       console.warn('[SupabaseSync] Error refreshing professor activity log:', e.message || e);

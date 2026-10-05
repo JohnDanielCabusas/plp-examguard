@@ -13,6 +13,8 @@
     "test:bandwidth:browser": "node scripts/smoke-test-bandwidth.mjs",
     "test:bandwidth:database": "node scripts/test-bandwidth-database.cjs",
     "test:sync-payloads": "node scripts/test-sync-payloads.cjs",
+    "test:message-sync": "node scripts/test-message-sync.cjs",
+    "test:evidence-query:database": "node scripts/test-evidence-query-database.cjs",
     "test:replay": "node scripts/check-replay-readiness.mjs",
     "test:yolo": "node scripts/test-yolo-policy.mjs && node scripts/test-yolo-worker-parsing.mjs && node scripts/smoke-test-yolo-model.mjs && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-coco-v1.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-proctor-tuklas-v2.json && node scripts/smoke-test-yolo-model.mjs public/models/yolo-phone-specialist-v1.json",
     "test:facemesh": "node scripts/test-facemesh.mjs",

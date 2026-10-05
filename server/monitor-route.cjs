@@ -1,3 +1,4 @@
+const { evidenceListQuery } = require('./evidence-list-query.cjs');
 const crypto = require('crypto');
 const path = require('path');
 const { connect, query } = require('./db.cjs');
@@ -777,19 +778,7 @@ async function handleViolationEvidenceList(req, res, url) {
   }
 
   const { rows } = await query(
-    `select ve.*,
-            greatest(
-              0,
-              coalesce(sess.warnings, 0)
-              - coalesce(sum(case when peer.warning_applied then peer.warning_adjustment else 0 end), 0)
-            ) as raw_warnings,
-            greatest(0, coalesce(sess.warnings, 0)) as adjusted_warnings
-       from public.violation_evidence ve
-       left join public.sessions sess on sess.id = ve.session_id
-       left join public.violation_evidence peer on peer.session_id = ve.session_id
-      where ${where.join(' and ')}
-      group by ve.id, sess.warnings
-      order by ve.created_at desc, ve.id desc`,
+    evidenceListQuery(where),
     values,
   );
 

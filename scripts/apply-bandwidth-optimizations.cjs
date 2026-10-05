@@ -44,6 +44,7 @@ async function main() {
     try {
       await client.query("set local lock_timeout='5s'");
       await client.query(await fs.readFile(path.join(root, 'supabase/bandwidth-optimizations.sql'), 'utf8'));
+      await client.query(await fs.readFile(path.join(root, 'supabase/query-audit-optimizations.sql'), 'utf8'));
       const keyHash = crypto.createHash('sha256').update(storageGatewayKey(environment)).digest('hex');
       await client.query('insert into examguard_private.storage_gateway(id,key_hash) values(true,$1) on conflict(id) do update set key_hash=excluded.key_hash', [keyHash]);
       await client.query('commit');
