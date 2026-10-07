@@ -17,3 +17,4 @@ ml/yolo/*.onnx
 weights/
 
 .data/
+brag-output/
