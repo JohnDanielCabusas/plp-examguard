@@ -9016,8 +9016,8 @@ const ExamApp = {
   // signal that matters: if this fails, saving would fail too. `no-cors` is used
   // because we only need to know the request could complete, not read its response.
   _connProbeUrl() {
-    const base = window.SupabaseBridge?.env?.url;
-    return base ? `${base}/auth/v1/health?_cb=` : '/plp-logo.png?_cb=';
+    // Our own server, not Supabase: every student runs this probe every few seconds.
+    return '/api/monitor/health?_cb=';
   },
 
   async _probeConnection() {

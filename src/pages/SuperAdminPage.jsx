@@ -20,6 +20,28 @@ function writeSuperAdminSectionToUrl(section) {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
+// The logo is shown at most 80px wide but is stored in the settings row, which
+// Realtime sends to every signed-in professor. Store a 256px copy instead of
+// the original upload; keep the original if it is already smaller (or an SVG).
+const LOGO_MAX_SIZE = 256;
+function downscaleLogo(dataUrl) {
+  if (!dataUrl.startsWith("data:image/") || dataUrl.startsWith("data:image/svg")) return Promise.resolve(dataUrl);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, LOGO_MAX_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      const resized = canvas.toDataURL("image/png");
+      resolve(resized.length < dataUrl.length ? resized : dataUrl);
+    };
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
+}
+
 // ── tiny helpers ────────────────────────────────────────────────
 function EyeToggle({ show, onToggle }) {
   return (
@@ -1008,11 +1030,10 @@ export default function SuperAdminPage() {
       return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setSystemSettings((prev) => ({
-        ...prev,
-        logoUrl: e.target?.result || "",
-      }));
+    reader.onload = async (e) => {
+      const original = e.target?.result || "";
+      const logoUrl = await downscaleLogo(original).catch(() => original);
+      setSystemSettings((prev) => ({ ...prev, logoUrl }));
     };
     reader.readAsDataURL(file);
   };

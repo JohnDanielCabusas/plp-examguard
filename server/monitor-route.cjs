@@ -957,6 +957,17 @@ async function handleViolationEvidenceFile(req, res, evidenceId) {
     return;
   }
 
+  // A re-uploaded replay keeps its evidence id but changes these fields. The
+  // browser revalidates each view; an unchanged clip is answered without
+  // downloading it from Storage again.
+  const etag = `"${crypto.createHash('sha256')
+    .update([evidence.id, evidence.storage_path, evidence.file_size_bytes, evidence.clip_ended_at].join('|'))
+    .digest('hex').slice(0, 32)}"`;
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { 'Cache-Control': 'private, no-cache', ETag: etag });
+    res.end();
+    return;
+  }
   const object = await downloadStorageObject(
     evidence.storage_bucket,
     evidence.storage_path,
@@ -965,7 +976,8 @@ async function handleViolationEvidenceFile(req, res, evidenceId) {
   const headers = {
     'Content-Type': evidence.mime_type || 'video/webm',
     'Content-Length': object.contentLength || object.data.length,
-    'Cache-Control': 'private, no-store',
+    'Cache-Control': 'private, no-cache',
+    ETag: etag,
     'Accept-Ranges': object.acceptRanges || 'bytes',
   };
   if (object.contentRange) headers['Content-Range'] = object.contentRange;
@@ -1183,7 +1195,8 @@ async function handleSnapshotFile(req, res, id) {
   const { rows } = await query('select session_id from public.camera_snapshot_assets where id=$1', [id]);
   if (!rows[0] || !(await authorizeSnapshotSession(req, rows[0].session_id))) { forbid(res); return true; }
   const etag = `"${id}"`;
-  const headers = { 'Cache-Control': 'private, max-age=300', 'ETag': etag, 'X-Content-Type-Options': 'nosniff' };
+  // The id is a hash of the image bytes, so a URL's content never changes.
+  const headers = { 'Cache-Control': 'private, max-age=31536000, immutable', 'ETag': etag, 'X-Content-Type-Options': 'nosniff' };
   if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return true; }
   const snapshot = await readSnapshot(id);
   if (!snapshot) { jsonResponse(res, 404, { success: false, message: 'Snapshot unavailable.' }); return true; }
@@ -1217,6 +1230,14 @@ async function handleMonitorRoute(req, res) {
   const warningDismissalMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/warnings\/dismiss$/);
 
   try {
+    // Students' connection indicator probes this every few seconds; it must not
+    // touch the database.
+    if (pathname === '/api/monitor/health') {
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+
     if (pathname === '/api/monitor/snapshots') {
       if (req.method !== 'POST') return methodNotAllowed(res);
       return await handleSnapshotUpload(req, res);

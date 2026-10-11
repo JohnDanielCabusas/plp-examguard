@@ -13,6 +13,7 @@ const PUBLIC_SETTINGS_COLUMNS = 'id, school_name, department, admin_name, admin_
 // Polling must never download embedded camera images or archived attempts.
 const SESSION_SUMMARY_COLUMNS = 'id, exam_id, exam_code, student_id, student_name, year_level, section, year_section, department, program, start_time, end_time, warnings, score, max_score, submitted, auto_submitted, submit_reason, score_released, owner_admin_id, created_at';
 const EXAM_SUMMARY_COLUMNS = 'id, subject_id, title, description, time_limit, code, status, shuffle_questions, shuffle_answers, require_camera, require_ai_detection, allow_review, scoring_released, target_year_levels, target_sections, owner_admin_id, started_at, closed_at, excluded_student_ids, created_at';
+const SUBMIT_LOG_TYPES = ['force_submit', 'timeout', 'refresh_submit', 'auto_submit'];
 const SESSION_FIELD_COLUMNS = {
   examId: 'exam_id', examCode: 'exam_code', studentId: 'student_id', studentName: 'student_name',
   yearLevel: 'year_level', section: 'section', yearSection: 'year_section', department: 'department', program: 'program',
@@ -185,6 +186,7 @@ const SupabaseSync = {
   // waiting for the next section poll — see admin.js's 'acsDataChanged' listener.
   _notifyDataChanged(table) {
     if (['subjects', 'students', 'professors', 'settings'].includes(table)) this._refreshCache.clear();
+    if (table === 'students') this._refreshRealtimeScope();
     this._dashboardSummaryCache = null;
     if (typeof document === 'undefined') return;
     document.dispatchEvent(new CustomEvent('acsDataChanged', { detail: { table } }));
@@ -390,7 +392,7 @@ const SupabaseSync = {
         { data: exams },
         { data: sessions },
       ] = await Promise.all([
-        c.from('settings').select('*').eq('id', 'main').maybeSingle(),
+        c.from('settings').select(`${PUBLIC_SETTINGS_COLUMNS}, claude_api_key`).eq('id', 'main').maybeSingle(),
         c.from('professors').select('id, username, name, email, department, created_at').eq('id', admin.id),
         this._readAllPages(() => c.from('subjects').select('*').eq('owner_admin_id', admin.id)),
         this._readAllPages(() => c.from('exams').select('*').eq('owner_admin_id', admin.id)),
@@ -398,7 +400,7 @@ const SupabaseSync = {
       ]);
       const { data: students } = await this._readAllPages(() => this._studentsQueryForAdmin(c, admin.id, (subjects || []).map(s => s.id)));
 
-      if (settings) this._writeLocal('acs_settings', this._dbToJsSettings(settings));
+      if (settings) this._writeLocal('acs_settings', this._dbToJsPublicSettings(settings));
       this._writeLocal('acs_professors', (admins || []).map(r => this._dbToJsAdmin(r)));
       this._writeLocal('acs_students', (students || []).map(r => this._dbToJsStudent(r)));
       this._writeLocal('acs_subjects', (subjects || []).map(r => this._dbToJsSubject(r)));
@@ -612,12 +614,13 @@ const SupabaseSync = {
 
     this._deferredHydrationPromise = (async () => {
       try {
-        const { admin, sysadmin, student } = this._getSessions();
-        if (!admin && !sysadmin && !student) return;
+        const { admin, sysadmin } = this._getSessions();
+        // The logs table holds every proctoring event; the only reader is the
+        // legacy submit-reason fallback in admin.js, which needs these types.
+        if (!admin && !sysadmin) return;
         const { data: logs } = await this._readAllPages(() => {
-          let query = this._client.from('logs').select('*');
+          let query = this._client.from('logs').select('*').in('type', SUBMIT_LOG_TYPES);
           if (admin?.id && !sysadmin) query = query.eq('owner_admin_id', admin.id);
-          else if (student?.studentId && !sysadmin) query = query.eq('student_id', student.studentId);
           return query;
         });
         logs.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
@@ -732,17 +735,49 @@ const SupabaseSync = {
   },
 
   // ── Realtime listeners ─────────────────────────────────────
+  // Every app table is readable by the anon role, so Realtime delivers each change
+  // to every subscriber whose filter matches. An unfiltered student subscription
+  // received every other student's session writes, so a student subscribes only
+  // to rows about them and their enrolled courses.
+  _realtimeSubscriptions() {
+    const { admin, sysadmin, student } = this._getSessions();
+    if (student?.studentId && !admin && !sysadmin) {
+      const own = `student_id=eq.${student.studentId}`;
+      const courses = this._studentEnrolledSubjectIds(student.studentId).join(',');
+      return [
+        ['sessions', own], ['students', own], ['messages', own],
+        ...(courses ? [['subjects', `id=in.(${courses})`], ['exams', `subject_id=in.(${courses})`]] : []),
+      ];
+    }
+    if (admin?.id && !sysadmin) {
+      const owner = `owner_admin_id=eq.${admin.id}`;
+      // Students and shares can belong to more than one professor, which a
+      // single-column filter cannot express; applyChange checks visibility.
+      return [['settings', null], ['subjects', owner], ['exams', owner], ['sessions', owner], ['students', null],
+        ['professors', `id=eq.${admin.id}`], ['messages', owner], ['exam_shares', null]];
+    }
+    return ['settings', 'subjects', 'exams', 'sessions', 'students', 'professors', 'logs',
+      'professor_activity_log', 'messages', 'exam_shares'].map(table => [table, null]);
+  },
+
+  _realtimeScopeKey() {
+    return JSON.stringify(this._realtimeSubscriptions());
+  },
+
+  // A student's subscription lists their courses, so enrolling or leaving one
+  // replaces the channel with one that covers the new course list.
+  _refreshRealtimeScope() {
+    if (!this._channel || this._channelScopeKey === this._realtimeScopeKey()) return;
+    const previous = this._channel;
+    this._channel = null;
+    try { this._client.removeChannel(previous); } catch (_) {}
+    this._setupListeners();
+  },
+
   _setupListeners() {
     const c = this._client;
     if (this._channel) return;
-    const { admin, sysadmin, student } = this._getSessions();
-    const ownerFilter = admin?.id && !sysadmin ? `owner_admin_id=eq.${admin.id}` : null;
-    const professorFilter = admin?.id && !sysadmin ? `id=eq.${admin.id}` : null;
-    // Chat is 1:1: a professor listens to every message scoped to them; a student
-    // listens only to their own thread. Both use a single-column Realtime filter.
-    const messagesFilter = admin?.id && !sysadmin
-      ? `owner_admin_id=eq.${admin.id}`
-      : (student?.studentId && !sysadmin ? `student_id=eq.${student.studentId}` : null);
+    const { admin, sysadmin } = this._getSessions();
 
     const applyChange = (table, lsKey, normalizer) => (payload) => {
       const { eventType, new: row, old } = payload;
@@ -752,14 +787,15 @@ const SupabaseSync = {
       if (table === 'settings') {
         if (row) {
           const normalized = normalizer(row);
+          const existing = window.DB?._read?.(lsKey, null);
           // Preserve claudeApiKey from localStorage if DB doesn't have it yet
           // (column may not exist in older schema deployments)
-          if (!normalized.claudeApiKey) {
-            const existing = window.DB?._read?.(lsKey, null);
-            if (existing && existing.claudeApiKey) {
-              normalized.claudeApiKey = existing.claudeApiKey;
-            }
+          if (!normalized.claudeApiKey && existing?.claudeApiKey) {
+            normalized.claudeApiKey = existing.claudeApiKey;
           }
+          // Realtime leaves out a large column the update did not change. An
+          // empty logo here would erase the stored logo on the next save.
+          if (!('logo_url' in row) && existing?.logoUrl) normalized.logoUrl = existing.logoUrl;
           this._writeLocal(lsKey, normalized);
         }
         return;
@@ -865,6 +901,7 @@ const SupabaseSync = {
             normalized.objectMonitoring = this._normalizeObjectMonitoring(prior.objectMonitoring);
           }
         }
+        if (table === 'sessions' && !this._isSessionVisibleToCurrentContext(normalized)) return;
         const nextRow = table === 'sessions'
           ? this._mergeIncomingSessionWithLocal(normalized, current.find(r => r.id === normalized.id))
           : normalized;
@@ -875,31 +912,24 @@ const SupabaseSync = {
       this._notifyDataChanged(table);
     };
 
-    this._channel = c.channel('acs-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' },
-        applyChange('settings', 'acs_settings', r => this._dbToJsSettings(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects', ...(ownerFilter ? { filter: ownerFilter } : {}) },
-        applyChange('subjects', 'acs_subjects', r => this._dbToJsSubject(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams', ...(ownerFilter ? { filter: ownerFilter } : {}) },
-        applyChange('exams', 'acs_exams', r => this._dbToJsExam(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', ...(ownerFilter ? { filter: ownerFilter } : {}) },
-        applyChange('sessions', 'acs_sessions', r => this._dbToJsSession(r)))
-      // No ownerFilter here — a student can belong to more than one professor
-      // (see applyChange's own visibility check above), which a single-column
-      // Realtime filter can't express, so this table is subscribed unfiltered.
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' },
-        applyChange('students', 'acs_students', r => this._dbToJsStudent(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professors', ...(professorFilter ? { filter: professorFilter } : {}) },
-        applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', ...(ownerFilter ? { filter: ownerFilter } : {}) },
-        applyChange('logs', 'acs_logs', r => this._dbToJsLog(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'professor_activity_log' },
-        applyChange('professor_activity_log', 'acs_professor_activity_log', r => this._dbToJsProfessorActivityLog(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', ...(messagesFilter ? { filter: messagesFilter } : {}) },
-        applyChange('messages', 'acs_messages', r => this._dbToJsMessage(r)))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_shares' },
-        applyChange('exam_shares', 'acs_exam_shares', r => this._dbToJsExamShare(r)))
-      .subscribe();
+    const handlers = {
+      settings: applyChange('settings', 'acs_settings', r => (sysadmin ? this._dbToJsSettings(r) : this._dbToJsPublicSettings(r))),
+      subjects: applyChange('subjects', 'acs_subjects', r => this._dbToJsSubject(r)),
+      exams: applyChange('exams', 'acs_exams', r => this._dbToJsExam(r)),
+      sessions: applyChange('sessions', 'acs_sessions', r => this._dbToJsSession(r)),
+      students: applyChange('students', 'acs_students', r => this._dbToJsStudent(r)),
+      professors: applyChange('professors', 'acs_professors', r => this._dbToJsAdmin(r)),
+      logs: applyChange('logs', 'acs_logs', r => this._dbToJsLog(r)),
+      professor_activity_log: applyChange('professor_activity_log', 'acs_professor_activity_log', r => this._dbToJsProfessorActivityLog(r)),
+      messages: applyChange('messages', 'acs_messages', r => this._dbToJsMessage(r)),
+      exam_shares: applyChange('exam_shares', 'acs_exam_shares', r => this._dbToJsExamShare(r)),
+    };
+    let channel = c.channel('acs-realtime');
+    for (const [table, filter] of this._realtimeSubscriptions()) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) }, handlers[table]);
+    }
+    this._channelScopeKey = this._realtimeScopeKey();
+    this._channel = channel.subscribe();
   },
 
   // ── Refresh helpers ─────────────────────────────────────────
@@ -1170,6 +1200,7 @@ const SupabaseSync = {
         [ownRow, ...classmates].map(row => [row.id, row])
       ).values());
       this._writeLocal('acs_students', uniqueRows.map(r => this._dbToJsStudent(r)));
+      this._refreshRealtimeScope();
       return;
     }
     const { data } = await this._refreshRead(this._client.from('students').select(cols));
@@ -1518,6 +1549,35 @@ const SupabaseSync = {
       this._emitSyncError(table, error);
       throw error;
     }
+  },
+
+  // Only submit-type logs are downloaded (see _hydrateDeferredTables), so log
+  // cleanup is done by filter on the server instead of per cached row.
+  async deleteLogs({ ownerAdminId = null, studentId = null, examId = null, sessionIds = [] } = {}) {
+    if (!this._client) return;
+    const scoped = query => (ownerAdminId ? query.eq('owner_admin_id', ownerAdminId) : query);
+    const requests = [];
+    if (studentId) requests.push(scoped(this._client.from('logs').delete().eq('student_id', studentId)));
+    if (examId) requests.push(scoped(this._client.from('logs').delete().eq('exam_id', examId)));
+    const ids = [...new Set(sessionIds.filter(Boolean))];
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      requests.push(scoped(this._client.from('logs').delete().in('session_id', ids.slice(offset, offset + 100))));
+    }
+    const error = (await Promise.all(requests)).find(result => result?.error)?.error;
+    if (!error) return;
+    console.error('[SupabaseSync] deleteLogs:', error.message || error);
+    this._emitSyncError('logs', error);
+    throw error;
+  },
+
+  async reassignStudentLogs(previousStudentId, nextStudentId, ownerAdminId = null) {
+    if (!this._client || !previousStudentId || !nextStudentId) return;
+    let query = this._client.from('logs').update({ student_id: nextStudentId }).eq('student_id', previousStudentId);
+    if (ownerAdminId) query = query.eq('owner_admin_id', ownerAdminId);
+    const { error } = await query;
+    if (!error) return;
+    console.error('[SupabaseSync] reassignStudentLogs:', error.message || error);
+    this._emitSyncError('logs', error);
   },
 
   // Deletes a whole student↔professor thread for one exam by filter rather than

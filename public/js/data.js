@@ -237,13 +237,10 @@ const DB = {
       const matchesStudent = log?.studentId === student.studentId;
       const matchesSession = log?.sessionId && removedSessionIds.has(log.sessionId);
       const matchesOwner = log?.ownerAdminId === ownerAdminId;
-      if ((matchesStudent || matchesSession) && matchesOwner) {
-        SupabaseSync.deleteDoc('logs', log.id);
-        return false;
-      }
-      return true;
+      return !((matchesStudent || matchesSession) && matchesOwner);
     });
     this._write(this.KEYS.logs, remainingLogs);
+    SupabaseSync.deleteLogs({ ownerAdminId, studentId: student.studentId, sessionIds: [...removedSessionIds] }).catch(() => {});
 
     return persistedStudent;
   },
@@ -998,13 +995,9 @@ const DB = {
     });
     this._write(this.KEYS.sessions, sessions);
 
-    const logs = this.getLogs().map(log => {
-      if (log.studentId !== previousStudentId) return log;
-      const updatedLog = { ...log, studentId: nextStudent.studentId };
-      SupabaseSync.syncDoc('logs', updatedLog);
-      return updatedLog;
-    });
+    const logs = this.getLogs().map(log => (log.studentId === previousStudentId ? { ...log, studentId: nextStudent.studentId } : log));
     this._write(this.KEYS.logs, logs);
+    SupabaseSync.reassignStudentLogs(previousStudentId, nextStudent.studentId, this._getCurrentAdminId() || null);
   },
   archiveStudent(id) {
     const students = this.getAllStudentsRaw().map(s => s.id === id ? { ...s, archived: true, archivedAt: new Date().toISOString() } : s);
@@ -1162,16 +1155,13 @@ const DB = {
     this._write(this.KEYS.sessions, remainingSessions);
     await Promise.all(sessionDeletePromises);
 
-    const logDeletePromises = [];
     const remainingLogs = this._read(this.KEYS.logs, []).filter(log => {
       const matchesExam = log?.examId === id;
       const matchesSession = log?.sessionId && removedSessionIds.has(log.sessionId);
-      if (!matchesExam && !matchesSession) return true;
-      logDeletePromises.push(SupabaseSync.deleteDoc('logs', log.id));
-      return false;
+      return !matchesExam && !matchesSession;
     });
     this._write(this.KEYS.logs, remainingLogs);
-    await Promise.all(logDeletePromises);
+    await SupabaseSync.deleteLogs({ examId: id, sessionIds: [...removedSessionIds] });
 
     const exams = this._read(this.KEYS.exams, []).filter(e => e.id !== id);
     this._write(this.KEYS.exams, exams);

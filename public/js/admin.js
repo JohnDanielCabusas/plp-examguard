@@ -96,6 +96,13 @@ const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
   ...FACEMESH_INCIDENT_TYPES,
 ]);
 const MONITOR_EVIDENCE_POLL_MS = 2500;
+// While the monitor socket is open it pushes new violations and evidence as they
+// are saved, so the HTTP polls only need to catch what a socket might miss.
+const MONITOR_SOCKET_BACKSTOP_MS = 15000;
+
+function isMonitorSocketOpen() {
+  return typeof WebSocket !== 'undefined' && _violationSocket?.readyState === WebSocket.OPEN;
+}
 
 function getExamDeadlineMs(exam) {
   const startedAt = exam?.startedAt ? new Date(exam.startedAt).getTime() : NaN;
@@ -9292,6 +9299,8 @@ function setViolationTransportMode(nextMode) {
 async function pollMonitorSessions(options = {}) {
   if (_monitorSessionPollInFlight) return;
   if (currentSection !== 'monitoring' && !options.immediate) return;
+  // Becoming visible again polls immediately (see the visibilitychange listener).
+  if (document.hidden && !options.immediate) return;
   if (!monitorExamId) return;
   const examId = monitorExamId;
 
@@ -9311,8 +9320,11 @@ async function pollMonitorSessions(options = {}) {
   }
 }
 
+let _lastViolationPollAt = 0;
 async function pollViolationAlerts(options = {}) {
   if (_violationPollInFlight) return;
+  if (options.backstop && isMonitorSocketOpen() && Date.now() - _lastViolationPollAt < MONITOR_SOCKET_BACKSTOP_MS) return;
+  _lastViolationPollAt = Date.now();
 
   _violationPollInFlight = true;
   try {
@@ -9349,7 +9361,7 @@ function startViolationAlertPolling() {
   setViolationTransportMode('pending');
   startViolationEventStream();
   pollViolationAlerts({ seedOnly: true });
-  _violationPollInterval = setInterval(() => pollViolationAlerts(), MONITOR_VIOLATION_POLL_MS);
+  _violationPollInterval = setInterval(() => pollViolationAlerts({ backstop: true }), MONITOR_VIOLATION_POLL_MS);
 }
 
 function stopViolationEventStream() {
@@ -9730,9 +9742,11 @@ function refreshProfChatFromSync() {
 }
 
 function refreshProfCameraFromSync() {
-  if (!_profChatCtx || !window.SupabaseSync?.refreshExams) return Promise.resolve();
+  if (!_profChatCtx || !window.SupabaseSync?.refreshExam) return Promise.resolve();
   const activeKey = `${_profChatCtx.examId}:${_profChatCtx.studentId}`;
-  return Promise.resolve(SupabaseSync.refreshExams())
+  // Only this exam's camera fields are needed; a full refresh downloaded every
+  // exam's questions.
+  return Promise.resolve(SupabaseSync.refreshExam(_profChatCtx.examId, { summary: true }))
     .then(() => {
       if (!_profChatCtx || `${_profChatCtx.examId}:${_profChatCtx.studentId}` !== activeKey) return;
       renderProfCameraRow();
@@ -13366,10 +13380,10 @@ function getRetakeGrantedBy() {
 async function clearRetakeCameraExemptions(exam, studentIds) {
   if (!exam?.id) return exam;
   let retakeExam = exam;
-  if (window.SupabaseSync?.refreshExams) {
+  if (window.SupabaseSync?.refreshExam) {
     // The exemption may have been changed from another professor tab. Refresh
     // before removing it so the reset is based on the authoritative list.
-    await Promise.resolve(SupabaseSync.refreshExams()).catch(() => {});
+    await Promise.resolve(SupabaseSync.refreshExam(exam.id, { summary: true })).catch(() => {});
     retakeExam = DB.getExam(exam.id) || exam;
   }
   const ids = [...new Set((studentIds || []).filter(Boolean))];
@@ -13907,7 +13921,9 @@ async function refreshViolationEvidence(options = {}) {
     return [];
   }
   if (_monitorEvidencePollInFlight && !options.force) return _monitorEvidenceRecords;
-  if (!options.force && (Date.now() - _lastMonitorEvidencePollAt) < MONITOR_EVIDENCE_POLL_MS) return _monitorEvidenceRecords;
+  // Each poll re-reads the exam's whole evidence list (~1 KB per record).
+  const minimumInterval = isMonitorSocketOpen() ? MONITOR_SOCKET_BACKSTOP_MS : MONITOR_EVIDENCE_POLL_MS;
+  if (!options.force && (document.hidden || (Date.now() - _lastMonitorEvidencePollAt) < minimumInterval)) return _monitorEvidenceRecords;
 
   _monitorEvidencePollInFlight = true;
   try {

@@ -107,3 +107,41 @@ with the new project's environment variables to apply the code to hosted users.
 Restart an already-running local server to reload its database configuration.
 Compare daily PostgREST egress during the next pilot. Already consumed bandwidth
 remains in the billing cycle's total.
+
+## Realtime scoping and smaller reads (October 11, 2026)
+
+Every app table is readable by the anon role, so Supabase Realtime sends each
+change to every subscriber whose filter matches. Students previously subscribed
+to sessions, exams, logs, students, subjects, professors, settings and exam
+shares without filters, so each student received every other student's session
+writes (answer saves, 30-second snapshots, activity entries).
+
+1. **Student Realtime filters.** Students subscribe to their own `sessions`,
+   `students` and `messages` rows (`student_id=eq.`) and to `subjects`/`exams`
+   for their enrolled courses (`in.(…)`). Enrolling in or leaving a course
+   replaces the channel. Session rows for other students are ignored even if
+   delivered. Supabase does not filter DELETE events on non-key columns, so a
+   deleted exam leaves a student's portal at the next 30-second poll.
+2. **Professor Realtime.** Professors no longer stream the `logs` table.
+3. **Settings without the logo.** Professor reads and Realtime updates replace
+   `logo_url` with `/api/branding/logo`; saving leaves the stored logo alone. An
+   update that omits the unchanged logo column no longer clears the system
+   administrator's cached logo. New logo uploads are stored at 256 px. The current
+   logo (487 KB) shrinks only when it is uploaded again.
+4. **Logs.** Students no longer download logs. Professors and the system
+   administrator download only submit-type logs, which the legacy submit-reason
+   fallback uses. Log deletes and student ID corrections run as filtered
+   requests instead of one request per cached log.
+5. **Monitoring polls.** While the monitor WebSocket is open, the violation and
+   evidence polls run every 15 seconds as a backstop. Hidden tabs skip the
+   evidence and session polls; returning to the tab polls immediately.
+6. **Caching and probes.** Camera snapshot files (content-hashed) are cached as
+   immutable. Replay files revalidate with an ETag, so repeat views avoid a
+   Storage download. Opening the professor chat refreshes one exam summary
+   instead of every exam. The student connection probe calls
+   `/api/monitor/health` on the app server instead of Supabase.
+
+Validation: `npm run test:realtime-scope`, the existing bandwidth, message,
+retake and report suites, and the monitor, camera grid, offline hold and report
+browser tests. Realtime `eq` and `in` filters were checked against the new
+project with a temporary row (delivered to matching filters only, then removed).
