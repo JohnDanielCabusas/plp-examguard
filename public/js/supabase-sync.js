@@ -1091,8 +1091,14 @@ const SupabaseSync = {
     this._writeLocal('acs_exams', exams);
   },
 
-  // Cheap status probe (a few bytes) for the waiting room's fast poll; the full
-  // exam row is only re-pulled when this reports a change.
+  // Whether pushed changes are arriving. Pollers that only exist as a fallback
+  // for a dropped socket can slow right down while this is true.
+  isRealtimeConnected() {
+    return this._channel?.state === 'joined';
+  },
+
+  // Cheap status probe (a few bytes) for the waiting room's fallback poll; the
+  // full exam row is only re-pulled when this reports a change.
   async fetchExamStatus(examId) {
     if (!this._client || !examId) return null;
     const { data, error } = await this._client.from('exams').select('id, status').eq('id', examId).maybeSingle();
@@ -1347,10 +1353,15 @@ const SupabaseSync = {
         if (this._snapshotUploads.size > 64) this._snapshotUploads.delete(this._snapshotUploads.keys().next().value);
       }
       try { Object.assign(next, await pending); }
-      catch (_) {
+      catch (error) {
         // Save the original embedded image rather than publishing a broken
         // reference. Future image/history writes can retry externalizing it.
-        this._emitSyncError('snapshots', new Error('Image storage is unavailable. Evidence is being retained in the exam record.'));
+        // Nothing is lost and the student can do nothing about it, so this is
+        // not shown to them as an error mid-exam; it is logged once per page.
+        if (!this._snapshotFallbackLogged) {
+          this._snapshotFallbackLogged = true;
+          console.warn('[SupabaseSync] Snapshot storage unavailable; keeping the image in the session record.', error?.message || error);
+        }
       }
     }
     for (const key of Object.keys(value)) {

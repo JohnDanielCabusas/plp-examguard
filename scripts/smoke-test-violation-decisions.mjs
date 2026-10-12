@@ -1,8 +1,8 @@
 // A violation a professor can see is a violation they must be able to act on.
-// Camera Grid tiles have to open a review that offers confirm-or-dismiss even
-// when no replay clip was stored, and browser-only violations (alt-tab, copy,
-// fullscreen exit) have to be dismissible from the Activity Log — including
-// after the attempt was submitted, which is when an accident gets noticed.
+// Every type — webcam, FaceMesh, YOLO and browser-only (alt-tab, copy,
+// fullscreen exit) — opens the same review with confirm and dismiss, with or
+// without a replay clip, including after the attempt was submitted, which is
+// when an accident gets noticed. Both decisions go to one endpoint per activity.
 import { access } from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
@@ -69,6 +69,8 @@ try {
       activities: [
         { type: 'no_person', timestamp: '2026-09-24T01:05:00.000Z', detail: 'No person detected in camera frame' },
         { type: 'tab_switch', timestamp: '2026-09-24T01:07:00.000Z', detail: 'Student switched tabs' },
+        { type: 'FACE_LIVENESS_UNCONFIRMED', timestamp: '2026-09-24T01:09:00.000Z', detail: 'Liveness check not answered', metadata: { source: 'FACEMESH', countsAsWarning: false } },
+        { type: 'browser_exam_start', timestamp: '2026-09-24T01:00:00.000Z', detail: 'Browser examination session started' },
       ],
       cameraSnapshots: [{
         kind: 'violation', violationType: 'no_person',
@@ -130,10 +132,10 @@ try {
       reviewOpen: !!review && !review.classList.contains('hidden'),
       snapshotShown: !!still && still.style.display !== 'none' && !!still.getAttribute('src'),
       emptyNote: document.getElementById('violation-review-empty')?.textContent || '',
-      status: document.getElementById('violation-review-status')?.textContent || '',
       actionsShown: document.getElementById('violation-review-actions')?.style.display !== 'none',
       dismissLabel: document.getElementById('violation-review-dismiss-btn')?.textContent || '',
       confirmLabel: document.getElementById('violation-review-confirm-btn')?.textContent || '',
+      hint: document.getElementById('violation-review-reviewed')?.textContent || '',
       snapshotModalOpen: !document.getElementById('modal-camera-snap').classList.contains('hidden'),
     };
   });
@@ -142,93 +144,105 @@ try {
   check(noClip.snapshotShown, `The captured frame must stand in for the missing clip: ${JSON.stringify(noClip)}`);
   check(/no replay clip was stored/i.test(noClip.emptyNote), `The review must say why there is no video: ${JSON.stringify(noClip.emptyNote)}`);
   check(noClip.actionsShown, `The decision row must be available without a clip: ${JSON.stringify(noClip)}`);
-  check(/dismiss warning/i.test(noClip.dismissLabel), `A clipless review must offer to dismiss the warning: ${JSON.stringify(noClip.dismissLabel)}`);
-  check(/keep warning/i.test(noClip.confirmLabel), `A clipless review must offer to keep the warning: ${JSON.stringify(noClip.confirmLabel)}`);
+  check(/dismiss violation/i.test(noClip.dismissLabel) && /confirm violation/i.test(noClip.confirmLabel),
+    `Every review offers both decisions: ${JSON.stringify(noClip)}`);
+  check(/removes the warning/i.test(noClip.hint), `The review must say dismissing gives the warning back: ${JSON.stringify(noClip.hint)}`);
 
-  // ── Dismissing from that review reaches the server and closes ─────────────
-  const dismissed = await page.evaluate(async () => {
+  // ── Both decisions reach the one review endpoint for that activity ────────
+  const decided = await page.evaluate(async () => {
     window.__requests = [];
-    const button = document.getElementById('violation-review-dismiss-btn');
-    if (!button) return { requests: [], closed: false, toasts: window.__toasts, missing: true };
-    button.click();
+    document.getElementById('violation-review-dismiss-btn').click();
     await new Promise(res => setTimeout(res, 80));
-    const review = document.getElementById('modal-violation-review');
-    return {
-      requests: window.__requests.map(r => ({ url: r.url, body: r.options?.body || null })),
-      closed: review.classList.contains('hidden'),
-      toasts: window.__toasts,
-    };
+    document.getElementById('violation-review-confirm-btn').click();
+    await new Promise(res => setTimeout(res, 80));
+    return window.__requests.map(r => ({ url: r.url, method: r.options?.method, body: r.options?.body || null }));
   });
-  check(!dismissed.missing, 'A clipless review never put a dismiss action on screen.');
-  const dismissCall = dismissed.requests.find(r => /warnings\/dismiss$/.test(r.url));
-  check(!!dismissCall, `Dismissing from the review must call the warning-dismiss endpoint: ${JSON.stringify(dismissed.requests)}`);
-  check(
-    dismissCall?.body?.activityIndex === 0,
-    `The dismissal must name the activity behind this tile: ${JSON.stringify(dismissCall?.body)}`,
-  );
-  check(dismissed.closed, `The review should close once the warning is dismissed: ${JSON.stringify(dismissed)}`);
+  check(decided.length === 2, `Dismiss and confirm must each save: ${JSON.stringify(decided)}`);
+  check(decided.every(r => r.url === '/api/monitor/sessions/s1/activities/0/review' && r.method === 'PATCH'),
+    `Decisions must name the activity behind the tile: ${JSON.stringify(decided)}`);
+  check(decided[0]?.body?.reviewStatus === 'dismissed' && decided[1]?.body?.reviewStatus === 'confirmed',
+    `Decisions must carry what was chosen: ${JSON.stringify(decided)}`);
 
-  // ── A stored clip still decides on the evidence itself ────────────────────
+  // ── A stored clip plays, and is named in the decision ─────────────────────
   const withClip = await page.evaluate(async () => {
     processIncomingViolationEvidence({
       id: 'ev-1', examId: 'e1', sessionId: 's1', violationType: 'no_person',
       triggeredAt: '2026-09-24T01:05:00.000Z', createdAt: '2026-09-24T01:05:01.000Z',
-      storageBucket: 'local-server', storagePath: 'clips/ev-1.webm',
+      storageBucket: 'local-server', storagePath: 'clips/ev-1.webm', durationMs: 12000,
       playbackUrl: '/api/monitor/replay/ev-1', reviewStatus: 'pending',
     });
     await openViolationReview('s1', 0);
     await new Promise(res => setTimeout(res, 60));
+    window.__requests = [];
+    document.getElementById('violation-review-dismiss-btn').click();
+    await new Promise(res => setTimeout(res, 80));
     return {
       videoSrc: document.getElementById('violation-review-video')?.getAttribute('src') || '',
       stillHidden: document.getElementById('violation-review-still')?.style.display === 'none',
-      dismissLabel: document.getElementById('violation-review-dismiss-btn')?.textContent || '',
-      confirmLabel: document.getElementById('violation-review-confirm-btn')?.textContent || '',
+      mediaLabel: document.getElementById('violation-review-media-label')?.textContent || '',
+      request: window.__requests[0] ? { url: window.__requests[0].url, body: window.__requests[0].options?.body } : null,
     };
   });
   check(withClip.videoSrc === 'blob:replay-clip', `A stored clip must still play: ${JSON.stringify(withClip)}`);
   check(withClip.stillHidden, `The still frame must give way to the replay: ${JSON.stringify(withClip)}`);
-  check(/dismiss violation/i.test(withClip.dismissLabel), `With a clip, the decision is on the violation: ${JSON.stringify(withClip.dismissLabel)}`);
-  check(/confirm violation/i.test(withClip.confirmLabel), `With a clip, the decision is on the violation: ${JSON.stringify(withClip.confirmLabel)}`);
+  check(/last 12 seconds before detection/i.test(withClip.mediaLabel), `The replay length must be stated: ${JSON.stringify(withClip.mediaLabel)}`);
+  check(withClip.request?.body?.evidenceId === 'ev-1', `A decision on a replay must name its evidence: ${JSON.stringify(withClip.request)}`);
 
-  // ── Browser-only violations are dismissible from the Activity Log ─────────
-  const log = await page.evaluate(() => {
+  // ── Browser-only violations are reviewable from the Activity Log ──────────
+  const log = await page.evaluate(async () => {
     const session = window.__sessions[0];
-    const html = buildStudentLogBody(session);
     const holder = document.createElement('div');
-    holder.innerHTML = html;
+    holder.innerHTML = buildStudentLogBody(session);
     const rows = [...holder.querySelectorAll('.activity-log-timeline-card')].map(card => ({
       type: card.querySelector('.log-type')?.textContent?.trim() || '',
-      dismiss: !!card.querySelector('.activity-log-dismiss-warning-btn'),
-      dismissArgs: card.querySelector('.activity-log-dismiss-warning-btn')?.getAttribute('onclick') || '',
-      badge: card.querySelector('.activity-log-review-badge')?.textContent?.trim() || '',
+      review: card.querySelector('.activity-log-review-btn')?.getAttribute('onclick') || '',
+      badges: [...card.querySelectorAll('.activity-log-review-badge')].map(b => b.textContent.trim()),
     }));
 
-    // Once dismissed, the row states that instead of offering it again.
-    const already = JSON.parse(JSON.stringify(session));
-    already.activities[1].metadata = { warningDismissed: true, warningDismissedAt: '2026-09-24T02:00:00.000Z' };
+    await openViolationReview('s1', 1);
+    await new Promise(res => setTimeout(res, 60));
+    const browserReview = {
+      videoHidden: document.getElementById('violation-review-video')?.style.display === 'none',
+      stillHidden: document.getElementById('violation-review-still')?.style.display === 'none',
+      labelHidden: document.getElementById('violation-review-media-label')?.style.display === 'none',
+      emptyNote: document.getElementById('violation-review-empty')?.textContent || '',
+    };
+    window.__requests = [];
+    document.getElementById('violation-review-confirm-btn').click();
+    await new Promise(res => setTimeout(res, 80));
+    browserReview.request = window.__requests[0] ? { url: window.__requests[0].url, body: window.__requests[0].options?.body } : null;
+
+    // Once decided, the row states the decision and offers to change it.
+    const decided = JSON.parse(JSON.stringify(session));
+    decided.activities[1].metadata = { reviewStatus: 'dismissed', warningDismissed: true, warningDismissedAt: '2026-09-24T02:00:00.000Z' };
+    decided.activities[2].metadata = { source: 'FACEMESH', countsAsWarning: false };
     const holder2 = document.createElement('div');
-    holder2.innerHTML = buildStudentLogBody(already);
-    const dismissedRow = [...holder2.querySelectorAll('.activity-log-timeline-card')]
-      .find(card => /tab/i.test(card.querySelector('.log-type')?.textContent || ''));
+    holder2.innerHTML = buildStudentLogBody(decided);
+    const cards = [...holder2.querySelectorAll('.activity-log-timeline-card')];
+    const card = type => cards.find(c => (c.querySelector('.log-type')?.textContent || '').includes(type));
     return {
       rows,
-      dismissedRowBadge: dismissedRow?.querySelector('.activity-log-review-badge')?.textContent?.trim() || '',
-      dismissedRowStillOffers: !!dismissedRow?.querySelector('.activity-log-dismiss-warning-btn'),
+      browserReview,
+      dismissedBadges: [...(card('Tab')?.querySelectorAll('.activity-log-review-badge') || [])].map(b => b.textContent.trim()),
+      dismissedButton: card('Tab')?.querySelector('.activity-log-review-btn')?.textContent?.trim() || '',
+      reviewOnlyBadges: [...(card('Liveness')?.querySelectorAll('.activity-log-review-badge') || [])].map(b => b.textContent.trim()),
     };
   });
   const browserRow = log.rows.find(row => /tab/i.test(row.type));
-  check(
-    !!browserRow?.dismiss,
-    `A browser-activity violation must offer "Dismiss warning" in the Activity Log: ${JSON.stringify(log.rows)}`,
-  );
-  check(
-    browserRow?.dismissArgs.includes('1'),
-    `The dismissal must name that activity's own index: ${JSON.stringify(browserRow?.dismissArgs)}`,
-  );
-  check(
-    /warning dismissed/i.test(log.dismissedRowBadge) && !log.dismissedRowStillOffers,
-    `An already-dismissed warning must say so instead of offering again: ${JSON.stringify(log)}`,
-  );
+  check(/openViolationReview\('s1', 1\)/.test(browserRow?.review || ''),
+    `A browser-activity violation must offer a review of its own row: ${JSON.stringify(log.rows)}`);
+  check(log.rows.every(row => !/browser exam start/i.test(row.type) || !row.review),
+    `Routine activity must not offer a review: ${JSON.stringify(log.rows)}`);
+  check(log.browserReview.videoHidden && log.browserReview.stillHidden && log.browserReview.labelHidden,
+    `A browser violation has no camera footage to show: ${JSON.stringify(log.browserReview)}`);
+  check(/no camera footage/i.test(log.browserReview.emptyNote), `The review must say why: ${JSON.stringify(log.browserReview)}`);
+  check(log.browserReview.request?.url === '/api/monitor/sessions/s1/activities/1/review'
+    && log.browserReview.request?.body?.reviewStatus === 'confirmed',
+  `Confirming a browser violation must save: ${JSON.stringify(log.browserReview.request)}`);
+  check(log.dismissedBadges.some(text => /dismissed \(warning removed\)/i.test(text)) && /change decision/i.test(log.dismissedButton),
+    `A decided row must say so and offer to change it: ${JSON.stringify(log)}`);
+  check(log.reviewOnlyBadges.some(text => /no warning was issued/i.test(text)),
+    `A review-only indicator must say it cost no warning: ${JSON.stringify(log.reviewOnlyBadges)}`);
 
   check(!errors.length, `Page errors: ${errors.join(' | ')}`);
   if (failures.length) {

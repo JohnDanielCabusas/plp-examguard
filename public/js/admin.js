@@ -85,6 +85,8 @@ const FACEMESH_INCIDENT_TYPES = [
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+  'FACE_LIVENESS_UNCONFIRMED',
+  'FACE_ON_PHONE_SCREEN',
 ];
 const REPLAYABLE_MONITOR_VIOLATION_TYPES = new Set([
   'no_person',
@@ -369,6 +371,10 @@ const BEHAVIOR_LABELS = {
   FACE_OCCLUDED: 'Face Appears Obstructed',
   FACE_TRACKING_UNSTABLE: 'Face Tracking Unstable',
   PHONE_NEAR_OR_COVERING_FACE: 'Phone Near or Covering Face',
+  FACE_LIVENESS_UNCONFIRMED: 'Liveness Check Not Answered',
+  FACE_ON_PHONE_SCREEN: 'Face Shown on a Phone Screen',
+  face_liveness_check_passed: 'Liveness Check Passed',
+  face_liveness_unavailable: 'Liveness Check Unavailable',
   face_calibration_completed: 'Face Calibration Completed',
   face_tracking_unavailable: 'Face Tracking Unavailable',
   no_person: 'No Person Detected',
@@ -514,71 +520,102 @@ function getSessionSnapshotByTimestamp(session, timestamp) {
     .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())[0] || null;
 }
 
-function renderViolationReviewAction(session, activity, index) {
-  const source = String(activity?.metadata?.source || '').toUpperCase();
-  if (source.startsWith('FACEMESH') && FACEMESH_INCIDENT_TYPES.includes(activity?.type)) {
-    const status = String(activity?.metadata?.reviewStatus || 'pending').toLowerCase();
-    const label = status === 'confirmed' ? 'Confirmed for review' : status === 'dismissed' ? 'Dismissed' : 'Pending review';
-    const metadata = activity?.metadata || {};
-    const durationSeconds = Math.max(0, Number(metadata.durationMs || 0)) / 1000;
-    const trackingPercent = Math.max(0, Math.min(100, Number(metadata.trackingConfidence || 0) * 100));
-    const metrics = [
-      source === 'FACEMESH_YOLO' ? 'Source: FaceMesh + YOLO' : 'Source: FaceMesh',
-      `Duration: ${durationSeconds.toFixed(1)}s`,
-      metadata.direction ? `Direction: ${String(metadata.direction).toLowerCase()}` : '',
-      `Tracking quality: ${trackingPercent.toFixed(0)}%`,
-    ].filter(Boolean);
-    return `
-      <div class="activity-log-indicator-metrics">
-        ${metrics.map(item => `<span>${escHtml(item)}</span>`).join('')}
-      </div>
-      <div class="activity-log-review-row">
-        <span class="activity-log-review-badge tone-${status}">${escHtml(label)}</span>
-        <button type="button" class="activity-log-review-btn" onclick="reviewFaceMeshIndicator('${escAttr(session?.id || '')}', ${index}, 'confirmed')">Confirm for review</button>
-        <button type="button" class="activity-log-review-btn" onclick="reviewFaceMeshIndicator('${escAttr(session?.id || '')}', ${index}, 'dismissed')">Dismiss indicator</button>
-      </div>
-    `;
-  }
-  if (!isReplayableMonitorViolationType(activity?.type)) return '';
-  const evidence = getBestEvidenceForActivity(session?.id || '', activity);
-  const reviewBadge = evidence
-    ? `<span class="activity-log-review-badge tone-${getEvidenceReviewTone(evidence.reviewStatus)}">${escHtml(formatEvidenceReviewStatus(evidence.reviewStatus))}</span>`
-    : `<span class="activity-log-review-badge tone-missing">Replay processing</span>`;
-  return `
-    <div class="activity-log-review-row">
-      <button
-        type="button"
-        class="activity-log-review-btn"
-        ${evidence ? '' : 'disabled'}
-        onclick="openViolationReview('${escAttr(session?.id || '')}', ${index})"
-      >${evidence ? 'Review replay' : 'Preparing replay…'}</button>
-      ${reviewBadge}
-    </div>
-  `;
+// Every activity that a professor has to accept or wave off. Mirrors
+// WARNING_ACTIVITY_TYPES in server/monitor-route.cjs, which decides on the
+// server whether a review is allowed.
+const REVIEWABLE_ACTIVITY_TYPES = new Set([
+  'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off',
+  'window_blur', 'tab_switch', 'fullscreen_exit', 'copy_attempt', 'paste_attempt',
+  'ctrl_c_attempt', 'ctrl_v_attempt', 'screen_record', 'camera_denied', 'screenshot',
+  ...YOLO_VIOLATION_TYPES,
+  ...FACEMESH_INCIDENT_TYPES,
+]);
+
+function isReviewableActivity(activity) {
+  return REVIEWABLE_ACTIVITY_TYPES.has(String(activity?.type || '').trim())
+    || activity?.metadata?.countsAsWarning === true;
 }
 
-function renderWarningDismissAction(session, activity, index) {
-  // A student who alt-tabbed by accident is usually spotted while reading the
-  // log afterwards, so this stays available once the attempt has been submitted.
-  // It corrects the record; it does not undo an auto-submit that already fired.
-  const hasStarted = !!session?.startTime;
-  if (wasActivityHeldByOutage(activity)) {
-    // Worth showing — the professor should see the student left the exam — but
-    // there is no warning behind it to dismiss.
-    return `<div class="activity-log-review-row"><span class="activity-log-review-badge tone-missing">Not counted — exam was on hold, connection lost</span></div>`;
-  }
-  const isWarning = VIOLATION_ALERTABLE_TYPES.has(String(activity?.type || '').trim())
-    || activity?.metadata?.countsAsWarning === true;
-  if (!isWarning) return '';
+// Whether the violation cost the student a warning, and so whether dismissing it
+// gives one back. Mirrors activityCountsAsWarning on the server.
+function activityCountsAsWarning(activity) {
+  const type = String(activity?.type || '').trim();
+  const metadata = activity?.metadata || {};
+  if (metadata.offlineHold === true || metadata.countsAsWarning === false) return false;
+  if (metadata.policyMode === 'alert' || metadata.policyMode === 'shadow') return false;
+  if (type === 'screen_record') return false;
+  if (FACEMESH_INCIDENT_TYPES.includes(type)) return metadata.countsAsWarning === true;
+  return REVIEWABLE_ACTIVITY_TYPES.has(type) || metadata.countsAsWarning === true;
+}
 
-  if (activity?.metadata?.warningDismissed === true) {
-    return `<div class="activity-log-review-row"><span class="activity-log-review-badge tone-dismissed">Warning dismissed</span></div>`;
+// The decision on an activity. It is stored on the activity itself; replays
+// reviewed before that was the case carry it on their evidence record instead.
+function getActivityReviewState(session, activity) {
+  const metadata = activity?.metadata || {};
+  const evidence = isReplayableMonitorViolationType(activity?.type)
+    ? getBestEvidenceForActivity(session?.id || '', activity)
+    : null;
+  let reviewStatus = String(metadata.reviewStatus || '').toLowerCase();
+  let reviewedAt = metadata.reviewedAt || null;
+  if (!['confirmed', 'dismissed'].includes(reviewStatus)) {
+    const evidenceStatus = String(evidence?.reviewStatus || '').toLowerCase();
+    if (['confirmed', 'dismissed'].includes(evidenceStatus)) {
+      reviewStatus = evidenceStatus;
+      reviewedAt = evidence.reviewedAt || null;
+    } else if (metadata.warningDismissed === true) {
+      reviewStatus = 'dismissed';
+      reviewedAt = metadata.warningDismissedAt || null;
+    } else {
+      reviewStatus = 'pending';
+    }
   }
-  if (!hasStarted || Number(session?.warnings || 0) <= 0) return '';
+  const legacyEvidenceDeduction = !!evidence?.warningApplied && Number(evidence.warningAdjustment || 0) < 0;
+  return {
+    reviewStatus,
+    reviewedAt,
+    reviewNotes: metadata.reviewNotes || evidence?.reviewNotes || '',
+    counted: activityCountsAsWarning(activity),
+    deducted: metadata.warningDismissed === true || legacyEvidenceDeduction,
+    evidence,
+  };
+}
 
+function formatActivityReviewStatus(state) {
+  if (state.reviewStatus === 'confirmed') return 'Confirmed';
+  if (state.reviewStatus === 'dismissed') return state.deducted ? 'Dismissed (warning removed)' : 'Dismissed';
+  return 'Pending review';
+}
+
+function renderViolationReviewAction(session, activity, index) {
+  if (!isReviewableActivity(activity)) return '';
+  const metadata = activity?.metadata || {};
+  const state = getActivityReviewState(session, activity);
+  const source = String(metadata.source || '').toUpperCase();
+  const metrics = source.startsWith('FACEMESH') && FACEMESH_INCIDENT_TYPES.includes(activity?.type)
+    ? [
+        source === 'FACEMESH_YOLO' ? 'Source: FaceMesh + YOLO' : 'Source: FaceMesh',
+        `Duration: ${(Math.max(0, Number(metadata.durationMs || 0)) / 1000).toFixed(1)}s`,
+        metadata.direction ? `Direction: ${String(metadata.direction).toLowerCase()}` : '',
+        `Tracking quality: ${Math.max(0, Math.min(100, Number(metadata.trackingConfidence || 0) * 100)).toFixed(0)}%`,
+      ].filter(Boolean)
+    : [];
+  // Said once, plainly, so a professor never wonders why dismissing this one
+  // left the warning count alone.
+  const noWarningNote = state.counted
+    ? ''
+    : metadata.offlineHold === true
+      ? 'Not counted — exam was on hold, connection lost'
+      : 'No warning was issued for this';
+  const hasCamera = isReplayableMonitorViolationType(activity?.type);
+  const buttonLabel = state.reviewStatus === 'pending'
+    ? (hasCamera ? 'Review replay' : 'Review')
+    : 'Change decision';
   return `
+    ${metrics.length ? `<div class="activity-log-indicator-metrics">${metrics.map(item => `<span>${escHtml(item)}</span>`).join('')}</div>` : ''}
     <div class="activity-log-review-row">
-      <button type="button" class="activity-log-review-btn activity-log-dismiss-warning-btn" onclick="dismissSessionWarning('${escAttr(session.id || '')}', ${index})">Dismiss warning</button>
+      <span class="activity-log-review-badge tone-${getEvidenceReviewTone(state.reviewStatus)}">${escHtml(formatActivityReviewStatus(state))}</span>
+      <button type="button" class="activity-log-review-btn" onclick="openViolationReview('${escAttr(session?.id || '')}', ${index})">${buttonLabel}</button>
+      ${noWarningNote ? `<span class="activity-log-review-badge tone-missing">${escHtml(noWarningNote)}</span>` : ''}
     </div>
   `;
 }
@@ -640,7 +677,6 @@ function buildStudentLogBody(session) {
             <div class="log-type ${activity.type}">${escHtml(getBehaviorLabel(activity.type))}</div>
             <div class="log-detail">${escHtml(activity.detail)}</div>
             ${renderViolationReviewAction(session, activity, index)}
-            ${renderWarningDismissAction(session, activity, index)}
           </div>
         </div>
       `).join('')}
@@ -665,6 +701,8 @@ const ROUTINE_ACTIVITY_TYPES = new Set([
   'connection_hold_ended',
   'face_calibration_assisted',
   'face_scan_help_requested',
+  'face_liveness_check_passed',
+  'face_liveness_unavailable',
 ]);
 
 function summarizeActivities(activities) {
@@ -722,7 +760,10 @@ function getActivityTone(type) {
   if (type === 'screen_record_possible') return 'neutral';
   // An unverified claim is not good news, it is something to look at.
   if (type === 'screen_record_stopped_claim') return 'warning';
-  if (FACEMESH_INCIDENT_TYPES.includes(type)) return type === 'PHONE_NEAR_OR_COVERING_FACE' ? 'danger' : 'warning';
+  if (FACEMESH_INCIDENT_TYPES.includes(type)) {
+    return ['PHONE_NEAR_OR_COVERING_FACE', 'FACE_ON_PHONE_SCREEN'].includes(type) ? 'danger' : 'warning';
+  }
+  if (type === 'face_liveness_check_passed') return 'success';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
   if (type === 'screen_record_panel') return 'warning';
   if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'screen_record', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
@@ -3143,29 +3184,6 @@ async function copyTextToClipboard(text, successMessage, options = {}) {
   showToast('Unable to access the clipboard. Allow clipboard permission and try again.', 'error');
   return false;
 }
-
-function reviewFaceMeshIndicator(sessionId, activityIndex, reviewStatus) {
-  if (!['confirmed', 'dismissed'].includes(reviewStatus)) return;
-  const session = DB.getSession(sessionId);
-  const activities = Array.isArray(session?.activities) ? [...session.activities] : [];
-  const index = Number(activityIndex);
-  if (!session || !activities[index]) return;
-  const admin = Auth.getAdminSession?.();
-  activities[index] = {
-    ...activities[index],
-    metadata: {
-      ...(activities[index].metadata || {}),
-      reviewStatus,
-      reviewedAt: new Date().toISOString(),
-      reviewedBy: admin?.id || '',
-    },
-  };
-  DB.updateSession(sessionId, { activities });
-  refreshOpenStudentLog();
-  renderMonitoringSectionLive();
-  showToast(reviewStatus === 'confirmed' ? 'Indicator confirmed for professor review.' : 'Indicator dismissed.', 'success');
-}
-window.reviewFaceMeshIndicator = reviewFaceMeshIndicator;
 
 function copyExamCode(code) {
   const cleanCode = String(code || '').trim().toUpperCase();
@@ -10289,42 +10307,6 @@ function refreshOpenStudentLog() {
   `;
 }
 
-async function dismissSessionWarning(sessionId, activityIndex) {
-  const session = DB.getSession(sessionId);
-  const activity = session?.activities?.[Number(activityIndex)];
-  if (!session || !activity || !session.startTime) {
-    showToast('Warnings can only be dismissed on an attempt the student has started.', 'warning');
-    return false;
-  }
-
-  const confirmed = await showConfirm({
-    title: 'Dismiss this warning?',
-    message: session.submitted
-      ? 'This removes one warning from the student\'s record and marks this activity as dismissed. The original activity stays in the audit log, and a submitted attempt stays submitted.'
-      : 'This removes one active warning from the student and marks this activity as dismissed. The original activity stays in the audit log.',
-    confirmLabel: 'Dismiss warning',
-    confirmClass: 'btn btn-danger',
-  });
-  if (!confirmed) return false;
-
-  const result = await monitorApiRequest(`/api/monitor/sessions/${encodeURIComponent(sessionId)}/warnings/dismiss`, {
-    method: 'PATCH',
-    body: { activityIndex: Number(activityIndex) },
-  });
-  if (!result.success || !result.session) {
-    showToast(result.message || 'Unable to dismiss this warning right now.', 'error');
-    return false;
-  }
-
-  applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
-  renderMonitoringSectionLive();
-  refreshOpenStudentLog();
-  if (currentSection === 'reports') renderReportTable();
-  showToast('Warning dismissed. The student’s warning count was updated.', 'success');
-  return true;
-}
-window.dismissSessionWarning = dismissSessionWarning;
-
 async function exportAllActivityLogs() {
   const examId = monitorExamId;
   const exam   = examId ? DB.getExam(examId) : null;
@@ -14030,7 +14012,7 @@ function ensureViolationReviewModal() {
           <div class="violation-review-meta-card"><div class="violation-review-meta-label">Recorded warnings</div><div class="violation-review-meta-value" id="violation-review-recorded">0</div></div>
           <div class="violation-review-meta-card"><div class="violation-review-meta-label">Adjusted warnings</div><div class="violation-review-meta-value" id="violation-review-adjusted">0</div></div>
         </div>
-        <div style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Last 10 seconds before detection</div>
+        <div id="violation-review-media-label" style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Before detection</div>
         <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
         <img id="violation-review-still" class="violation-review-player violation-review-still" alt="Frame captured when this violation was detected" style="display:none;" />
         <div id="violation-review-empty" class="violation-review-empty">Replay is processing.</div>
@@ -14038,7 +14020,7 @@ function ensureViolationReviewModal() {
         <textarea id="violation-review-notes" class="form-control violation-review-notes" placeholder="Optional review notes for this violation"></textarea>
       </div>
       <div class="modal-footer violation-review-footer" id="violation-review-actions">
-        <div id="violation-review-reviewed" class="violation-review-reviewed hidden" role="status" aria-live="polite">Replay reviewed. This decision can still be edited.</div>
+        <div id="violation-review-reviewed" class="violation-review-reviewed hidden" role="status" aria-live="polite"></div>
         <div class="violation-review-footer-actions">
           <button class="btn btn-secondary" onclick="closeViolationReview()">Close</button>
           <button id="violation-review-dismiss-btn" class="btn btn-danger" onclick="submitViolationReviewDecision('dismissed')">Dismiss Violation</button>
@@ -14060,97 +14042,54 @@ function getActiveViolationReviewActivity() {
   return { session, activity: (Array.isArray(session.activities) ? session.activities : [])[index] || null };
 }
 
-// No clip means there is no evidence row to mark, but the professor still has to
-// be able to say "that was an accident". The decision then lands on the warning.
-function renderWarninglessReviewDecisionState() {
-  const { activity } = getActiveViolationReviewActivity();
-  const dismissed = activity?.metadata?.warningDismissed === true;
-
-  const statusBadge = document.getElementById('violation-review-status');
-  if (statusBadge) {
-    statusBadge.textContent = dismissed ? 'Warning dismissed' : 'No replay stored';
-    statusBadge.className = `violation-review-status tone-${dismissed ? 'dismissed' : 'missing'}`;
-  }
-
-  const reviewedEl = document.getElementById('violation-review-reviewed');
-  if (reviewedEl) {
-    reviewedEl.className = `violation-review-reviewed${dismissed ? ' tone-dismissed' : ' hidden'}`;
-    if (dismissed) {
-      reviewedEl.textContent = `\u2713 Warning dismissed as accidental${activity?.metadata?.warningDismissedAt ? ` on ${formatDateTime(activity.metadata.warningDismissedAt)}` : ''}.`;
-    }
-  }
-
-  const dismissBtn = document.getElementById('violation-review-dismiss-btn');
-  if (dismissBtn) {
-    dismissBtn.disabled = dismissed;
-    dismissBtn.className = dismissed
-      ? 'btn btn-secondary violation-review-action-selected'
-      : 'btn btn-danger';
-    dismissBtn.textContent = dismissed ? '\u2713 Warning Dismissed' : 'Dismiss Warning';
-    dismissBtn.onclick = () => dismissWarningFromReview();
-  }
-
-  const confirmBtn = document.getElementById('violation-review-confirm-btn');
-  if (confirmBtn) {
-    confirmBtn.disabled = false;
-    confirmBtn.className = 'btn btn-primary';
-    confirmBtn.textContent = 'Keep Warning';
-    confirmBtn.onclick = () => closeViolationReview();
-  }
-}
-
-async function dismissWarningFromReview() {
-  const context = _activeViolationReview;
-  if (!context?.sessionId) return;
-  const dismissed = await dismissSessionWarning(context.sessionId, context.activityIndex);
-  if (dismissed) closeViolationReview();
-}
-window.dismissWarningFromReview = dismissWarningFromReview;
-
-function renderViolationReviewDecisionState(evidence, options = {}) {
-  if (!evidence && !options.savingStatus) {
-    renderWarninglessReviewDecisionState();
-    return;
-  }
-  const reviewStatus = String(evidence?.reviewStatus || 'pending').toLowerCase();
+// One decision UI for every violation. `state` comes from getActivityReviewState;
+// `savingStatus` is the decision currently being saved, if any.
+function renderViolationReviewDecisionState(state, options = {}) {
+  const reviewStatus = String(state?.reviewStatus || 'pending').toLowerCase();
   const savingStatus = String(options.savingStatus || '').toLowerCase();
   const isSaving = ['confirmed', 'dismissed'].includes(savingStatus);
   const isConfirmed = !isSaving && reviewStatus === 'confirmed';
   const isDismissed = !isSaving && reviewStatus === 'dismissed';
-  const isReviewed = isConfirmed || isDismissed;
+  const counted = state?.counted === true;
+  const deducted = state?.deducted === true;
 
   const statusBadge = document.getElementById('violation-review-status');
   if (statusBadge) {
-    statusBadge.textContent = isSaving
-      ? 'Saving review...'
-      : evidence
-        ? formatEvidenceReviewStatus(reviewStatus)
-        : 'Replay processing';
-    statusBadge.className = `violation-review-status tone-${isSaving ? 'pending' : evidence ? getEvidenceReviewTone(reviewStatus) : 'missing'}`;
+    statusBadge.textContent = isSaving ? 'Saving review...' : formatActivityReviewStatus(state || { reviewStatus: 'pending' });
+    statusBadge.className = `violation-review-status tone-${isSaving ? 'pending' : getEvidenceReviewTone(reviewStatus)}`;
   }
 
   const reviewedEl = document.getElementById('violation-review-reviewed');
   if (reviewedEl) {
-    reviewedEl.className = `violation-review-reviewed${isSaving ? ' tone-saving' : isReviewed ? ` tone-${reviewStatus}` : ' hidden'}`;
+    const when = state?.reviewedAt ? ` on ${formatDateTime(state.reviewedAt)}` : '';
+    let message = '';
+    let tone = '';
     if (isSaving) {
-      reviewedEl.textContent = `Saving decision: ${savingStatus === 'confirmed' ? 'confirm violation' : 'dismiss violation'}...`;
+      tone = 'saving';
+      message = `Saving decision: ${savingStatus === 'confirmed' ? 'confirm violation' : 'dismiss violation'}...`;
     } else if (isConfirmed) {
-      reviewedEl.textContent = `✓ Review complete — Violation confirmed${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}.`;
+      tone = 'confirmed';
+      message = `✓ Review complete — violation confirmed${when}.`;
     } else if (isDismissed) {
-      reviewedEl.textContent = `✓ Review complete — Violation dismissed as a false positive${evidence.reviewedAt ? ` on ${formatDateTime(evidence.reviewedAt)}` : ''}.`;
+      tone = 'dismissed';
+      message = `✓ Review complete — dismissed as a false positive${when}${deducted ? '; one warning was removed' : ''}.`;
+    } else {
+      // Before a decision, say what dismissing will do to the warning count.
+      tone = 'pending-note';
+      message = counted
+        ? 'Dismissing this violation removes the warning it cost the student.'
+        : 'No warning was issued for this, so dismissing it leaves the warning count unchanged.';
     }
+    reviewedEl.className = `violation-review-reviewed tone-${tone}`;
+    reviewedEl.textContent = message;
   }
 
   const dismissBtn = document.getElementById('violation-review-dismiss-btn');
   const confirmBtn = document.getElementById('violation-review-confirm-btn');
-  // Re-bound every time: the same two buttons also serve the no-clip review.
-  if (dismissBtn) dismissBtn.onclick = () => submitViolationReviewDecision('dismissed');
-  if (confirmBtn) confirmBtn.onclick = () => submitViolationReviewDecision('confirmed');
   if (dismissBtn) {
+    dismissBtn.onclick = () => submitViolationReviewDecision('dismissed');
     dismissBtn.disabled = isSaving || isDismissed;
-    dismissBtn.className = isDismissed
-      ? 'btn btn-secondary violation-review-action-selected'
-      : 'btn btn-danger';
+    dismissBtn.className = isDismissed ? 'btn btn-secondary violation-review-action-selected' : 'btn btn-danger';
     dismissBtn.textContent = isSaving && savingStatus === 'dismissed'
       ? 'Saving...'
       : isDismissed
@@ -14160,10 +14099,9 @@ function renderViolationReviewDecisionState(evidence, options = {}) {
           : 'Dismiss Violation';
   }
   if (confirmBtn) {
+    confirmBtn.onclick = () => submitViolationReviewDecision('confirmed');
     confirmBtn.disabled = isSaving || isConfirmed;
-    confirmBtn.className = isConfirmed
-      ? 'btn btn-success violation-review-action-selected'
-      : 'btn btn-primary';
+    confirmBtn.className = isConfirmed ? 'btn btn-success violation-review-action-selected' : 'btn btn-primary';
     confirmBtn.textContent = isSaving && savingStatus === 'confirmed'
       ? 'Saving...'
       : isConfirmed
@@ -14175,14 +14113,23 @@ function renderViolationReviewDecisionState(evidence, options = {}) {
 }
 window.renderViolationReviewDecisionState = renderViolationReviewDecisionState;
 
+function formatReplayLengthLabel(evidence) {
+  const seconds = Math.round(Number(evidence?.durationMs || 0) / 1000);
+  return seconds >= 1
+    ? `Last ${seconds} seconds before detection — the violation is detected at the end of the clip`
+    : 'Before detection — the violation is detected at the end of the clip';
+}
+
 async function openViolationReview(sessionId, activityIndex, options = {}) {
   ensureViolationReviewModal();
   const session = DB.getSession(sessionId);
   const activity = Array.isArray(session?.activities) ? session.activities[Number(activityIndex)] : null;
   if (!session || !activity) return;
 
-  const evidence = getBestEvidenceForActivity(sessionId, activity);
-  const stillSnapshot = options.snapshot || getSnapshotForActivity(session, activity);
+  const state = getActivityReviewState(session, activity);
+  const evidence = state.evidence;
+  const hasCamera = isReplayableMonitorViolationType(activity.type);
+  const stillSnapshot = hasCamera ? (options.snapshot || getSnapshotForActivity(session, activity)) : null;
   const rawWarnings = getSessionRawWarningCount(session);
   const adjustedWarnings = getEffectiveSessionWarningCount(session);
 
@@ -14196,7 +14143,6 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
     sessionId,
     activityIndex: Number(activityIndex),
     evidenceId: evidence?.id || '',
-    policyMode: activity?.metadata?.policyMode || '',
   };
 
   const setText = (id, value) => {
@@ -14219,14 +14165,33 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
       || 'Violation recorded.',
   );
   const notesEl = document.getElementById('violation-review-notes');
-  if (notesEl && !reviewAlreadyOpen) notesEl.value = evidence?.reviewNotes || '';
-  renderViolationReviewDecisionState(evidence);
+  if (notesEl && !reviewAlreadyOpen) notesEl.value = state.reviewNotes || '';
+  renderViolationReviewDecisionState(state);
 
+  const mediaLabel = document.getElementById('violation-review-media-label');
   const video = document.getElementById('violation-review-video');
   const still = document.getElementById('violation-review-still');
   const empty = document.getElementById('violation-review-empty');
   const actions = document.getElementById('violation-review-actions');
+  if (actions) actions.style.display = '';
 
+  const releasePreviousClip = () => {
+    if (!_activeViolationReplayObjectUrl) return;
+    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
+    _activeViolationReplayObjectUrl = '';
+    _loadedViolationReplayEvidenceId = '';
+  };
+  const clearVideo = () => {
+    if (!video) {
+      releasePreviousClip();
+      return;
+    }
+    video.pause?.();
+    releasePreviousClip();
+    video.removeAttribute('src');
+    video.style.display = 'none';
+    video.load?.();
+  };
   // With no clip to play, the captured frame is the evidence. Showing it is what
   // lets a professor still judge the violation instead of being told to wait.
   const showStillFrame = () => {
@@ -14241,9 +14206,27 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
     return true;
   };
   const hideStillFrame = () => {
-    if (!still) return;
-    still.style.display = 'none';
+    if (still) still.style.display = 'none';
   };
+
+  // Browser activity (switching tabs, copying, leaving fullscreen) involves no
+  // camera, so the review is the details and the decision alone.
+  if (!hasCamera) {
+    ++_violationReplayLoadToken;
+    clearVideo();
+    hideStillFrame();
+    if (mediaLabel) mediaLabel.style.display = 'none';
+    if (empty) {
+      empty.style.display = '';
+      empty.textContent = 'This is browser activity, so there is no camera footage to review.';
+    }
+    openModal('modal-violation-review');
+    return;
+  }
+  if (mediaLabel) {
+    mediaLabel.style.display = '';
+    mediaLabel.textContent = evidence ? formatReplayLengthLabel(evidence) : 'Before detection';
+  }
 
   // Live violations repaint monitoring and re-enter this function for the review
   // already on screen. Re-loading the same clip there tore the blob out from
@@ -14252,12 +14235,10 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
     && evidence.id === _loadedViolationReplayEvidenceId
     && !!_activeViolationReplayObjectUrl
     && video?.getAttribute('src') === _activeViolationReplayObjectUrl;
-
   if (alreadyPlayingThisClip) {
     if (empty) empty.style.display = 'none';
     if (video) video.style.display = '';
     hideStillFrame();
-    if (actions) actions.style.display = '';
     openModal('modal-violation-review');
     return;
   }
@@ -14265,13 +14246,6 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
   // Whoever loads last owns the player, so a slow fetch cannot overwrite the
   // clip a later call already put on screen.
   const loadToken = ++_violationReplayLoadToken;
-  const releasePreviousClip = () => {
-    if (!_activeViolationReplayObjectUrl) return;
-    URL.revokeObjectURL(_activeViolationReplayObjectUrl);
-    _activeViolationReplayObjectUrl = '';
-    _loadedViolationReplayEvidenceId = '';
-  };
-
   if (video) {
     video.onerror = null;
     video.onloadedmetadata = null;
@@ -14293,8 +14267,11 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
       video.style.display = '';
       video.onerror = () => {
         video.style.display = 'none';
+        const shown = showStillFrame();
         empty.style.display = '';
-        empty.textContent = 'This replay could not be played. Please try again.';
+        empty.textContent = shown
+          ? 'This replay could not be played, so the frame captured at detection is shown above.'
+          : 'This replay could not be played. Please try again.';
       };
       video.onloadedmetadata = () => {
         empty.style.display = 'none';
@@ -14302,30 +14279,16 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
       video.load?.();
       empty.style.display = 'none';
       hideStillFrame();
-      if (actions) actions.style.display = '';
     } else {
-      video.pause?.();
-      releasePreviousClip();
-      video.removeAttribute('src');
-      video.style.display = 'none';
-      video.load?.();
+      clearVideo();
       const shown = showStillFrame();
       empty.style.display = '';
       empty.textContent = shown
         ? 'The replay could not be loaded, so the frame captured at detection is shown above.'
         : 'This replay is temporarily unavailable. Please try again.';
-      if (actions) actions.style.display = evidence ? '' : 'none';
     }
   } else {
-    if (video) {
-      video.pause?.();
-      releasePreviousClip();
-      video.removeAttribute('src');
-      video.style.display = 'none';
-      video.load?.();
-    } else {
-      releasePreviousClip();
-    }
+    clearVideo();
     const shown = showStillFrame();
     if (empty) {
       empty.style.display = '';
@@ -14333,7 +14296,6 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
         ? 'No replay clip was stored for this violation, so the frame captured at detection is shown above.'
         : 'The replay is still processing. This view will update automatically when the clip is ready.';
     }
-    if (actions) actions.style.display = '';
   }
 
   openModal('modal-violation-review');
@@ -14353,31 +14315,6 @@ function closeViolationReview() {
   closeModal('modal-violation-review');
 }
 window.closeViolationReview = closeViolationReview;
-
-async function dismissViolationEvidence(evidenceId, sessionId = '', activityIndex = -1) {
-  if (!evidenceId) return;
-  const activity = sessionId && Number(activityIndex) >= 0
-    ? DB.getSession(sessionId)?.activities?.[Number(activityIndex)]
-    : null;
-  const alertOnly = activity?.metadata?.policyMode === 'alert';
-  const ok = await showConfirm({
-    title: 'Dismiss false positive?',
-    message: alertOnly
-      ? 'This will mark the YOLO alert as a false positive while keeping it in the audit trail. No warning was issued for this alert.'
-      : 'This will reduce the adjusted warning count by 1 while keeping the original violation in the audit trail.',
-    confirmLabel: 'Dismiss Violation',
-    confirmClass: 'btn btn-danger',
-  });
-  if (!ok) return;
-  _activeViolationReview = {
-    sessionId: sessionId || '',
-    activityIndex: Number.isFinite(Number(activityIndex)) ? Number(activityIndex) : -1,
-    evidenceId,
-    policyMode: activity?.metadata?.policyMode || '',
-  };
-  await submitViolationReviewDecision('dismissed');
-}
-window.dismissViolationEvidence = dismissViolationEvidence;
 
 function openCameraGridViolationReview(sessionId, snapshotTimestamp = '') {
   const session = DB.getSession(sessionId);
@@ -14400,72 +14337,68 @@ function openCameraGridViolationReview(sessionId, snapshotTimestamp = '') {
 window.openCameraGridViolationReview = openCameraGridViolationReview;
 
 async function submitViolationReviewDecision(reviewStatus) {
-  if (!_activeViolationReview?.evidenceId || _violationReviewSaving) return;
+  const context = _activeViolationReview;
+  if (!context?.sessionId || !(Number(context.activityIndex) >= 0) || _violationReviewSaving) return;
   if (!['confirmed', 'dismissed'].includes(reviewStatus)) return;
-  const priorEvidence = _monitorEvidenceRecords.find(record => record.id === _activeViolationReview.evidenceId) || null;
+  const { session, activity } = getActiveViolationReviewActivity();
+  if (!session || !activity) return;
+  const priorState = getActivityReviewState(session, activity);
   const notesEl = document.getElementById('violation-review-notes');
   _violationReviewSaving = true;
-  renderViolationReviewDecisionState(priorEvidence, { savingStatus: reviewStatus });
+  renderViolationReviewDecisionState(priorState, { savingStatus: reviewStatus });
 
   let result;
   try {
-    result = await monitorApiRequest(`/api/monitor/violation-evidence/${encodeURIComponent(_activeViolationReview.evidenceId)}/review`, {
-      method: 'PATCH',
-      body: {
-        reviewStatus,
-        reviewNotes: String(notesEl?.value || '').trim(),
-        warningAdjustment: reviewStatus === 'dismissed' && _activeViolationReview.policyMode !== 'alert' ? -1 : 0,
+    result = await monitorApiRequest(
+      `/api/monitor/sessions/${encodeURIComponent(context.sessionId)}/activities/${Number(context.activityIndex)}/review`,
+      {
+        method: 'PATCH',
+        body: {
+          reviewStatus,
+          reviewNotes: String(notesEl?.value || '').trim(),
+          evidenceId: context.evidenceId || priorState.evidence?.id || '',
+        },
       },
-    });
+    );
   } catch (error) {
     result = { success: false, message: error?.message || '' };
   }
   _violationReviewSaving = false;
 
-  if (!result.success) {
-    renderViolationReviewDecisionState(priorEvidence);
-    showToast(result.message || 'Unable to save violation review right now.', 'error');
+  if (!result?.success) {
+    renderViolationReviewDecisionState(priorState);
+    showToast(result?.message || 'Unable to save violation review right now.', 'error');
     return;
   }
 
-  const nextRecord = result.evidence || null;
-  if (nextRecord?.id) {
-    const existingIndex = _monitorEvidenceRecords.findIndex(record => record.id === nextRecord.id);
-    if (existingIndex >= 0) _monitorEvidenceRecords[existingIndex] = nextRecord;
-    else _monitorEvidenceRecords.unshift(nextRecord);
+  if (result.evidence?.id) {
+    _monitorEvidenceRecords = mergeMonitorEvidenceRecords(_monitorEvidenceRecords, [result.evidence]);
   }
-  const savedEvidence = nextRecord || {
-    ...(priorEvidence || {}),
-    reviewStatus,
-    reviewedAt: new Date().toISOString(),
-  };
-  renderViolationReviewDecisionState(savedEvidence);
-
-  if (reviewStatus === 'dismissed') {
-    const reviewedSessionId = _activeViolationReview?.sessionId || '';
-    const reviewedActivity = reviewedSessionId
-      ? DB.getSession(reviewedSessionId)?.activities?.[_activeViolationReview.activityIndex]
-      : null;
-    dismissReviewedViolationAlert(reviewedSessionId, reviewedActivity);
-  }
-
   if (result.session?.id && result.session?.exam_id) {
     applyMonitorSessionsSnapshot(result.session.exam_id, [result.session]);
   }
 
-  try {
-    await refreshViolationEvidence({ examId: monitorExamId, force: true, silent: true });
-  } catch (error) {
-    console.warn('[Monitor] Violation review saved, but the evidence list could not be refreshed:', error?.message || error);
+  if (reviewStatus === 'dismissed') {
+    const reviewed = getActiveViolationReviewActivity();
+    dismissReviewedViolationAlert(context.sessionId, reviewed.activity || activity);
   }
+
   renderMonitoringSectionLive();
   refreshOpenStudentLog();
-  if (_activeViolationReview?.sessionId) openViolationReview(_activeViolationReview.sessionId, _activeViolationReview.activityIndex);
+  if (currentSection === 'reports') renderReportTable();
+  if (_activeViolationReview?.sessionId === context.sessionId) {
+    openViolationReview(context.sessionId, context.activityIndex);
+  }
+  const delta = Number(result.warningDelta || 0);
   showToast(reviewStatus === 'dismissed'
     ? (result.reopened
-      ? 'False positive dismissed. The warning was deducted and the student exam was reopened.'
-      : 'False positive dismissed and the student warning count was updated live.')
-    : 'Violation review confirmed.', 'success');
+      ? 'Dismissed. The warning was removed and the student\'s exam was reopened.'
+      : delta < 0
+        ? 'Dismissed as a false positive. The student\'s warning count was updated.'
+        : 'Dismissed as a false positive.')
+    : (delta > 0
+      ? 'Violation confirmed. The warning was restored.'
+      : 'Violation confirmed.'), 'success');
 }
 window.submitViolationReviewDecision = submitViolationReviewDecision;
 
@@ -14520,7 +14453,6 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
   const snaps = session.cameraSnapshots || [];
   if (snaps.length > 0) {
     const selected = getSessionSnapshotByTimestamp(session, snapshotTimestamp);
-    const evidence = getBestEvidenceForSnapshot(sessionId, selected);
     const activityIndex = getBestReplayActivityIndex(session, selected?.violationType, selected?.timestamp);
     img.src = selected?.imageData || '';
     img.style.display = '';
@@ -14530,11 +14462,10 @@ function viewCameraSnapshot(sessionId, snapshotTimestamp = '') {
       : '';
     emptyEl.style.display = 'none';
     if (actionsEl) {
-      if (evidence) {
-        actionsEl.innerHTML = `
-          ${activityIndex >= 0 ? `<button class="btn btn-primary" onclick="openViolationReview('${escAttr(sessionId)}', ${activityIndex})">Review Replay</button>` : ''}
-          <button class="btn btn-danger" onclick="dismissViolationEvidence('${escAttr(evidence.id)}', '${escAttr(sessionId)}', ${activityIndex})">Dismiss Violation</button>
-        `;
+      // Confirming or dismissing happens in the review, which plays the replay
+      // when there is one and shows this frame when there is not.
+      if (activityIndex >= 0) {
+        actionsEl.innerHTML = `<button class="btn btn-primary" onclick="openViolationReview('${escAttr(sessionId)}', ${activityIndex})">Review Violation</button>`;
         actionsEl.style.display = 'flex';
       } else {
         actionsEl.innerHTML = '';

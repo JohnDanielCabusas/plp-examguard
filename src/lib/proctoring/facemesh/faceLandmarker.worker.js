@@ -4,6 +4,7 @@ import simdBinaryUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.w
 import noSimdLoaderUrl from '@mediapipe/tasks-vision/vision_wasm_nosimd_internal.js?url';
 import noSimdBinaryUrl from '@mediapipe/tasks-vision/vision_wasm_nosimd_internal.wasm?url';
 import { estimateHeadPose, smoothHeadPose } from './headPoseEstimator.js';
+import { createNonRigidMotionMeter, extractBlendshapes } from './livenessCues.js';
 import { createTrackingQualityMeter } from './trackingQuality.js';
 
 const FACE_OVAL_LANDMARKS = [10, 21, 54, 58, 67, 93, 103, 109, 127, 132, 136, 148, 149, 150, 152, 162, 172, 176, 234, 251, 284, 288, 297, 323, 332, 338, 356, 361, 365, 377, 378, 379, 389, 397, 400, 454];
@@ -11,6 +12,7 @@ const FACE_OVAL_LANDMARKS = [10, 21, 54, 58, 67, 93, 103, 109, 127, 132, 136, 14
 let landmarker = null;
 let backend = '';
 const trackingQualityMeter = createTrackingQualityMeter();
+const nonRigidMotionMeter = createNonRigidMotionMeter();
 let lastSmoothedPose = null;
 let poseSmoothingAlpha = 0.5;
 
@@ -88,9 +90,10 @@ async function createLandmarker(fileset, modelUrl, options, delegate) {
     minFaceDetectionConfidence: options.minFaceDetectionConfidence,
     minFacePresenceConfidence: options.minFacePresenceConfidence,
     minTrackingConfidence: options.minTrackingConfidence,
-    // Blendshapes are not consumed by the monitoring policy. Avoiding that
-    // extra output keeps each scan focused on landmarks and head pose.
-    outputFaceBlendshapes: false,
+    // Blink, jaw and brow scores feed the liveness check: a picture of a face
+    // holds every one of them still. The extra head is small next to the
+    // landmark model itself.
+    outputFaceBlendshapes: true,
     outputFacialTransformationMatrixes: true,
   });
 }
@@ -137,6 +140,7 @@ function infer(message) {
     const landmarks = result.faceLandmarks?.[0] || null;
     if (!landmarks) {
       trackingQualityMeter.reset();
+      nonRigidMotionMeter.reset();
       lastSmoothedPose = null;
       self.postMessage({
         type: 'result',
@@ -184,6 +188,8 @@ function infer(message) {
         geometry,
         pose,
         poseCues: poseCuesFromLandmarks(landmarks),
+        blendshapes: extractBlendshapes(result.faceBlendshapes?.[0]),
+        nonRigidMotion: nonRigidMotionMeter.measure(landmarks, message.timestampMs),
         partiallyVisible: geometry?.partiallyVisible === true,
         nearFrameEdge: geometry?.nearFrameEdge === true,
         tooClose: geometry?.tooClose === true,
@@ -214,6 +220,7 @@ self.addEventListener('message', event => {
     landmarker?.close?.();
     landmarker = null;
     trackingQualityMeter.reset();
+    nonRigidMotionMeter.reset();
     lastSmoothedPose = null;
     self.close?.();
   }

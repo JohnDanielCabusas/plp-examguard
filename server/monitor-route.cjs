@@ -8,6 +8,7 @@ const {
   readEvidenceFile,
 } = require('./violation-evidence-store.cjs');
 const {
+  deleteStorageObject,
   downloadStorageObject,
   uploadStorageObject,
 } = require('./supabase-storage.cjs');
@@ -38,6 +39,13 @@ const FACEMESH_INCIDENT_TYPES = new Set([
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+  'FACE_LIVENESS_UNCONFIRMED',
+  'FACE_ON_PHONE_SCREEN',
+]);
+// Incidents that need both the face scan and the object detector to agree.
+const FACEMESH_YOLO_INCIDENT_TYPES = new Set([
+  'PHONE_NEAR_OR_COVERING_FACE',
+  'FACE_ON_PHONE_SCREEN',
 ]);
 const REPLAYABLE_VIOLATION_TYPES = new Set([
   'no_person',
@@ -61,6 +69,33 @@ const WARNING_ACTIVITY_TYPES = new Set([
   'restricted_phone', 'secondary_computer', 'restricted_book',
   ...FACEMESH_INCIDENT_TYPES,
 ]);
+// What a review hands back to the professor's page: the monitoring summary plus
+// the timeline the decision changed. Answers, camera images and archived
+// attempts are left out; they did not change and are the bulk of the row.
+const REVIEWED_SESSION_COLUMNS = `id, exam_id, exam_code, student_id, student_name, year_level, section,
+  year_section, department, program, start_time, end_time, warnings, score, max_score, submitted,
+  auto_submitted, submit_reason, score_released, owner_admin_id, created_at, activities`;
+// Ends the attempt outright rather than counting as one of the three strikes,
+// so dismissing it has no warning to give back.
+const TERMINAL_ACTIVITY_TYPES = new Set(['screen_record']);
+
+function isReviewableActivity(activity) {
+  const type = String(activity?.type || '').trim();
+  return WARNING_ACTIVITY_TYPES.has(type) || activity?.metadata?.countsAsWarning === true;
+}
+
+// Whether this activity actually cost the student a warning. Being a violation
+// type is not enough: a YOLO alert, a review-only FaceMesh indicator and anything
+// raised while the exam was on hold are recorded without a strike.
+function activityCountsAsWarning(activity) {
+  const type = String(activity?.type || '').trim();
+  const metadata = activity?.metadata && typeof activity.metadata === 'object' ? activity.metadata : {};
+  if (metadata.offlineHold === true || metadata.countsAsWarning === false) return false;
+  if (metadata.policyMode === 'alert' || metadata.policyMode === 'shadow') return false;
+  if (TERMINAL_ACTIVITY_TYPES.has(type)) return false;
+  if (FACEMESH_INCIDENT_TYPES.has(type)) return metadata.countsAsWarning === true;
+  return WARNING_ACTIVITY_TYPES.has(type) || metadata.countsAsWarning === true;
+}
 const FACEMESH_EVENT_SEVERITY = Object.freeze({
   FACE_ABSENT: 'MODERATE',
   FACE_PARTIALLY_VISIBLE: 'INFO',
@@ -73,6 +108,8 @@ const FACEMESH_EVENT_SEVERITY = Object.freeze({
   FACE_OCCLUDED: 'LOW',
   FACE_TRACKING_UNSTABLE: 'INFO',
   PHONE_NEAR_OR_COVERING_FACE: 'HIGH',
+  FACE_LIVENESS_UNCONFIRMED: 'MODERATE',
+  FACE_ON_PHONE_SCREEN: 'HIGH',
 });
 const FACEMESH_EVENT_DETAILS = Object.freeze({
   FACE_ABSENT: 'No person detected in the camera frame',
@@ -86,6 +123,8 @@ const FACEMESH_EVENT_DETAILS = Object.freeze({
   FACE_OCCLUDED: 'Face appears obstructed',
   FACE_TRACKING_UNSTABLE: 'Face tracking is unstable',
   PHONE_NEAR_OR_COVERING_FACE: 'Phone detected near or covering the face',
+  FACE_LIVENESS_UNCONFIRMED: 'Face did not respond to the on-screen liveness check',
+  FACE_ON_PHONE_SCREEN: 'Face appears to be shown on a phone screen',
 });
 
 function createId() {
@@ -205,18 +244,14 @@ function normalizeReviewStatus(rawStatus) {
   return ['pending', 'confirmed', 'dismissed'].includes(status) ? status : 'pending';
 }
 
+// A replay holds at least the ten seconds before detection, plus up to five more
+// from the recorder that was cut (see the exam page's replay buffer).
+const MAX_REPLAY_CLIP_MS = 20000;
+
 function normalizeEvidenceDuration(rawDurationMs) {
   const durationMs = Number.parseInt(String(rawDurationMs ?? 0), 10);
   if (!Number.isFinite(durationMs) || durationMs < 0) return 0;
-  return Math.min(durationMs, 10000);
-}
-
-function normalizeWarningAdjustment(rawAdjustment) {
-  const adjustment = Number.parseInt(String(rawAdjustment ?? 0), 10);
-  if (!Number.isFinite(adjustment)) return 0;
-  if (adjustment > 0) return 0;
-  if (adjustment < -1) return -1;
-  return adjustment;
+  return Math.min(durationMs, MAX_REPLAY_CLIP_MS);
 }
 
 function decodeBase64Payload(rawValue) {
@@ -494,7 +529,7 @@ async function handleFaceIncidentUpsert(req, res, body) {
   if (!/^[a-zA-Z0-9-]{8,128}$/.test(clientIncidentId)) return badRequest(res, 'Invalid incident ID.');
   if (!['start', 'update', 'end'].includes(phase)) return badRequest(res, 'Invalid incident phase.');
   if (!['FACEMESH', 'FACEMESH_YOLO'].includes(source)) return badRequest(res, 'Invalid incident source.');
-  if ((eventType === 'PHONE_NEAR_OR_COVERING_FACE') !== (source === 'FACEMESH_YOLO')) {
+  if (FACEMESH_YOLO_INCIDENT_TYPES.has(eventType) !== (source === 'FACEMESH_YOLO')) {
     return badRequest(res, 'Incident source does not match its event type.');
   }
   if (student.studentId !== studentId) return forbid(res);
@@ -688,7 +723,12 @@ async function handleViolationEvidenceInsert(req, res, body) {
 
   await uploadStorageObject(storageBucket, storagePath, payloadBuffer, mimeType);
 
-  const insertResult = await query(
+  // The video is uploaded first so no row ever points at a missing file. If the
+  // row is then refused, the video is removed again: a database check that once
+  // rejected every FaceMesh clip left 151 unreferenced videos (41 MB) behind.
+  let insertResult;
+  try {
+    insertResult = await query(
     `insert into public.violation_evidence (
        id,
        violation_event_id,
@@ -739,7 +779,11 @@ async function handleViolationEvidenceInsert(req, res, body) {
       durationMs,
       Number.isFinite(fileSizeBytes) && fileSizeBytes > 0 ? fileSizeBytes : payloadBuffer.length,
      ],
-  );
+    );
+  } catch (error) {
+    await deleteStorageObject(storageBucket, storagePath).catch(() => {});
+    throw error;
+  }
 
   const summary = await getSessionWarningSummary(sessionId);
   const evidence = {
@@ -788,112 +832,152 @@ async function handleViolationEvidenceList(req, res, url) {
   });
 }
 
-async function handleViolationEvidenceReview(req, res, evidenceId, body) {
+// One decision path for every violation a professor reviews: browser activity,
+// webcam detections, FaceMesh incidents and YOLO alerts, with or without a
+// replay clip. Two separate paths (a replay review and a warning dismissal) used
+// to exist, and because neither knew about the other the same violation could be
+// deducted twice, and a YOLO alert that never cost a warning had one taken off.
+//
+// The deduction for a violation is recorded on the activity itself
+// (metadata.warningDismissed), so it can only ever be applied once and is undone
+// exactly once if the professor changes the decision back to confirmed.
+async function handleActivityReview(req, res, sessionId, activityIndex, body) {
   const admin = await getCurrentProfessorSession(req);
   if (!admin) return forbid(res);
 
   const reviewStatus = normalizeReviewStatus(body?.reviewStatus);
-  const reviewNotes = String(body?.reviewNotes || '').trim();
-  let warningAdjustment = normalizeWarningAdjustment(body?.warningAdjustment);
-
   if (!['confirmed', 'dismissed'].includes(reviewStatus)) {
     return badRequest(res, 'Review status must be confirmed or dismissed.');
   }
-
-  if (reviewStatus === 'confirmed') warningAdjustment = 0;
-  if (reviewStatus === 'dismissed' && warningAdjustment === 0) warningAdjustment = -1;
+  if (!Number.isInteger(activityIndex) || activityIndex < 0) {
+    return badRequest(res, 'A violation activity is required.');
+  }
+  const reviewNotes = String(body?.reviewNotes || '').trim().slice(0, 2000);
+  const evidenceId = String(body?.evidenceId || '').trim();
 
   const client = await connect();
-  let updatedEvidence = null;
-  let updatedSession = null;
-  let reopened = false;
-
   try {
     await client.query('begin');
-    const existingResult = await client.query(
-      `select ve.*,
-              sess.warnings as session_warnings,
-              sess.submitted as session_submitted,
-              sess.auto_submitted as session_auto_submitted,
-              sess.submit_reason as session_submit_reason
-         from public.violation_evidence ve
-         join public.sessions sess on sess.id = ve.session_id
-        where ve.id = $1
-          and ve.owner_admin_id = $2
-        for update of ve, sess`,
-      [evidenceId, admin.id],
+    // Only the one activity is read. The activities column grows with the whole
+    // attempt, and the row lock already keeps the index stable underneath us.
+    const result = await client.query(
+      `select s.id, s.exam_id, s.warnings, s.submitted, s.auto_submitted, s.submit_reason,
+              s.start_time, s.end_time,
+              s.activities -> $2::int as activity,
+              coalesce(s.owner_admin_id, e.owner_admin_id) as effective_owner_admin_id
+         from public.sessions s
+         left join public.exams e on e.id = s.exam_id
+        where s.id = $1
+        for update of s`,
+      [sessionId, activityIndex],
     );
-    const existing = existingResult.rows[0] || null;
-    if (!existing) {
+    const session = result.rows[0] || null;
+    if (!session || String(session.effective_owner_admin_id || '') !== String(admin.id || '')) {
       await client.query('rollback');
-      return jsonResponse(res, 404, { success: false, message: 'Violation evidence record not found.' });
+      return jsonResponse(res, 404, { success: false, message: 'Exam session not found.' });
+    }
+    const activity = session.activity && typeof session.activity === 'object' ? session.activity : null;
+    if (!activity || !isReviewableActivity(activity)) {
+      await client.query('rollback');
+      return badRequest(res, 'That activity is not a reviewable violation.');
     }
 
-    const previousAppliedAdjustment = existing.warning_applied
-      ? normalizeWarningAdjustment(existing.warning_adjustment)
-      : 0;
-    const warningDelta = warningAdjustment - previousAppliedAdjustment;
-    const evidenceResult = await client.query(
-      `update public.violation_evidence
-          set review_status = $3,
-              review_notes = $4,
-              warning_adjustment = $5,
-              warning_applied = true,
-              reviewed_by = $6,
-              reviewed_at = now()
-        where id = $1
-          and owner_admin_id = $2
-        returning *`,
-      [evidenceId, admin.id, reviewStatus, reviewNotes || null, warningAdjustment, admin.id],
-    );
-    updatedEvidence = evidenceResult.rows[0] || existing;
+    let evidence = null;
+    if (evidenceId) {
+      const evidenceResult = await client.query(
+        `select id, warning_applied, warning_adjustment
+           from public.violation_evidence
+          where id = $1 and session_id = $2 and owner_admin_id = $3
+          for update`,
+        [evidenceId, sessionId, admin.id],
+      );
+      evidence = evidenceResult.rows[0] || null;
+      if (!evidence) {
+        await client.query('rollback');
+        return jsonResponse(res, 404, { success: false, message: 'Violation evidence record not found.' });
+      }
+    }
 
-    if (warningDelta !== 0) {
-      const activity = [{
-        type: warningDelta < 0 ? 'violation_review_dismissed' : 'violation_review_confirmed',
-        timestamp: new Date().toISOString(),
-        detail: warningDelta < 0
-          ? 'Professor dismissed webcam violation replay as a false positive'
-          : 'Professor changed replay review to confirmed',
-      }];
-      const sessionResult = await client.query(
-        `update public.sessions
-            set warnings = greatest(0, coalesce(warnings, 0) + $2),
-                activities = coalesce(activities, '[]'::jsonb) || $3::jsonb
+    const metadata = activity.metadata && typeof activity.metadata === 'object' ? activity.metadata : {};
+    // A replay dismissed before this route existed deducted through the evidence
+    // row. That deduction is moved onto the activity below, so it is not repeated.
+    const legacyEvidenceDeduction = !!evidence?.warning_applied && Number(evidence.warning_adjustment || 0) < 0;
+    const alreadyDeducted = metadata.warningDismissed === true || legacyEvidenceDeduction;
+    const counted = activityCountsAsWarning(activity);
+
+    let warningDelta = 0;
+    if (reviewStatus === 'dismissed' && counted && !alreadyDeducted && Number(session.warnings || 0) > 0) warningDelta = -1;
+    if (reviewStatus === 'confirmed' && alreadyDeducted) warningDelta = 1;
+    const deducted = reviewStatus === 'dismissed' ? (alreadyDeducted || warningDelta < 0) : false;
+
+    const reviewedAt = new Date().toISOString();
+    const nextMetadata = {
+      ...metadata,
+      reviewStatus,
+      reviewNotes: reviewNotes || null,
+      reviewedAt,
+      reviewedBy: admin.id,
+      warningDismissed: deducted,
+      warningDismissedAt: deducted ? (metadata.warningDismissedAt || reviewedAt) : null,
+      warningDismissedBy: deducted ? (metadata.warningDismissedBy || admin.id) : null,
+    };
+    const audit = warningDelta === 0 ? [] : [{
+      type: warningDelta < 0 ? 'warning_dismissed' : 'violation_review_confirmed',
+      timestamp: reviewedAt,
+      detail: warningDelta < 0
+        ? `Professor dismissed the ${String(activity.type || '').replace(/_/g, ' ')} warning as a false positive`
+        : `Professor changed the ${String(activity.type || '').replace(/_/g, ' ')} review back to confirmed`,
+      metadata: { reviewedActivityIndex: activityIndex, reviewedActivityType: activity.type },
+    }];
+
+    const update = await client.query(
+      `update public.sessions
+          set warnings = greatest(0, coalesce(warnings, 0) + $3),
+              activities = jsonb_set(coalesce(activities, '[]'::jsonb), array[$2::text, 'metadata'], $4::jsonb, true)
+                           || $5::jsonb
+        where id = $1
+        returning ${REVIEWED_SESSION_COLUMNS}`,
+      [sessionId, String(activityIndex), warningDelta, JSON.stringify(nextMetadata), JSON.stringify(audit)],
+    );
+    let updatedSession = update.rows[0] || null;
+
+    let updatedEvidence = null;
+    if (evidence) {
+      // The deduction now lives on the activity, so the evidence row no longer
+      // carries one; it only records the review.
+      const evidenceUpdate = await client.query(
+        `update public.violation_evidence
+            set review_status = $2,
+                review_notes = $3,
+                warning_adjustment = 0,
+                warning_applied = true,
+                reviewed_by = $4,
+                reviewed_at = now(),
+                updated_at = now()
           where id = $1
           returning *`,
-        [existing.session_id, warningDelta, JSON.stringify(activity)],
+        [evidence.id, reviewStatus, reviewNotes || null, admin.id],
       );
-      updatedSession = sessionResult.rows[0] || null;
-    } else {
-      const sessionResult = await client.query('select * from public.sessions where id = $1', [existing.session_id]);
-      updatedSession = sessionResult.rows[0] || null;
+      updatedEvidence = evidenceUpdate.rows[0] || null;
     }
 
-    const adjustmentResult = await client.query(
-      `select coalesce(sum(warning_adjustment), 0)::integer as applied_adjustment
-         from public.violation_evidence
-        where session_id = $1
-          and warning_applied = true`,
-      [existing.session_id],
-    );
-    const appliedAdjustment = Number(adjustmentResult.rows[0]?.applied_adjustment || 0);
-    const adjustedWarnings = Number(updatedSession?.warnings || 0);
-    const recordedWarnings = Math.max(0, adjustedWarnings - appliedAdjustment);
-    const wasWarningAutoSubmit = updatedSession?.submit_reason === 'violations'
-      || (!updatedSession?.submit_reason && !!updatedSession?.auto_submitted && recordedWarnings >= 3);
-
+    // A false positive that pushed the student over the limit also caused the
+    // automatic submission, so dismissing it hands the attempt back.
+    let reopened = false;
+    const remainingWarnings = Number(updatedSession?.warnings || 0);
+    const submittedForViolations = updatedSession?.submit_reason === 'violations'
+      || (!updatedSession?.submit_reason && !!updatedSession?.auto_submitted && Number(session.warnings || 0) >= 3);
     if (
-      reviewStatus === 'dismissed'
+      warningDelta < 0
       && updatedSession?.submitted
       && updatedSession?.auto_submitted
-      && adjustedWarnings < 3
-      && wasWarningAutoSubmit
+      && submittedForViolations
+      && remainingWarnings < 3
     ) {
       const reopenActivity = [{
         type: 'violation_review_reopened',
         timestamp: new Date().toISOString(),
-        detail: 'Exam reopened after professor dismissed a webcam violation replay',
+        detail: 'Exam reopened after professor dismissed the violation that ended it',
       }];
       const reopenedResult = await client.query(
         `update public.sessions
@@ -909,29 +993,27 @@ async function handleViolationEvidenceReview(req, res, evidenceId, body) {
                 score_released = false,
                 activities = coalesce(activities, '[]'::jsonb) || $2::jsonb
           where id = $1
-          returning *`,
-        [existing.session_id, JSON.stringify(reopenActivity)],
+          returning ${REVIEWED_SESSION_COLUMNS}`,
+        [sessionId, JSON.stringify(reopenActivity)],
       );
       updatedSession = reopenedResult.rows[0] || updatedSession;
       reopened = true;
     }
 
-    updatedEvidence.raw_warnings = recordedWarnings;
-    updatedEvidence.adjusted_warnings = Number(updatedSession?.warnings || 0);
     await client.query('commit');
+    return jsonResponse(res, 200, {
+      success: true,
+      session: updatedSession,
+      evidence: updatedEvidence ? normalizeEvidenceRow(updatedEvidence) : null,
+      warningDelta,
+      reopened,
+    });
   } catch (error) {
     await client.query('rollback').catch(() => {});
     throw error;
   } finally {
     client.release();
   }
-
-  jsonResponse(res, 200, {
-    success: true,
-    evidence: normalizeEvidenceRow(updatedEvidence),
-    session: updatedSession,
-    reopened,
-  });
 }
 
 async function handleViolationEvidenceFile(req, res, evidenceId) {
@@ -1037,93 +1119,6 @@ async function handleSessionList(req, res, url) {
   });
 }
 
-async function handleWarningDismissal(req, res, sessionId, body) {
-  const admin = await getCurrentProfessorSession(req);
-  if (!admin) return forbid(res);
-
-  const activityIndex = Number.parseInt(String(body?.activityIndex ?? ''), 10);
-  if (!Number.isInteger(activityIndex) || activityIndex < 0) {
-    return badRequest(res, 'A warning activity is required.');
-  }
-
-  const client = await connect();
-  try {
-    await client.query('begin');
-    const result = await client.query(
-      `select s.*, coalesce(s.owner_admin_id, e.owner_admin_id) as effective_owner_admin_id
-         from public.sessions s
-         left join public.exams e on e.id = s.exam_id
-        where s.id = $1
-        for update of s`,
-      [sessionId],
-    );
-    const session = result.rows[0] || null;
-    if (!session || String(session.effective_owner_admin_id || '') !== String(admin.id || '')) {
-      await client.query('rollback');
-      return jsonResponse(res, 404, { success: false, message: 'Exam session not found.' });
-    }
-    // An accidental warning is usually recognised while reading the log after the
-    // attempt, so a submitted session stays correctable. The dismissal is a record
-    // correction: the attempt stays submitted and the audit entries below record
-    // who cleared it and when.
-    if (!session.start_time) {
-      await client.query('rollback');
-      return jsonResponse(res, 409, { success: false, message: 'Warnings can only be dismissed on an attempt the student has started.' });
-    }
-
-    const activities = Array.isArray(session.activities) ? [...session.activities] : [];
-    const activity = activities[activityIndex];
-    const type = String(activity?.type || '').trim();
-    const isWarning = WARNING_ACTIVITY_TYPES.has(type)
-      || activity?.metadata?.countsAsWarning === true;
-    if (!activity || !isWarning) {
-      await client.query('rollback');
-      return badRequest(res, 'That activity is not a dismissible warning.');
-    }
-    if (activity?.metadata?.warningDismissed === true) {
-      await client.query('rollback');
-      return jsonResponse(res, 409, { success: false, message: 'This warning has already been dismissed.' });
-    }
-    if (Number(session.warnings || 0) <= 0) {
-      await client.query('rollback');
-      return jsonResponse(res, 409, { success: false, message: 'This student has no active warnings to remove.' });
-    }
-
-    const dismissedAt = new Date().toISOString();
-    activities[activityIndex] = {
-      ...activity,
-      metadata: {
-        ...(activity.metadata && typeof activity.metadata === 'object' ? activity.metadata : {}),
-        warningDismissed: true,
-        warningDismissedAt: dismissedAt,
-        warningDismissedBy: admin.id,
-      },
-    };
-    activities.push({
-      type: 'warning_dismissed',
-      timestamp: dismissedAt,
-      detail: `Professor dismissed the ${type.replace(/_/g, ' ')} warning as accidental`,
-      metadata: { dismissedActivityIndex: activityIndex, dismissedActivityType: type },
-    });
-
-    const update = await client.query(
-      `update public.sessions
-          set warnings = greatest(0, coalesce(warnings, 0) - 1),
-              activities = $2::jsonb
-        where id = $1
-        returning *`,
-      [sessionId, JSON.stringify(activities)],
-    );
-    await client.query('commit');
-    return jsonResponse(res, 200, { success: true, session: update.rows[0] || null });
-  } catch (error) {
-    await client.query('rollback').catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
 async function handleMonitorStream(req, res) {
   const admin = await getCurrentProfessorSession(req);
   if (!admin) return forbid(res);
@@ -1225,9 +1220,8 @@ async function handleMonitorRoute(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
   const snapshotFileMatch = pathname.match(/^\/api\/monitor\/snapshots\/([a-f0-9]{64})\/file$/);
-  const evidenceReviewMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/review$/);
+  const activityReviewMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/activities\/(\d+)\/review$/);
   const evidenceFileMatch = pathname.match(/^\/api\/monitor\/violation-evidence\/([^/]+)\/file$/);
-  const warningDismissalMatch = pathname.match(/^\/api\/monitor\/sessions\/([^/]+)\/warnings\/dismiss$/);
 
   try {
     // Students' connection indicator probes this every few seconds; it must not
@@ -1282,7 +1276,7 @@ async function handleMonitorRoute(req, res) {
       return await handleSessionList(req, res, url);
     }
 
-    if (warningDismissalMatch) {
+    if (activityReviewMatch) {
       if (req.method !== 'PATCH') return methodNotAllowed(res);
       let body;
       try {
@@ -1290,7 +1284,13 @@ async function handleMonitorRoute(req, res) {
       } catch {
         return badRequest(res, 'Invalid JSON body.');
       }
-      return await handleWarningDismissal(req, res, decodeURIComponent(warningDismissalMatch[1]), body);
+      return await handleActivityReview(
+        req,
+        res,
+        decodeURIComponent(activityReviewMatch[1]),
+        Number.parseInt(activityReviewMatch[2], 10),
+        body,
+      );
     }
 
     if (pathname === '/api/monitor/violation-evidence') {
@@ -1305,17 +1305,6 @@ async function handleMonitorRoute(req, res) {
         return await handleViolationEvidenceInsert(req, res, body);
       }
       return methodNotAllowed(res);
-    }
-
-    if (evidenceReviewMatch) {
-      if (req.method !== 'PATCH') return methodNotAllowed(res);
-      let body;
-      try {
-        body = await readJsonBody(req);
-      } catch {
-        return badRequest(res, 'Invalid JSON body.');
-      }
-      return await handleViolationEvidenceReview(req, res, decodeURIComponent(evidenceReviewMatch[1]), body);
     }
 
     if (evidenceFileMatch) {

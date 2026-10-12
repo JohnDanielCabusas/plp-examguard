@@ -45,6 +45,8 @@ function loadFaceMeshRuntime() {
           createRuleEngine: runtime.createFaceRuleEngine,
           createCorrelator: runtime.createFaceEventCorrelator,
           createAggregator: runtime.createFaceSessionAggregator,
+          createLivenessMonitor: runtime.createFaceLivenessMonitor,
+          createFaceOnScreenDetector: runtime.createFaceOnScreenDetector,
           createEvaluationExporter: runtime.createEvaluationExporter,
           classifyObservation: runtime.classifyObservation,
           normalizeConfig: runtime.resolveFaceMonitoringConfig,

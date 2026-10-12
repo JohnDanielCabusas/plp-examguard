@@ -26,6 +26,8 @@ export const FACE_INCIDENT_TYPES = Object.freeze({
   FACE_OCCLUDED: 'FACE_OCCLUDED',
   FACE_TRACKING_UNSTABLE: 'FACE_TRACKING_UNSTABLE',
   PHONE_NEAR_OR_COVERING_FACE: 'PHONE_NEAR_OR_COVERING_FACE',
+  FACE_LIVENESS_UNCONFIRMED: 'FACE_LIVENESS_UNCONFIRMED',
+  FACE_ON_PHONE_SCREEN: 'FACE_ON_PHONE_SCREEN',
 });
 
 export const FACE_EVENT_DESCRIPTIONS = Object.freeze({
@@ -40,6 +42,8 @@ export const FACE_EVENT_DESCRIPTIONS = Object.freeze({
   FACE_OCCLUDED: 'Face appears obstructed',
   FACE_TRACKING_UNSTABLE: 'Face tracking is unstable',
   PHONE_NEAR_OR_COVERING_FACE: 'Phone detected near or covering the face',
+  FACE_LIVENESS_UNCONFIRMED: 'Face did not respond to the on-screen liveness check',
+  FACE_ON_PHONE_SCREEN: 'Face appears to be shown on a phone screen',
 });
 
 export const FACE_EVENT_SEVERITY = Object.freeze({
@@ -54,6 +58,8 @@ export const FACE_EVENT_SEVERITY = Object.freeze({
   FACE_OCCLUDED: 'LOW',
   FACE_TRACKING_UNSTABLE: 'INFO',
   PHONE_NEAR_OR_COVERING_FACE: 'HIGH',
+  FACE_LIVENESS_UNCONFIRMED: 'MODERATE',
+  FACE_ON_PHONE_SCREEN: 'HIGH',
 });
 
 export function createIncidentId(prefix = 'face') {

@@ -4,7 +4,7 @@ import { loadEnv } from 'vite';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { forwardEnvironment } = require('./server/environment.cjs');
+const { forwardEnvironment, readEnvFiles } = require('./server/environment.cjs');
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
 const { handleMonitorRoute } = require('./server/monitor-route.cjs');
@@ -64,7 +64,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const host = resolveHost(env);
   const port = resolvePort(env.VITE_PORT, env.PORT, process.env.VITE_PORT, process.env.PORT);
-  forwardEnvironment(env, SERVER_ENV_NAMES);
+  // The project's env files beat machine-wide variables for the server side, so
+  // the API and the browser always talk to the same Supabase project.
+  forwardEnvironment({ ...env, ...readEnvFiles(mode) }, SERVER_ENV_NAMES);
 
   return {
     plugins: [

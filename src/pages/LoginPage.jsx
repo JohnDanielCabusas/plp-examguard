@@ -40,10 +40,13 @@ function EyeToggle({ show, onToggle }) {
   );
 }
 
+// `btn-spinner` keeps it turning when Windows "Animation effects" is off; the
+// reduced-motion rule in style.css otherwise froze it after one frame.
 function ButtonSpinner() {
   return (
     <span
       aria-hidden="true"
+      className="btn-spinner"
       style={{
         width: '16px',
         height: '16px',
@@ -54,6 +57,22 @@ function ButtonSpinner() {
         animation: 'loginBtnSpin 0.75s linear infinite',
       }}
     />
+  );
+}
+
+// A primary action that shows it is working while its request is in flight.
+function BusyButton({ busy, busyLabel, onClick, children }) {
+  return (
+    <button
+      className="btn btn-primary btn-block btn-lg"
+      onClick={onClick}
+      disabled={busy}
+      aria-busy={busy}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
+    >
+      {busy && <ButtonSpinner />}
+      <span>{busy ? busyLabel : children}</span>
+    </button>
   );
 }
 
@@ -93,6 +112,25 @@ export default function LoginPage() {
   const [adminEmailSendBusy, setAdminEmailSendBusy] = useState(false);
   const [studentResendCooldown, setStudentResendCooldown] = useState(0);
   const [studentResetBusy, setStudentResetBusy] = useState(false);
+  // The button whose request is in flight (sign-in, verify, update password...).
+  // It shows a spinner, and Enter or a second click cannot send it twice.
+  const [pendingAction, setPendingAction] = useState('');
+  const pendingActionRef = useRef('');
+  const runAction = async (key, action) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = key;
+    setPendingAction(key);
+    let navigating = false;
+    try {
+      navigating = (await action()) === true;
+    } finally {
+      // A successful sign-in is leaving the page; keep the spinner until it does.
+      if (!navigating) {
+        pendingActionRef.current = '';
+        setPendingAction('');
+      }
+    }
+  };
   const [studentResetCooldown, setStudentResetCooldown] = useState(0);
   const [adminResendCooldown, setAdminResendCooldown] = useState(0);
   const [settings, setSettings] = useState({
@@ -288,7 +326,7 @@ export default function LoginPage() {
     }
   };
 
-  const verifyProfessorEmail = async () => {
+  const verifyProfessorEmail = () => runAction('admin-verify', async () => {
     const code = (adminVerifyCodeRef.current?.value || '').trim();
     setAdminError('');
     if (!/^\d{6}$/.test(code)) {
@@ -311,7 +349,7 @@ export default function LoginPage() {
     setAdminVerifyMessage('Email verified successfully. You can now create your username and password.');
     setAdminStep('setup');
     requestAnimationFrame(() => adminSetupUsernameRef.current?.focus());
-  };
+  });
 
   const resendProfessorVerificationCode = async () => {
     setAdminError('');
@@ -335,7 +373,7 @@ export default function LoginPage() {
     }
   };
 
-  const doProfessorPasswordLogin = async () => {
+  const doProfessorPasswordLogin = () => runAction('admin-login', async () => {
     const identifier = getProfessorIdentifierValue();
     const password = adminPasswordRef.current?.value || '';
     setAdminError('');
@@ -352,10 +390,11 @@ export default function LoginPage() {
       : await window.Auth.adminLogin(identifier, password);
     if (result.success) {
       window.location.href = adminAccountType === 'sysadmin' ? 'super-admin.html' : 'admin.html';
+      return true;
     } else {
       setAdminError(result.message);
     }
-  };
+  });
 
   const doProfessorFirstSetup = async () => {
     const email = adminEmail;
@@ -437,7 +476,7 @@ export default function LoginPage() {
     requestAnimationFrame(() => adminResetCodeRef.current?.focus());
   };
 
-  const verifyAdminResetCode = async () => {
+  const verifyAdminResetCode = () => runAction('admin-reset-verify', async () => {
     const code = (adminResetCodeRef.current?.value || '').trim();
     setAdminError('');
     if (!/^\d{6}$/.test(code)) {
@@ -453,9 +492,9 @@ export default function LoginPage() {
     setAdminResetMessage('Code verified. You can now create a new password.');
     setAdminStep('reset-password');
     requestAnimationFrame(() => adminResetPasswordRef.current?.focus());
-  };
+  });
 
-  const saveAdminNewPassword = async () => {
+  const saveAdminNewPassword = () => runAction('admin-reset-save', async () => {
     const password = adminResetPasswordRef.current?.value || '';
     const confirm = adminResetConfirmRef.current?.value || '';
     setAdminError('');
@@ -481,7 +520,7 @@ export default function LoginPage() {
       if (adminPasswordRef.current) adminPasswordRef.current.value = '';
       adminPasswordRef.current?.focus();
     });
-  };
+  });
 
   const studentGoBack = () => {
     setStudentStep(1);
@@ -582,7 +621,7 @@ export default function LoginPage() {
     requestAnimationFrame(() => studentVerifyCodeRef.current?.focus());
   };
 
-  const verifyStudentEmail = async () => {
+  const verifyStudentEmail = () => runAction('student-verify', async () => {
     const code = (studentVerifyCodeRef.current?.value || '').trim();
     setStep1Error('');
     if (!/^\d{6}$/.test(code)) { setStep1Error('Please enter the 6-digit verification code.'); return; }
@@ -596,9 +635,9 @@ export default function LoginPage() {
       setStudentStep('2b');
       requestAnimationFrame(() => setupNameRef.current?.focus());
     }
-  };
+  });
 
-  const doPasswordLogin = async () => {
+  const doPasswordLogin = () => runAction('student-login', async () => {
     const email = getStudentEmailValue();
     const password = studentPasswordRef.current?.value || '';
     setStep2aError('');
@@ -610,9 +649,9 @@ export default function LoginPage() {
       setStep2aError(error instanceof Error ? error.message : 'Unable to sign in right now. Please try again.');
       return;
     }
-    if (result.success) { window.location.href = 'exam.html'; }
-    else { setStep2aError(result.message); }
-  };
+    if (result.success) { window.location.href = 'exam.html'; return true; }
+    setStep2aError(result.message);
+  });
 
   const startStudentReset = async () => {
     const email = getStudentEmailValue();
@@ -665,7 +704,7 @@ export default function LoginPage() {
     }
   };
 
-  const verifyStudentResetCode = async () => {
+  const verifyStudentResetCode = () => runAction('student-reset-verify', async () => {
     const code = (studentResetCodeRef.current?.value || '').trim();
     const email = getStudentEmailValue();
     setStep2aError('');
@@ -681,7 +720,7 @@ export default function LoginPage() {
     setStudentResetMessage('Code verified. You can now create a new password.');
     setStudentStep('reset-password');
     requestAnimationFrame(() => studentResetPasswordRef.current?.focus());
-  };
+  });
 
   const saveStudentNewPassword = async () => {
     const email = getStudentEmailValue();
@@ -717,7 +756,7 @@ export default function LoginPage() {
     }
   };
 
-  const doFirstSetup = async () => {
+  const doFirstSetup = () => runAction('student-setup', async () => {
     const email = getStudentEmailValue();
     const studentId = (setupIdRef.current?.value || '').trim().toUpperCase();
     const name = (setupNameRef.current?.value || '').trim();
@@ -749,9 +788,9 @@ export default function LoginPage() {
       setStep2bError(error instanceof Error ? error.message : 'Unable to create the student account right now. Please try again.');
       return;
     }
-    if (result.success) { window.location.href = 'exam.html'; }
-    else { setStep2bError(result.message); }
-  };
+    if (result.success) { window.location.href = 'exam.html'; return true; }
+    setStep2bError(result.message);
+  });
 
   const formatStudentId = (e) => {
     const input = e.target;
@@ -949,7 +988,7 @@ export default function LoginPage() {
               )}
               {adminStep === 'verify' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyProfessorEmail}>Verify Email</button>
+                  <BusyButton busy={pendingAction === 'admin-verify'} busyLabel="Verifying…" onClick={verifyProfessorEmail}>Verify Email</BusyButton>
                   <div style={{ marginTop: '10px', textAlign: 'right' }}>
                     <button type="button" onClick={resendProfessorVerificationCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
                       {adminEmailSendBusy ? 'Sending…' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
@@ -959,7 +998,7 @@ export default function LoginPage() {
               )}
               {adminStep === 'password' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={doProfessorPasswordLogin}>Sign In</button>
+                  <BusyButton busy={pendingAction === 'admin-login'} busyLabel="Signing In…" onClick={doProfessorPasswordLogin}>Sign In</BusyButton>
                   {adminAccountType === 'professor' && (
                     <div style={{ marginTop: '10px', textAlign: 'center' }}>
                       <button type="button" onClick={startAdminReset} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600 }}>
@@ -988,7 +1027,7 @@ export default function LoginPage() {
               )}
               {adminStep === 'reset-code' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyAdminResetCode}>Verify Code</button>
+                  <BusyButton busy={pendingAction === 'admin-reset-verify'} busyLabel="Verifying…" onClick={verifyAdminResetCode}>Verify Code</BusyButton>
                   <div style={{ marginTop: '10px', textAlign: 'right' }}>
                     <button type="button" onClick={sendAdminResetCode} disabled={adminEmailSendBusy || adminResendCooldown > 0} style={{ background: 'none', border: 'none', cursor: adminEmailSendBusy || adminResendCooldown > 0 ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: adminEmailSendBusy || adminResendCooldown > 0 ? 0.6 : 1 }}>
                       {adminEmailSendBusy ? 'Sending…' : adminResendCooldown > 0 ? `Send Code Again in ${adminResendCooldown}s` : 'Send Code Again'}
@@ -999,7 +1038,7 @@ export default function LoginPage() {
               )}
               {adminStep === 'reset-password' && (
                 <>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={saveAdminNewPassword}>Update Password</button>
+                  <BusyButton busy={pendingAction === 'admin-reset-save'} busyLabel="Updating Password…" onClick={saveAdminNewPassword}>Update Password</BusyButton>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={backFromAdminReset}>Cancel</button>
                 </>
               )}
@@ -1046,7 +1085,7 @@ export default function LoginPage() {
                       {studentEmailSendBusy ? 'Sending…' : studentResendCooldown > 0 ? `Send Code Again in ${studentResendCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentEmail}>Verify Email</button>
+                  <BusyButton busy={pendingAction === 'student-verify'} busyLabel="Verifying…" onClick={verifyStudentEmail}>Verify Email</BusyButton>
                 </div>
               )}
 
@@ -1069,7 +1108,7 @@ export default function LoginPage() {
                   </div>
                   {studentResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
                   {step2aError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
-                  <button className="btn btn-primary btn-block btn-lg" onClick={doPasswordLogin}>Sign In</button>
+                  <BusyButton busy={pendingAction === 'student-login'} busyLabel="Signing In…" onClick={doPasswordLogin}>Sign In</BusyButton>
                   <div style={{ marginTop: '10px', textAlign: 'center' }}>
                     <button type="button" onClick={startStudentReset} disabled={studentResetBusy} style={{ background: 'none', border: 'none', cursor: studentResetBusy ? 'default' : 'pointer', padding: 0, fontSize: '12px', color: '#1a4d2a', fontWeight: 600, opacity: studentResetBusy ? 0.6 : 1 }}>
                       {studentResetBusy ? 'Sending Code…' : 'Forgot Password?'}
@@ -1098,7 +1137,7 @@ export default function LoginPage() {
                       {studentResetBusy ? 'Sending…' : studentResetCooldown > 0 ? `Send Code Again in ${studentResetCooldown}s` : 'Send Code Again'}
                     </button>
                   </div>
-                  <button className="btn btn-primary btn-block btn-lg" onClick={verifyStudentResetCode}>Verify Code</button>
+                  <BusyButton busy={pendingAction === 'student-reset-verify'} busyLabel="Verifying…" onClick={verifyStudentResetCode}>Verify Code</BusyButton>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={studentResetBackToSignIn}>Back to Sign In</button>
                 </div>
               )}
@@ -1129,7 +1168,7 @@ export default function LoginPage() {
                   </div>
                   {studentResetMessage && <div role="status" aria-live="polite" className="mb-12" style={{ fontSize: '12px', color: '#4b5563' }}>{studentResetMessage}</div>}
                   {step2aError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2aError}</div>}
-                  <button className="btn btn-primary btn-block btn-lg" onClick={saveStudentNewPassword} disabled={studentResetBusy}>Update Password</button>
+                  <BusyButton busy={studentResetBusy} busyLabel="Updating Password…" onClick={saveStudentNewPassword}>Update Password</BusyButton>
                   <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: '10px' }} onClick={studentResetBackToSignIn}>Cancel</button>
                 </div>
               )}
@@ -1198,7 +1237,7 @@ export default function LoginPage() {
                     </div>
                   </div>
                   {step2bError && <div role="alert" className="text-danger mb-12" style={{ fontSize: '13px' }}>{step2bError}</div>}
-                  <button className="btn btn-primary btn-block btn-lg" onClick={doFirstSetup}>Create Account &amp; Sign In</button>
+                  <BusyButton busy={pendingAction === 'student-setup'} busyLabel="Creating Account…" onClick={doFirstSetup}>Create Account &amp; Sign In</BusyButton>
                 </div>
               )}
 

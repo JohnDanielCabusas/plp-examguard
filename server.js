@@ -2,7 +2,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+// The project's .env.local beats machine-wide variables: a stale SUPABASE_DB_*
+// in the Windows user environment otherwise pointed the API at a different
+// database from the browser's. Deployments have no .env.local, so this is a
+// no-op there and the platform's variables are used.
+require('dotenv').config({ path: path.join(__dirname, '.env.local'), override: true, quiet: true });
 const { handleEmailRoute } = require('./server/email-route.cjs');
 const { handleAuthRoute } = require('./server/auth-route.cjs');
 const { handleMonitorRoute } = require('./server/monitor-route.cjs');

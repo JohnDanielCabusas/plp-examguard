@@ -1,5 +1,9 @@
 const crypto = require('crypto');
 
+// Buckets whose server-only operations are authorised by the storage gateway key
+// (see supabase/bandwidth-optimizations.sql and violation-replay-review.sql).
+const GATEWAY_BUCKETS = new Set(['camera-snapshots', 'violation-evidence']);
+
 function getStorageConfig() {
   const url = String(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
   const key = String(
@@ -33,7 +37,7 @@ function storageHeaders(key, extra = {}, bucket = '') {
   return {
     apikey: key,
     Authorization: `Bearer ${key}`,
-    ...(bucket === 'camera-snapshots' && process.env.SUPABASE_DB_PASSWORD ? {
+    ...(GATEWAY_BUCKETS.has(bucket) && process.env.SUPABASE_DB_PASSWORD ? {
       'x-examguard-storage-key': crypto.createHmac('sha256', process.env.SUPABASE_DB_PASSWORD).update('examguard-private-snapshot-storage-v1').digest('hex'),
     } : {}),
     ...extra,
@@ -59,6 +63,21 @@ async function uploadStorageObject(bucket, objectPath, data, mimeType) {
   if (!response.ok) {
     const error = new Error(await readStorageError(response));
     error.code = 'SUPABASE_STORAGE_UPLOAD_FAILED';
+    error.status = response.status;
+    throw error;
+  }
+}
+
+async function deleteStorageObject(bucket, objectPath) {
+  const { url, key } = getStorageConfig();
+  const response = await fetch(`${url}/storage/v1/object/${encodeURIComponent(String(bucket || '').trim())}`, {
+    method: 'DELETE',
+    headers: storageHeaders(key, { 'Content-Type': 'application/json' }, bucket),
+    body: JSON.stringify({ prefixes: [String(objectPath || '').replace(/\\/g, '/').replace(/^\/+/, '')] }),
+  });
+  if (!response.ok) {
+    const error = new Error(await readStorageError(response));
+    error.code = 'SUPABASE_STORAGE_DELETE_FAILED';
     error.status = response.status;
     throw error;
   }
@@ -91,6 +110,7 @@ async function downloadStorageObject(bucket, objectPath, range = '') {
 }
 
 module.exports = {
+  deleteStorageObject,
   downloadStorageObject,
   uploadStorageObject,
 };

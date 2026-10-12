@@ -27,8 +27,47 @@ The professor-facing camera behavior categories are deliberately limited to:
 
 - no person detected (`FACE_ABSENT`),
 - multiple faces or people (`multiple_people`),
-- looking down (`SUSTAINED_LOOKING_DOWN`), and
-- looking away left, right, or up (`SUSTAINED_HEAD_TURN` with direction).
+- looking down (`SUSTAINED_LOOKING_DOWN`),
+- looking away left, right, or up (`SUSTAINED_HEAD_TURN` with direction), and
+- two review-only spoofing indicators: a face that did not answer the on-screen
+  liveness check (`FACE_LIVENESS_UNCONFIRMED`) and a face shown on a phone
+  screen (`FACE_ON_PHONE_SCREEN`).
+
+### Liveness (is the face alive, or a picture of one?)
+
+A printed photo or a phone showing a photo satisfies every rule above. Three
+layers, all built on models the exam already loads, deal with it:
+
+1. **Passive cues.** The worker now outputs the model's blendshape scores
+   (blink, jaw, mouth, brows) and a *non-rigid motion* score: how much the
+   landmarks changed shape since a frame about 0.7 s earlier, after fitting out
+   the affine motion a flat picture can produce (shift, turn, tilt, zoom). See
+   `livenessCues.js`. The liveness monitor credits any sign of life — a blink,
+   an expression change, or non-rigid motion — and only counts time while the
+   face is cleanly in view (frontal, single, well tracked). Calibration records
+   the student's open-eye and closed-mouth levels so these are judged relative
+   to their own camera.
+2. **On-screen check.** After a full quiet window (60 s of clean viewing with
+   no sign of life) the student is asked, with a countdown in the camera panel
+   and a toast, to blink twice or open their mouth. Either answer is accepted
+   whichever was asked. A pass records a neutral `face_liveness_check_passed`
+   activity and lengthens the next quiet window (up to 150 s). A face that
+   leaves mid-check cancels it. Only a prompt that goes unanswered while the
+   face stays in view becomes `FACE_LIVENESS_UNCONFIRMED`. It is a professor
+   review incident with a replay clip; it is **not** a strike unless
+   `liveness.failureCountsAsWarning` is turned on.
+3. **Face inside a phone.** Each YOLO scan's phone boxes are checked against
+   the latest face box (`faceOnScreenDetector.js`). A phone that contains at
+   least 85 % of the face, is larger than it, and is not most of the frame,
+   sustained for 4 s across at least four scans, raises `FACE_ON_PHONE_SCREEN`
+   (review only, with a replay clip; the YOLO phone rule carries any strike).
+
+Fail-safes: blink scores that never settle near "open" (narrow eyes, glare on
+glasses, a picture with shut eyes) stop counting, the check leans on the mouth
+and the quiet window doubles; a camera whose model gives no expression scores
+switches the check off and logs `face_liveness_unavailable`.
+`ExamApp.getFaceLivenessDiagnostics()` in the browser console shows the live
+scores for threshold tuning.
 
 ## Main files
 
@@ -43,6 +82,12 @@ The professor-facing camera behavior categories are deliberately limited to:
   update, repetition, and cooldown rules.
 - `src/lib/proctoring/facemesh/faceEventCorrelator.js`: FaceMesh/YOLO phone
   correlation.
+- `src/lib/proctoring/facemesh/livenessCues.js`: blendshape extraction and the
+  non-rigid motion meter (worker side).
+- `src/lib/proctoring/facemesh/livenessMonitor.js`: passive quiet window,
+  on-screen check, and the `FACE_LIVENESS_UNCONFIRMED` incident.
+- `src/lib/proctoring/facemesh/faceOnScreenDetector.js`: face-inside-phone
+  rule and the `FACE_ON_PHONE_SCREEN` incident.
 - `src/lib/proctoring/facemesh/faceSessionAggregator.js`: monitoring-report
   aggregates that are deliberately not sent to the current Random Forest.
 - `src/lib/proctoring/facemesh/evaluationExporter.js`: consent-gated,
@@ -95,6 +140,10 @@ All tunable values are centralized in
 | Sustained downward direction | 10 seconds |
 | Recovery before incident end | 1 second |
 | Same-rule cooldown | 5 seconds |
+| Liveness quiet window | 60 seconds of clean viewing with no sign of life; +30 s per answered check, up to 150 s; doubled when blinks are unreadable |
+| Liveness check | 15 seconds to blink twice or open the mouth; 120 s cooldown after any check |
+| Blink / expression / non-rigid motion | eye score ≥ max(0.5, rest + 0.3) then back; any expression score ranging ≥ 0.2; non-rigid motion ≥ 0.035 inter-ocular distances |
+| Face on phone screen | phone confidence ≥ 0.3, ≥ 85 % of the face inside, phone ≥ 1.15× face area and ≤ 70 % of frame, 4 s and ≥ 4 scans |
 
 Pitch is normalized to the student-facing convention: negative is up and
 positive is down. These are starting values, not validated production policy;
@@ -128,6 +177,17 @@ Use a non-production test exam with camera monitoring enabled:
     reload/remount the page. In browser developer tools, verify the worker,
     timers, and camera track stop and do not duplicate.
 11. Deny camera permission. Confirm the retry and exit controls remain usable.
+12. Sit normally for several minutes. Confirm no "Quick camera check" prompt
+    appears (blinks are being credited: `getFaceLivenessDiagnostics().monitor.lastLifeSign`).
+13. Hold a printed photo of a face steadily in front of the camera. After about
+    a minute confirm the prompt, let it run out, and verify one
+    `FACE_LIVENESS_UNCONFIRMED` review incident with a replay clip and no
+    strike. Repeat with a photo on a phone screen and verify
+    `FACE_ON_PHONE_SCREEN` within a few seconds when the object detector can
+    see the phone's edges.
+14. When the prompt appears, blink twice (or open your mouth). Confirm it
+    clears with a "camera check passed" toast and nothing in the violations.
+15. Leave the frame during a prompt. Confirm it cancels without an incident.
 
 The student camera panel deliberately does not display pose coordinates,
 tracking percentages, backend details, or inference timing. Confirm left/right
@@ -190,6 +250,13 @@ Current technical limitations:
   and the existing face detector; it is not an identity or intent classifier.
 - Iris/gaze classification is disabled. The system does not infer an exact
   on-screen gaze target.
+- Liveness thresholds (blink, expression range, non-rigid motion) are starting
+  values chosen so that errors fall on the side of the student; they have not
+  been measured on real webcam footage. A video of a person played on a phone
+  can answer a blink check — only the face-on-phone rule catches that, and only
+  while the detector can see the phone. A student who holds up a picture and
+  answers each check in person is seen only as a pattern of repeated
+  `face_liveness_check_passed` entries.
 - Face Landmarker tracks one primary face; BlazeFace continues to handle
   multiple faces.
 - Browser/device behavioral accuracy, fairness slices, false warnings per exam

@@ -67,7 +67,12 @@ const FACEMESH_REPORTED_INCIDENT_TYPES = new Set([
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+  'FACE_LIVENESS_UNCONFIRMED',
+  'FACE_ON_PHONE_SCREEN',
 ]);
+// The on-screen liveness prompt shares the camera panel's countdown slot under
+// this key. It is not an incident type; nothing is recorded while it counts.
+const FACE_LIVENESS_CHECK_KEY = 'FACE_LIVENESS_CHECK';
 
 // One timing policy drives every strike-warning path. Keeping these values in
 // one place prevents a focus/visibility event from silently replacing a camera
@@ -118,9 +123,15 @@ const VIOLATION_SNAPSHOT_QUALITY = 0.78;
 // Portal and course-view catch-up poll. Each tick re-reads the student's courses,
 // exams and sessions from Supabase, so with a full class online it must stay slow.
 const STUDENT_PORTAL_POLL_MS = 30000;
-// The waiting room probes exam status every 3s; the full exam row and sessions
-// are re-pulled every N ticks (or immediately when the status changes).
-const WAITING_FULL_REFRESH_TICKS = 5;
+// The waiting room learns that the exam started from the realtime push, which
+// costs no query. The status probe below is only the fallback for a dropped
+// socket: slow while realtime is connected, quick while it is not. With a full
+// class waiting, every second of this interval is a query per student.
+const WAITING_PROBE_REALTIME_MS = 30000;
+const WAITING_PROBE_OFFLINE_MS = 5000;
+// The full exam row and sessions (attendance) are re-pulled this often, or
+// immediately when the probe sees the status change.
+const WAITING_FULL_REFRESH_MS = 120000;
 
 // Capture hardware that screen recorders and streaming suites register with the
 // operating system. Matched case-insensitively against media-device labels.
@@ -200,6 +211,7 @@ const ExamApp = {
   warnings: 0,
   timerInterval: null,
   pollInterval: null,
+  _waitingPoll: null,
   anticheatListeners: [],
   answers: {},              // { questionId: value }
   _autoSaveTimer: null,
@@ -236,8 +248,13 @@ const ExamApp = {
   _violationClipSpawnTimer: null,
   _violationClipMimeType: '',
   _violationClipChunkMs: 1000,
-  _violationClipSegmentMs: 10000,
+  // A recorder starts every 5 s and runs for 15 s, so three overlap and the
+  // oldest one always holds at least the 10 s before any detection. With 10 s
+  // segments the oldest was only 5-10 s old: 89% of stored replays were shorter
+  // than the ten seconds the professor needs.
+  _violationClipSegmentMs: 15000,
   _violationClipOverlapMs: 5000,
+  _violationClipStream: null,
   // The last clip cut as the webcam went dark, held for the camera_off warning
   // that only arrives ten seconds later.
   _cameraLossClip: null,
@@ -309,6 +326,8 @@ const ExamApp = {
   _lastFaceMeshObservation: null,
   _faceIncidentRequests: new Map(),
   _faceViolationIncidentIds: new Set(),
+  _faceLivenessMonitor: null,
+  _faceOnScreenDetector: null,
   _facePositioningWarnings: new Map(),
   _faceConditionCountdowns: new Map(),
   _cameraCalibrationOnly: false,
@@ -731,6 +750,7 @@ const ExamApp = {
 
     this._violationClipMimeType = mimeType;
     this._violationClipRecorders = [];
+    this._violationClipStream = this._createViolationReplayStream();
 
     try {
       this._startViolationReplaySegment();
@@ -753,15 +773,39 @@ const ExamApp = {
     }
   },
 
+  // The replay recorders encode a 640x360 copy of the webcam. Three overlapping
+  // encoders at the camera's 720p would cost a weak laptop real frame time
+  // during the exam; at a quarter of the pixels they cost less than two did.
+  // The violation still frame is still taken from the full-resolution feed.
+  _createViolationReplayStream() {
+    const track = this._cameraStream?.getVideoTracks?.()[0];
+    if (!track || typeof track.clone !== 'function' || typeof MediaStream === 'undefined') return null;
+    try {
+      const copy = track.clone();
+      copy.applyConstraints?.({ width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 15 } })
+        ?.catch?.(() => {});
+      return new MediaStream([copy]);
+    } catch (_) {
+      return null;
+    }
+  },
+
+  _violationReplaySourceStream() {
+    const copy = this._violationClipStream;
+    if (copy?.active) return copy;
+    return this._cameraStream?.active ? this._cameraStream : null;
+  },
+
   _startViolationReplaySegment() {
-    if (!this._cameraStream?.active || typeof MediaRecorder === 'undefined') return null;
+    const source = this._violationReplaySourceStream();
+    if (!source || typeof MediaRecorder === 'undefined') return null;
 
     const recorder = this._violationClipMimeType
-      ? new MediaRecorder(this._cameraStream, {
+      ? new MediaRecorder(source, {
           mimeType: this._violationClipMimeType,
-          videoBitsPerSecond: 320000,
+          videoBitsPerSecond: 250000,
         })
-      : new MediaRecorder(this._cameraStream, { videoBitsPerSecond: 320000 });
+      : new MediaRecorder(source, { videoBitsPerSecond: 250000 });
     this._violationClipMimeType = recorder.mimeType || this._violationClipMimeType || 'video/webm';
     const segment = {
       recorder,
@@ -817,6 +861,10 @@ const ExamApp = {
       } catch (_) {}
     });
     this._violationClipMimeType = '';
+    this._violationClipStream?.getTracks?.().forEach((track) => {
+      try { track.stop(); } catch (_) {}
+    });
+    this._violationClipStream = null;
   },
 
   _blobToDataUrl(blob) {
@@ -833,25 +881,36 @@ const ExamApp = {
   // leaving the buffer empty until the spawn timer came round again is what cost
   // clustered camera violations their replays.
   _ensureViolationReplaySegment() {
-    if (!this._cameraStream?.active) return;
+    if (!this._violationReplaySourceStream()) return;
     const recording = (Array.isArray(this._violationClipRecorders) ? this._violationClipRecorders : [])
       .some(item => item?.recorder?.state === 'recording');
     if (recording) return;
     try { this._startViolationReplaySegment(); } catch (_) {}
   },
 
-  async _cutViolationReplaySegment(segment, triggeredAtMs) {
-    if (!segment?.recorder) return null;
-    segment.endedAt = triggeredAtMs;
-    if (segment.stopTimer) clearTimeout(segment.stopTimer);
-    try {
-      segment.recorder.requestData?.();
-      segment.recorder.stop();
-    } catch (_) {
-      return null;
-    }
-    const clipBlob = await segment.finished;
-    return clipBlob?.size ? clipBlob : null;
+  // Copies what a recorder has captured so far without stopping it. Stopping was
+  // what left a violation arriving seconds after another with only a short,
+  // younger segment to cut from; now every violation in a cluster gets its own
+  // full history from the same recorder.
+  async _cutViolationReplaySegment(segment) {
+    const recorder = segment?.recorder;
+    if (!recorder || recorder.state !== 'recording') return null;
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 1500);
+      const settle = () => { clearTimeout(timer); setTimeout(resolve, 0); };
+      try {
+        recorder.addEventListener('dataavailable', settle, { once: true });
+        // Flush the encoder so the clip reaches the moment of detection.
+        recorder.requestData();
+      } catch (_) {
+        settle();
+      }
+    });
+    if (!segment.chunks.length) return null;
+    const clipBlob = new Blob(segment.chunks.slice(), {
+      type: recorder.mimeType || this._violationClipMimeType || 'video/webm',
+    });
+    return clipBlob.size ? clipBlob : null;
   },
 
   // A webcam that has stopped cannot be recorded any more, and the warning for it
@@ -900,7 +959,7 @@ const ExamApp = {
       // a younger segment is still holding usable video.
       for (const segment of candidates) {
         // eslint-disable-next-line no-await-in-loop
-        const clipBlob = await this._cutViolationReplaySegment(segment, triggeredAtMs);
+        const clipBlob = await this._cutViolationReplaySegment(segment);
         if (!clipBlob) continue;
 
         const clipStartedAtMs = Number(segment.startedAt || triggeredAtMs);
@@ -912,7 +971,7 @@ const ExamApp = {
           clipStartedAt: new Date(clipStartedAtMs).toISOString(),
           clipEndedAt: new Date(clipEndedAtMs).toISOString(),
           triggeredAt: new Date(triggeredAtMs).toISOString(),
-          durationMs: Math.min(10000, Math.max(0, clipEndedAtMs - clipStartedAtMs)),
+          durationMs: Math.min(20000, Math.max(0, clipEndedAtMs - clipStartedAtMs)),
           fileSizeBytes: clipBlob.size,
           clipBlob,
         };
@@ -3276,50 +3335,98 @@ const ExamApp = {
   startWaitingPoll() {
     this._stopSessionSyncPolling();
     this.stopPoll();
-    let ticksSinceFullRefresh = 0;
-    this.pollInterval = setInterval(async () => {
-      // Re-fetch from Supabase, not just the local cache, so the exam still
-      // auto-starts here even if the realtime socket silently dropped. Each tick
-      // only probes this exam's status; the full exam row and the student's
-      // sessions are re-pulled when the status changes, or every
-      // WAITING_FULL_REFRESH_TICKS ticks to catch attendance changes.
-      const sync = window.SupabaseSync;
-      const examId = this.exam.id;
-      const remoteStatus = await Promise.resolve(sync?.fetchExamStatus?.(examId)).catch(() => null);
-      ticksSinceFullRefresh += 1;
-      const statusChanged = !!remoteStatus && remoteStatus !== DB.getExam(examId)?.status;
-      if (statusChanged || ticksSinceFullRefresh >= WAITING_FULL_REFRESH_TICKS) {
-        ticksSinceFullRefresh = 0;
-        await Promise.all([sync?.refreshExam?.(examId, { summary: true }), sync?.refreshSessions?.({ examId })]).catch(() => {});
-      }
-      if (!this.exam || this.exam.id !== examId) return;
-      const latestExam = DB.getExam(examId);
-      if (!latestExam) return;
-      this.exam = latestExam;
-      this._preloadYoloObjectModel();
-      const studentSession = Auth.getStudentSession();
-      const portalStudent = studentSession ? this._getPortalStudent(studentSession.studentId) : null;
-      const existingSession = studentSession ? DB.getStudentSession(this.exam.id, studentSession.studentId) : null;
+    const examId = this.exam?.id;
+    if (!examId) return;
+    const waiting = { examId, lastFullRefreshAt: Date.now(), probing: false };
+    this._waitingPoll = waiting;
 
-      if (this._isStudentAbsentForExam(portalStudent, latestExam) && !existingSession?.submitted) {
-        this.stopPoll();
-        this._showMarkedAbsentState(latestExam);
+    const scheduleProbe = () => {
+      clearTimeout(this.pollInterval);
+      const connected = window.SupabaseSync?.isRealtimeConnected?.() === true;
+      this.pollInterval = setTimeout(probe, connected ? WAITING_PROBE_REALTIME_MS : WAITING_PROBE_OFFLINE_MS);
+    };
+
+    // Re-reads Supabase in case the realtime socket silently dropped. Only this
+    // exam's status is probed; the full exam row and the student's sessions are
+    // re-pulled when the status changes, or every WAITING_FULL_REFRESH_MS to
+    // catch attendance changes.
+    const probe = async () => {
+      if (this._waitingPoll !== waiting || waiting.probing) return;
+      // A hidden tab has no one watching it; it probes the moment it is shown.
+      if (document.hidden) {
+        scheduleProbe();
         return;
       }
-
-      if (latestExam.status === 'active') {
-        this.stopPoll();
-        this._startExamFlow(studentSession);
-        return;
-      } else if (latestExam.status === 'closed' || latestExam.status === 'archived') {
-        this.stopPoll();
-        this.returnToLogin(); // return to dashboard
+      waiting.probing = true;
+      try {
+        const sync = window.SupabaseSync;
+        const remoteStatus = await Promise.resolve(sync?.fetchExamStatus?.(examId)).catch(() => null);
+        if (this._waitingPoll !== waiting) return;
+        const statusChanged = !!remoteStatus && remoteStatus !== DB.getExam(examId)?.status;
+        if (statusChanged || Date.now() - waiting.lastFullRefreshAt >= WAITING_FULL_REFRESH_MS) {
+          waiting.lastFullRefreshAt = Date.now();
+          await Promise.all([sync?.refreshExam?.(examId, { summary: true }), sync?.refreshSessions?.({ examId })]).catch(() => {});
+        }
+        if (this._waitingPoll !== waiting) return;
+        this._checkWaitingExam();
+      } finally {
+        waiting.probing = false;
       }
-    }, 3000);
+      if (this._waitingPoll === waiting) scheduleProbe();
+    };
+
+    const probeNow = () => {
+      if (this._waitingPoll !== waiting || document.hidden) return;
+      clearTimeout(this.pollInterval);
+      probe();
+    };
+    waiting.onVisible = () => { if (!document.hidden) probeNow(); };
+    waiting.onOnline = probeNow;
+    document.addEventListener('visibilitychange', waiting.onVisible);
+    window.addEventListener('online', waiting.onOnline);
+    scheduleProbe();
+  },
+
+  // Acts on whatever the local cache now says about the exam being waited for.
+  // Realtime pushes land here directly, with no query of their own.
+  _checkWaitingExam() {
+    const waiting = this._waitingPoll;
+    if (!waiting || !this.exam || this.exam.id !== waiting.examId) return;
+    const latestExam = DB.getExam(waiting.examId);
+    if (!latestExam) return;
+    this.exam = latestExam;
+    this._preloadYoloObjectModel();
+    const studentSession = Auth.getStudentSession();
+    const portalStudent = studentSession ? this._getPortalStudent(studentSession.studentId) : null;
+    const existingSession = studentSession ? DB.getStudentSession(this.exam.id, studentSession.studentId) : null;
+
+    if (this._isStudentAbsentForExam(portalStudent, latestExam) && !existingSession?.submitted) {
+      this.stopPoll();
+      this._showMarkedAbsentState(latestExam);
+      return;
+    }
+
+    if (latestExam.status === 'active') {
+      this.stopPoll();
+      this._startExamFlow(studentSession);
+    } else if (latestExam.status === 'closed' || latestExam.status === 'archived') {
+      this.stopPoll();
+      this.returnToLogin(); // return to dashboard
+    }
+  },
+
+  _handleWaitingDataChange(table) {
+    if (!this._waitingPoll) return;
+    if (!['exams', 'sessions', 'students'].includes(String(table || '').trim())) return;
+    this._checkWaitingExam();
   },
 
   stopPoll() {
-    if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; }
+    if (this.pollInterval) { clearTimeout(this.pollInterval); this.pollInterval = null; }
+    const waiting = this._waitingPoll;
+    this._waitingPoll = null;
+    if (waiting?.onVisible) document.removeEventListener('visibilitychange', waiting.onVisible);
+    if (waiting?.onOnline) window.removeEventListener('online', waiting.onOnline);
   },
 
   // ============================================================
@@ -5277,6 +5384,20 @@ const ExamApp = {
     this._updateMultiplePeopleTracking('facemesh', enriched.faceCount >= 2, { holdMs: 1500 });
     this._faceAggregator?.observe?.(enriched);
     this._faceRuleEngine.update(enriched);
+    this._faceLivenessMonitor?.observe?.(enriched);
+    if (this._faceOnScreenDetector) {
+      const primaryFace = this._latestFaceContext?.faces?.[0];
+      this._faceOnScreenDetector.observeFace(
+        enriched.facePresent && primaryFace
+          ? {
+            ...primaryFace,
+            frameWidth: this._latestFaceContext.frameWidth,
+            frameHeight: this._latestFaceContext.frameHeight,
+          }
+          : null,
+        Date.now(),
+      );
+    }
     this._renderFaceConditionCountdown();
     this._setFaceMeshStatus(
       enriched.trackingUnstable ? 'warning' : 'ready',
@@ -5340,6 +5461,89 @@ const ExamApp = {
       this._faceMeshConfig,
       event => this._handleFaceMeshRuleEvent(event),
     );
+    // A picture of a face satisfies every rule above. These two ask whether the
+    // face is alive, and whether it is being shown on a phone screen.
+    this._faceLivenessMonitor = window.FaceMeshProctor.createLivenessMonitor?.(
+      this._faceMeshConfig,
+      this._faceMeshBaseline,
+      event => this._handleFaceLivenessEvent(event),
+    ) || null;
+    this._faceOnScreenDetector = this._faceMeshConfig?.faceOnScreen?.enabled !== false
+      ? window.FaceMeshProctor.createFaceOnScreenDetector?.(
+        this._faceMeshConfig,
+        event => this._handleFaceMeshRuleEvent(event),
+      ) || null
+      : null;
+  },
+
+  _handleFaceLivenessEvent(event) {
+    if (!event?.kind) return;
+    if (event.kind === 'incident') {
+      this._handleFaceMeshRuleEvent(event);
+      return;
+    }
+    if (event.kind === 'liveness-unavailable') {
+      this._recordActivity(
+        'face_liveness_unavailable',
+        'The liveness check is off for this session because the camera gives no usable expression data',
+        { source: 'FACEMESH', reason: String(event.reason || '') },
+      );
+      return;
+    }
+    if (event.kind === 'liveness-blink-unreliable') {
+      console.warn('[FaceMesh] Blink scores unreliable on this camera; liveness relies on mouth movement.', event.restEyeBlink);
+      return;
+    }
+    if (event.kind === 'liveness-challenge' || event.kind === 'liveness-challenge-progress') {
+      const remainingSeconds = Number(event.remainingSeconds);
+      this._faceConditionCountdowns.set(FACE_LIVENESS_CHECK_KEY, {
+        eventType: FACE_LIVENESS_CHECK_KEY,
+        remainingSeconds,
+        instruction: event.instruction,
+      });
+      this._facePositioningWarnings.set(FACE_LIVENESS_CHECK_KEY, event.instruction);
+      this._renderFacePositioningNotice(event.instruction, remainingSeconds, {
+        label: 'Quick camera check',
+        verb: 'Respond',
+      });
+      this._renderFaceConditionCountdown();
+      this._setFaceMeshStatus('warning', 'Quick camera check');
+      if (event.kind === 'liveness-challenge') {
+        // The camera panel is small and the student is reading questions, so the
+        // ask is also surfaced where they are looking.
+        this._showToast(`Quick camera check: ${event.instruction}`, 'info');
+      }
+      return;
+    }
+    const finished = ['liveness-challenge-passed', 'liveness-challenge-failed', 'liveness-challenge-cancelled'];
+    if (!finished.includes(event.kind)) return;
+    this._faceConditionCountdowns.delete(FACE_LIVENESS_CHECK_KEY);
+    this._facePositioningWarnings.delete(FACE_LIVENESS_CHECK_KEY);
+    this._renderRemainingFacePositioningNotice();
+    this._renderFaceConditionCountdown();
+    this._setFaceMeshStatus('ready', 'Face scan active');
+    if (event.kind === 'liveness-challenge-passed') {
+      this._showToast('Thanks — camera check passed.', 'success');
+      this._recordActivity(
+        'face_liveness_check_passed',
+        'Student responded to the on-screen liveness check',
+        {
+          source: 'FACEMESH',
+          challenge: String(event.challenge || ''),
+          responseMs: Number(event.responseMs || 0),
+        },
+      );
+    }
+  },
+
+  getFaceLivenessDiagnostics() {
+    const observation = this._lastFaceMeshObservation || {};
+    return {
+      monitor: this._faceLivenessMonitor?.snapshot?.() || null,
+      blendshapes: observation.blendshapes || null,
+      nonRigidMotion: Number.isFinite(Number(observation.nonRigidMotion)) ? Number(observation.nonRigidMotion) : null,
+      trackingQuality: Number(observation.trackingQuality || 0),
+    };
   },
 
   _upsertFaceActivity(event) {
@@ -5453,9 +5657,15 @@ const ExamApp = {
 
   _issueFaceMeshViolation(event) {
     if (event?.phase !== 'start' || !FACEMESH_REPORTED_INCIDENT_TYPES.has(event.eventType)) return false;
-    // This correlated FaceMesh + YOLO event is already enforced by the YOLO
+    // These correlated FaceMesh + YOLO events are already enforced by the YOLO
     // restricted-phone rule. Counting both would give two strikes for one phone.
-    if (event.eventType === 'PHONE_NEAR_OR_COVERING_FACE') return false;
+    if (event.eventType === 'PHONE_NEAR_OR_COVERING_FACE' || event.eventType === 'FACE_ON_PHONE_SCREEN') return false;
+    // An unanswered liveness check goes to the professor for review. It only
+    // costs a strike where the exam's configuration says so.
+    if (
+      event.eventType === 'FACE_LIVENESS_UNCONFIRMED'
+      && this._faceMeshConfig?.liveness?.failureCountsAsWarning !== true
+    ) return false;
 
     return this.issueWarning(event.eventType, event.description || 'Face monitoring rule violated', {
       source: event.source || 'FACEMESH',
@@ -5546,8 +5756,7 @@ const ExamApp = {
     }
     if (event?.kind === 'positioning-warning-clear') {
       this._facePositioningWarnings.delete(event.eventType);
-      const remaining = [...this._facePositioningWarnings.values()].at(-1);
-      this._renderFacePositioningNotice(remaining || '');
+      this._renderRemainingFacePositioningNotice();
       return;
     }
     if (event?.kind !== 'incident') return;
@@ -5576,12 +5785,31 @@ const ExamApp = {
     this._faceAggregator?.consume?.(trackedEvent);
     this._upsertFaceActivity(trackedEvent);
     const incidentRequest = this._syncFaceIncident(trackedEvent);
-    if (warningIssued) this._captureFaceMeshViolationReplay(trackedEvent, incidentRequest);
+    // The review-only spoofing incidents carry no strike, but the professor
+    // still needs to see what the camera saw to judge them.
+    const reviewClip = event.phase === 'start'
+      && ['FACE_LIVENESS_UNCONFIRMED', 'FACE_ON_PHONE_SCREEN'].includes(event.eventType);
+    if (warningIssued || reviewClip) this._captureFaceMeshViolationReplay(trackedEvent, incidentRequest);
     if (event.phase === 'end') this._persistFaceMonitoringSummary();
     if (event.phase === 'end' && event.incidentId) this._faceViolationIncidentIds.delete(event.incidentId);
   },
 
-  _renderFacePositioningNotice(message, remainingSeconds = null) {
+  // After one notice clears, whichever is still outstanding takes its place.
+  _renderRemainingFacePositioningNotice() {
+    const [type, message] = [...this._facePositioningWarnings.entries()].at(-1) || [];
+    if (!message) {
+      this._renderFacePositioningNotice('');
+      return;
+    }
+    const countdown = this._faceConditionCountdowns.get(type);
+    this._renderFacePositioningNotice(
+      message,
+      countdown?.remainingSeconds,
+      type === FACE_LIVENESS_CHECK_KEY ? { label: 'Quick camera check', verb: 'Respond' } : {},
+    );
+  },
+
+  _renderFacePositioningNotice(message, remainingSeconds = null, options = {}) {
     const warning = document.getElementById('face-positioning-warning');
     if (!warning) return;
     if (!message) {
@@ -5590,6 +5818,8 @@ const ExamApp = {
       return;
     }
 
+    const label = options.label || 'Camera positioning';
+    const verb = options.verb || 'Adjust';
     const seconds = Number(remainingSeconds);
     const hasCountdown = Number.isFinite(seconds) && seconds > 0;
 
@@ -5602,10 +5832,10 @@ const ExamApp = {
         </svg>
       </span>
       <span class="face-positioning-warning-copy">
-        <span class="face-positioning-warning-label">Camera positioning</span>
+        <span class="face-positioning-warning-label">${_esc(label)}</span>
         <span class="face-positioning-warning-message">${_esc(message)}</span>
         ${hasCountdown
-          ? `<span class="face-positioning-warning-hint">Adjust within <strong>${seconds}s</strong> and nothing is recorded.</span>`
+          ? `<span class="face-positioning-warning-hint">${_esc(verb)} within <strong>${seconds}s</strong> and nothing is recorded.</span>`
           : ''}
       </span>
       ${hasCountdown ? `<span class="face-positioning-warning-count" aria-hidden="true">${seconds}</span>` : ''}`;
@@ -5646,7 +5876,7 @@ const ExamApp = {
     }
     delete statusText.dataset.alert;
     statusText.removeAttribute?.('title');
-    const priorities = ['FACE_ABSENT', 'SUSTAINED_LOOKING_DOWN', 'SUSTAINED_HEAD_TURN'];
+    const priorities = ['FACE_ABSENT', 'SUSTAINED_LOOKING_DOWN', 'SUSTAINED_HEAD_TURN', FACE_LIVENESS_CHECK_KEY];
     const countdown = priorities.map(type => this._faceConditionCountdowns.get(type)).find(Boolean);
     if (!countdown) {
       if (statusText.dataset.faceCountdown === 'true') {
@@ -5661,7 +5891,9 @@ const ExamApp = {
       ? 'No person detected'
       : countdown.eventType === 'SUSTAINED_LOOKING_DOWN'
         ? 'Looking down'
-        : `Looking away${direction ? ` ${direction}` : ''}`;
+        : countdown.eventType === FACE_LIVENESS_CHECK_KEY
+          ? 'Quick check'
+          : `Looking away${direction ? ` ${direction}` : ''}`;
     statusText.dataset.faceCountdown = 'true';
     statusText.textContent = countdown.remainingSeconds > 0
       ? `${label} (${countdown.remainingSeconds}s)`
@@ -6078,6 +6310,13 @@ const ExamApp = {
       if (people.length) this._yoloPersonSeenUntil = Date.now() + 1500;
       this._updateMultiplePeopleTracking('yolo', people.length >= 2, { holdMs: 2000 });
     }
+    // Every phone box this scan found, from either detector, is a vote on
+    // whether the face is sitting inside one.
+    this._faceOnScreenDetector?.observePhones(
+      detections.filter(detection => detection?.objectClass === 'mobile_phone' && detection?.boundingBox),
+      Date.now(),
+      Date.now(),
+    );
     const events = this._yoloPolicy.evaluate(detections, {
       now: Date.now(),
       modelVersion: result.modelVersion || '',
@@ -7438,6 +7677,10 @@ const ExamApp = {
         wallClockMs: Date.now(),
       });
     }
+    this._faceLivenessMonitor?.stop?.();
+    this._faceLivenessMonitor = null;
+    this._faceOnScreenDetector?.stop?.(Date.now(), Date.now());
+    this._faceOnScreenDetector = null;
     this._persistFaceMonitoringSummary();
     this._faceMeshRuntime?.stop?.();
     this._faceMeshRuntime = null;
@@ -7965,6 +8208,8 @@ const ExamApp = {
       FACE_OCCLUDED: 'Your face remained obstructed.',
       FACE_TRACKING_UNSTABLE: 'Your face could not be tracked reliably.',
       PHONE_NEAR_OR_COVERING_FACE: 'A phone was detected near or covering your face.',
+      FACE_LIVENESS_UNCONFIRMED: 'The on-screen camera check was not answered.',
+      FACE_ON_PHONE_SCREEN: 'A face shown on a phone screen was detected in the camera frame.',
     };
 
     msgEl.textContent  = messages[type] || detail;
@@ -10126,6 +10371,7 @@ document.addEventListener('supabaseSyncError', (e) => {
 });
 
 document.addEventListener('acsDataChanged', (e) => {
+  ExamApp._handleWaitingDataChange(e.detail?.table);
   ExamApp._handlePortalDataChange(e.detail?.table);
   ExamApp._handleExamDataChange(e.detail?.table);
 });

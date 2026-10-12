@@ -48,6 +48,8 @@ const RULE_VIOLATION_TYPES = Object.freeze(new Set([
   'FACE_OCCLUDED',
   'FACE_TRACKING_UNSTABLE',
   'PHONE_NEAR_OR_COVERING_FACE',
+  'FACE_LIVENESS_UNCONFIRMED',
+  'FACE_ON_PHONE_SCREEN',
 ]));
 const BROWSER_VIOLATION_TYPES = Object.freeze(new Set([
   'window_blur', 'tab_switch', 'fullscreen_exit', 'screenshot',
@@ -142,11 +144,13 @@ function aggregateViolationFeatureSnapshot(session, recordedEvents = [], configu
   const typeCount = type => types.filter(value => value === type).length;
   const countAny = candidates => types.filter(value => candidates.has(value)).length;
   const focusTypes = new Set(['window_blur', 'tab_switch', 'fullscreen_exit']);
-  const noFaceTypes = new Set(['no_person', 'camera_off', 'FACE_ABSENT', 'FACE_OCCLUDED']);
+  // A face that failed the liveness check was, as far as the features go, no
+  // face at all.
+  const noFaceTypes = new Set(['no_person', 'camera_off', 'FACE_ABSENT', 'FACE_OCCLUDED', 'FACE_LIVENESS_UNCONFIRMED']);
   const multiFaceTypes = new Set(['multiple_people']);
   const pitchTypes = new Set(['look_down', 'SUSTAINED_LOOKING_DOWN']);
   const yawTypes = new Set(['SUSTAINED_HEAD_TURN', 'REPEATED_LOOKING_AWAY']);
-  const handOrObjectTypes = new Set(['restricted_phone', 'secondary_computer', 'restricted_book', 'PHONE_NEAR_OR_COVERING_FACE']);
+  const handOrObjectTypes = new Set(['restricted_phone', 'secondary_computer', 'restricted_book', 'PHONE_NEAR_OR_COVERING_FACE', 'FACE_ON_PHONE_SCREEN']);
 
   const features = { ...defaults };
   features.browser_tab_switched_count = Math.min(5, countAny(focusTypes));

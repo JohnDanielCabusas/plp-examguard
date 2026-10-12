@@ -9,6 +9,7 @@ const cache = new Map();
 let studentId = 'student-1';
 let imageFailure = false;
 const errors = [];
+const warnings = [];
 const requests = [];
 const imageRequests = [];
 const window = {
@@ -16,7 +17,7 @@ const window = {
   Auth: { getStudentSession: () => ({ studentId }), getAdminSession: () => null, getSysAdminSession: () => null },
 };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/supabase-sync.js'), 'utf8'), {
-  window, console, AbortController, setTimeout, clearTimeout,
+  window, console: { ...console, warn: (...args) => warnings.push(args.join(' ')) }, AbortController, setTimeout, clearTimeout,
   fetch: async (url, options) => {
     imageRequests.push(JSON.parse(options.body));
     if (imageFailure) throw new Error('storage unavailable');
@@ -84,7 +85,12 @@ sync._client = { from(table) {
   const failedImage = { ...full, id: 'session-failed-image' };
   await sync.syncDoc('sessions', failedImage, { fields: ['cameraSnapshots'] });
   assert.equal(requests.at(-1).payload.camera_snapshots[0].imageData, PIXEL, 'storage failure retains original evidence');
-  assert.ok(errors.some(error => error.table === 'snapshots'));
+  // Nothing is lost and the student cannot act on it, so it is not raised as a
+  // sync error (which the exam page shows as a toast); it is logged once.
+  assert.ok(!errors.some(error => error.table === 'snapshots'), 'a storage fallback is not shown to the student');
+  assert.equal(warnings.filter(line => line.includes('Snapshot storage unavailable')).length, 1);
+  await sync.syncDoc('sessions', { ...failedImage, id: 'session-failed-image-2' }, { fields: ['cameraSnapshots'] });
+  assert.equal(warnings.filter(line => line.includes('Snapshot storage unavailable')).length, 1, 'logged once per page');
   imageFailure = false;
   await sync.syncDoc('sessions', failedImage, { fields: ['cameraSnapshots'] });
   assert.ok(requests.at(-1).payload.camera_snapshots[0].assetId, 'a later write retries failed storage');

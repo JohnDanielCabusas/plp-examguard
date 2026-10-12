@@ -296,7 +296,7 @@ try {
     `A repaint overwrote the review notes being typed: ${JSON.stringify(reshow.notes)}`,
   );
   check(
-    /reviewed/i.test(reshow.status),
+    /confirmed/i.test(reshow.status),
     `The review status must still update in place: ${JSON.stringify(reshow.status)}`,
   );
 

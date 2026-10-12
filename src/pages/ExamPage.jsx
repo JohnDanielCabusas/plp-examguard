@@ -480,7 +480,7 @@ export default function ExamPage() {
           <h2>Waiting for Exam to Start</h2>
           <p>The exam has not started yet. Please wait for your instructor to activate the exam.</p>
           <div className="student-info-box" id="waiting-info-box" />
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>This page refreshes automatically every 3 seconds.</div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Keep this page open. Your exam opens automatically when your instructor starts it.</div>
           <a href="#" onClick={(e) => { e.preventDefault(); window.ExamApp.returnToLogin(); }} style={{ display: 'inline-flex', alignItems: 'center', marginTop: '16px', fontSize: '13px' }}><BackLabel text="Back to Dashboard" /></a>
         </div>
       </div>

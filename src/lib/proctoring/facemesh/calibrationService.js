@@ -2,6 +2,18 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
 }
 
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function eyeBlinkSample(blendshapes) {
+  const left = Number(blendshapes?.eyeBlinkLeft);
+  const right = Number(blendshapes?.eyeBlinkRight);
+  return Number.isFinite(left) && Number.isFinite(right) ? (left + right) / 2 : null;
+}
+
 function range(values) {
   return values.length ? Math.max(...values) - Math.min(...values) : Infinity;
 }
@@ -213,6 +225,12 @@ export class FaceCalibrationSession {
       // pitch is later judged against these, not against a fixed figure.
       noseFraction: Number.isFinite(Number(cues?.noseFraction)) ? Number(cues.noseFraction) : null,
       faceSpanRatio: Number.isFinite(Number(cues?.faceSpanRatio)) ? Number(cues.faceSpanRatio) : null,
+      // What this camera reports for this student's open eyes and closed mouth.
+      // The liveness check reads blinks and mouth movement against these.
+      eyeBlink: eyeBlinkSample(observation?.blendshapes),
+      jawOpen: Number.isFinite(Number(observation?.blendshapes?.jawOpen))
+        ? Number(observation.blendshapes.jawOpen)
+        : null,
     });
 
     const progress = this._progress();
@@ -235,6 +253,10 @@ export class FaceCalibrationSession {
     const faceSpanRatios = this.samples
       .map(sample => sample.faceSpanRatio)
       .filter(value => Number.isFinite(value));
+    // A blink during the scan would lift the open-eye average, so the resting
+    // level is the median rather than the mean.
+    const eyeBlinks = this.samples.map(sample => sample.eyeBlink).filter(value => Number.isFinite(value));
+    const jawOpens = this.samples.map(sample => sample.jawOpen).filter(value => Number.isFinite(value));
 
     this.complete = true;
     this.baseline = Object.freeze({
@@ -243,6 +265,8 @@ export class FaceCalibrationSession {
       // the euler-only rule rather than comparing against a figure we never saw.
       baselineNoseFraction: noseFractions.length >= 5 ? average(noseFractions) : null,
       baselineFaceSpanRatio: faceSpanRatios.length >= 5 ? average(faceSpanRatios) : null,
+      baselineEyeBlink: eyeBlinks.length >= 5 ? median(eyeBlinks) : null,
+      baselineJawOpen: jawOpens.length >= 5 ? median(jawOpens) : null,
       baselineYaw: average(yawValues),
       baselinePitch: average(pitchValues),
       baselineRoll: average(this.samples.map(sample => sample.roll)),

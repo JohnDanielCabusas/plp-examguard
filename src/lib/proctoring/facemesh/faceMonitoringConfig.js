@@ -134,6 +134,84 @@ const BASE_CONFIG = Object.freeze({
     overlapWindowMs: 4000,
     faceBoxExpansionRatio: 0.18,
   }),
+  // Is the face on camera alive, or a picture of one? See livenessMonitor.js.
+  // Everything here is set so that a real student is almost never asked, and
+  // when they are, a blink clears it with nothing recorded.
+  liveness: Object.freeze({
+    enabled: true,
+    // Clean viewing with no sign of life before the student is asked to show
+    // one. People blink several times a minute even while reading; a minute
+    // with no blink, no expression and no change of shape is long enough to
+    // ask, and short enough that a picture cannot hide for long.
+    passiveWindowMs: 60000,
+    // Each answered check lengthens the next window, up to this.
+    passiveWindowGrowthMs: 30000,
+    maximumPassiveWindowMs: 150000,
+    // Frames further apart than this are a stall or a lost face, not quiet time.
+    maximumFrameGapMs: 1500,
+    // Only steady, frontal, well-tracked single faces are judged.
+    minimumTrackingQuality: 0.4,
+    maximumYawDegrees: 25,
+    // Open-eye level learned from the first clean frames when calibration did
+    // not supply one.
+    restSampleCount: 20,
+    // Eyes that never read as open (narrow eyes, glare, or a picture with the
+    // eyes shut) make blinks unreadable: they stop counting, the mouth is asked
+    // for instead, and the quiet window is scaled up to compensate.
+    maximumRestingEyeBlink: 0.4,
+    unreliableBlinkWindowScale: 2,
+    // A blink is the eye score rising this far above rest (and past the floor),
+    // then dropping back within the blink's own duration.
+    blinkThreshold: 0.5,
+    blinkRiseAboveRest: 0.3,
+    blinkRecoveryAboveRest: 0.15,
+    maximumBlinkMs: 1500,
+    // Any expression score ranging this much over the window is a change of
+    // face no picture can make.
+    expressionRangeThreshold: 0.2,
+    // Non-rigid landmark motion, in inter-ocular distances, above which the
+    // face has changed shape rather than merely moved (see livenessCues.js).
+    nonRigidMotionThreshold: 0.035,
+    // The on-screen check.
+    challengeDurationMs: 15000,
+    challengeBlinkCount: 2,
+    blinkChallengeProbability: 0.7,
+    mouthOpenThreshold: 0.3,
+    mouthOpenRiseAboveRest: 0.25,
+    mouthClosedAboveRest: 0.1,
+    // A face gone this long mid-check cancels it; silence only counts while the
+    // face stayed cleanly in view for most of the prompt.
+    challengeAbsenceCancelMs: 3000,
+    challengeMinimumCleanRatio: 0.5,
+    // Quiet time after any check before another can begin.
+    challengeCooldownMs: 120000,
+    cancelledCooldownMs: 15000,
+    // An unanswered check is a review incident for the professor. It is not a
+    // strike unless this is turned on.
+    failureCountsAsWarning: false,
+  }),
+  // A face that sits inside a detected phone is being shown on its screen. See
+  // faceOnScreenDetector.js.
+  faceOnScreen: Object.freeze({
+    enabled: true,
+    // Face boxes older than this say nothing about the current scan.
+    faceContextMs: 1500,
+    minimumPhoneConfidence: 0.3,
+    // How much of the face box the phone box has to cover.
+    minimumContainment: 0.85,
+    // The phone has to be larger than the face it shows, and cannot be most of
+    // the frame (that is a monitor, or a phone against the lens).
+    minimumPhoneToFaceAreaRatio: 1.15,
+    maximumPhoneFrameAreaRatio: 0.7,
+    // YOLO scans every 400-600 ms; the incident needs this much continuous
+    // containment with at least this many scans agreeing.
+    incidentMs: 4000,
+    minimumHits: 4,
+    gapToleranceMs: 2000,
+    recoveryMs: 3000,
+    incidentUpdateMs: 5000,
+    cooldownMs: 10000,
+  }),
   randomForest: Object.freeze({
     featureContractVersion: 'rf-session-summary-v1',
     handModelUrl: '/models/hand_landmarker.task',
@@ -162,6 +240,8 @@ export function resolveFaceMonitoringConfig(value = {}) {
     geometry: mergeSection(BASE_CONFIG.geometry, raw.geometry),
     temporal: mergeSection(BASE_CONFIG.temporal, raw.temporal),
     correlation: mergeSection(BASE_CONFIG.correlation, raw.correlation),
+    liveness: mergeSection(BASE_CONFIG.liveness, raw.liveness),
+    faceOnScreen: mergeSection(BASE_CONFIG.faceOnScreen, raw.faceOnScreen),
     randomForest: mergeSection(BASE_CONFIG.randomForest, raw.randomForest),
     inferenceFps: Math.min(15, Math.max(5, Number(raw.inferenceFps || BASE_CONFIG.inferenceFps))),
     maximumInferenceDimension: Math.min(

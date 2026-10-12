@@ -17320,6 +17320,15 @@ label.theme-switch,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* A loading spinner is a status indicator, not decoration. Frozen, it reads
+     as a hung page, which is what students with Windows "Animation effects"
+     turned off saw in the waiting room. It keeps turning, just more slowly. */
+  .spinner,
+  .btn-spinner,
+  .theme-loading-spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* ============================================================

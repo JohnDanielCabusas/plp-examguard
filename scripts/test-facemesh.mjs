@@ -15,6 +15,13 @@ import {
   smoothHeadPose,
 } from '../src/lib/proctoring/facemesh/headPoseEstimator.js';
 import { FaceTemporalRuleEngine } from '../src/lib/proctoring/facemesh/temporalRuleEngine.js';
+import {
+  createNonRigidMotionMeter,
+  extractBlendshapes,
+  nonRigidResidual,
+} from '../src/lib/proctoring/facemesh/livenessCues.js';
+import { FaceLivenessMonitor } from '../src/lib/proctoring/facemesh/livenessMonitor.js';
+import { FaceOnScreenDetector, findContainingPhone } from '../src/lib/proctoring/facemesh/faceOnScreenDetector.js';
 
 function matrixFor({ yaw = 0, pitch = 0, roll = 0 } = {}) {
   const x = pitch * Math.PI / 180;
@@ -529,4 +536,342 @@ await assert.rejects(
   error => error?.code === 'UNAVAILABLE',
 );
 
-console.log('FaceMesh pose, calibration, temporal, correlation, aggregation, and camera error tests passed.');
+// ── Liveness cues ────────────────────────────────────────────────────────────
+// A flat picture can shift, turn, tilt and come closer, and every landmark
+// moves together under one affine map. The residual after fitting that map out
+// is what a picture cannot produce: the face changing shape.
+assert.equal(config.liveness.passiveWindowMs, 60000);
+assert.equal(config.liveness.failureCountsAsWarning, false);
+assert.equal(config.faceOnScreen.minimumContainment, 0.85);
+
+function meshPoints(deform = () => null) {
+  const points = [];
+  for (let index = 0; index < 478; index += 1) {
+    const column = index % 22;
+    const row = Math.floor(index / 22);
+    points.push({ x: 0.3 + (column * 0.02), y: 0.2 + (row * 0.025) });
+  }
+  // Eye corners the residual is normalised by, 0.2 apart.
+  points[33] = { x: 0.4, y: 0.4 };
+  points[263] = { x: 0.6, y: 0.4 };
+  return points.map((point, index) => deform(point, index) || point);
+}
+const flatReference = meshPoints();
+const flatMoved = flatReference.map(point => ({
+  x: (1.1 * point.x) + (0.05 * point.y) + 0.02,
+  y: (-0.03 * point.x) + (0.95 * point.y) - 0.01,
+}));
+assert.ok(nonRigidResidual(flatReference, flatMoved) < 1e-9, 'A picture tilted and moved leaves no non-rigid residual.');
+// A blink-sized change on thirty landmarks, on top of the same movement.
+const blinkMoved = flatMoved.map((point, index) => (index >= 100 && index < 130 ? { x: point.x, y: point.y + 0.02 } : point));
+assert.ok(
+  nonRigidResidual(flatReference, blinkMoved) >= config.liveness.nonRigidMotionThreshold,
+  'Thirty landmarks moving on their own is a change of shape.',
+);
+assert.equal(nonRigidResidual(flatReference.slice(0, 4), flatMoved.slice(0, 4)), null);
+
+const motionMeter = createNonRigidMotionMeter({ referenceAgeMs: 700 });
+assert.equal(motionMeter.measure(flatReference, 0), null, 'Nothing to compare with on the first frame.');
+assert.equal(motionMeter.measure(flatMoved, 300), null, 'No frame is old enough to be a reference yet.');
+assert.ok(motionMeter.measure(blinkMoved, 800) >= config.liveness.nonRigidMotionThreshold);
+assert.ok(motionMeter.measure(flatMoved, 1500) < 1e-6, 'Compared with the 800 ms frame, the shape is back to flat.');
+motionMeter.reset();
+assert.equal(motionMeter.measure(flatMoved, 2000), null);
+
+assert.deepEqual(
+  extractBlendshapes({ categories: [
+    { categoryName: 'eyeBlinkLeft', score: 0.1234 },
+    { categoryName: 'eyeBlinkRight', score: 0.2 },
+    { categoryName: 'cheekPuff', score: 0.9 },
+    { categoryName: 'jawOpen', score: 0.05 },
+  ] }),
+  { eyeBlinkLeft: 0.123, eyeBlinkRight: 0.2, jawOpen: 0.05 },
+);
+assert.equal(extractBlendshapes(null), null);
+assert.equal(extractBlendshapes({ categories: [{ categoryName: 'cheekPuff', score: 1 }] }), null);
+
+// ── Liveness monitor ─────────────────────────────────────────────────────────
+const quietBlendshapes = {
+  eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05, jawOpen: 0.02,
+  mouthSmileLeft: 0.1, mouthSmileRight: 0.1, mouthPucker: 0.05, mouthFunnel: 0.03, browInnerUp: 0.1,
+};
+const livingBaseline = { baselineEyeBlink: 0.05, baselineJawOpen: 0.02 };
+const frame = (timestampMs, overrides = {}) => ({
+  timestampMs,
+  wallClockMs: 500000 + timestampMs,
+  facePresent: true,
+  trackingQuality: 0.8,
+  faceCount: 1,
+  relativePose: { yaw: 0, pitch: 0 },
+  blendshapes: quietBlendshapes,
+  nonRigidMotion: 0.005,
+  ...overrides,
+});
+const blinkFrames = timestampMs => [
+  frame(timestampMs, { blendshapes: { ...quietBlendshapes, eyeBlinkLeft: 0.7, eyeBlinkRight: 0.7 } }),
+  frame(timestampMs + 100),
+];
+const quickLiveness = {
+  ...config.liveness,
+  passiveWindowMs: 2000,
+  passiveWindowGrowthMs: 500,
+  maximumPassiveWindowMs: 4000,
+  challengeDurationMs: 1000,
+  challengeCooldownMs: 1000,
+  cancelledCooldownMs: 300,
+  challengeAbsenceCancelMs: 300,
+};
+const livenessMonitor = (overrides = {}, baseline = livingBaseline, random = () => 0) => {
+  const events = [];
+  const monitor = new FaceLivenessMonitor({ ...quickLiveness, ...overrides }, baseline, event => events.push(event), { random });
+  return { monitor, events };
+};
+
+// A picture: nothing ever changes. It is asked, cannot answer, and becomes one
+// review incident — then the monitor waits before asking again.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 3200; time += 100) monitor.observe(frame(time));
+  const challenge = events.find(event => event.kind === 'liveness-challenge');
+  assert.ok(challenge, 'A whole quiet window brings the on-screen check.');
+  assert.equal(challenge.challenge, 'blink');
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-progress' && event.remainingSeconds === 1));
+  const incidents = events.filter(event => event.kind === 'incident');
+  assert.deepEqual(incidents.map(event => event.phase), ['start', 'end']);
+  assert.equal(incidents[0].eventType, 'FACE_LIVENESS_UNCONFIRMED');
+  assert.equal(incidents[0].incidentId, incidents[1].incidentId);
+  assert.equal(incidents[0].source, 'FACEMESH');
+  assert.equal(incidents[0].challenge, 'blink');
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-failed'));
+  assert.equal(monitor.snapshot().state, 'cooldown');
+  const challengesSoFar = events.filter(event => event.kind === 'liveness-challenge').length;
+  for (let time = 3300; time <= 4500; time += 100) monitor.observe(frame(time));
+  assert.equal(events.filter(event => event.kind === 'liveness-challenge').length, challengesSoFar, 'No second ask inside the cooldown.');
+  for (let time = 4600; time <= 7000; time += 100) monitor.observe(frame(time));
+  assert.equal(events.filter(event => event.kind === 'liveness-challenge').length, challengesSoFar + 1, 'The picture is asked again once a fresh window passes.');
+}
+
+// A living student blinks now and then; nothing is ever asked of them.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 12000; time += 100) {
+    if (time % 1500 === 0) blinkFrames(time).forEach(item => monitor.observe(item));
+    else monitor.observe(frame(time));
+  }
+  assert.equal(events.length, 0, 'Regular blinks keep the monitor silent.');
+  assert.equal(monitor.snapshot().lastLifeSign.kind, 'blink');
+}
+
+// Other signs of life count just as well: an expression, or the face changing shape.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 6000; time += 100) {
+    monitor.observe(frame(time, {
+      blendshapes: { ...quietBlendshapes, mouthSmileLeft: time % 1000 === 0 ? 0.5 : 0.1, mouthSmileRight: time % 1000 === 0 ? 0.5 : 0.1 },
+    }));
+  }
+  assert.equal(events.length, 0);
+  assert.equal(monitor.snapshot().lastLifeSign.kind, 'expression');
+}
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 6000; time += 100) {
+    monitor.observe(frame(time, { nonRigidMotion: time % 1000 === 0 ? 0.06 : 0.004 }));
+  }
+  assert.equal(events.length, 0);
+  assert.equal(monitor.snapshot().lastLifeSign.kind, 'motion');
+}
+
+// Eyes that stay shut and then open are not a blink; a picture swapped for a
+// face would read as one otherwise.
+{
+  const { monitor } = livenessMonitor();
+  for (let time = 0; time <= 2000; time += 100) {
+    monitor.observe(frame(time, { blendshapes: { ...quietBlendshapes, eyeBlinkLeft: 0.8, eyeBlinkRight: 0.8 } }));
+  }
+  monitor.observe(frame(2100));
+  assert.equal(monitor.snapshot().blinkCount, 0);
+}
+
+// Time turned away, badly tracked or with the face gone is not quiet time.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 8000; time += 100) monitor.observe(frame(time, { relativePose: { yaw: 40, pitch: 0 } }));
+  for (let time = 8100; time <= 16000; time += 100) monitor.observe(frame(time, { trackingQuality: 0.2 }));
+  for (let time = 16100; time <= 24000; time += 100) monitor.observe(frame(time, { facePresent: false, blendshapes: null }));
+  for (let time = 24100; time <= 32000; time += 100) monitor.observe(frame(time, { faceCount: 2 }));
+  assert.equal(events.length, 0, 'Only clean frontal frames count towards the window.');
+  assert.equal(monitor.snapshot().quietMs, 0);
+}
+
+// The student answers the ask with two blinks: nothing recorded, and the next
+// quiet window is longer.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 2000; time += 100) monitor.observe(frame(time));
+  assert.ok(events.some(event => event.kind === 'liveness-challenge'));
+  blinkFrames(2100).forEach(item => monitor.observe(item));
+  assert.ok(!events.some(event => event.kind === 'liveness-challenge-passed'), 'One blink is not the two that were asked for.');
+  blinkFrames(2400).forEach(item => monitor.observe(item));
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-passed'));
+  assert.equal(events.filter(event => event.kind === 'incident').length, 0);
+  assert.equal(monitor.snapshot().windowMs, 2500);
+  assert.equal(monitor.snapshot().state, 'cooldown');
+}
+
+// A mouth answer is a movement. Opening it passes; a picture of an open mouth
+// holds still and does not.
+{
+  const { monitor, events } = livenessMonitor({}, livingBaseline, () => 0.99);
+  for (let time = 0; time <= 2000; time += 100) monitor.observe(frame(time));
+  assert.equal(events.find(event => event.kind === 'liveness-challenge').challenge, 'mouth');
+  monitor.observe(frame(2100, { blendshapes: { ...quietBlendshapes, jawOpen: 0.5 } }));
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-passed'));
+}
+{
+  const openMouth = { ...quietBlendshapes, jawOpen: 0.5 };
+  const { monitor, events } = livenessMonitor({}, livingBaseline, () => 0.99);
+  for (let time = 0; time <= 3200; time += 100) monitor.observe(frame(time, { blendshapes: openMouth }));
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-failed'), 'A mouth that never moves does not answer.');
+}
+
+// The face leaves during the ask: cancelled, nothing recorded, no cooldown to
+// speak of.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 2000; time += 100) monitor.observe(frame(time));
+  for (let time = 2100; time <= 2600; time += 100) monitor.observe(frame(time, { facePresent: false, blendshapes: null }));
+  const cancelled = events.find(event => event.kind === 'liveness-challenge-cancelled');
+  assert.equal(cancelled?.reason, 'face-not-visible');
+  assert.equal(events.filter(event => event.kind === 'incident').length, 0);
+}
+
+// Eyes that never read as open make blinks unreadable. Blinks stop counting,
+// the window is scaled up and the ask is for the mouth.
+{
+  const { monitor, events } = livenessMonitor({}, { baselineEyeBlink: 0.6, baselineJawOpen: 0.02 }, () => 0);
+  for (let time = 0; time <= 2500; time += 100) monitor.observe(frame(time));
+  assert.ok(events.some(event => event.kind === 'liveness-blink-unreliable'));
+  assert.equal(monitor.snapshot().blinkReliable, false);
+  assert.equal(monitor.snapshot().windowMs, 4000);
+  assert.ok(!events.some(event => event.kind === 'liveness-challenge'), 'The doubled window has not passed.');
+  for (let time = 2600; time <= 4200; time += 100) monitor.observe(frame(time));
+  assert.equal(events.find(event => event.kind === 'liveness-challenge')?.challenge, 'mouth');
+}
+
+// Without calibration the open-eye level is learned from the first frames.
+{
+  const { monitor } = livenessMonitor({}, null);
+  for (let time = 0; time <= 2500; time += 100) monitor.observe(frame(time));
+  assert.ok(Math.abs(monitor.snapshot().restEyeBlink - 0.05) < 0.01);
+  assert.equal(monitor.snapshot().blinkReliable, true);
+}
+
+// A camera whose model gives no expression scores switches the check off.
+{
+  const { monitor, events } = livenessMonitor();
+  monitor.observe(frame(0, { blendshapes: { jawOpen: 0.1 } }));
+  assert.deepEqual(events.map(event => event.kind), ['liveness-unavailable']);
+  for (let time = 100; time <= 5000; time += 100) monitor.observe(frame(time));
+  assert.equal(events.length, 1);
+  assert.equal(monitor.snapshot().state, 'disabled');
+}
+{
+  const { monitor, events } = livenessMonitor({ enabled: false });
+  for (let time = 0; time <= 5000; time += 100) monitor.observe(frame(time));
+  assert.equal(events.length, 0);
+}
+
+// Stopping mid-ask cancels it rather than failing it.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 2000; time += 100) monitor.observe(frame(time));
+  monitor.stop();
+  assert.equal(events.find(event => event.kind === 'liveness-challenge-cancelled')?.reason, 'monitoring-stopped');
+  assert.equal(events.filter(event => event.kind === 'incident').length, 0);
+}
+
+// Calibration records the open-eye and closed-mouth levels, ignoring a blink.
+{
+  const blinkCalibration = new FaceCalibrationSession(config.calibration);
+  let blinkBaseline = null;
+  for (let t = 0; t <= 9000; t += 150) {
+    const result = blinkCalibration.addObservation({
+      timestampMs: t,
+      facePresent: true,
+      trackingQuality: 0.6,
+      pose: { yaw: 0, pitch: 0, roll: 0 },
+      geometry: { width: 0.24, height: 0.3, centerX: 0.5, centerY: 0.5 },
+      blendshapes: t === 1500 || t === 1650
+        ? { eyeBlinkLeft: 0.8, eyeBlinkRight: 0.8, jawOpen: 0.02 }
+        : { eyeBlinkLeft: 0.06, eyeBlinkRight: 0.04, jawOpen: 0.02 },
+    });
+    if (result.complete) { blinkBaseline = result.baseline; break; }
+  }
+  assert.ok(Math.abs(blinkBaseline.baselineEyeBlink - 0.05) < 0.001);
+  assert.equal(blinkBaseline.baselineJawOpen, 0.02);
+  assert.equal(cuelessBaseline.baselineEyeBlink, null);
+}
+
+// ── Face shown on a phone screen ─────────────────────────────────────────────
+const screenConfig = { ...config.faceOnScreen, incidentMs: 1000, minimumHits: 3, gapToleranceMs: 500, recoveryMs: 500 };
+const faceOnPhone = { x: 200, y: 150, width: 100, height: 120, frameWidth: 640, frameHeight: 480 };
+const phoneAround = confidence => ({ confidence, boundingBox: { x: 150, y: 100, width: 200, height: 300, frameWidth: 640, frameHeight: 480 } });
+assert.ok(findContainingPhone(faceOnPhone, [phoneAround(0.6)], screenConfig));
+assert.equal(findContainingPhone(faceOnPhone, [phoneAround(0.2)], screenConfig), null, 'Below the phone confidence floor.');
+assert.equal(findContainingPhone(faceOnPhone, [{ confidence: 0.9, boundingBox: { x: 0, y: 0, width: 620, height: 470, frameWidth: 640, frameHeight: 480 } }], screenConfig), null, 'A box that is most of the frame is a monitor, not a phone.');
+assert.equal(findContainingPhone(faceOnPhone, [{ confidence: 0.9, boundingBox: { x: 210, y: 160, width: 80, height: 100, frameWidth: 640, frameHeight: 480 } }], screenConfig), null, 'A phone smaller than the face is in front of it, not showing it.');
+assert.equal(findContainingPhone(faceOnPhone, [{ confidence: 0.9, boundingBox: { x: 400, y: 100, width: 200, height: 300, frameWidth: 640, frameHeight: 480 } }], screenConfig), null, 'A phone beside the face does not contain it.');
+// Boxes from frames of different sizes are compared in frame fractions.
+assert.ok(findContainingPhone(faceOnPhone, [{ confidence: 0.6, boundingBox: { x: 75, y: 50, width: 100, height: 150, frameWidth: 320, frameHeight: 240 } }], screenConfig));
+
+{
+  const events = [];
+  const detector = new FaceOnScreenDetector(screenConfig, event => events.push(event));
+  for (const time of [0, 400, 800]) {
+    detector.observeFace(faceOnPhone, time);
+    detector.observePhones([phoneAround(0.6)], time, 700000 + time);
+  }
+  assert.equal(events.length, 0, 'Three scans inside one second is not yet sustained.');
+  detector.observeFace(faceOnPhone, 1200);
+  detector.observePhones([phoneAround(0.7)], 1200, 701200);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].eventType, 'FACE_ON_PHONE_SCREEN');
+  assert.equal(events[0].phase, 'start');
+  assert.equal(events[0].source, 'FACEMESH_YOLO');
+  assert.equal(events[0].phoneConfidence, 0.7);
+  assert.equal(events[0].frameHits, 4);
+  detector.observeFace(faceOnPhone, 1600);
+  detector.observePhones([], 1600, 701600);
+  assert.equal(events.length, 1, 'One empty scan is not the end of it.');
+  detector.observeFace(faceOnPhone, 2200);
+  detector.observePhones([], 2200, 702200);
+  assert.deepEqual(events.map(event => event.phase), ['start', 'end']);
+  assert.equal(events[1].incidentId, events[0].incidentId);
+}
+{
+  const events = [];
+  const detector = new FaceOnScreenDetector(screenConfig, event => events.push(event));
+  // Scattered single sightings with gaps longer than the tolerance never add up.
+  for (const time of [0, 1000, 2000, 3000, 4000]) {
+    detector.observeFace(faceOnPhone, time);
+    detector.observePhones([phoneAround(0.9)], time, 700000 + time);
+  }
+  assert.equal(events.length, 0);
+  // A stale face box says nothing about the current scan.
+  detector.observeFace(faceOnPhone, 5000);
+  for (const time of [8000, 8400, 8800, 9200]) detector.observePhones([phoneAround(0.9)], time, 700000 + time);
+  assert.equal(events.length, 0);
+}
+{
+  const events = [];
+  const detector = new FaceOnScreenDetector(screenConfig, event => events.push(event));
+  for (const time of [0, 400, 800, 1200]) {
+    detector.observeFace(faceOnPhone, time);
+    detector.observePhones([phoneAround(0.6)], time, 700000 + time);
+  }
+  detector.stop(1300, 701300);
+  assert.deepEqual(events.map(event => event.phase), ['start', 'end']);
+}
+
+console.log('FaceMesh pose, calibration, temporal, correlation, aggregation, liveness, face-on-screen, and camera error tests passed.');

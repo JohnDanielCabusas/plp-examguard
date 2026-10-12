@@ -3,8 +3,10 @@ import { FaceEventCorrelator } from './faceEventCorrelator.js';
 import { FaceEvaluationExporter } from './evaluationExporter.js';
 import { FaceLandmarkerRuntime } from './faceLandmarkerRuntime.js';
 import { resolveFaceMonitoringConfig } from './faceMonitoringConfig.js';
+import { FaceOnScreenDetector } from './faceOnScreenDetector.js';
 import { FaceSessionAggregator } from './faceSessionAggregator.js';
 import { classifyFaceObservation } from './headPoseEstimator.js';
+import { FaceLivenessMonitor } from './livenessMonitor.js';
 import { FaceTemporalRuleEngine } from './temporalRuleEngine.js';
 
 export function createFaceLandmarkerRuntime(options) {
@@ -28,6 +30,16 @@ export function createFaceEventCorrelator(config = {}) {
 
 export function createFaceSessionAggregator() {
   return new FaceSessionAggregator();
+}
+
+export function createFaceLivenessMonitor(config = {}, baseline = null, onEvent) {
+  const resolved = resolveFaceMonitoringConfig(config);
+  return new FaceLivenessMonitor(resolved.liveness, baseline, onEvent);
+}
+
+export function createFaceOnScreenDetector(config = {}, onEvent) {
+  const resolved = resolveFaceMonitoringConfig(config);
+  return new FaceOnScreenDetector(resolved.faceOnScreen, onEvent);
 }
 
 export function createEvaluationExporter(options = {}) {

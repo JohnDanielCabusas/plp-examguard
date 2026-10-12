@@ -114,7 +114,7 @@ try {
     'FACE_ABSENT', 'FACE_PARTIALLY_VISIBLE', 'FACE_TOO_CLOSE', 'FACE_TOO_FAR',
     'FACE_NEAR_FRAME_EDGE', 'SUSTAINED_HEAD_TURN', 'SUSTAINED_LOOKING_DOWN',
     'REPEATED_LOOKING_AWAY', 'FACE_OCCLUDED', 'FACE_TRACKING_UNSTABLE',
-    'PHONE_NEAR_OR_COVERING_FACE',
+    'PHONE_NEAR_OR_COVERING_FACE', 'FACE_LIVENESS_UNCONFIRMED', 'FACE_ON_PHONE_SCREEN',
   ];
 
   const captured = await page.evaluate(async (types) => {
@@ -136,6 +136,51 @@ try {
     missing.length === 0,
     `No replay clip was captured for: ${missing.join(', ')} (full result ${JSON.stringify(captured)})`,
   );
+
+  // Every replay has to hold the full ten seconds before detection, including the
+  // second of two violations that land together. Measured on the decoded video,
+  // not just the timestamps the client attaches to it.
+  const fullHistory = await page.evaluate(async () => {
+    const decodedSeconds = blob => new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.preload = 'metadata';
+      const done = value => { URL.revokeObjectURL(video.src); resolve(value); };
+      const timer = setTimeout(() => done(-2), 10000);
+      video.onloadedmetadata = () => {
+        if (Number.isFinite(video.duration)) { clearTimeout(timer); done(video.duration); return; }
+        // MediaRecorder WebM carries no duration; seeking to the end makes the
+        // browser work it out.
+        video.ondurationchange = () => {
+          if (Number.isFinite(video.duration)) { clearTimeout(timer); done(video.duration); }
+        };
+        video.currentTime = 1e101;
+      };
+      video.onerror = () => { clearTimeout(timer); done(-1); };
+      video.src = URL.createObjectURL(blob);
+    });
+    const describe = async clip => ({
+      bytes: clip?.clipBlob?.size || 0,
+      coveredMs: clip ? new Date(clip.clipEndedAt).getTime() - new Date(clip.clipStartedAt).getTime() : 0,
+      durationMs: clip?.durationMs || 0,
+      decodedSeconds: clip?.clipBlob ? await decodedSeconds(clip.clipBlob) : 0,
+    });
+    const first = await ExamApp._capturePreViolationReplayClip('multiple_people');
+    const second = await ExamApp._capturePreViolationReplayClip('SUSTAINED_HEAD_TURN');
+    return {
+      first: await describe(first),
+      second: await describe(second),
+      recorders: (ExamApp._violationClipRecorders || []).filter(s => s?.recorder?.state === 'recording').length,
+      recordingWidth: ExamApp._violationClipStream?.getVideoTracks?.()[0]?.getSettings?.().width || null,
+    };
+  });
+  for (const [label, clip] of Object.entries({ first: fullHistory.first, second: fullHistory.second })) {
+    check(clip.coveredMs >= 10000, `The ${label} replay starts less than ten seconds before detection: ${JSON.stringify(fullHistory)}`);
+    check(clip.decodedSeconds >= 9.5, `The ${label} replay video is shorter than ten seconds: ${JSON.stringify(fullHistory)}`);
+    check(clip.durationMs === clip.coveredMs, `The ${label} replay must report its real length: ${JSON.stringify(fullHistory)}`);
+  }
+  check(fullHistory.recorders >= 2, `Cutting replays must not stop the recorders: ${JSON.stringify(fullHistory)}`);
+  console.log(`Replay history: ${JSON.stringify(fullHistory)}`);
 
   const backToBack = await page.evaluate(async () => {
     const recording = () => (ExamApp._violationClipRecorders || [])

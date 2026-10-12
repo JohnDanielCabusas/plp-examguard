@@ -208,29 +208,22 @@ create table if not exists public.violation_evidence (
   constraint violation_evidence_review_status_check check (review_status in ('pending', 'confirmed', 'dismissed')),
   constraint violation_evidence_warning_adjustment_check check (warning_adjustment <= 0),
   constraint violation_evidence_time_window_check check (clip_started_at <= clip_ended_at and clip_ended_at <= triggered_at),
-  constraint violation_evidence_duration_check check (duration_ms >= 0 and duration_ms <= 10000),
-  constraint violation_evidence_replayable_type_check check (violation_type in ('no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off'))
+  -- At least the ten seconds before detection, plus up to five from the recorder cut.
+  constraint violation_evidence_duration_check check (duration_ms >= 0 and duration_ms <= 20000)
 );
 
 alter table if exists public.violation_evidence
   add column if not exists warning_applied boolean not null default false;
 alter table if exists public.violation_events
   add column if not exists detection_metadata jsonb not null default '{}'::jsonb;
+-- The server's REPLAYABLE_VIOLATION_TYPES is the one list of replayable types.
+-- A copy here once refused every FaceMesh replay after its video was uploaded.
 alter table if exists public.violation_evidence
   drop constraint if exists violation_evidence_replayable_type_check;
 alter table if exists public.violation_evidence
-  add constraint violation_evidence_replayable_type_check check (
-    violation_type in (
-      'no_person',
-      'multiple_people',
-      'look_down',
-      'low_brightness',
-      'camera_off',
-      'restricted_phone',
-      'secondary_computer',
-      'restricted_book'
-    )
-  );
+  drop constraint if exists violation_evidence_duration_check;
+alter table if exists public.violation_evidence
+  add constraint violation_evidence_duration_check check (duration_ms >= 0 and duration_ms <= 20000);
 create unique index if not exists violation_evidence_violation_event_unique_idx on public.violation_evidence (violation_event_id);
 create index if not exists violation_evidence_owner_exam_created_idx on public.violation_evidence (owner_admin_id, exam_id, created_at desc);
 create index if not exists violation_evidence_session_created_idx on public.violation_evidence (session_id, created_at desc);
