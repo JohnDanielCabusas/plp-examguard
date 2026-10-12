@@ -260,12 +260,14 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+-- Replay videos are webcam footage of students, so the bucket is not open to
+-- the public key. Only the server, which holds the storage gateway key, reads
+-- and writes it; supabase/violation-replay-review.sql grants that access once
+-- the gateway from bandwidth-optimizations.sql exists. Professors watch replays
+-- through the authenticated /api/monitor/violation-evidence/:id/file route.
 drop policy if exists violation_evidence_anon_insert on storage.objects;
-create policy violation_evidence_anon_insert on storage.objects for insert to anon with check (bucket_id = 'violation-evidence');
 drop policy if exists violation_evidence_anon_select on storage.objects;
-create policy violation_evidence_anon_select on storage.objects for select to anon using (bucket_id = 'violation-evidence');
 drop policy if exists violation_evidence_anon_update on storage.objects;
-create policy violation_evidence_anon_update on storage.objects for update to anon using (bucket_id = 'violation-evidence') with check (bucket_id = 'violation-evidence');
 
 -- Publish core live-monitoring tables to Supabase Realtime so professor and
 -- student clients receive pushes without requiring a browser refresh.

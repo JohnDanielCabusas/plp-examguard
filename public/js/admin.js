@@ -897,24 +897,12 @@ function getBestReplayActivityIndex(session, violationType, timestamp) {
   return bestDelta <= 30000 ? bestIndex : -1;
 }
 
-function getSupabasePlaybackClient() {
-  return window.SupabaseSync?._client || window.supabase || null;
-}
-
+// Replays are webcam footage of students, so the storage bucket is closed to the
+// browser's public key. They are only served by the authenticated server route,
+// which checks the clip belongs to this professor.
 async function resolveEvidencePlaybackUrl(evidence) {
   if (!evidence) return '';
-  const candidates = [];
-  if (evidence.playbackUrl) candidates.push(evidence.playbackUrl);
-  if (evidence.storageBucket && evidence.storageBucket !== 'local-server' && evidence.storagePath) {
-    const client = getSupabasePlaybackClient();
-    if (client?.storage?.from) {
-      const { data, error } = await client.storage
-        .from(evidence.storageBucket)
-        .createSignedUrl(evidence.storagePath, 300);
-      if (!error && data?.signedUrl) candidates.push(data.signedUrl);
-      else if (error) console.warn('[Monitor] Unable to create replay URL:', error.message || error);
-    }
-  }
+  const candidates = evidence.playbackUrl ? [evidence.playbackUrl] : [];
 
   for (const candidate of candidates) {
     try {

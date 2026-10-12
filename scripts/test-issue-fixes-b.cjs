@@ -160,7 +160,8 @@ assert.ok(
   styleSource.includes('[data-theme="dark"] .nav-section-label,\n[data-theme="dark"] .portal-nav-section-label'),
   'both section labels take the same muted colour in dark mode',
 );
-assert.equal(ruleFor('.portal-wordmark-name {'), ruleFor('.sidebar-wordmark-name {'), 'one product, one wordmark');
+// One rule styles both sidebars' wordmark, so they cannot drift apart.
+ruleFor('.sidebar-wordmark-name,\n.portal-wordmark-name {');
 // Course rows use the same padding and gap as the nav rows, with the course's
 // colour chip in the slot the others use for an icon, so every label starts at
 // the same x and no blank indent stands in for a missing icon.
@@ -191,7 +192,7 @@ assert.match(examSource, /portal-subject-item\$\{isOpen \? ' active' : ''\}/);
     `the sidebar declaring "${anchor}" needs matching font smoothing`,
   );
 });
-assert.equal(ruleFor('.portal-wordmark-sub {'), ruleFor('.sidebar-wordmark-sub {'));
+ruleFor('.sidebar-wordmark-sub,\n.portal-wordmark-sub {');
 
 // Archive is the last nav entry, after the enrolled courses, so enrolling in a
 // new course cannot push it out of last place.

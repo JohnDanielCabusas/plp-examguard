@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const path = require('node:path');
 
-require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
+// The project's env file beats machine-wide variables, as in server.js.
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local'), override: true, quiet: true });
 
 const database = require('../server/db.cjs');
 

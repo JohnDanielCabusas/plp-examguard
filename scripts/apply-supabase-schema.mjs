@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import dotenv from 'dotenv';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,11 +5,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
-// Every other database script in scripts/ reads .env.local; this one did not,
-// so it reported the connection settings missing even when they were sitting
-// right there in the file. override:false keeps real environment variables
-// winning, which is what CI and a deploy shell rely on.
-dotenv.config({ path: '.env.local', override: false, quiet: true });
+// The project's .env.local beats machine-wide variables, as in server.js: stale
+// SUPABASE_DB_* variables in the Windows user environment once pointed this at
+// the old project. CI and deploy shells have no .env.local, so their real
+// environment variables are used unchanged.
+dotenv.config({ path: '.env.local', override: true, quiet: true });
+console.log(`Applying schema to ${String(process.env.SUPABASE_DB_USER || '').replace(/^postgres\./, '') || '(unknown project)'}`);
 
 const { Client } = pg;
 
