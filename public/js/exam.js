@@ -226,6 +226,7 @@ const ExamApp = {
   timeRemaining: 0,
   _examRuntimeStarted: false,
   _cameraRequestToken: 0,
+  _unconfirmedWarningCount: 0,   // strikes this device issued that the server has not shown back yet
   _examFlowGeneration: 0,
   _pendingReviewReopen: false,
   _blurTimer: null,         // debounce timer for window blur
@@ -417,7 +418,6 @@ const ExamApp = {
   _pendingManualSubmit: false, // true if the student tried to submit while offline
   _refreshUnloadHandler: null,
   _refreshPageHideHandler: null,
-  _refreshUnloadCleanupTimer: null,
   _portalDataChangedTimer: null,
   _remoteForceSubmitSessionId: null,
   _pendingCameraRequirementNotice: null,
@@ -488,10 +488,6 @@ const ExamApp = {
     if (this._refreshPageHideHandler) {
       window.removeEventListener('pagehide', this._refreshPageHideHandler);
       this._refreshPageHideHandler = null;
-    }
-    if (this._refreshUnloadCleanupTimer) {
-      clearTimeout(this._refreshUnloadCleanupTimer);
-      this._refreshUnloadCleanupTimer = null;
     }
     try { sessionStorage.removeItem(this._REFRESH_AUTO_SUBMIT_KEY); } catch (_) {}
   },
@@ -597,26 +593,24 @@ const ExamApp = {
 
   _enableRefreshProtection() {
     if (this._refreshUnloadHandler) return;
+    // beforeunload only asks. The marker is written in pagehide, which fires
+    // only when the page really goes (the student chose Leave, or the browser
+    // skipped the dialog). Writing it here and clearing it on a timer when the
+    // student chose Stay did not work: timers are frozen while the dialog is
+    // open, so after a slow Leave the overdue timer cleared the marker before
+    // pagehide and the reload resumed the exam instead of submitting it.
     this._refreshUnloadHandler = (event) => {
-      const marker = this._buildRefreshAutoSubmitMarker();
-      if (!marker) return;
-
-      try { sessionStorage.setItem(this._REFRESH_AUTO_SUBMIT_KEY, JSON.stringify(marker)); } catch (_) {}
-      if (this._refreshUnloadCleanupTimer) clearTimeout(this._refreshUnloadCleanupTimer);
-      this._refreshUnloadCleanupTimer = setTimeout(() => {
-        try { sessionStorage.removeItem(this._REFRESH_AUTO_SUBMIT_KEY); } catch (_) {}
-        this._refreshUnloadCleanupTimer = null;
-      }, 1500);
-
+      const liveSession = this.session ? DB.getSession(this.session.id) : null;
+      if (!this.exam || !liveSession || liveSession.submitted) return;
       event.preventDefault();
       event.returnValue = 'Refreshing this exam will auto-submit your answers.';
       return event.returnValue;
     };
     window.addEventListener('beforeunload', this._refreshUnloadHandler);
     this._refreshPageHideHandler = () => {
-      let marker = null;
-      try { marker = JSON.parse(sessionStorage.getItem(this._REFRESH_AUTO_SUBMIT_KEY) || 'null'); } catch (_) {}
+      const marker = this._buildRefreshAutoSubmitMarker();
       if (!marker) return;
+      try { sessionStorage.setItem(this._REFRESH_AUTO_SUBMIT_KEY, JSON.stringify(marker)); } catch (_) {}
       this._applyRefreshAutoSubmitMarker(marker);
     };
     window.addEventListener('pagehide', this._refreshPageHideHandler);
@@ -1690,7 +1684,7 @@ const ExamApp = {
     const updated = { ...sess, examId };
     delete updated.examCode;
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
-    this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+    this.exam = null; this.session = null; this.warnings = 0; this._unconfirmedWarningCount = 0; this.answers = {};
     this._startExamFlow(updated);
   },
 
@@ -3062,7 +3056,7 @@ const ExamApp = {
     const sess = Auth.getStudentSession();
     const updated = { ...sess, examId: exam.id, examCode: String(exam.code || '').trim().toUpperCase() };
     sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
-    this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+    this.exam = null; this.session = null; this.warnings = 0; this._unconfirmedWarningCount = 0; this.answers = {};
     this._startExamFlow(updated);
   },
 
@@ -3270,7 +3264,7 @@ const ExamApp = {
     const student = this._getPortalStudent(studentSession.studentId) || DB.getStudent(studentSession.studentId);
     const subject = targetExam ? DB.getSubject(targetExam.subjectId) : null;
 
-    this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+    this.exam = null; this.session = null; this.warnings = 0; this._unconfirmedWarningCount = 0; this.answers = {};
 
     const box = document.getElementById('absent-info-box');
     if (box) {
@@ -3478,6 +3472,7 @@ const ExamApp = {
     // This map only protects edits made during the current runtime from stale
     // polling responses; never carry those guards into another attempt.
     this._pendingLocalAnswers = new Map();
+    this._unconfirmedWarningCount = 0;
     this._resetCameraDragPosition();
     this._prepareExamShell();
     this._webcamConsentAccepted = false;
@@ -3791,6 +3786,18 @@ const ExamApp = {
     DB._write(DB.KEYS.exams, exams);
   },
 
+  // A strike raises this.warnings at once, is written locally after the next
+  // paint and reaches the server later still. Until the server has it, its
+  // lower count is stale — taking it would drop the badge and make the
+  // third-strike submit refuse ("fewer than three warnings") at expiry. A
+  // professor dismissing a violation still lowers the count once the server
+  // has caught up with this device's strikes.
+  _reconcileServerWarnings(serverWarnings) {
+    const server = Number(serverWarnings || 0);
+    if (server >= this._unconfirmedWarningCount) this._unconfirmedWarningCount = 0;
+    return Math.max(server, this._unconfirmedWarningCount);
+  },
+
   _pollRemoteSessionState() {
     const client = window.SupabaseSync?._client || window.supabase;
     if (!client || !this.session?.id) return;
@@ -3811,7 +3818,7 @@ const ExamApp = {
           autoSubmitted: !!data.auto_submitted,
           submitReason: data.submit_reason || null,
           endTime: data.end_time || null,
-          warnings: Number(data.warnings || 0),
+          warnings: this._reconcileServerWarnings(data.warnings),
           score: data.score ?? null,
           maxScore: data.max_score ?? null,
           scoreReleased: !!data.score_released,
@@ -3862,7 +3869,7 @@ const ExamApp = {
       this._updateAnsweredStatus();
     }
     if (typeof liveSession.warnings === 'number') {
-      this.warnings = liveSession.warnings;
+      this.warnings = Math.max(liveSession.warnings, this._unconfirmedWarningCount);
       const warningNumEl = document.getElementById('warning-num');
       if (warningNumEl) warningNumEl.textContent = this.warnings;
     }
@@ -3897,6 +3904,8 @@ const ExamApp = {
 
   _showReviewReopenedState(liveSession) {
     this._pendingReviewReopen = true;
+    // The professor deducted a warning; the server count is authoritative now.
+    this._unconfirmedWarningCount = 0;
     this._examRuntimeStarted = false;
     this.session = liveSession;
     this.answers = liveSession.answers || this.answers || {};
@@ -5314,16 +5323,7 @@ const ExamApp = {
       runtime = window.FaceMeshProctor.createRuntime({
         video,
         config: this._faceMeshConfig,
-        onStatus: status => {
-          if (status.state === 'ready') this._setFaceMeshStatus('ready', 'Face scan ready');
-          else if (status.state === 'fallback') this._setFaceMeshStatus('loading', 'Starting face scan');
-          else if (status.state === 'degraded') this._setFaceMeshStatus('warning', 'Adjusting face scan');
-          else if (status.state === 'hand-unavailable') {
-            this._faceHandTrackingUnavailable = true;
-            console.warn('[FaceMesh] Random Forest hand tracking unavailable:', status.message || 'unknown error');
-          }
-          else if (status.state === 'error') this._setFaceMeshStatus('error');
-        },
+        onStatus: status => this._handleFaceMeshRuntimeStatus(status),
         onObservation: observation => this._handleFaceMeshObservation(observation),
       });
       this._faceMeshRuntime = runtime;
@@ -5345,6 +5345,60 @@ const ExamApp = {
         0,
         { retry: true, report: true },
       );
+    } finally {
+      if (generation === this._faceCalibrationGeneration) this._faceMeshStarting = false;
+    }
+  },
+
+  _handleFaceMeshRuntimeStatus(status) {
+    if (status.state === 'ready') this._setFaceMeshStatus('ready', 'Face scan ready');
+    else if (status.state === 'fallback') this._setFaceMeshStatus('loading', 'Starting face scan');
+    else if (status.state === 'degraded') this._setFaceMeshStatus('warning', 'Adjusting face scan');
+    else if (status.state === 'hand-unavailable') {
+      this._faceHandTrackingUnavailable = true;
+      console.warn('[FaceMesh] Random Forest hand tracking unavailable:', status.message || 'unknown error');
+    }
+    else if (status.state === 'error') this._setFaceMeshStatus('error');
+  },
+
+  // The face-tracking runtime is created by the pre-exam face scan, and
+  // stopCamera discards it. When the camera comes back mid-exam (webcam
+  // requirement turned back on, or a reopened attempt resumed) the saved
+  // baseline is still valid, so start a fresh runtime against it instead of
+  // leaving face direction, liveness and phone-screen checks switched off.
+  async _restartFaceMeshMonitoring(video) {
+    if (!this._faceMeshBaseline || this._faceMeshRuntime || this._faceMeshStarting) return;
+    // stopCamera bumps the generation, which cancels a start still in flight.
+    const generation = ++this._faceCalibrationGeneration;
+    this._faceMeshStarting = true;
+    this._setFaceMeshStatus('loading');
+    let runtime = null;
+    try {
+      await window.FaceMeshProctor?.load?.();
+      if (generation !== this._faceCalibrationGeneration || !this._cameraStream) return;
+      if (!window.FaceMeshProctor?.createRuntime) throw new Error('FaceMesh runtime is unavailable.');
+      if (!this._faceMeshConfig) this._faceMeshConfig = window.FaceMeshProctor.normalizeConfig({});
+      runtime = window.FaceMeshProctor.createRuntime({
+        video,
+        config: this._faceMeshConfig,
+        onStatus: status => this._handleFaceMeshRuntimeStatus(status),
+        onObservation: observation => this._handleFaceMeshObservation(observation),
+      });
+      this._faceMeshRuntime = runtime;
+      await runtime.start();
+      if (generation !== this._faceCalibrationGeneration || !this._cameraStream) {
+        runtime.stop?.();
+        if (this._faceMeshRuntime === runtime) this._faceMeshRuntime = null;
+        return;
+      }
+      this._activateFaceMeshMonitoring();
+      this._setCameraStatusText('Camera scan active');
+    } catch (error) {
+      runtime?.stop?.();
+      if (this._faceMeshRuntime === runtime) this._faceMeshRuntime = null;
+      if (generation !== this._faceCalibrationGeneration) return;
+      this._setFaceMeshStatus('error');
+      console.warn('[FaceMesh] Could not restart face monitoring:', error?.message || error);
     } finally {
       if (generation === this._faceCalibrationGeneration) this._faceMeshStarting = false;
     }
@@ -5983,7 +6037,8 @@ const ExamApp = {
     this._startCameraWatchdog();
     if (this._getObjectMonitoringConfig().enabled) this._startYoloObjectMonitoring(video);
     else this._setYoloStatus('disabled');
-    this._activateFaceMeshMonitoring();
+    if (this._faceMeshRuntime) this._activateFaceMeshMonitoring();
+    else this._restartFaceMeshMonitoring(video);
     this._setCameraStatusText('Starting camera scan…', { force: true });
     setTimeout(() => this._checkInitialPresence(video), 500);
     // FaceMesh already performs primary-face inference in a worker. Loading
@@ -8190,6 +8245,7 @@ const ExamApp = {
     // recording in time saved nothing because the strike rule fired anyway.
     if (!terminal) this.warnings++;
     const warningCount = this.warnings;
+    if (!terminal) this._unconfirmedWarningCount = Math.max(this._unconfirmedWarningCount, warningCount);
 
     // Update warning badge in header
     const warningNumEl = document.getElementById('warning-num');
@@ -10123,7 +10179,7 @@ const ExamApp = {
       delete updated.examCode;
       delete updated.examId;
       sessionStorage.setItem('acs_student_session', JSON.stringify(updated));
-      this.exam = null; this.session = null; this.warnings = 0; this.answers = {};
+      this.exam = null; this.session = null; this.warnings = 0; this._unconfirmedWarningCount = 0; this.answers = {};
 
       // Return to course view if that's where they came from, otherwise home
       if (this._returnCourseId) {
@@ -10164,7 +10220,10 @@ const ExamApp = {
     // student trapped behind an overlay that would never resolve.
     if (trigger === 'auto') {
       const liveSession = this._getLiveSession() || this.session;
-      const warningCount = Number(liveSession?.warnings ?? this.warnings ?? 0);
+      const warningCount = Math.max(
+        Number(liveSession?.warnings ?? this.warnings ?? 0),
+        this._unconfirmedWarningCount,
+      );
       if (!Number.isFinite(warningCount) || warningCount < 3) {
         console.warn('[Exam] Ignored premature violation submission before three warnings.');
         return false;
