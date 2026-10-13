@@ -214,7 +214,43 @@ try {
   assert.equal(reEnable.cameraRequired, true);
   assert.equal(reEnable.modalShown, true);
   assert.match(reEnable.title, /Turned Back On/);
-  console.log('Webcam request availability, professor confirmations and re-enable notice passed.');
+  // A closed exam editor leaves the exam's id in #exam-id. Its draft hook must
+  // not capture later webcam toggles from Monitoring, or Re-enable never saves.
+  const editorPage = await browser.newPage();
+  await editorPage.route('https://examguard.test/', route => route.fulfill({
+    contentType: 'text/html',
+    body: '<!doctype html><html><body><section id="section-exams" class="admin-section"><input id="exam-id"><div id="exam-editor-view" class="hidden"></div></section></body></html>',
+  }));
+  await editorPage.goto('https://examguard.test/');
+  await editorPage.addScriptTag({ path: resolve('public/js/data.js') });
+  await editorPage.addScriptTag({ path: resolve('public/js/admin.js') });
+  const editor = await editorPage.evaluate(() => {
+    const synced = [];
+    window.SupabaseSync = { syncDoc: (table, doc) => synced.push([...(doc.cameraExemptStudentIds || [])]) };
+    DB._write(DB.KEYS.exams, [{ id: 'exam-a', requireCamera: true, cameraExemptStudentIds: [] }]);
+    updateExamEditorSaveButtonState = () => {};
+    refreshExamEditorStatusUI = () => {};
+    bindExamEditorPersistenceHooks();
+    document.getElementById('exam-id').value = 'exam-a';
+    DB.setStudentCameraExempt('exam-a', 'student-a', true);
+    const offSaved = DB.isStudentCameraExempt('exam-a', 'student-a');
+    DB.setStudentCameraExempt('exam-a', 'student-a', false);
+    const onSaved = !DB.isStudentCameraExempt('exam-a', 'student-a');
+
+    // With the editor really open, unsaved edits still stay in the draft.
+    document.getElementById('exam-editor-view').classList.remove('hidden');
+    currentQBuilderExamId = 'exam-a';
+    setExamEditorDraftExam(DB.getExam('exam-a'));
+    const syncsBefore = synced.length;
+    DB.updateExam('exam-a', { title: 'Unsaved title' });
+    const draftKept = synced.length === syncsBefore && DB.getExam('exam-a').title === 'Unsaved title';
+    return { offSaved, onSaved, synced, draftKept };
+  });
+  assert.equal(editor.offSaved, true);
+  assert.equal(editor.onSaved, true);
+  assert.deepEqual(editor.synced, [['student-a'], []]);
+  assert.equal(editor.draftKept, true);
+  console.log('Webcam request availability, professor confirmations, re-enable notice and exam-editor draft isolation passed.');
 } finally {
   await browser.close();
 }

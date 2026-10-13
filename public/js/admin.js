@@ -5105,6 +5105,13 @@ function getExamEditorActiveId() {
   return currentQBuilderExamId || document.getElementById('exam-id')?.value || '';
 }
 
+function isExamEditorOpen() {
+  const section = document.getElementById('section-exams');
+  const view = document.getElementById('exam-editor-view');
+  return !!view && !view.classList.contains('hidden')
+    && (!section || !section.classList.contains('hidden'));
+}
+
 function getPersistedExamRecord(examId) {
   if (!examId) return null;
   return examEditorOriginalGetExam ? examEditorOriginalGetExam(examId) : DB.getExam(examId);
@@ -5442,8 +5449,13 @@ function bindExamEditorPersistenceHooks() {
   examEditorOriginalGetExam = DB.getExam.bind(DB);
   examEditorOriginalUpdateExam = DB.updateExam.bind(DB);
 
+  // The draft only stands in for the exam while the editor is on screen.
+  // Closing the editor leaves the exam's id in #exam-id, so without this check
+  // the next real write to that exam (e.g. a webcam exemption from Monitoring)
+  // re-created a hidden draft, and every write after it landed in that draft
+  // and never reached Supabase: "Re-enable webcam" did nothing at all.
   DB.getExam = function patchedGetExam(id) {
-    if (!examEditorPersistBypassDepth) {
+    if (!examEditorPersistBypassDepth && isExamEditorOpen()) {
       const draftExam = getExamEditorDraftExam(id);
       if (draftExam) return cloneExamEditorData(draftExam);
     }
@@ -5451,8 +5463,8 @@ function bindExamEditorPersistenceHooks() {
   };
 
   DB.updateExam = function patchedUpdateExam(id, changes) {
-    const activeExamId = getExamEditorActiveId();
-    const draftExam = !examEditorPersistBypassDepth ? getExamEditorDraftExam(id) : null;
+    const activeExamId = isExamEditorOpen() ? getExamEditorActiveId() : '';
+    const draftExam = !examEditorPersistBypassDepth && activeExamId ? getExamEditorDraftExam(id) : null;
     if (draftExam) {
       const subjects = DB.getSubjects();
       const nextSubject = changes.subjectId ? subjects.find(s => s.id === changes.subjectId) : null;
