@@ -7742,7 +7742,8 @@ const ExamApp = {
     // Don't repeat the check on page refresh / exam resume
     const session = DB.getSession(this.session.id);
     const acts = (session && session.activities) || [];
-    if (acts.some(a => a.type === 'brightness_check_passed' || a.type === 'brightness_check_skipped')) return;
+    // brightness_check_skipped is what older attempts recorded for a skip.
+    if (acts.some(a => ['brightness_check_passed', 'brightness_check_skipped', 'low_screen_brightness'].includes(a.type))) return;
     this._brightnessCheckRound = 0;
     this._brightnessCheckFails = 0;
     const skip = document.getElementById('brightness-check-skip');
@@ -7800,8 +7801,12 @@ const ExamApp = {
     }
   },
 
+  // Skipping is the only way past the check without passing it, so it is what
+  // records Low Screen Brightness. Log-only: a dim screen is reported to the
+  // professor but never costs a strike (unlike low_brightness, which is the
+  // camera's Low Camera Lighting violation).
   _skipBrightnessCheck() {
-    this._recordActivity('brightness_check_skipped', `Student skipped the brightness check after ${this._brightnessCheckFails} failed attempt(s)`);
+    this._recordActivity('low_screen_brightness', `Student could not pass the screen brightness check after ${this._brightnessCheckFails} failed attempt(s) and continued with the screen likely too dim`);
     const overlay = document.getElementById('brightness-check-overlay');
     if (overlay) overlay.style.display = 'none';
   },

@@ -27,6 +27,7 @@
     "train:random-forest": ".\\.venv\\Scripts\\python.exe ml/random_forest/train_random_forest.py",
     "test:facemesh:browser": "node scripts/smoke-test-facemesh-browser.mjs",
     "test:webcam-requests": "node scripts/smoke-test-webcam-requests.mjs",
+    "test:brightness": "node scripts/smoke-test-brightness-violations.mjs",
     "test:anticheat": "node scripts/test-anticheat-rules.cjs",
     "test:retake": "node scripts/test-retake-history.cjs",
     "test:report-filters": "node scripts/test-report-filters.cjs",

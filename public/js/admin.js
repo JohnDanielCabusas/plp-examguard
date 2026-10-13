@@ -380,16 +380,19 @@ const BEHAVIOR_LABELS = {
   no_person: 'No Person Detected',
   multiple_people: 'Multiple Faces or People Detected',
   look_down: 'Looking Down Detected',
-  low_brightness: 'Low Screen Brightness',
-  low_brightness_prompt: 'Brightness Prompt Shown',
+  // low_brightness has always measured the camera picture, not the screen;
+  // the type id stays because the Random Forest model uses it as a feature.
+  low_brightness: 'Low Camera Lighting',
+  low_brightness_prompt: 'Lighting Prompt Shown',
+  low_screen_brightness: 'Low Screen Brightness',
   camera_off: 'Camera Turned Off',
   restricted_phone: 'Mobile Phone Detected',
   secondary_computer: 'Secondary Computer Detected',
   restricted_book: 'Book or Textbook Detected',
   camera_restored: 'Camera Restored',
-  brightness_check_passed: 'Brightness Check Passed',
-  brightness_check_failed: 'Brightness Check Failed',
-  brightness_check_skipped: 'Brightness Check Skipped',
+  brightness_check_passed: 'Screen Brightness Check Passed',
+  brightness_check_failed: 'Screen Brightness Check Failed',
+  brightness_check_skipped: 'Screen Brightness Check Skipped',
   connection_lost: 'Connection Lost',
   connection_restored: 'Connection Restored',
   connection_hold_ended: 'Exam Resumed After Outage',
@@ -421,7 +424,8 @@ const VIOLATION_TYPE_ICON_SVGS = {
   no_person: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/>',
   multiple_people: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   look_down: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>',
-  low_brightness: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  low_brightness: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.74V16h8v-1.26A7 7 0 0 0 12 2z"/>',
+  low_screen_brightness: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="10" r="2.5"/>',
   brightness_check_failed: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   brightness_check_skipped: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   camera_off: '<path d="M16 16v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
@@ -462,6 +466,7 @@ const VIOLATION_ALERTABLE_TYPES = new Set([
   'screenshot',
   'brightness_check_failed',
   'brightness_check_skipped',
+  'low_screen_brightness',
   ...YOLO_VIOLATION_TYPES,
   ...FACEMESH_INCIDENT_TYPES,
 ]);
@@ -765,7 +770,7 @@ function getActivityTone(type) {
   }
   if (type === 'face_liveness_check_passed') return 'success';
   if (['window_blur', 'tab_switch', 'copy_attempt', 'paste_attempt', 'ctrl_c_attempt', 'ctrl_v_attempt'].includes(type)) return 'warning';
-  if (type === 'screen_record_panel') return 'warning';
+  if (type === 'screen_record_panel' || type === 'low_screen_brightness') return 'warning';
   if (['no_person', 'multiple_people', 'look_down', 'camera_off', 'fullscreen_exit', 'screen_record', 'timeout', 'auto_submit', 'force_submit'].includes(type)) return 'danger';
   return 'neutral';
 }
@@ -9069,7 +9074,7 @@ function renderCameraGrid(examId) {
       empty.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="margin-bottom:12px;"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
         <div style="font-size:14px;font-weight:600;color:#6b7280;">No camera-rule violations captured yet</div>
-        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Violation snapshots appear here when students are flagged for camera issues such as no person found, low brightness, or camera off</div>`;
+        <div style="font-size:12px;margin-top:4px;color:#4b5563;">Violation snapshots appear here when students are flagged for camera issues such as no person found, low camera lighting, or camera off</div>`;
     }
     return;
   }
@@ -10394,7 +10399,7 @@ async function buildAndDownloadActivityLogWorkbook(sessions, exam, filenameBase)
   if (!ExcelJSLib) { showToast('Excel library not loaded. Check internet connection.', 'error'); return; }
 
   const fmtDate = ts => ts ? new Date(ts).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'paste_attempt', 'screenshot', 'screen_record', 'screen_record_panel'];
+  const violationTypes = ['tab_switch', 'window_blur', 'fullscreen_exit', 'no_person', 'multiple_people', 'look_down', 'low_brightness', 'low_screen_brightness', 'camera_off', ...YOLO_VIOLATION_TYPES, ...FACEMESH_INCIDENT_TYPES, 'copy_attempt', 'paste_attempt', 'screenshot', 'screen_record', 'screen_record_panel'];
   const summaryHeader = [
     'Student Name', 'Student ID', 'Warnings', 'Score', 'Max Score', 'Status',
     ...violationTypes.map(t => getBehaviorLabel(t)),
