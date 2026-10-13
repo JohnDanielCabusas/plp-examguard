@@ -130,6 +130,8 @@ sync._client = { from(table) {
     _getPortalStudent: () => ({ id: 'student-1' }),
     _examForStudent: exam => exam,
     _preloadYoloObjectModel() {},
+    _examFlowGeneration: 0,
+    stopPoll() {},
     _showSubmitted() { this.resultShown = true; },
     _showError(message) { this.error = message; },
   });

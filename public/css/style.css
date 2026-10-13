@@ -8624,6 +8624,8 @@ body.exam-page {
   transform-origin: top;
   transition: all 0.55s cubic-bezier(0.23, 1, 0.32, 1);
 }
+/* The submitted screen reuses this style for resuming a reopened attempt. */
+#btn-resume-reopened-exam::after { content: "Resume Exam →"; }
 /* Reveal label — "Good luck!" slides up on hover */
 .course-exam-cta-primary::before {
   content: "Good luck! 🍀";
@@ -9224,6 +9226,21 @@ body.exam-page {
   border-radius: inherit;
   background: var(--success);
   transition: width 120ms linear;
+}
+
+.face-calibration-progress.is-loading span {
+  width: 35% !important;
+  transition: none;
+  animation: face-calibration-loading 1.1s ease-in-out infinite;
+}
+
+@keyframes face-calibration-loading {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face-calibration-progress.is-loading span { animation-duration: 2.4s; }
 }
 
 /* Base rule. The exam page overrides most of this further down; see

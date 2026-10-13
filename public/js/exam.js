@@ -225,6 +225,8 @@ const ExamApp = {
   markedForReview: new Set(), // set of question indices marked for review
   timeRemaining: 0,
   _examRuntimeStarted: false,
+  _cameraRequestToken: 0,
+  _examFlowGeneration: 0,
   _pendingReviewReopen: false,
   _blurTimer: null,         // debounce timer for window blur
   _visTimer: null,          // grace timer for tab-hidden (visibilitychange)
@@ -557,6 +559,16 @@ const ExamApp = {
       score: score.earned,
       maxScore: score.max || baseSession.maxScore || 0,
     };
+    const submission = {
+      submitted: true,
+      autoSubmitted: true,
+      submitReason: 'refresh',
+      endTime,
+      answers,
+      score: nextSession.score,
+      maxScore: nextSession.maxScore,
+    };
+    if (nextSession.id) window.SupabaseSync?.holdSubmission?.(nextSession.id, submission);
 
     if (liveSession) {
       DB.updateSession(liveSession.id, nextSession);
@@ -568,6 +580,7 @@ const ExamApp = {
       DB._write(DB.KEYS.sessions, sessions);
       window.SupabaseSync?.syncDoc?.('sessions', nextSession);
     }
+    if (nextSession.id) this._confirmSubmissionReachedServer(nextSession.id, submission);
 
     if (nextSession.id && exam?.id) {
       DB.addLog({
@@ -1658,6 +1671,18 @@ const ExamApp = {
   },
 
   _openExamDirectly(examId) {
+    // Browsers only allow fullscreen during the click that asked for it, and the
+    // launch below waits on the network first — by the time the exam itself
+    // starts, that permission has usually expired. Enter it now so the whole
+    // launch (rules, webcam consent, face scan, exam) is already fullscreen.
+    const sessForFullscreen = Auth.getStudentSession();
+    const examForFullscreen = this._examForStudent(
+      DB.getExam(examId),
+      sessForFullscreen ? this._getPortalStudent(sessForFullscreen.studentId) : null,
+    );
+    const alreadySubmitted = !!DB.getStudentSession(examId, sessForFullscreen?.studentId)?.submitted;
+    if (!alreadySubmitted && ['active', 'ready'].includes(examForFullscreen?.status)) this.requestFullscreen();
+
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
     this._returnCourseId = this._currentCourseId || null;
@@ -1815,6 +1840,13 @@ const ExamApp = {
     // Stop any running dashboard/course-view poll
     if (this._dashInterval) { clearInterval(this._dashInterval); this._dashInterval = null; }
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
+    this.stopPoll();
+
+    // The refreshes below take a moment and the dashboard stays clickable. A
+    // second Take Exam click (or a leftover waiting-room poll) starts a newer
+    // flow; this one must then stop, or two exams end up sharing one session.
+    const flow = ++this._examFlowGeneration;
+    const superseded = () => flow !== this._examFlowGeneration;
 
     const sync = window.SupabaseSync;
     await Promise.all([
@@ -1823,14 +1855,17 @@ const ExamApp = {
       sync?.refreshStudents?.({ force: true }),
       sync?.refreshSubjects?.({ force: true }),
     ]).catch(() => {});
+    if (superseded()) return;
     const selectedExam = this._resolveExamFromSession(studentSession);
     if (selectedExam && sync?._client) {
       try {
         await Promise.all([sync.refreshExam(selectedExam.id, { requireDetails: true }), sync.refreshSessionDetails(selectedExam.id)]);
       } catch (_) {
+        if (superseded()) return;
         this._showError('Unable to load your exam and saved answers. Please try again.');
         return;
       }
+      if (superseded()) return;
     }
     const refreshAutoSubmit = this._consumePendingRefreshAutoSubmit(studentSession);
 
@@ -1953,6 +1988,7 @@ const ExamApp = {
         Promise.resolve(window.SupabaseSync.refreshExam(exam.id))
           .catch(() => {})
           .then(() => {
+            if (superseded()) return;
             const latestExam = DB.getExam(exam.id);
             if (latestExam) this.exam = latestExam;
             launchActiveExam();
@@ -2590,9 +2626,7 @@ const ExamApp = {
               <div class="course-exam-panel-date">${this._formatExamCardDateTime(e.closedAt || e.updatedAt || e.createdAt)}</div>
               <div class="course-exam-panel-note">This exam is no longer accepting submissions.</div>
             </div>
-            ${dbSess
-              ? `<button class="course-exam-cta course-exam-cta-secondary" onclick="ExamApp._openExamDirectly('${e.id}')"><span>View Result</span>${this._portalIcon('arrowRight', { size: 14, stroke: 'currentColor' })}</button>`
-              : `<button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Unavailable</span></button>`}
+            <button class="course-exam-cta course-exam-cta-secondary" disabled style="opacity:0.55;cursor:not-allowed;"><span>Unavailable</span></button>
           </div>`;
         } else {
           accentLabel = 'Draft';
@@ -2691,6 +2725,7 @@ const ExamApp = {
     const sess = studentSession || Auth.getStudentSession();
     if (!sess) { window.location.href = 'index.html'; return; }
     this._disableRefreshProtection();
+    this._exitFullscreenOutsideExam();
 
     // Leaving the course view (if any) — stop its poll.
     if (this._courseInterval) { clearInterval(this._courseInterval); this._courseInterval = null; }
@@ -2710,7 +2745,7 @@ const ExamApp = {
     if (codeInput && !codeInput._ls) {
       codeInput._ls = true;
       codeInput.addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
-      codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.submitExamAccessCode(); });
+      // Enter is already handled by the input's onKeyDown in ExamPage.jsx.
     }
     const enrollInput = document.getElementById('dash-enroll-code');
     if (enrollInput && !enrollInput._ls) {
@@ -3223,6 +3258,7 @@ const ExamApp = {
     this._stopSessionSyncPolling();
     this.stopPoll();
     this.stopTimer();
+    this._exitFullscreenOutsideExam();
 
     // Drop the exam target so a refresh lands on the dashboard instead of
     // bouncing straight back into this blocked screen.
@@ -3263,6 +3299,12 @@ const ExamApp = {
 
   _showError(msg) {
     this._disableRefreshProtection();
+    // The launch failed, so nothing is open: a leftover exam/session would make
+    // the portal ignore updates and let a later exam event act on it.
+    if (!this._examRuntimeStarted) {
+      this.exam = null;
+      this.session = null;
+    }
     // If student has a session, go back to their dashboard with the error shown briefly
     const sess = Auth.getStudentSession();
     if (sess) {
@@ -3525,6 +3567,7 @@ const ExamApp = {
   },
 
   acceptExamPolicies() {
+    this.requestFullscreen();
     const modal = document.getElementById('exam-policies-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
@@ -3573,6 +3616,9 @@ const ExamApp = {
     this._initConnectionMonitor();
     this._startSessionSyncPolling();
     this.startTimer();
+    // startTimer submits on the spot when time has already run out; nothing
+    // after this point may start monitoring on a submitted attempt.
+    if (!this._examRuntimeStarted) return;
     this.renderQuestions();
     this._restoreFontScale();
     this._scheduleFullscreenEnforcement();
@@ -3674,8 +3720,10 @@ const ExamApp = {
       if (actionBtn) actionBtn.textContent = 'Turn On Webcam';
     }
 
+    // A second notice before the first is acknowledged must not take the
+    // scroll lock twice — it is released only once.
+    if (modal.classList.contains('hidden')) lockBodyScroll();
     modal.classList.remove('hidden');
-    lockBodyScroll();
   },
 
   acknowledgeCameraRequirementNotice() {
@@ -3751,8 +3799,14 @@ const ExamApp = {
       .eq('id', this.session.id).maybeSingle()
       .then(({ data, error }) => {
         if (error || !data) return;
+        // The server has not received this device's submission yet; its copy
+        // is stale, not a professor reopening the attempt.
+        if (!data.submitted && this._isSubmissionUnconfirmed(data.id)) return;
+        // Start from the local record, not this.session: local writes such as
+        // the start time and new activities do not refresh this.session, and
+        // writing it back would erase them.
         const normalized = {
-          ...this.session,
+          ...(DB.getSession(this.session.id) || this.session),
           submitted: !!data.submitted,
           autoSubmitted: !!data.auto_submitted,
           submitReason: data.submit_reason || null,
@@ -3876,6 +3930,7 @@ const ExamApp = {
   resumeReopenedExam() {
     const liveSession = this.session?.id ? (DB.getSession(this.session.id) || this.session) : null;
     if (!liveSession || liveSession.submitted || !this._pendingReviewReopen) return;
+    this.requestFullscreen();
     this._pendingReviewReopen = false;
     this.session = liveSession;
     this.answers = liveSession.answers || {};
@@ -3893,8 +3948,10 @@ const ExamApp = {
     this.stopTimer();
     this.destroyAntiCheat();
     this.stopPoll();
-    this._pendingManualSubmit = false;
     this._intentionalFullscreenExit = true;
+    this._examRuntimeStarted = false;
+    this._stopFullscreenEnforcement();
+    this._closeAttemptScreens();
     this.session = liveSession || this.session;
     this.answers = liveSession?.answers && typeof liveSession.answers === 'object'
       ? liveSession.answers
@@ -4392,7 +4449,10 @@ const ExamApp = {
       if (!this._examRuntimeStarted) {
         this._beginExamRuntime();
       }
-    } else if (!nowExempt && !this._cameraRequired) {
+    } else if (!nowExempt && !this._cameraRequired && this._examRuntimeStarted) {
+      // Before the runtime starts, _continueExamLaunch decides the requirement
+      // itself; reacting here would raise a "turned back on" notice over the
+      // exam rules for an exemption this student never had.
       // Professor turned the requirement back on — re-request consent before the
       // webcam is reactivated (a camera is never turned on without consent).
       this._cameraRequired = true;
@@ -4419,6 +4479,14 @@ const ExamApp = {
       }
     } catch (e) { /* silently fail */ }
     return Promise.resolve(false);
+  },
+
+  // Fullscreen is entered on the Take Exam click; a launch that ends somewhere
+  // other than the exam (exit, error, return, marked absent) gives it back.
+  _exitFullscreenOutsideExam() {
+    if (this._examRuntimeStarted || !this._isFullscreenActive()) return;
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
   },
 
   _rememberTrustedInteraction(durationMs = 1400) {
@@ -4465,7 +4533,8 @@ const ExamApp = {
       overlay.style.display = 'flex';
     }
 
-    document.getElementById('fs-return-btn').onclick = doReturn;
+    // Any click on the lock screen counts, not only the button.
+    overlay.onclick = doReturn;
     this._startFullscreenLockCountdown();
   },
 
@@ -4856,6 +4925,7 @@ const ExamApp = {
   },
 
   acceptWebcamConsent() {
+    this.requestFullscreen();
     const modal = document.getElementById('webcam-consent-modal');
     if (modal && !modal.classList.contains('hidden')) unlockBodyScroll();
     modal?.classList.add('hidden');
@@ -5047,6 +5117,9 @@ const ExamApp = {
     const report = document.getElementById('face-calibration-report');
     if (status) status.textContent = message;
     if (bar) bar.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
+    // While the camera or scan is still starting there is no progress to show,
+    // so the bar runs an indeterminate animation instead of sitting empty.
+    bar?.parentElement?.classList.toggle('is-loading', options.loading === true);
     // Every observation refreshes this row, so a way out that has been offered
     // has to stick: it used to be wiped by the next frame's status update.
     const helpOffered = this._faceCalibrationHelpVisible === true;
@@ -5216,7 +5289,7 @@ const ExamApp = {
     this._faceCalibrationLastProgress = 0;
     this._faceCalibrationReportSentAt = 0;
     this._showFaceCalibrationModal();
-    this._setFaceCalibrationStatus('Starting camera…', 0);
+    this._setFaceCalibrationStatus('Starting camera…', 0, { loading: true });
     this.initCamera({ calibrationOnly: true });
   },
 
@@ -5226,7 +5299,7 @@ const ExamApp = {
     this._faceMeshStarting = true;
     this._faceCalibrationLastObservationAt = 0;
     this._faceCalibrationRuntimeStartedAt = Date.now();
-    this._setFaceCalibrationStatus('Starting the on-device face scan…', 0);
+    this._setFaceCalibrationStatus('Starting the on-device face scan…', 0, { loading: true });
     this._setFaceMeshStatus('loading');
     let runtime = null;
     try {
@@ -5429,17 +5502,20 @@ const ExamApp = {
   },
 
   retryFaceCalibration() {
+    this.requestFullscreen();
     this._faceCalibrationGeneration++;
     this._clearFaceCalibrationObservationTimer();
     this._clearFaceCalibrationAssistTimer();
     this._faceCalibrationAssisted = false;
+    // The new attempt has not failed yet, so Retry must go away until it does.
+    this._faceCalibrationHelpVisible = false;
     this._faceCalibrationLastProgress = 0;
     this._faceMeshRuntime?.stop?.();
     this._faceMeshRuntime = null;
     this._faceCalibration = null;
     this._faceMeshStarting = false;
     this._faceMeshCalibrating = true;
-    this._setFaceCalibrationStatus('Restarting face calibration…', 0);
+    this._setFaceCalibrationStatus('Restarting face calibration…', 0, { loading: true });
     const video = document.getElementById('camera-feed');
     if (this._cameraStream && video?.readyState >= 2) this._startFaceCalibrationRuntime(video);
     else this.initCamera({ calibrationOnly: true });
@@ -5939,6 +6015,9 @@ const ExamApp = {
 
     container.style.display = '';
     this._cameraPrompting = true;
+    // stopCamera bumps this, so a permission prompt answered after the student
+    // has already left does not switch the webcam back on.
+    const cameraRequest = ++this._cameraRequestToken;
 
     try {
       const existingLive = this._cameraStream?.getVideoTracks?.().some(track => track.readyState === 'live');
@@ -5951,6 +6030,10 @@ const ExamApp = {
         : await (window.FaceMeshProctor?.requestCameraStream
           ? window.FaceMeshProctor.requestCameraStream(navigator.mediaDevices, cameraConstraints)
           : navigator.mediaDevices.getUserMedia(cameraConstraints));
+      if (cameraRequest !== this._cameraRequestToken) {
+        if (stream !== this._cameraStream) stream?.getTracks?.().forEach(track => track.stop());
+        return;
+      }
       this._cameraPrompting = false;
       this._cameraStream = stream;
       this._setCameraStatusText(calibrationOnly ? 'Calibrating' : 'Monitoring', { force: true });
@@ -5974,6 +6057,7 @@ const ExamApp = {
       video.play().catch(() => {});
       if (video.readyState >= 2) handleCameraReady();
     } catch (err) {
+      if (cameraRequest !== this._cameraRequestToken) return;
       this._cameraPrompting = false;
       this._setCameraStatusText('Camera denied', { force: true });
       if (blockedMsg) blockedMsg.style.display = 'flex';
@@ -7668,6 +7752,8 @@ const ExamApp = {
   },
 
   stopCamera() {
+    this._cameraRequestToken++;
+    this._cameraPrompting = false;
     this._faceCalibrationGeneration++;
     this._clearFaceCalibrationObservationTimer();
     if (this._faceRuleEngine) {
@@ -9988,9 +10074,42 @@ const ExamApp = {
     }).join('');
   },
 
+  // Screens that belong to a running or launching attempt. Whatever ends the
+  // attempt (submit, professor close/force-submit, leaving) has to take them
+  // down, or they cover the next screen and keep the page scroll-locked.
+  _closeAttemptScreens() {
+    this._hideWebcamWaitNoticeModal();
+    this._hideWebcamDeniedDecisionModal();
+    this._hideWebcamWaitOverlay();
+    this._faceMeshCalibrating = false;
+    this._hideFaceCalibrationModal();
+    this._hideOfflineOverlay();
+    this._hideBrightnessPrompt();
+    const brightnessCheck = document.getElementById('brightness-check-overlay');
+    if (brightnessCheck) brightnessCheck.style.display = 'none';
+    // The connection monitor is stopped with the attempt; a stale "offline"
+    // would hold the next attempt's first question until a probe answers.
+    this._connectionState = 'online';
+    this._connFailStreak = 0;
+    this._pendingManualSubmit = false;
+  },
+
   returnToLogin() {
     this._stopSessionSyncPolling();
     this._disableRefreshProtection();
+    // Leaving the waiting room must stop its poll, or it relaunches the exam
+    // flow later in the middle of another attempt.
+    this.stopPoll();
+    // Leaving mid-attempt (e.g. declining a re-enabled webcam, then Exit) must
+    // shut the attempt down, not just hide it behind the dashboard.
+    if (this._examRuntimeStarted && this.session && !this.session.submitted) {
+      this._flushAutoSave();
+      this.stopTimer();
+      this.destroyAntiCheat();
+    }
+    this._stopFullscreenEnforcement();
+    this._hideFullscreenLock();
+    this._closeAttemptScreens();
     this._examRuntimeStarted = false;
     const cameraRequirementModal = document.getElementById('camera-requirement-modal');
     if (cameraRequirementModal && !cameraRequirementModal.classList.contains('hidden')) unlockBodyScroll();
@@ -9998,9 +10117,6 @@ const ExamApp = {
     const policiesModal = document.getElementById('exam-policies-modal');
     if (policiesModal && !policiesModal.classList.contains('hidden')) unlockBodyScroll();
     policiesModal?.classList.add('hidden');
-    this._hideWebcamWaitNoticeModal();
-    this._hideWebcamDeniedDecisionModal();
-    this._hideWebcamWaitOverlay();
     const sess = Auth.getStudentSession();
     if (sess) {
       const updated = { ...sess };
@@ -10092,6 +10208,12 @@ const ExamApp = {
     this.destroyAntiCheat(); // also calls stopCamera()
     this.stopPoll();
     this._intentionalFullscreenExit = true;
+    // The attempt is over: nothing may demand fullscreen back or keep charging
+    // strikes against the submitted session.
+    this._examRuntimeStarted = false;
+    this._stopFullscreenEnforcement();
+    this._hideFullscreenLock();
+    this._closeAttemptScreens();
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -10118,7 +10240,7 @@ const ExamApp = {
         : trigger === 'exam_closed' ? 'exam_closed'
         : (trigger === 'auto' || trigger === 'violation_terminal') ? 'violations'
         : 'manual';
-      DB.updateSession(this.session.id, {
+      const submission = {
         submitted: true,
         autoSubmitted,
         submitReason,
@@ -10126,7 +10248,10 @@ const ExamApp = {
         answers: { ...this.answers },
         score: score.earned,
         maxScore: score.max,
-      });
+      };
+      window.SupabaseSync?.holdSubmission?.(this.session.id, submission);
+      DB.updateSession(this.session.id, submission);
+      this._confirmSubmissionReachedServer(this.session.id, submission);
 
       if (trigger === 'timeout') {
         DB.addLog({ sessionId: this.session.id, studentId: this.session.studentId, examId: this.exam.id, type: 'timeout', details: 'Auto-submitted: time expired' });
@@ -10140,6 +10265,36 @@ const ExamApp = {
 
     this._showSubmitted(true);
     return true;
+  },
+
+  // A failed save is only logged by the sync layer, so a submission made while
+  // the connection was down would otherwise never reach the server — and the
+  // next poll would read the attempt as reopened. Keep checking, and push the
+  // submission again, until the server has it.
+  async _confirmSubmissionReachedServer(sessionId, submission, attempt = 0) {
+    const sync = window.SupabaseSync;
+    const client = sync?._client;
+    if (!client) {
+      sync?.releaseSubmission?.(sessionId);
+      return;
+    }
+    try {
+      // Our own write has settled (saved or failed) once this resolves.
+      await sync.waitForDocSync?.('sessions', sessionId);
+      const { data, error } = await client.from('sessions').select('id, submitted').eq('id', sessionId).maybeSingle();
+      if (error) throw error;
+      if (data?.submitted) {
+        sync.releaseSubmission?.(sessionId);
+        return;
+      }
+      DB.updateSession(sessionId, submission);
+    } catch (_) { /* offline or transient — the next attempt retries */ }
+    const delayMs = Math.min(30000, 2000 * (2 ** Math.min(attempt, 4)));
+    setTimeout(() => this._confirmSubmissionReachedServer(sessionId, submission, attempt + 1), delayMs);
+  },
+
+  _isSubmissionUnconfirmed(sessionId) {
+    return !!(sessionId && window.SupabaseSync?._heldSubmissions?.has(sessionId));
   },
 
   _showSubmitted(freshSubmit) {
@@ -10173,6 +10328,11 @@ const ExamApp = {
         iconWrap.className = 'submitted-icon-wrap auto';
         titleEl.textContent = 'Exam Force-Submitted';
         msgEl.textContent = 'Your professor ended this attempt and submitted your current answers.';
+      } else if (session && session.autoSubmitted && session.submitReason === 'exam_closed') {
+        iconWrap.innerHTML = _submittedIcon('auto');
+        iconWrap.className = 'submitted-icon-wrap auto';
+        titleEl.textContent = 'Exam Closed';
+        msgEl.textContent = 'Your professor closed this exam, so your current answers were submitted.';
       } else if (session && session.autoSubmitted) {
         iconWrap.innerHTML = _submittedIcon('auto');
         iconWrap.className = 'submitted-icon-wrap auto';
@@ -10332,9 +10492,11 @@ function _escText(str) {
   return _esc(str);
 }
 
+// For HTML attribute values. Backslashes are left alone: HTML never unescapes
+// them, so doubling one changed the option value and marked a correct answer
+// with a backslash in it (a file path, "\n") wrong.
 function _escAttr(str) {
-  if (str === null || str === undefined) return '';
-  return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\\/g,'\\\\');
+  return _esc(str).replace(/'/g, '&#39;');
 }
 
 function _submittedIcon(type) {

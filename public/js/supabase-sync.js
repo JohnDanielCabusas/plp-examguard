@@ -78,7 +78,30 @@ const SupabaseSync = {
   },
 
   _writeLocal(key, value) {
+    if (key === 'acs_sessions' && Array.isArray(value) && this._heldSubmissions.size) {
+      value = value.map(session => this._keepHeldSubmission(session));
+    }
     window.DB?._write?.(key, value);
+  },
+
+  // A student's submission is saved on this device first and reaches the
+  // server a moment later — or, offline, much later. Until the server confirms
+  // it, a refresh or realtime echo carrying the older unsubmitted row must not
+  // undo it here, or the submitted exam reappears with a Take Exam button.
+  _heldSubmissions: new Map(),
+
+  holdSubmission(sessionId, fields) {
+    if (sessionId && fields) this._heldSubmissions.set(sessionId, { ...fields });
+  },
+
+  releaseSubmission(sessionId) {
+    this._heldSubmissions.delete(sessionId);
+  },
+
+  _keepHeldSubmission(session) {
+    const held = session?.id ? this._heldSubmissions.get(session.id) : null;
+    if (!held || session.submitted) return session;
+    return { ...session, ...held };
   },
 
   _getCrossTabSignalKey() {
