@@ -9927,6 +9927,21 @@ async function toggleCameraExemption() {
   const toggleKey = `${examId}:${studentId}`;
   if (_profCameraTogglePending.has(toggleKey)) return;
   const nowExempt = !DB.isStudentCameraExempt(examId, studentId);
+  const confirmed = await showConfirm(nowExempt
+    ? {
+        title: 'Turn off webcam?',
+        message: `Let ${studentName} continue this exam without webcam monitoring? Their camera will be turned off.`,
+        confirmLabel: 'Turn off webcam',
+      }
+    : {
+        title: 'Re-enable webcam?',
+        message: `Require webcam monitoring for ${studentName} again? They will be asked to turn their camera back on to continue the exam.`,
+        confirmLabel: 'Re-enable webcam',
+        confirmClass: 'btn btn-primary',
+      });
+  if (!confirmed) return;
+  if (!_profChatCtx || _profChatCtx.examId !== examId || _profChatCtx.studentId !== studentId) return;
+  if (_profCameraTogglePending.has(toggleKey)) return;
   _profCameraTogglePending.add(toggleKey);
   renderProfCameraRow();
   try {
@@ -9936,9 +9951,29 @@ async function toggleCameraExemption() {
     DB.setStudentCameraExempt(examId, studentId, nowExempt);
     await (window.SupabaseSync?.waitForDocSync?.('exams', examId) || Promise.resolve());
     await refreshProfCameraFromSync();
+    // Tell the student in their chat too. The exams row change alone gave a
+    // student no visible sign that anything happened, and its realtime event
+    // can miss them; this message also makes their page re-check the exam.
+    // Sent after the exam row is on the server so the re-check sees it.
+    const adminId = Auth.getAdminSession()?.id || null;
+    DB.addMessage({
+      ownerAdminId: adminId,
+      professorId: adminId,
+      studentId,
+      studentName,
+      examId,
+      sessionId: _profChatCtx?.sessionId || null,
+      senderRole: 'professor',
+      type: 'webcam_requirement',
+      reportCategory: nowExempt ? 'disabled' : 'enabled',
+      body: nowExempt
+        ? 'Your professor turned off the webcam requirement. You may continue the exam without webcam monitoring.'
+        : 'Your professor turned the webcam requirement back on. Turn on your webcam to continue the exam.',
+    });
   } finally {
     _profCameraTogglePending.delete(toggleKey);
     renderProfCameraRow();
+    if (_profChatCtx?.examId === examId && _profChatCtx?.studentId === studentId) renderProfChatMessages();
   }
   showToast(nowExempt
     ? `Webcam requirement turned off for ${studentName}.`
@@ -10017,21 +10052,27 @@ async function respondToWebcamRequest(requestMessageId, decision) {
     return;
   }
 
-  if (decision === 'deny') {
-    const confirmed = await showConfirm({
-      title: 'Deny webcam request?',
-      message: `Deny ${studentName}'s request to continue without webcam monitoring? They will still need a webcam to continue the exam.`,
-      confirmLabel: 'Deny request',
-      confirmClass: 'btn btn-danger',
-    });
-    if (!confirmed) return;
-    if (!_profChatCtx || _profChatCtx.examId !== examId || _profChatCtx.studentId !== studentId) return;
-    if (!DB.getExam(examId)?.requireCamera) return;
-    const currentMessages = DB.getMessagesForExamStudent(examId, studentId);
-    const currentRequest = currentMessages.find(message => message.id === requestMessageId);
-    if (!isProfChatWebcamRequestMessage(currentRequest)
-      || getProfChatWebcamDecisionForRequest(currentMessages, currentRequest)) return;
-  }
+  const confirmed = await showConfirm(decision === 'deny'
+    ? {
+        title: 'Deny webcam request?',
+        message: `Deny ${studentName}'s request to continue without webcam monitoring? They will still need a webcam to continue the exam.`,
+        confirmLabel: 'Deny request',
+        confirmClass: 'btn btn-danger',
+      }
+    : {
+        title: 'Allow webcam off?',
+        message: `Allow ${studentName} to continue this exam without webcam monitoring? Their camera will be turned off.`,
+        confirmLabel: 'Allow',
+        confirmClass: 'btn btn-primary',
+      });
+  if (!confirmed) return;
+  // The thread may have moved on while the dialog was open.
+  if (!_profChatCtx || _profChatCtx.examId !== examId || _profChatCtx.studentId !== studentId) return;
+  if (!DB.getExam(examId)?.requireCamera) return;
+  const currentMessages = DB.getMessagesForExamStudent(examId, studentId);
+  const currentRequest = currentMessages.find(message => message.id === requestMessageId);
+  if (!isProfChatWebcamRequestMessage(currentRequest)
+    || getProfChatWebcamDecisionForRequest(currentMessages, currentRequest)) return;
 
   DB.setStudentCameraExempt(examId, studentId, decision === 'allow');
 
@@ -10084,6 +10125,16 @@ function renderProfChatMessages() {
           <span class="prof-chat-report-copy">${escHtml(m.body || '')}</span>
         </div>
         <div class="prof-chat-time">${mine ? 'You' : escHtml(_profChatCtx.studentName)} &middot; ${escHtml(time)}</div>
+      </div>`;
+    }
+    if (m.type === 'webcam_requirement') {
+      const enabled = m.reportCategory === 'enabled';
+      return `<div class="prof-chat-msg ${mine ? 'mine' : 'theirs'}">
+        <div class="prof-chat-report-bubble is-decision ${enabled ? 'is-required' : 'is-allow'}">
+          <span class="prof-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${enabled ? '<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>' : '<path d="M1 1l22 22"/><path d="M21 7l-7 5 2.5 1.79"/><path d="M15 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 1.17 1.82"/><path d="M9.5 19H15a2 2 0 0 0 2-2v-1.5"/>'}</svg>${enabled ? 'Webcam Re-enabled' : 'Webcam Turned Off'}</span>
+          <span class="prof-chat-report-copy">${escHtml(m.body || '')}</span>
+        </div>
+        <div class="prof-chat-time">You &middot; ${escHtml(time)}</div>
       </div>`;
     }
     if (m.type === 'report') {

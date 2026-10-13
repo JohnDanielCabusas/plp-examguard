@@ -4240,6 +4240,34 @@ const ExamApp = {
     }
   },
 
+  _isWebcamRequirementMessage(message) {
+    return !!(
+      message
+      && message.senderRole === 'professor'
+      && message.type === 'webcam_requirement'
+      && ['enabled', 'disabled'].includes(message.reportCategory)
+    );
+  },
+
+  // The professor's webcam toggle posts a chat notice once the exams row is on
+  // the server. The exams realtime event can miss this socket, so a new notice
+  // re-reads the exam and applies the requirement from there; the notice itself
+  // only says "look again", the exam row stays the source of truth.
+  _handleIncomingWebcamRequirementChange() {
+    if (!this.exam || !this.session || !this.exam.requireCamera) return;
+    const latest = [...this._chatMessages()].reverse().find(message => this._isWebcamRequirementMessage(message));
+    if (!latest || latest.id === this._lastHandledWebcamRequirementId) return;
+    this._lastHandledWebcamRequirementId = latest.id;
+    const examId = this.exam.id;
+    Promise.resolve(window.SupabaseSync?.refreshExam?.(examId, { summary: true }))
+      .catch(() => {})
+      .then(() => {
+        if (this.exam?.id !== examId) return;
+        this.exam = DB.getExam(examId) || this.exam;
+        this._syncCameraExemptionState();
+      });
+  },
+
   _renderChatMessages() {
     const body = document.getElementById('exam-chat-messages');
     if (!body) return;
@@ -4266,6 +4294,16 @@ const ExamApp = {
             <span class="exam-chat-report-copy">${_esc(m.body || '')}</span>
           </div>
           <div class="exam-chat-time">${_esc(time)}</div>
+        </div>`;
+      }
+      if (this._isWebcamRequirementMessage(m)) {
+        const enabled = m.reportCategory === 'enabled';
+        return `<div class="exam-chat-msg report">
+          <div class="exam-chat-report-bubble is-decision ${enabled ? 'is-required' : 'is-allow'}">
+            <span class="exam-chat-report-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${enabled ? '<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>' : '<path d="M1 1l22 22"/><path d="M21 7l-7 5 2.5 1.79"/><path d="M15 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 1.17 1.82"/><path d="M9.5 19H15a2 2 0 0 0 2-2v-1.5"/>'}</svg>${enabled ? 'Webcam required again' : 'Webcam requirement turned off'}</span>
+            <span class="exam-chat-report-copy">${_esc(m.body || '')}</span>
+          </div>
+          <div class="exam-chat-time">Professor &middot; ${_esc(time)}</div>
         </div>`;
       }
       if (m.type === 'report') {
@@ -4304,6 +4342,8 @@ const ExamApp = {
       .then((changed) => {
         if (!changed) return;
         this._renderChatMessages();
+        this._handleIncomingWebcamDecision();
+        this._handleIncomingWebcamRequirementChange();
         const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
         if (panelOpen) DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
         this._updateChatBadge();
@@ -4395,6 +4435,7 @@ const ExamApp = {
     if (table === 'messages') {
       this._renderChatMessages();
       this._handleIncomingWebcamDecision();
+      this._handleIncomingWebcamRequirementChange();
       const panelOpen = document.getElementById('exam-chat-panel')?.style.display === 'flex';
       if (panelOpen) DB.markMessagesRead(this.exam.id, this.session.studentId, 'professor');
       this._updateChatBadge();

@@ -4184,10 +4184,17 @@ tr:hover td { background: #F8FDF8; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 600px;
+  /* Sized from the viewport, not a fixed 600px, so the whole panel stays on
+     screen at any browser zoom or screen height (vh scales with zoom). 76px is
+     the sticky offset below the 60px topbar, plus a 24px bottom gap. */
+  max-height: calc(100vh - 100px);
+  max-height: calc(100dvh - 100px);
+  min-height: min(440px, calc(100vh - 100px));
   position: sticky;
   top: 76px;
-  align-self: start;
+  /* Matches the sessions panel's height (its body below adds nothing to the
+     row), so a short session list never leaves the log hanging past it. */
+  align-self: stretch;
 }
 
 .activity-log-header {
@@ -4204,7 +4211,9 @@ tr:hover td { background: #F8FDF8; }
 .activity-log-body {
   overflow-y: auto;
   flex: 1;
-  min-height: 240px;
+  min-height: 0;
+  /* The timeline scrolls inside the panel instead of growing the grid row. */
+  contain: size;
   padding: 12px;
   background: #f9fafb;
 }
@@ -7324,6 +7333,7 @@ body.exam-page {
   .settings-main-grid { grid-template-columns: 1fr; }
   .monitoring-grid { grid-template-columns: 1fr; }
   .activity-log { max-height: none; min-height: 320px; position: static; }
+  .activity-log-body { contain: none; }
   .course-exam-shell { grid-template-columns: 1fr; }
   .course-exam-actions-pane { padding: 0 22px 22px; }
   .course-exam-panel { padding: 18px 0 0; border-left: none; border-top: 1px solid #e7edf4; }
@@ -15389,6 +15399,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .exam-chat-report-bubble.is-decision.is-allow .exam-chat-report-tag { color: var(--chip-ok-text); }
 .exam-chat-report-bubble.is-decision.is-deny { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-deny-bg) 26%); border-color: color-mix(in srgb, var(--chip-deny-border) 64%, var(--border, #d1d5db)); }
 .exam-chat-report-bubble.is-decision.is-deny .exam-chat-report-tag { color: var(--chip-deny-text); }
+.exam-chat-report-bubble.is-decision.is-required { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-warn-bg) 26%); border-color: color-mix(in srgb, var(--chip-warn-border) 62%, var(--border, #d1d5db)); }
+.exam-chat-report-bubble.is-decision.is-required .exam-chat-report-tag { color: var(--chip-warn-text); }
 .exam-chat-time { font-size: 12px; color: var(--text-muted, #9ca3af); margin-top: 3px; }
 .exam-chat-reports { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff); }
 .exam-chat-reports-label { width: 100%; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted, #9ca3af); margin-bottom: 2px; }
@@ -16253,6 +16265,8 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
 .prof-chat-report-bubble.is-decision.is-allow .prof-chat-report-tag { color: var(--chip-ok-text); }
 .prof-chat-report-bubble.is-decision.is-deny { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-deny-bg) 26%); border-color: color-mix(in srgb, var(--chip-deny-border) 64%, var(--border, #d1d5db)); }
 .prof-chat-report-bubble.is-decision.is-deny .prof-chat-report-tag { color: var(--chip-deny-text); }
+.prof-chat-report-bubble.is-decision.is-required { background: color-mix(in srgb, var(--surface, #fff) 74%, var(--chip-warn-bg) 26%); border-color: color-mix(in srgb, var(--chip-warn-border) 62%, var(--border, #d1d5db)); }
+.prof-chat-report-bubble.is-decision.is-required .prof-chat-report-tag { color: var(--chip-warn-text); }
 .prof-chat-report-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--chip-warn-text); }
 .prof-chat-report-tag svg { width: 12px; height: 12px; flex-shrink: 0; }
 .prof-chat-report-copy { font-size: 14px; line-height: 1.55; color: var(--text, #1a1a1a); word-break: break-word; white-space: pre-wrap; }
