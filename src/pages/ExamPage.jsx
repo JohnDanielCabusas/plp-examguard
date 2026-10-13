@@ -1118,6 +1118,7 @@ export default function ExamPage() {
                 'Multiple visible faces or people through the 3-second camera countdown',
                 'Looking down continuously through the 10-second camera countdown',
                 'Looking away left, right, or up continuously through the 10-second camera countdown',
+                'Not answering the on-screen camera check (blink or open your mouth when asked) — for example, showing a photo instead of your face',
                 'Poor camera lighting — your face too dark to see clearly',
                 'Turning off or blocking your webcam',
               ].map((text) => (

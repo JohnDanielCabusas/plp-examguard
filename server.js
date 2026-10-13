@@ -250,7 +250,10 @@ server.on('upgrade', (req, socket, head) => {
 
 function startServer(port) {
   server.listen(port, host, () => {
-    console.log(`TUKLAS running at http://${host}:${port}`);
+    // 0.0.0.0 is a bind address, not one a browser can open, and the webcam
+    // only works on localhost or HTTPS.
+    const shownHost = host === '0.0.0.0' || host === '::' ? 'localhost' : host;
+    console.log(`TUKLAS running at http://${shownHost}:${port}`);
     console.log(`Serving from: ${rootDir}`);
     console.log(`Run "npm run build" first to generate the dist/ folder.`);
   });

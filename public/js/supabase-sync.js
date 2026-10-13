@@ -278,8 +278,23 @@ const SupabaseSync = {
       && !(session.warnings || 0);
   },
 
+  // A submitted attempt only becomes unsubmitted again through a retake (the
+  // attempt is wiped) or a professor reopening it (which logs an activity).
+  // Anything else is a late realtime echo of a save made before the submit,
+  // and applying it flashed the finished exam back to "Take Exam".
+  _isGenuineUnsubmit(incoming, prior) {
+    if (!prior?.submitted || incoming?.submitted) return true;
+    if (this._isSessionResetState(incoming)) return true;
+    if (!incoming.startTime && !Object.keys(incoming.answers || {}).length) return true;
+    const reopenCount = session => (Array.isArray(session?.activities) ? session.activities : [])
+      .filter(activity => activity?.type === 'violation_review_reopened').length;
+    return reopenCount(incoming) > reopenCount(prior);
+  },
+
   _mergeIncomingSessionWithLocal(incoming, prior) {
     if (!prior) return incoming;
+
+    if (!this._isGenuineUnsubmit(incoming, prior)) return prior;
 
     const merged = { ...prior, ...incoming };
     if (this._isSessionResetState(incoming)) return merged;

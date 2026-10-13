@@ -13,8 +13,9 @@ import {
 // whole window of clean viewing passes with no sign at all is the student
 // asked, on screen with a countdown, to blink or open their mouth. A picture
 // cannot answer; a student can, in a second, and nothing is recorded. Only a
-// prompt that goes unanswered while the face stays in view becomes a review
-// incident for the professor. It never costs a strike on its own.
+// prompt that goes unanswered while the face stays in view becomes an incident:
+// it goes to the professor for review, and costs a strike when the config's
+// failureCountsAsWarning says so.
 //
 // Every cue that fails to work on a given camera fails safe: blink scores that
 // never settle to an open-eye level stop counting, unavailable scores switch the
@@ -76,6 +77,8 @@ export class FaceLivenessMonitor {
     this.eyesClosed = false;
     this.eyesClosedAt = null;
     this.expressionRanges = new Map();
+    this.expressionSmoothed = new Map();
+    this.motionFrames = 0;
     this.challenge = null;
     this.lastLifeSign = null;
     this.blinkCount = 0;
@@ -172,11 +175,19 @@ export class FaceLivenessMonitor {
     return false;
   }
 
+  // Scores are smoothed before their range is taken. The model's frame-to-frame
+  // jitter on a still picture is a spike here and a spike there, and over a
+  // whole window those spikes added up to a "change of expression"; a real
+  // smile or raised brow is held for many frames and survives the smoothing.
   _detectExpressionChange(blendshapes) {
     let changed = false;
+    const smoothing = Number(this.config.expressionSmoothing ?? 1);
     for (const [name, keys] of Object.entries(EXPRESSION_LEVELS)) {
-      const level = expressionLevel(blendshapes, keys);
-      if (level === null) continue;
+      const raw = expressionLevel(blendshapes, keys);
+      if (raw === null) continue;
+      const previous = this.expressionSmoothed.get(name);
+      const level = previous === undefined ? raw : previous + ((raw - previous) * smoothing);
+      this.expressionSmoothed.set(name, level);
       const range = this.expressionRanges.get(name) || { min: level, max: level };
       range.min = Math.min(range.min, level);
       range.max = Math.max(range.max, level);
@@ -193,7 +204,12 @@ export class FaceLivenessMonitor {
     const blink = this._detectBlink(blendshapes, now);
     const expression = this._detectExpressionChange(blendshapes);
     const motion = finite(observation.nonRigidMotion);
-    const moved = motion !== null && motion >= Number(this.config.nonRigidMotionThreshold);
+    // One noisy frame is not a change of shape; a blink or a word keeps the
+    // landmarks off the picture fit for several frames running.
+    this.motionFrames = motion !== null && motion >= Number(this.config.nonRigidMotionThreshold)
+      ? this.motionFrames + 1
+      : 0;
+    const moved = this.motionFrames >= Number(this.config.nonRigidMotionFrames ?? 1);
     if (blink) return 'blink';
     if (expression) return 'expression';
     if (moved) return 'motion';
@@ -371,6 +387,7 @@ export class FaceLivenessMonitor {
     } else {
       this.eyesClosed = false;
       this.eyesClosedAt = null;
+      this.motionFrames = 0;
     }
 
     if (this.state === 'challenge') {

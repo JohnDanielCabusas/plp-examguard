@@ -540,8 +540,8 @@ await assert.rejects(
 // A flat picture can shift, turn, tilt and come closer, and every landmark
 // moves together under one affine map. The residual after fitting that map out
 // is what a picture cannot produce: the face changing shape.
-assert.equal(config.liveness.passiveWindowMs, 60000);
-assert.equal(config.liveness.failureCountsAsWarning, false);
+assert.equal(config.liveness.passiveWindowMs, 30000);
+assert.equal(config.liveness.failureCountsAsWarning, true);
 assert.equal(config.faceOnScreen.minimumContainment, 0.85);
 
 function meshPoints(deform = () => null) {
@@ -569,6 +569,25 @@ assert.ok(
   'Thirty landmarks moving on their own is a change of shape.',
 );
 assert.equal(nonRigidResidual(flatReference.slice(0, 4), flatMoved.slice(0, 4)), null);
+// A hand-held photo tilted towards the camera is foreshortened in perspective.
+// An affine fit left that as residual, so the photo was credited with life.
+const perspective = point => {
+  const w = (0.6 * point.x) + (0.4 * point.y) + 1;
+  return {
+    x: ((1.05 * point.x) + (0.04 * point.y) + 0.01) / w,
+    y: ((-0.02 * point.x) + (0.97 * point.y) + 0.02) / w,
+  };
+};
+const flatTilted = flatReference.map(perspective);
+assert.ok(
+  nonRigidResidual(flatReference, flatTilted) < 1e-6,
+  'A picture tilted in perspective leaves no non-rigid residual.',
+);
+const blinkTilted = flatTilted.map((point, index) => (index >= 100 && index < 130 ? { x: point.x, y: point.y + 0.02 } : point));
+assert.ok(
+  nonRigidResidual(flatReference, blinkTilted) >= config.liveness.nonRigidMotionThreshold,
+  'A blink is still a change of shape on a tilted face.',
+);
 
 const motionMeter = createNonRigidMotionMeter({ referenceAgeMs: 700 });
 assert.equal(motionMeter.measure(flatReference, 0), null, 'Nothing to compare with on the first frame.');
@@ -662,12 +681,14 @@ const livenessMonitor = (overrides = {}, baseline = livingBaseline, random = () 
   assert.equal(monitor.snapshot().lastLifeSign.kind, 'blink');
 }
 
-// Other signs of life count just as well: an expression, or the face changing shape.
+// Other signs of life count just as well: an expression held for a moment, or
+// the face changing shape over a few frames.
 {
   const { monitor, events } = livenessMonitor();
   for (let time = 0; time <= 6000; time += 100) {
+    const smiling = time % 1000 < 500;
     monitor.observe(frame(time, {
-      blendshapes: { ...quietBlendshapes, mouthSmileLeft: time % 1000 === 0 ? 0.5 : 0.1, mouthSmileRight: time % 1000 === 0 ? 0.5 : 0.1 },
+      blendshapes: { ...quietBlendshapes, mouthSmileLeft: smiling ? 0.5 : 0.1, mouthSmileRight: smiling ? 0.5 : 0.1 },
     }));
   }
   assert.equal(events.length, 0);
@@ -676,10 +697,25 @@ const livenessMonitor = (overrides = {}, baseline = livingBaseline, random = () 
 {
   const { monitor, events } = livenessMonitor();
   for (let time = 0; time <= 6000; time += 100) {
-    monitor.observe(frame(time, { nonRigidMotion: time % 1000 === 0 ? 0.06 : 0.004 }));
+    monitor.observe(frame(time, { nonRigidMotion: time % 1000 < 200 ? 0.06 : 0.004 }));
   }
   assert.equal(events.length, 0);
   assert.equal(monitor.snapshot().lastLifeSign.kind, 'motion');
+}
+
+// A picture's model jitter: one-frame spikes in expression and shape. Those
+// used to reset the clock forever; now the picture is still challenged.
+{
+  const { monitor, events } = livenessMonitor();
+  for (let time = 0; time <= 3600; time += 100) {
+    const spike = time % 700 === 0;
+    monitor.observe(frame(time, {
+      nonRigidMotion: spike ? 0.06 : 0.004,
+      blendshapes: { ...quietBlendshapes, mouthSmileLeft: spike ? 0.45 : 0.1, mouthSmileRight: spike ? 0.45 : 0.1 },
+    }));
+  }
+  assert.ok(events.some(event => event.kind === 'liveness-challenge'), 'Single-frame jitter is not a sign of life.');
+  assert.ok(events.some(event => event.kind === 'liveness-challenge-failed'));
 }
 
 // Eyes that stay shut and then open are not a blink; a picture swapped for a

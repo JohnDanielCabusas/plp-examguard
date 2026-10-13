@@ -135,15 +135,16 @@ const BASE_CONFIG = Object.freeze({
     faceBoxExpansionRatio: 0.18,
   }),
   // Is the face on camera alive, or a picture of one? See livenessMonitor.js.
-  // Everything here is set so that a real student is almost never asked, and
-  // when they are, a blink clears it with nothing recorded.
+  // Everything here is set so that a real student is rarely asked, and when
+  // they are, a blink clears it with nothing recorded. A check left unanswered
+  // counts as a strike.
   liveness: Object.freeze({
     enabled: true,
     // Clean viewing with no sign of life before the student is asked to show
-    // one. People blink several times a minute even while reading; a minute
-    // with no blink, no expression and no change of shape is long enough to
-    // ask, and short enough that a picture cannot hide for long.
-    passiveWindowMs: 60000,
+    // one. People blink many times in half a minute even while reading, so
+    // thirty seconds with no blink, no expression and no change of shape is
+    // rare for a real face, and a picture is challenged within that time.
+    passiveWindowMs: 30000,
     // Each answered check lengthens the next window, up to this.
     passiveWindowGrowthMs: 30000,
     maximumPassiveWindowMs: 150000,
@@ -169,9 +170,16 @@ const BASE_CONFIG = Object.freeze({
     // Any expression score ranging this much over the window is a change of
     // face no picture can make.
     expressionRangeThreshold: 0.2,
+    // Each expression score is smoothed by this factor per frame before its
+    // range is taken, so model jitter on a still picture cannot add up to a
+    // change; a held smile or raised brow still does.
+    expressionSmoothing: 0.3,
     // Non-rigid landmark motion, in inter-ocular distances, above which the
     // face has changed shape rather than merely moved (see livenessCues.js).
     nonRigidMotionThreshold: 0.035,
+    // Consecutive frames above that threshold needed; one noisy frame is not a
+    // change of shape.
+    nonRigidMotionFrames: 2,
     // The on-screen check.
     challengeDurationMs: 15000,
     challengeBlinkCount: 2,
@@ -186,9 +194,10 @@ const BASE_CONFIG = Object.freeze({
     // Quiet time after any check before another can begin.
     challengeCooldownMs: 120000,
     cancelledCooldownMs: 15000,
-    // An unanswered check is a review incident for the professor. It is not a
-    // strike unless this is turned on.
-    failureCountsAsWarning: false,
+    // An unanswered check is what a picture produces, so it costs a strike as
+    // well as going to the professor for review. A real student sees the
+    // on-screen prompt and clears it with a blink.
+    failureCountsAsWarning: true,
   }),
   // A face that sits inside a detected phone is being shown on its screen. See
   // faceOnScreenDetector.js.

@@ -18809,3 +18809,25 @@ body {
 [data-theme="dark"] .btn-warning {
   color: var(--on-accent) !important;
 }
+
+/* Exam page: no backdrop blur. A blurred panel has to be re-blurred every time
+   what is behind it changes, and behind these is the live webcam — so every
+   camera frame cost a full re-blur, and the full-screen warning, notice and
+   modal overlays re-blurred the whole screen per frame, competing with the
+   monitoring models for the same laptop GPU. Slightly more opaque backgrounds
+   keep the text readable without it. */
+.exam-page .yolo-camera-status,
+.exam-page .camera-status-bar,
+.exam-page #warning-overlay,
+.exam-page .modal-backdrop,
+.exam-page .face-positioning-warning,
+.exam-page .fullscreen-lock-overlay,
+.exam-page .exam-timer,
+.exam-page .floating-exam-timer {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.exam-page .camera-status-bar { background: rgba(0, 0, 0, 0.72); }
+.exam-page .modal-backdrop { background: rgba(5, 18, 11, 0.8); }
+.exam-page .fullscreen-lock-overlay { background: rgba(8, 20, 13, 0.88); }
+.exam-page .floating-exam-timer { background: rgba(15, 45, 26, 0.88); }

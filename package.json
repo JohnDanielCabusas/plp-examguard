@@ -8,6 +8,7 @@
     "build": "npm run prepare:mediapipe && vite build",
     "preview": "vite preview",
     "start": "node server.js",
+    "local": "npm run build && node server.js",
     "supabase:optimize": "node scripts/apply-bandwidth-optimizations.cjs --migrate-snapshots",
     "test:bandwidth": "node scripts/test-bandwidth-optimizations.cjs && node scripts/test-sync-payloads.cjs && node scripts/test-waiting-room.cjs",
     "test:bandwidth:browser": "node scripts/smoke-test-bandwidth.mjs",

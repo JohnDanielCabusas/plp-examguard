@@ -82,11 +82,110 @@ function fitAffine(reference, current) {
   };
 }
 
+// Centre a point set and scale it to an average distance of √2 from the
+// origin, so the projective fit below stays well conditioned.
+function normalizer(points) {
+  let meanX = 0; let meanY = 0;
+  for (const point of points) { meanX += point.x; meanY += point.y; }
+  meanX /= points.length; meanY /= points.length;
+  let spread = 0;
+  for (const point of points) spread += Math.hypot(point.x - meanX, point.y - meanY);
+  spread /= points.length;
+  if (!(spread > 1e-9)) return null;
+  return { meanX, meanY, scale: Math.SQRT2 / spread };
+}
+
+// Solves the n×n system in place by Gaussian elimination with partial pivoting.
+function solveLinear(matrix, vector) {
+  const size = vector.length;
+  for (let column = 0; column < size; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < size; row += 1) {
+      if (Math.abs(matrix[row][column]) > Math.abs(matrix[pivot][column])) pivot = row;
+    }
+    if (!(Math.abs(matrix[pivot][column]) > 1e-12)) return null;
+    [matrix[column], matrix[pivot]] = [matrix[pivot], matrix[column]];
+    [vector[column], vector[pivot]] = [vector[pivot], vector[column]];
+    for (let row = column + 1; row < size; row += 1) {
+      const factor = matrix[row][column] / matrix[column][column];
+      if (!factor) continue;
+      for (let k = column; k < size; k += 1) matrix[row][k] -= factor * matrix[column][k];
+      vector[row] -= factor * vector[column];
+    }
+  }
+  const solution = new Array(size);
+  for (let row = size - 1; row >= 0; row -= 1) {
+    let total = vector[row];
+    for (let k = row + 1; k < size; k += 1) total -= matrix[row][k] * solution[k];
+    solution[row] = total / matrix[row][row];
+  }
+  return solution.every(Number.isFinite) ? solution : null;
+}
+
+// Least-squares homography from `reference` onto `current`. A flat picture
+// tilted towards or away from the camera is foreshortened in perspective,
+// which an affine map cannot express: the leftover read as the face changing
+// shape, so a hand-held photo earned "signs of life". A homography is exactly
+// the set of images a flat picture can make, so it fits every one of them out.
+function fitHomography(reference, current) {
+  const count = reference.length;
+  if (count < 6) return null;
+  const from = normalizer(reference);
+  const to = normalizer(current);
+  if (!from || !to) return null;
+  const normal = Array.from({ length: 8 }, () => new Array(8).fill(0));
+  const rhs = new Array(8).fill(0);
+  const accumulate = (row, target) => {
+    for (let i = 0; i < 8; i += 1) {
+      if (!row[i]) continue;
+      rhs[i] += row[i] * target;
+      for (let j = 0; j < 8; j += 1) normal[i][j] += row[i] * row[j];
+    }
+  };
+  for (let index = 0; index < count; index += 1) {
+    const u = (reference[index].x - from.meanX) * from.scale;
+    const v = (reference[index].y - from.meanY) * from.scale;
+    const x = (current[index].x - to.meanX) * to.scale;
+    const y = (current[index].y - to.meanY) * to.scale;
+    accumulate([u, v, 1, 0, 0, 0, -u * x, -v * x], x);
+    accumulate([0, 0, 0, u, v, 1, -u * y, -v * y], y);
+  }
+  const h = solveLinear(normal, rhs);
+  if (!h) return null;
+  return {
+    apply(point) {
+      const u = (point.x - from.meanX) * from.scale;
+      const v = (point.y - from.meanY) * from.scale;
+      const w = (h[6] * u) + (h[7] * v) + 1;
+      if (!(Math.abs(w) > 1e-9)) return null;
+      return {
+        x: ((((h[0] * u) + (h[1] * v) + h[2]) / w) / to.scale) + to.meanX,
+        y: ((((h[3] * u) + (h[4] * v) + h[5]) / w) / to.scale) + to.meanY,
+      };
+    },
+  };
+}
+
+function affineMapper(transform) {
+  return {
+    apply: point => ({
+      x: (transform.a * point.x) + (transform.b * point.y) + transform.c,
+      y: (transform.d * point.x) + (transform.e * point.y) + transform.f,
+    }),
+  };
+}
+
 export function nonRigidResidual(reference, current, options = {}) {
   if (!Array.isArray(reference) || !Array.isArray(current)) return null;
   const count = Math.min(reference.length, current.length);
   if (count < 6) return null;
-  const transform = fitAffine(reference.slice(0, count), current.slice(0, count));
+  const source = reference.slice(0, count);
+  const target = current.slice(0, count);
+  let transform = fitHomography(source, target);
+  if (!transform) {
+    const affine = fitAffine(source, target);
+    transform = affine ? affineMapper(affine) : null;
+  }
   if (!transform) return null;
 
   const leftEye = current[LEFT_EYE_OUTER];
@@ -98,11 +197,9 @@ export function nonRigidResidual(reference, current, options = {}) {
 
   const residuals = new Array(count);
   for (let index = 0; index < count; index += 1) {
-    const source = reference[index];
-    const target = current[index];
-    const predictedX = (transform.a * source.x) + (transform.b * source.y) + transform.c;
-    const predictedY = (transform.d * source.x) + (transform.e * source.y) + transform.f;
-    residuals[index] = Math.hypot(target.x - predictedX, target.y - predictedY) / scale;
+    const predicted = transform.apply(source[index]);
+    if (!predicted) return null;
+    residuals[index] = Math.hypot(target[index].x - predicted.x, target[index].y - predicted.y) / scale;
   }
   // The mean over every point would dilute a blink (thirty-odd eyelid points out
   // of nearly five hundred) into the noise floor, so the score is the mean of the

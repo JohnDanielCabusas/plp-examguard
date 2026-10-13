@@ -247,15 +247,62 @@ navigationEvent = keyEvent('Enter');
 assert.equal(app._handleQuestionNavigationKey(navigationEvent), true);
 assert.equal(keyboardDirection, 'next');
 
-const textTarget = { type: 'text', closest: () => ({}) };
+// A control stub that matches the selectors it would really match.
+const control = ({ tag, type = '', matches = [], answerArea = null }) => {
+  const self = {
+    tagName: tag.toUpperCase(),
+    type,
+    closest: selector => {
+      if (selector === '.question-answer-area') return answerArea;
+      const wanted = selector.split(',').map(part => part.trim());
+      return wanted.some(part => part === tag || matches.includes(part)) ? self : null;
+    },
+  };
+  return self;
+};
+const answerAreaWith = boxes => ({ querySelectorAll: () => boxes });
+
+// Identification: Enter in the answer box moves to the next question.
+const idArea = answerAreaWith([]);
+const idInput = control({ tag: 'input', type: 'text', answerArea: idArea });
+idArea.querySelectorAll = () => [idInput];
 keyboardDirection = '';
-assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', textTarget)), false);
-assert.equal(app._handleQuestionNavigationKey(keyEvent('ArrowRight', textTarget)), false);
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', idInput)), true);
+assert.equal(keyboardDirection, 'next');
+// Arrow keys still move the caret inside a typed answer.
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('ArrowRight', idInput)), false);
 assert.equal(keyboardDirection, '');
 
-const radioTarget = { type: 'radio', closest: () => ({}) };
-assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', radioTarget)), true);
+// Enumeration: Enter moves to the next item box, and leaves from the last one.
+let focused = null;
+const enumArea = answerAreaWith([]);
+const enumFirst = control({ tag: 'input', type: 'text', answerArea: enumArea });
+const enumLast = control({ tag: 'input', type: 'text', answerArea: enumArea });
+enumLast.focus = () => { focused = enumLast; };
+enumArea.querySelectorAll = () => [enumFirst, enumLast];
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', enumFirst)), true);
+assert.equal(focused, enumLast);
+assert.equal(keyboardDirection, '');
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', enumLast)), true);
 assert.equal(keyboardDirection, 'next');
+
+// Matching dropdowns and choice inputs advance too.
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'select', answerArea: answerAreaWith([]) }))), true);
+assert.equal(keyboardDirection, 'next');
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'input', type: 'radio', answerArea: answerAreaWith([]) }))), true);
+assert.equal(keyboardDirection, 'next');
+
+// Essays and code need Enter for new lines; chat and buttons keep their own Enter.
+keyboardDirection = '';
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'textarea', answerArea: answerAreaWith([]) }))), false);
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'textarea', matches: ['.CodeMirror'], answerArea: answerAreaWith([]) }))), false);
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'input', type: 'text' }))), false);
+assert.equal(app._handleQuestionNavigationKey(keyEvent('Enter', control({ tag: 'button' }))), false);
+assert.equal(keyboardDirection, '');
 app.nextQuestion = realNextQuestion;
 app.prevQuestion = realPrevQuestion;
 app._examRuntimeStarted = false;

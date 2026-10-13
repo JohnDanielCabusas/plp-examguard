@@ -109,7 +109,9 @@ const TERMINAL_VIOLATION_TYPES = Object.freeze(['screen_record']);
 const EXAM_CAMERA_CONSTRAINTS = Object.freeze({
   width: { ideal: 1280, min: 640 },
   height: { ideal: 720, min: 480 },
-  frameRate: { ideal: 24, min: 10 },
+  // 30 is what laptop webcams natively run at; asking for 24 made the browser
+  // drop every fifth frame, which shows as an uneven judder.
+  frameRate: { ideal: 30, min: 10 },
   facingMode: 'user',
 });
 
@@ -226,6 +228,7 @@ const ExamApp = {
   timeRemaining: 0,
   _examRuntimeStarted: false,
   _cameraRequestToken: 0,
+  _cameraExposureLock: null,      // set while the exam, not the camera, controls exposure (see _improveCameraFrameRate)
   _unconfirmedWarningCount: 0,   // strikes this device issued that the server has not shown back yet
   _examFlowGeneration: 0,
   _pendingReviewReopen: false,
@@ -6037,8 +6040,8 @@ const ExamApp = {
     this._startCameraWatchdog();
     if (this._getObjectMonitoringConfig().enabled) this._startYoloObjectMonitoring(video);
     else this._setYoloStatus('disabled');
-    if (this._faceMeshRuntime) this._activateFaceMeshMonitoring();
-    else this._restartFaceMeshMonitoring(video);
+    this._activateFaceMeshMonitoring();
+    if (!this._faceMeshRuntime) this._restartFaceMeshMonitoring(video);
     this._setCameraStatusText('Starting camera scan…', { force: true });
     setTimeout(() => this._checkInitialPresence(video), 500);
     // FaceMesh already performs primary-face inference in a worker. Loading
@@ -6055,6 +6058,175 @@ const ExamApp = {
         console.warn('[Camera] Face detection fallback active:', error?.message || error);
       });
     }
+  },
+
+  // ── Webcam frame rate ─────────────────────────────────────────
+  // Many laptop webcams halve their frame rate whenever automatic exposure is
+  // on, even when the exposure they pick would allow full speed. Measured on an
+  // XJS-CT48: 15 fps in automatic exposure, 30 fps in manual at the very same
+  // exposure time — so students saw themselves move in slow, choppy steps on
+  // every server. When the feed is measurably slow and the camera offers manual
+  // exposure, the exposure the camera itself chose is locked (same brightness,
+  // full frame rate) and the exam takes over adjusting it from the brightness it
+  // already measures. It never makes the picture darker than the camera would:
+  // a room that needs a longer exposure than full speed allows gets automatic
+  // exposure back.
+  _CAMERA_SMOOTH_FPS: 24,
+  _MAX_SMOOTH_EXPOSURE_TIME: 333, // 100 µs units: 1/30 s, the longest a 30 fps frame allows
+
+  _measureDeliveredFps(durationMs = 1500) {
+    const videos = ['camera-feed', 'face-calibration-feed']
+      .map(id => document.getElementById(id))
+      .filter(video => video && typeof video.requestVideoFrameCallback === 'function');
+    if (!videos.length) return Promise.resolve(0);
+    // Whichever preview is on screen gets frames; an unrendered one gets none.
+    return Promise.all(videos.map(video => new Promise((resolve) => {
+      let frames = 0;
+      const startedAt = performance.now();
+      const onFrame = (now) => {
+        frames += 1;
+        if (now - startedAt < durationMs) video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+      setTimeout(() => resolve(frames / (durationMs / 1000)), durationMs + 50);
+    }))).then(rates => Math.max(...rates));
+  },
+
+  async _improveCameraFrameRate(stream, cameraRequest) {
+    const track = stream?.getVideoTracks?.()[0];
+    if (!track || typeof track.getCapabilities !== 'function' || typeof track.applyConstraints !== 'function') return;
+    const capabilities = track.getCapabilities() || {};
+    if (!Array.isArray(capabilities.exposureMode) || !capabilities.exposureMode.includes('manual')) return;
+    if (!capabilities.exposureTime) return;
+
+    // Give the camera a moment to settle its own exposure before judging it.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (cameraRequest !== this._cameraRequestToken || this._cameraStream !== stream) return;
+    const deliveredFps = await this._measureDeliveredFps();
+    if (cameraRequest !== this._cameraRequestToken || this._cameraStream !== stream) return;
+    if (!(deliveredFps > 0) || deliveredFps >= this._CAMERA_SMOOTH_FPS) return;
+
+    const chosen = Number(track.getSettings?.().exposureTime);
+    if (!(chosen > 0)) return;
+    const max = Math.min(Number(capabilities.exposureTime.max) || this._MAX_SMOOTH_EXPOSURE_TIME, this._MAX_SMOOTH_EXPOSURE_TIME);
+    const lumaBefore = this._sampleCameraLuminance();
+    const giveBack = () => track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }).catch(() => {});
+
+    // The camera's own exposure when it fits a full-speed frame (same picture,
+    // just faster); otherwise the longest step that does, which is darker and
+    // is only kept below if the face stays clearly visible. Webcams snap to a
+    // few fixed steps, so step down until one fits.
+    let applied = NaN;
+    let request = Math.min(chosen, max);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: request }] });
+      } catch (_) {
+        await giveBack();
+        return;
+      }
+      applied = Number(track.getSettings?.().exposureTime);
+      if (!(applied > max)) break;
+      request = Math.min(request, applied) / 2;
+    }
+    if (!(applied > 0) || applied > max) {
+      await giveBack();
+      return;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+    if (cameraRequest !== this._cameraRequestToken || this._cameraStream !== stream) return;
+    const lumaAfter = this._sampleCameraLuminance();
+    const lockedFps = await this._measureDeliveredFps();
+    if (cameraRequest !== this._cameraRequestToken || this._cameraStream !== stream) return;
+    const brightEnough = applied >= chosen
+      || lumaAfter === null
+      || lumaAfter >= Math.max(this._MIN_LUMINANCE + 30, (lumaBefore ?? 0) * 0.6);
+    if (lockedFps < deliveredFps + 5 || !brightEnough) {
+      await giveBack();
+      console.info(`[Camera] Kept automatic exposure (${deliveredFps.toFixed(1)} fps): a faster exposure ${brightEnough ? 'did not raise the frame rate' : 'left the picture too dark'}.`);
+      return;
+    }
+    this._cameraExposureLock = {
+      track,
+      min: Number(capabilities.exposureTime.min) || 1,
+      max,
+      targetLuminance: null,
+      atBrightest: applied < chosen,
+      adjustedAt: 0,
+    };
+    console.info(`[Camera] Feed ran at ${deliveredFps.toFixed(1)} fps in automatic exposure; exposure locked at ${applied} for ${lockedFps.toFixed(1)} fps.`);
+  },
+
+  // Average brightness (0–255) of the current webcam frame, from a tiny copy.
+  _sampleCameraLuminance() {
+    const video = document.getElementById('camera-feed');
+    if (!video || video.readyState < 2) return null;
+    try {
+      const canvas = this._luminanceCanvas || (this._luminanceCanvas = document.createElement('canvas'));
+      canvas.width = 64;
+      canvas.height = 36;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, 64, 36);
+      const data = ctx.getImageData(0, 0, 64, 36).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += (0.299 * data[i]) + (0.587 * data[i + 1]) + (0.114 * data[i + 2]);
+      return sum / (data.length / 4);
+    } catch (_) {
+      return null;
+    }
+  },
+
+  // Called with every brightness reading (0–255) while the exposure is locked.
+  _adjustLockedExposure(avgLuminance) {
+    const lock = this._cameraExposureLock;
+    if (!lock) return;
+    if (lock.track.readyState !== 'live') {
+      this._cameraExposureLock = null;
+      return;
+    }
+    // The first reading after locking is what the camera's own exposure gave.
+    if (lock.targetLuminance === null) {
+      lock.targetLuminance = avgLuminance;
+      return;
+    }
+    const now = Date.now();
+    if (now - lock.adjustedAt < 2000) return; // let each change show up first
+    const current = Number(lock.track.getSettings?.().exposureTime) || lock.max;
+    const tooDark = avgLuminance < Math.max(lock.targetLuminance * 0.75, this._MIN_LUMINANCE + 10);
+    const tooBright = avgLuminance > Math.min(lock.targetLuminance * 1.35, 230);
+    let next = null;
+    if (tooDark) {
+      if (current >= lock.max || lock.atBrightest) {
+        this._releaseCameraExposureLock();
+        return;
+      }
+      next = Math.min(lock.max, current * 1.3);
+    } else if (tooBright && current > lock.min) {
+      next = Math.max(lock.min, current / 1.3);
+      lock.atBrightest = false;
+    }
+    if (next === null) return;
+    lock.adjustedAt = now;
+    lock.track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: next }] })
+      .then(() => {
+        // Webcams only offer a few exposure steps (one measured: 156, 312, 625),
+        // so asking for a little more can land on a step too long for full
+        // speed. Step back; this is as bright as full speed allows.
+        const applied = Number(lock.track.getSettings?.().exposureTime);
+        if (this._cameraExposureLock !== lock || !(applied > lock.max)) return null;
+        lock.atBrightest = true;
+        return lock.track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: current }] });
+      })
+      .catch(() => this._releaseCameraExposureLock());
+  },
+
+  _releaseCameraExposureLock() {
+    const lock = this._cameraExposureLock;
+    this._cameraExposureLock = null;
+    if (!lock || lock.track.readyState !== 'live') return Promise.resolve();
+    return lock.track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }).catch(() => {});
   },
 
   async initCamera(options = {}) {
@@ -6091,6 +6263,7 @@ const ExamApp = {
       }
       this._cameraPrompting = false;
       this._cameraStream = stream;
+      if (!existingLive) this._improveCameraFrameRate(stream, cameraRequest).catch(() => {});
       this._setCameraStatusText(calibrationOnly ? 'Calibrating' : 'Monitoring', { force: true });
       if (blockedMsg) blockedMsg.style.display = 'none';
 
@@ -7425,6 +7598,7 @@ const ExamApp = {
 
     this._cameraObstructed = false;
     this._cameraObstructedSeconds = 0;
+    this._adjustLockedExposure(avgLuminance);
     if (this._cameraRecoveryGraceUntil) {
       this._cameraRecoveryGraceUntil = 0;
     }
@@ -7873,8 +8047,18 @@ const ExamApp = {
     this._cameraOffWarningIssued = false;
     this._hideCameraOffOverlay();
     if (this._cameraStream) {
-      this._cameraStream.getTracks().forEach(t => t.stop());
+      const tracks = this._cameraStream.getTracks();
       this._cameraStream = null;
+      if (this._cameraExposureLock) {
+        // Hand the webcam back in automatic exposure, so other apps (and the
+        // next exam) do not inherit the exposure this exam locked.
+        Promise.race([
+          this._releaseCameraExposureLock(),
+          new Promise(resolve => setTimeout(resolve, 300)),
+        ]).finally(() => tracks.forEach(t => t.stop()));
+      } else {
+        tracks.forEach(t => t.stop());
+      }
     }
     const calibrationVideo = document.getElementById('face-calibration-feed');
     if (calibrationVideo) calibrationVideo.srcObject = null;
@@ -9557,6 +9741,9 @@ const ExamApp = {
     if (!questions.length) return;
     idx = Math.max(0, Math.min(idx, questions.length - 1));
     this.currentQuestionIndex = idx;
+    // A clicked question number or Previous button keeps focus, and Enter on
+    // it re-clicks it instead of moving on to the next question.
+    if (document.activeElement?.matches?.('.nav-q-btn, #btn-prev')) document.activeElement.blur();
 
     questions.forEach((q, i) => {
       const frame = document.getElementById(`qframe-${q.id}`);
@@ -9639,17 +9826,50 @@ const ExamApp = {
     // whenever the student is interacting with an answer control.
     if ((key === 'ArrowLeft' || key === 'ArrowRight') && isFormControl) return false;
 
-    // Enter advances from the question itself and from selected-choice inputs,
-    // but remains available for typed answers, dropdowns, links, and buttons.
     if (key === 'Enter' && isFormControl) {
+      // Multi-line answers (essay, code) need Enter for new lines, and controls
+      // outside the question (chat, dialogs, buttons) keep their own Enter.
+      const answerArea = closest('.question-answer-area');
+      const multiLine = !!closest('textarea, [contenteditable="true"], [contenteditable=""], .CodeMirror');
+      if (!answerArea || multiLine) return false;
+      const tag = String(target?.tagName || '').toLowerCase();
       const inputType = String(target?.type || '').toLowerCase();
-      if (inputType !== 'radio' && inputType !== 'checkbox') return false;
+      const singleLineText = tag === 'input' && !['radio', 'checkbox', 'button', 'submit'].includes(inputType);
+      if (!singleLineText && tag !== 'select' && inputType !== 'radio' && inputType !== 'checkbox') return false;
+
+      // Enumeration has one box per item: Enter moves to the next box first,
+      // and only leaves the question from the last one.
+      if (singleLineText) {
+        const boxes = [...answerArea.querySelectorAll('input[type="text"]')];
+        const nextBox = boxes[boxes.indexOf(target) + 1];
+        if (nextBox) {
+          event.preventDefault?.();
+          nextBox.focus();
+          return true;
+        }
+      }
     }
 
     event.preventDefault?.();
-    if (key === 'ArrowLeft') this.prevQuestion();
-    else this.nextQuestion();
+    if (key === 'ArrowLeft') {
+      this.prevQuestion();
+      return true;
+    }
+    const before = this.currentQuestionIndex;
+    this.nextQuestion();
+    if (key === 'Enter' && this.currentQuestionIndex !== before) this._focusCurrentQuestionInput();
     return true;
+  },
+
+  // After Enter moves on, a typed answer box on the new question is ready to
+  // type into; otherwise focus leaves the old (now hidden) control so the next
+  // Enter is not swallowed by it.
+  _focusCurrentQuestionInput() {
+    const q = this.questionOrder[this.currentQuestionIndex];
+    const frame = q ? document.getElementById(`qframe-${q.id}`) : null;
+    const field = frame?.querySelector('.question-answer-area input[type="text"], .question-answer-area select');
+    if (field) field.focus();
+    else document.activeElement?.blur?.();
   },
 
   toggleMarkReview() {
