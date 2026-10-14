@@ -24,12 +24,17 @@ const POSITIONING_WARNINGS = Object.freeze({
   FACE_NEAR_FRAME_EDGE: 'Please center your face in the camera frame.',
   FACE_OCCLUDED: 'Please keep your face unobstructed.',
   FACE_TRACKING_UNSTABLE: 'Improve the lighting so your face remains visible.',
+  // Head direction used to count down only in the small camera status text,
+  // so a student looking away saw nothing on the exam itself until the strike.
+  SUSTAINED_HEAD_TURN: 'You are looking away from the screen.',
+  SUSTAINED_LOOKING_DOWN: 'You are looking down, away from the screen.',
 });
 
 // Every condition a student can actually correct counts down where they can see
 // it. The positioning rules were missing, so a student who was simply sitting
 // too far back got a notice and a violation about a second apart, with no way
-// to tell that moving would have been enough (#40).
+// to tell that moving would have been enough (#40). Occlusion and unstable
+// tracking were still missing, and their notice and strike landed a second apart.
 const COUNTDOWN_EVENT_TYPES = new Set([
   'FACE_ABSENT',
   'SUSTAINED_HEAD_TURN',
@@ -38,7 +43,18 @@ const COUNTDOWN_EVENT_TYPES = new Set([
   'FACE_TOO_CLOSE',
   'FACE_TOO_FAR',
   'FACE_NEAR_FRAME_EDGE',
+  'FACE_OCCLUDED',
+  'FACE_TRACKING_UNSTABLE',
 ]);
+
+// The notice normally waits out a brief glance before appearing, but never so
+// long that the student is left less than this to act on it.
+const DEFAULT_MINIMUM_COUNTDOWN_NOTICE_MS = 3000;
+
+function noticeDelayMs(config, incidentThresholdMs) {
+  const minimumNoticeMs = Number(config.minimumCountdownNoticeMs ?? DEFAULT_MINIMUM_COUNTDOWN_NOTICE_MS);
+  return Math.max(0, Math.min(Number(config.positioningWarningMs || 0), incidentThresholdMs - minimumNoticeMs));
+}
 
 function iso(value) {
   return new Date(value).toISOString();
@@ -203,7 +219,11 @@ export class FaceTemporalRuleEngine {
           });
         }
       }
-      if (!track.warningSent && POSITIONING_WARNINGS[rule.eventType] && elapsed >= this.config.positioningWarningMs) {
+      if (
+        !track.warningSent
+        && POSITIONING_WARNINGS[rule.eventType]
+        && elapsed >= noticeDelayMs(this.config, incidentThresholdMs)
+      ) {
         track.warningSent = true;
         this.onEvent({
           kind: 'positioning-warning',

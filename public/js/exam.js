@@ -74,6 +74,22 @@ const FACEMESH_REPORTED_INCIDENT_TYPES = new Set([
 // this key. It is not an incident type; nothing is recorded while it counts.
 const FACE_LIVENESS_CHECK_KEY = 'FACE_LIVENESS_CHECK';
 
+// Heading and call to action for every camera countdown the student can see in
+// the notice at the foot of the exam. Anything not listed is a camera
+// positioning problem (too close, too far, off-centre, partly out of frame).
+const CAMERA_NOTICE_COPY = Object.freeze({
+  FACE_ABSENT: { label: 'Face not visible', verb: 'Return to the camera' },
+  no_person: { label: 'Face not visible', verb: 'Return to the camera' },
+  SUSTAINED_HEAD_TURN: { label: 'Looking away', verb: 'Look back at the screen' },
+  SUSTAINED_LOOKING_DOWN: { label: 'Looking down', verb: 'Look back at the screen' },
+  look_down: { label: 'Looking down', verb: 'Look back at the screen' },
+  FACE_OCCLUDED: { label: 'Face covered', verb: 'Uncover your face' },
+  FACE_TRACKING_UNSTABLE: { label: 'Camera lighting', verb: 'Adjust' },
+  multiple_people: { label: 'Another person', verb: 'Clear the camera frame' },
+  low_brightness: { label: 'Camera lighting', verb: 'Restore your lighting' },
+  [FACE_LIVENESS_CHECK_KEY]: { label: 'Quick camera check', verb: 'Respond' },
+});
+
 // One timing policy drives every strike-warning path. Keeping these values in
 // one place prevents a focus/visibility event from silently replacing a camera
 // warning's allotted display time with a different countdown.
@@ -336,6 +352,10 @@ const ExamApp = {
   _faceOnScreenDetector: null,
   _facePositioningWarnings: new Map(),
   _faceConditionCountdowns: new Map(),
+  // Camera countdowns that do not come from the FaceMesh rule engine (another
+  // person, a darkened camera view, the fallback face detector), keyed by
+  // violation type: { message, remainingSeconds }.
+  _cameraNotices: new Map(),
   _cameraCalibrationOnly: false,
   _motionBlocked: false,    // true if exam is blocked due to no person detected
   _presenceConfirmSec: 0,
@@ -3148,8 +3168,100 @@ const ExamApp = {
   showViolationsInfo() {
     const modal = document.getElementById('violations-info-modal');
     if (!modal) return;
+    this._renderViolationsInfo();
     modal.classList.remove('hidden');
     lockBodyScroll();
+  },
+
+  // The rules a student is held to, built from the same settings and timings
+  // the monitors use, so the list cannot drift from what actually happens.
+  // Camera rules appear only when this student must use the camera, and the
+  // phone rule only when phone detection is on for the exam.
+  _renderViolationsInfo() {
+    const host = document.getElementById('violations-info-content');
+    if (!host) return;
+    const cameraRequired = this._cameraRequired === true;
+    const phoneDetection = cameraRequired && this._getObjectMonitoringConfig().enabled;
+    const temporal = this._faceMeshConfig?.temporal || {};
+    const liveness = this._faceMeshConfig?.liveness || {};
+    const seconds = (ms, fallback) => Math.round(Number(ms ?? fallback * 1000) / 1000);
+    const faceSeconds = seconds(temporal.faceAbsentIncidentMs, this._NO_MOTION_WARN);
+    const headSeconds = seconds(temporal.headTurnIncidentMs, 10);
+    const downSeconds = seconds(temporal.lookingDownIncidentMs, this._LOOK_DOWN_WARN_SEC);
+    const positionSeconds = seconds(temporal.positioningIncidentMs, 10);
+    const coveredSeconds = seconds(temporal.occlusionIncidentMs, 4);
+    const checkSeconds = seconds(liveness.challengeDurationMs, 15);
+    const awayCount = Number(temporal.repeatedAwayCount || 4);
+    const awayWindow = seconds(temporal.repeatedAwayWindowMs, 60);
+    const warnings = Math.min(3, Math.max(0, Number(this.warnings || 0)));
+
+    const icons = {
+      warn: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+      end: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+      ok: '<circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/>',
+    };
+    const item = (text, time = '', kind = 'warn') => `
+      <div class="violations-info-item violations-info-item-${kind}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[kind]}</svg>
+        <span class="violations-info-text">${_esc(text)}</span>
+        ${time ? `<span class="violations-info-time">${_esc(time)}</span>` : ''}
+      </div>`;
+    const group = (title, note, items) => `
+      <section class="violations-info-group">
+        <h3 class="violations-info-group-title">${_esc(title)}</h3>
+        ${note ? `<p class="violations-info-group-note">${_esc(note)}</p>` : ''}
+        <div class="violations-info-list">${items.join('')}</div>
+      </section>`;
+
+    const browserItems = [
+      item('Switching to another tab or window, or opening another application'),
+      item(`Leaving fullscreen. Return within ${EXAM_WARNING_TIMINGS.fullscreenLockSeconds} seconds or another warning is recorded.`),
+      item('Copying or cutting exam content'),
+      item('Pasting or dragging content into an answer'),
+      item('Pressing Print Screen or a screen-capture shortcut'),
+    ];
+    // The fallback face detector (used when FaceMesh cannot load) checks only
+    // presence, looking down and other people.
+    const faceMesh = this._faceMeshUnavailable !== true;
+    const cameraItems = cameraRequired ? [
+      item('Leaving the camera view, or your face is not visible', `${faceSeconds}s countdown`),
+      ...(faceMesh ? [
+        item('Sitting too close, too far, off-centre, or partly out of the frame', `${positionSeconds}s countdown`),
+        item('Looking away to the left, right, or up', `${headSeconds}s countdown`),
+      ] : []),
+      item('Looking down, away from the screen', `${downSeconds}s countdown`),
+      ...(faceMesh ? [item('Covering your face, or your face cannot be seen clearly', `${coveredSeconds}s countdown`)] : []),
+      item('Another face or person visible on camera', `${this._MULTIPLE_FACE_WARN_SEC}s countdown`),
+      item('Your camera view darkens to below 75% of its starting brightness', '10s countdown'),
+      item('Your room is too dark for the camera', `${this._LOW_LIGHT_WARN_SEC}s countdown`),
+      item('Turning off or blocking your webcam', `${this._CAMERA_OFF_WARN_SEC}s countdown`),
+      ...(faceMesh && liveness.enabled !== false && liveness.failureCountsAsWarning !== false
+        ? [item('Not answering the quick camera check (blink or open your mouth when asked)', `${checkSeconds}s to respond`)]
+        : []),
+      ...(faceMesh ? [item(`Looking away ${awayCount} times within ${awayWindow} seconds`, 'No countdown')] : []),
+      ...(phoneDetection ? [item('A mobile phone visible on camera', 'No countdown')] : []),
+    ] : [];
+
+    host.innerHTML = `
+      <div class="violations-info-summary" data-level="${warnings}">
+        <strong>You have ${warnings} of 3 warnings.</strong>
+        Each item below adds one warning. At 3 warnings your exam is submitted automatically.
+        Your professor reviews every warning and can remove one recorded by mistake.
+      </div>
+      ${group('Browser and keyboard', '', browserItems)}
+      ${cameraRequired ? group(
+        'Camera',
+        'A countdown appears at the bottom of your screen first. Fix the problem before it reaches zero and nothing is recorded.',
+        cameraItems,
+      ) : ''}
+      ${group('Ends your exam', '', [
+        item('Refreshing or reloading the exam page', '', 'end'),
+        item(`Starting a screen recording. You get one ${EXAM_WARNING_TIMINGS.screenRecordSeconds}-second chance to stop it; a second recording submits your exam.`, '', 'end'),
+      ])}
+      ${group('Not counted', '', [
+        item(`Losing your internet connection. Leaving the exam window while offline is not counted, and you get ${EXAM_WARNING_TIMINGS.offlineResumeSeconds} seconds to return once you reconnect.`, '', 'ok'),
+        ...(cameraRequired ? [item('Some camera events, such as a phone held near your face, are only recorded for your professor to review.', '', 'ok')] : []),
+      ])}`;
   },
 
   closeViolationsInfo() {
@@ -5676,10 +5788,7 @@ const ExamApp = {
         instruction: event.instruction,
       });
       this._facePositioningWarnings.set(FACE_LIVENESS_CHECK_KEY, event.instruction);
-      this._renderFacePositioningNotice(event.instruction, remainingSeconds, {
-        label: 'Quick camera check',
-        verb: 'Respond',
-      });
+      this._renderRemainingFacePositioningNotice();
       this._renderFaceConditionCountdown();
       this._setFaceMeshStatus('warning', 'Quick camera check');
       if (event.kind === 'liveness-challenge') {
@@ -5908,10 +6017,7 @@ const ExamApp = {
       // Once the notice is up, tick it down in place. A static "move back"
       // message gives no sense of how long is left to act on it.
       if (this._facePositioningWarnings.has(event.eventType)) {
-        this._renderFacePositioningNotice(
-          this._facePositioningWarnings.get(event.eventType),
-          event.remainingSeconds,
-        );
+        this._renderRemainingFacePositioningNotice();
       }
       return;
     }
@@ -5921,10 +6027,7 @@ const ExamApp = {
     }
     if (event?.kind === 'positioning-warning') {
       this._facePositioningWarnings.set(event.eventType, event.description);
-      this._renderFacePositioningNotice(
-        event.description,
-        this._faceConditionCountdowns.get(event.eventType)?.remainingSeconds,
-      );
+      this._renderRemainingFacePositioningNotice();
       this._setFaceMeshStatus('warning', event.description);
       return;
     }
@@ -5968,18 +6071,48 @@ const ExamApp = {
     if (event.phase === 'end' && event.incidentId) this._faceViolationIncidentIds.delete(event.incidentId);
   },
 
-  // After one notice clears, whichever is still outstanding takes its place.
+  // Show or update a camera countdown that does not come from the FaceMesh rule
+  // engine. A remaining time of zero keeps the message up without a countdown,
+  // which is what the student sees after the warning has been recorded.
+  _setCameraNotice(type, message, remainingSeconds = null) {
+    const previous = this._cameraNotices.get(type);
+    if (previous && previous.message === message && previous.remainingSeconds === remainingSeconds) return;
+    this._cameraNotices.set(type, { message, remainingSeconds });
+    this._renderRemainingFacePositioningNotice();
+  },
+
+  _clearCameraNotice(type) {
+    if (this._cameraNotices.delete(type)) this._renderRemainingFacePositioningNotice();
+  },
+
+  // Several camera conditions can count down at once (leaning back is both
+  // "too far" and "looking up"). The notice shows whichever strike is closest;
+  // when one clears, whichever is still outstanding takes its place.
   _renderRemainingFacePositioningNotice() {
-    const [type, message] = [...this._facePositioningWarnings.entries()].at(-1) || [];
-    if (!message) {
+    const candidates = [
+      ...[...this._facePositioningWarnings.entries()].map(([type, message]) => ({
+        type,
+        message,
+        remainingSeconds: this._faceConditionCountdowns.get(type)?.remainingSeconds,
+      })),
+      ...[...this._cameraNotices.entries()].map(([type, notice]) => ({ type, ...notice })),
+    ].filter(candidate => candidate.message);
+    if (!candidates.length) {
       this._renderFacePositioningNotice('');
       return;
     }
-    const countdown = this._faceConditionCountdowns.get(type);
+    const secondsLeft = candidate => {
+      const seconds = Number(candidate.remainingSeconds);
+      return Number.isFinite(seconds) && seconds > 0 ? seconds : Infinity;
+    };
+    // Ties and countdown-less notices keep the old rule: the newest one wins.
+    const chosen = candidates.reduce((best, candidate) => (
+      secondsLeft(candidate) <= secondsLeft(best) ? candidate : best
+    ));
     this._renderFacePositioningNotice(
-      message,
-      countdown?.remainingSeconds,
-      type === FACE_LIVENESS_CHECK_KEY ? { label: 'Quick camera check', verb: 'Respond' } : {},
+      chosen.message,
+      chosen.remainingSeconds,
+      CAMERA_NOTICE_COPY[chosen.type] || {},
     );
   },
 
@@ -6050,7 +6183,18 @@ const ExamApp = {
     }
     delete statusText.dataset.alert;
     statusText.removeAttribute?.('title');
-    const priorities = ['FACE_ABSENT', 'SUSTAINED_LOOKING_DOWN', 'SUSTAINED_HEAD_TURN', FACE_LIVENESS_CHECK_KEY];
+    const priorities = [
+      'FACE_ABSENT',
+      'SUSTAINED_LOOKING_DOWN',
+      'SUSTAINED_HEAD_TURN',
+      'FACE_OCCLUDED',
+      'FACE_TRACKING_UNSTABLE',
+      'FACE_PARTIALLY_VISIBLE',
+      'FACE_TOO_CLOSE',
+      'FACE_TOO_FAR',
+      'FACE_NEAR_FRAME_EDGE',
+      FACE_LIVENESS_CHECK_KEY,
+    ];
     const countdown = priorities.map(type => this._faceConditionCountdowns.get(type)).find(Boolean);
     if (!countdown) {
       if (statusText.dataset.faceCountdown === 'true') {
@@ -6061,13 +6205,17 @@ const ExamApp = {
     }
 
     const direction = String(countdown.direction || '').toLowerCase();
-    const label = countdown.eventType === 'FACE_ABSENT'
-      ? 'No person detected'
-      : countdown.eventType === 'SUSTAINED_LOOKING_DOWN'
-        ? 'Looking down'
-        : countdown.eventType === FACE_LIVENESS_CHECK_KEY
-          ? 'Quick check'
-          : `Looking away${direction ? ` ${direction}` : ''}`;
+    const statusLabels = {
+      FACE_ABSENT: 'No person detected',
+      SUSTAINED_LOOKING_DOWN: 'Looking down',
+      SUSTAINED_HEAD_TURN: `Looking away${direction ? ` ${direction}` : ''}`,
+      FACE_OCCLUDED: 'Face covered',
+      FACE_TRACKING_UNSTABLE: 'Face unclear',
+      FACE_TOO_FAR: 'Too far',
+      FACE_TOO_CLOSE: 'Too close',
+      [FACE_LIVENESS_CHECK_KEY]: 'Quick check',
+    };
+    const label = statusLabels[countdown.eventType] || 'Adjust position';
     statusText.dataset.faceCountdown = 'true';
     statusText.textContent = countdown.remainingSeconds > 0
       ? `${label} (${countdown.remainingSeconds}s)`
@@ -7377,6 +7525,15 @@ const ExamApp = {
     this._multiplePeopleStatus = status;
     this._multipleFaceSeconds = elapsedMs / 1000;
     this._multipleFaceWarningIssued = this._multiplePeopleActive;
+    if (multipleDetected) {
+      this._setCameraNotice(
+        'multiple_people',
+        'Another face or person is visible in the camera frame.',
+        this._multiplePeopleActive ? 0 : status.remainingSeconds,
+      );
+    } else {
+      this._clearCameraNotice('multiple_people');
+    }
 
     if (justStarted) {
       this.issueWarning(
@@ -7397,6 +7554,7 @@ const ExamApp = {
     this._multipleFaceSeconds = 0;
     this._multipleFaceWarningIssued = false;
     this._yoloPersonSeenUntil = 0;
+    this._clearCameraNotice('multiple_people');
   },
 
   _consumeCameraDetectDelta(fallbackMs = 600) {
@@ -7503,6 +7661,8 @@ const ExamApp = {
       }
 
       if (multiplePeopleState.detected) {
+        this._clearCameraNotice('look_down');
+        this._clearCameraNotice('no_person');
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
@@ -7529,6 +7689,16 @@ const ExamApp = {
           this._motionBlocked = false;
         }
         const remaining = Math.max(0, this._LOOK_DOWN_WARN_SEC - this._lookDownSeconds);
+        this._clearCameraNotice('no_person');
+        if (lookDownConfirmed) {
+          this._setCameraNotice(
+            'look_down',
+            'You are looking down, away from the screen.',
+            this._lookDownWarningIssued ? 0 : Math.ceil(remaining),
+          );
+        } else {
+          this._clearCameraNotice('look_down');
+        }
         if (statusText) {
           const message = this._lookDownWarningIssued
             ? 'Looking down detected'
@@ -7550,6 +7720,8 @@ const ExamApp = {
         this._lookDownSeconds = 0;
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
+        this._clearCameraNotice('look_down');
+        this._clearCameraNotice('no_person');
         if (presenceStable) {
           this._noMotionSec = 0;
           this._motionBlocked = false;
@@ -7565,6 +7737,7 @@ const ExamApp = {
         this._lookDownConfirmSeconds = 0;
         this._lookDownWarningIssued = false;
         this._resetPresenceTracking();
+        this._clearCameraNotice('look_down');
         if (this._isPresenceGraceActive(now)) {
           if (useLegacyPrimaryRules) this._setCameraStatusText('Checking camera...');
           return;
@@ -7573,6 +7746,11 @@ const ExamApp = {
           this._noMotionSec += deltaSec;
           const remaining = Math.max(0, this._NO_MOTION_WARN - this._noMotionSec);
           this._setCameraStatusText(`No person (${Math.ceil(remaining)}s)`);
+          this._setCameraNotice(
+            'no_person',
+            'Please keep your face visible on camera.',
+            this._motionBlocked ? 0 : Math.ceil(remaining),
+          );
           if (this._noMotionSec >= this._NO_MOTION_WARN && !this._motionBlocked) {
             this._handleNoMotion();
           }
@@ -7634,6 +7812,7 @@ const ExamApp = {
       this._darkSeconds = 0;
       this._brightnessWarningIssued = false;
       this._hideBrightnessPrompt();
+      this._clearCameraNotice('low_brightness');
       return;
     }
 
@@ -7679,10 +7858,18 @@ const ExamApp = {
 
     if (ratio < 0.75) {
       this._darkSeconds += 0.6;
+      const pct = Math.round(ratio * 100);
+      const remaining = Math.max(0, Math.ceil(10 - this._darkSeconds));
       if (this._darkSeconds < 10) {
-        const pct = Math.round(ratio * 100);
-        this._setCameraStatusText(`⚠ Brightness ${pct}% (${Math.ceil(10 - this._darkSeconds)}s)`);
+        this._setCameraStatusText(`⚠ Brightness ${pct}% (${remaining}s)`);
       }
+      // The status text above sits inside the small camera preview, where a
+      // student reading a question does not see it count down.
+      this._setCameraNotice(
+        'low_brightness',
+        `Your camera view has darkened to ${pct}% of its starting brightness.`,
+        this._brightnessWarningIssued ? 0 : remaining,
+      );
       if (this._darkSeconds >= 10 && !this._brightnessWarningIssued) {
         this._brightnessWarningIssued = true;
         this.issueWarning('low_brightness', 'Camera view dimmed below 75% of its baseline — please restore your lighting');
@@ -7693,6 +7880,7 @@ const ExamApp = {
         this._brightnessWarningIssued = false;
         this._setCameraStatusText('● Monitoring');
       }
+      this._clearCameraNotice('low_brightness');
     }
   },
 
@@ -8056,6 +8244,7 @@ const ExamApp = {
     this._faceViolationIncidentIds.clear();
     this._facePositioningWarnings.clear();
     this._faceConditionCountdowns.clear();
+    this._cameraNotices.clear();
     const faceWarning = document.getElementById('face-positioning-warning');
     if (faceWarning) faceWarning.style.display = 'none';
     this._cameraCalibrationOnly = false;
@@ -8483,6 +8672,9 @@ const ExamApp = {
     const warningCountDisplay = document.getElementById('warning-count-display');
     if (warningCountDisplay) {
       warningCountDisplay.className = 'warning-count warning-level-' + warningCount;
+    }
+    if (!document.getElementById('violations-info-modal')?.classList.contains('hidden')) {
+      this._renderViolationsInfo();
     }
 
     this.showWarningOverlay(type, detail);

@@ -1101,34 +1101,10 @@ export default function ExamPage() {
             <span className="modal-title">What Is Monitored?</span>
             <button type="button" data-exam-control="true" aria-label="Close dialog" className="modal-close examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>&#10005;</button>
           </div>
-          <div className="modal-body">
-            <p style={{ fontSize: '13px', color: 'var(--text-muted-2)', marginBottom: '14px', lineHeight: 1.6 }}>
-              This exam monitors camera presence, face direction, focus, clipboard activity, and refresh attempts. Face-direction events are indicators for professor review and do not automatically add a warning; applicable browser or camera-rule violations can still follow the exam&apos;s warning policy.
-            </p>
-            <div className="violations-info-list">
-              {[
-                'Switching to another tab or browser window',
-                'Exiting fullscreen mode',
-                'Refreshing or reloading the exam page — if you continue, your exam will be auto-submitted',
-                'Opening another application while the exam is open',
-                'Copying or cutting exam content',
-                'Pasting content into an answer',
-                'Taking a screenshot',
-                'No person detected through the 10-second camera countdown',
-                'Multiple visible faces or people through the 3-second camera countdown',
-                'Looking down continuously through the 10-second camera countdown',
-                'Looking away left, right, or up continuously through the 10-second camera countdown',
-                'Not answering the on-screen camera check (blink or open your mouth when asked) — for example, showing a photo instead of your face',
-                'Poor camera lighting — your face too dark to see clearly',
-                'Turning off or blocking your webcam',
-              ].map((text) => (
-                <div className="violations-info-item" key={text}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-                  <span className="violations-info-text">{text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Filled by ExamApp.showViolationsInfo() from this exam's own settings
+              (camera, phone detection) and the student's current warning count. */}
+          <div className="modal-body" id="violations-info-content" />
+
           <div className="modal-footer">
             <button type="button" data-exam-control="true" className="btn btn-primary examv2-interactive" onClick={() => window.ExamApp.closeViolationsInfo()}>Got It</button>
           </div>

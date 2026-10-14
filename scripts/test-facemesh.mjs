@@ -414,6 +414,47 @@ for (let time = 1000; time <= 1500; time += 100) {
 assert.ok(absenceEvents.some(event => event.kind === 'positioning-warning'));
 assert.ok(absenceEvents.some(event => event.kind === 'incident' && event.eventType === 'FACE_ABSENT'));
 
+// Every correctable camera condition counts down on the exam itself, and the
+// notice never leaves less than the minimum notice time before the strike.
+function noticeTimeline(observation, overrides, eventType) {
+  const timeline = [];
+  const timelineEngine = new FaceTemporalRuleEngine({ ...config.temporal, ...overrides }, event => {
+    if (event.eventType === eventType) timeline.push(event);
+  });
+  for (let time = 0; time <= 10000; time += 100) {
+    timelineEngine.update({ timestampMs: time, wallClockMs: 300000 + time, trackingQuality: 0.9, ...observation });
+  }
+  const noticeIndex = timeline.findIndex(event => event.kind === 'positioning-warning');
+  const startIndex = timeline.findIndex(event => event.kind === 'incident' && event.phase === 'start');
+  const progressBeforeNotice = timeline.slice(0, noticeIndex).filter(event => event.kind === 'condition-progress');
+  return {
+    noticed: noticeIndex !== -1,
+    noticeBeforeStrike: noticeIndex !== -1 && noticeIndex < startIndex,
+    secondsShownAtNotice: progressBeforeNotice.at(-1)?.remainingSeconds,
+    counted: timeline.some(event => event.kind === 'condition-progress'),
+  };
+}
+
+const occlusion = noticeTimeline({ facePresent: false, occluded: true }, {}, 'FACE_OCCLUDED');
+assert.equal(occlusion.counted, true, 'occlusion counts down');
+assert.equal(occlusion.noticeBeforeStrike, true);
+assert.ok(occlusion.secondsShownAtNotice >= 3, `occlusion notice leaves ${occlusion.secondsShownAtNotice}s`);
+
+const unstable = noticeTimeline({ facePresent: true, trackingUnstable: true }, {}, 'FACE_TRACKING_UNSTABLE');
+assert.equal(unstable.counted, true, 'unstable tracking counts down');
+assert.ok(unstable.secondsShownAtNotice >= 3, `unstable notice leaves ${unstable.secondsShownAtNotice}s`);
+
+for (const [direction, eventType] of [['HEAD_UP', 'SUSTAINED_HEAD_TURN'], ['HEAD_DOWN', 'SUSTAINED_LOOKING_DOWN']]) {
+  const head = noticeTimeline({ facePresent: true, headDirection: direction }, {}, eventType);
+  assert.equal(head.noticed, true, `${eventType} shows a notice on the exam`);
+  assert.equal(head.noticeBeforeStrike, true);
+  assert.equal(head.secondsShownAtNotice, 7);
+}
+
+const tooFar = noticeTimeline({ facePresent: true, tooFar: true }, {}, 'FACE_TOO_FAR');
+assert.equal(tooFar.noticeBeforeStrike, true);
+assert.equal(tooFar.secondsShownAtNotice, 7);
+
 for (const [direction, expectedType, expectedDirection] of [
   ['HEAD_LEFT', 'SUSTAINED_HEAD_TURN', 'LEFT'],
   ['HEAD_RIGHT', 'SUSTAINED_HEAD_TURN', 'RIGHT'],

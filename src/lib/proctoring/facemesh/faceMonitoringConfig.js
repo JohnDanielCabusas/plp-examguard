@@ -111,6 +111,9 @@ const BASE_CONFIG = Object.freeze({
   temporal: Object.freeze({
     trackingLossGraceMs: 2000,
     positioningWarningMs: 3000,
+    // ...but a short rule (occlusion, unstable tracking) shows its notice early
+    // enough to leave the student at least this long to respond.
+    minimumCountdownNoticeMs: 3000,
     // Match the established TUKLAS camera countdowns. The three-second value
     // above is only an early positioning prompt; formal review incidents wait
     // for the full continuous countdown.

@@ -17028,7 +17028,68 @@ body.exam-page {
 }
 
 .exam-page .violations-info-item svg { color: #b7791f; }
-.exam-page .violations-info-text { color: #39473e; }
+.exam-page .violations-info-text { color: #39473e; flex: 1; min-width: 0; }
+
+/* The monitoring rules are grouped by consequence, with the countdown each
+   camera rule gives before it records a warning. */
+.violations-info-summary {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #d6e4da;
+  border-radius: 11px;
+  background: #f3f8f4;
+  color: #39473e;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.violations-info-summary strong { display: block; margin-bottom: 2px; color: #1f6b3a; font-size: 14px; }
+.violations-info-summary[data-level="1"] strong { color: #b7791f; }
+.violations-info-summary[data-level="2"] strong,
+.violations-info-summary[data-level="3"] strong { color: #b91c1c; }
+.violations-info-group + .violations-info-group { margin-top: 18px; }
+.violations-info-group-title {
+  margin: 0 0 8px;
+  color: #5a675e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.violations-info-group-note { margin: -2px 0 10px; color: #5a675e; font-size: 12.5px; line-height: 1.5; }
+.violations-info-time {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f8e8bd;
+  color: #80580f;
+  font-size: 11.5px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.exam-page .violations-info-item-end { border-color: #f3c4c4; background: #fff5f5; }
+.exam-page .violations-info-item-end svg { color: #b91c1c; }
+.exam-page .violations-info-item-ok { border-color: #cfe3d5; background: #f4f9f5; }
+.exam-page .violations-info-item-ok svg { color: #1f6b3a; }
+
+[data-theme="dark"] .exam-page .violations-info-item { border-color: #4a3f22; background: #1e1b12; }
+[data-theme="dark"] .exam-page .violations-info-item svg { color: #e0b450; }
+[data-theme="dark"] .exam-page .violations-info-item-end { border-color: #5a2a2a; background: #241414; }
+[data-theme="dark"] .exam-page .violations-info-item-end svg { color: #fca5a5; }
+[data-theme="dark"] .exam-page .violations-info-item-ok { border-color: #2c4a35; background: #142019; }
+[data-theme="dark"] .exam-page .violations-info-item-ok svg { color: #86d19d; }
+[data-theme="dark"] .exam-page .violations-info-text,
+[data-theme="dark"] .violations-info-summary { color: #d7e2da; }
+[data-theme="dark"] .violations-info-summary { border-color: #2f4236; background: #18231c; }
+/* !important only because the global `[data-theme="dark"] strong` rule uses it. */
+[data-theme="dark"] .violations-info-summary strong { color: #86d19d !important; }
+[data-theme="dark"] .violations-info-summary[data-level="1"] strong { color: #e0b450 !important; }
+[data-theme="dark"] .violations-info-summary[data-level="2"] strong,
+[data-theme="dark"] .violations-info-summary[data-level="3"] strong { color: #fca5a5 !important; }
+[data-theme="dark"] .violations-info-group-title,
+[data-theme="dark"] .violations-info-group-note { color: #9eaaa2; }
+[data-theme="dark"] .violations-info-time { background: #3a3018; color: #f0cd7a; }
 
 /* The compact camera prompt shown at the top of the exam. */
 .exam-page .face-positioning-warning {
