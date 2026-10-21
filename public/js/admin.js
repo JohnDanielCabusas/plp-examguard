@@ -2640,7 +2640,13 @@ function renderAnalytics(exams, sessions, students) {
       return { name: s.name, risk, avgScore, totalWarnings };
     })
     .filter(x => x.risk)
-    .sort((a, b) => (a.risk === 'high' ? -1 : 1) - (b.risk === 'high' ? -1 : 1))
+    // Most at risk first: High before Watch, then the lowest average score,
+    // then the most warnings, then by name so ties keep a stable order.
+    .sort((a, b) =>
+      (a.risk === 'high' ? 0 : 1) - (b.risk === 'high' ? 0 : 1)
+      || (a.avgScore ?? Infinity) - (b.avgScore ?? Infinity)
+      || b.totalWarnings - a.totalWarnings
+      || String(a.name || '').localeCompare(String(b.name || '')))
     .slice(0, 5);
 
   const riskColors = ['#f87171','#60a5fa','#c084fc','#fb923c','#34d399'];

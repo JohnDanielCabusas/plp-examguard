@@ -244,7 +244,7 @@ function normalizeReviewStatus(rawStatus) {
   return ['pending', 'confirmed', 'dismissed'].includes(status) ? status : 'pending';
 }
 
-// A replay holds at least the ten seconds before detection, plus up to five more
+// A replay holds at least the ten seconds before detection, plus up to ten more
 // from the recorder that was cut (see the exam page's replay buffer).
 const MAX_REPLAY_CLIP_MS = 20000;
 

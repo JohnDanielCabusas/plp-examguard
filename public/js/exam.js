@@ -270,12 +270,14 @@ const ExamApp = {
   _violationClipSpawnTimer: null,
   _violationClipMimeType: '',
   _violationClipChunkMs: 1000,
-  // A recorder starts every 5 s and runs for 15 s, so three overlap and the
+  // A recorder starts every 10 s and runs for 20 s, so two overlap and the
   // oldest one always holds at least the 10 s before any detection. With 10 s
   // segments the oldest was only 5-10 s old: 89% of stored replays were shorter
-  // than the ten seconds the professor needs.
-  _violationClipSegmentMs: 15000,
-  _violationClipOverlapMs: 5000,
+  // than the ten seconds the professor needs. The earlier 15 s / 5 s rotation
+  // gave the same guarantee with three live encoders and a new one starting
+  // every 5 s, and each encoder start was a visible hitch on weak laptops.
+  _violationClipSegmentMs: 20000,
+  _violationClipOverlapMs: 10000,
   _violationClipStream: null,
   // The last clip cut as the webcam went dark, held for the camera_off warning
   // that only arrives ten seconds later.
@@ -1067,9 +1069,32 @@ const ExamApp = {
   },
 
   _captureCameraFrameData(detectionMetadata = null) {
-    const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('camera-canvas');
-    if (!video || !canvas || !this._cameraStream || video.readyState < 2) return null;
+    if (!canvas || !this._drawCameraFrame(canvas, detectionMetadata)) return null;
+    return canvas.toDataURL('image/jpeg', VIOLATION_SNAPSHOT_QUALITY);
+  },
+
+  // The same frame, JPEG-encoded off the main thread. The frame is drawn now,
+  // so the still shows the moment of detection; only the encode is deferred.
+  // Each capture gets its own canvas so two violations close together cannot
+  // overwrite each other's frame while encoding.
+  _captureCameraFrameDataAsync(detectionMetadata = null) {
+    const canvas = document.createElement('canvas');
+    if (!this._drawCameraFrame(canvas, detectionMetadata)) return Promise.resolve(null);
+    if (typeof canvas.toBlob !== 'function') {
+      return Promise.resolve(canvas.toDataURL('image/jpeg', VIOLATION_SNAPSHOT_QUALITY));
+    }
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(null); return; }
+        this._blobToDataUrl(blob).then(resolve, () => resolve(null));
+      }, 'image/jpeg', VIOLATION_SNAPSHOT_QUALITY);
+    });
+  },
+
+  _drawCameraFrame(canvas, detectionMetadata = null) {
+    const video = document.getElementById('camera-feed');
+    if (!video || !canvas || !this._cameraStream || video.readyState < 2) return false;
 
     const shotWidth = VIOLATION_SNAPSHOT_WIDTH;
     const shotHeight = VIOLATION_SNAPSHOT_HEIGHT;
@@ -1099,7 +1124,7 @@ const ExamApp = {
       ctx.fillStyle = '#fff';
       ctx.fillText(label, x + 8, Math.max(19, y - 7));
     }
-    return canvas.toDataURL('image/jpeg', VIOLATION_SNAPSHOT_QUALITY);
+    return true;
   },
 
   _buildCameraSnapshots(nextSnapshot) {
@@ -1120,7 +1145,9 @@ const ExamApp = {
 
   _captureCameraViolationSnapshot(type, detail, warningCount, detectionMetadata = null) {
     if (!this.session || !this.exam?.requireCamera || !this._isCameraViolationType(type)) return null;
-    return this.captureSnapshot({
+    // Encoded asynchronously: a synchronous 640×480 JPEG encode landed in the
+    // same moment the warning overlay appeared and froze it for a beat.
+    return this._captureSnapshotAsync({
       kind: 'violation',
       violationType: type,
       detail,
@@ -5309,13 +5336,13 @@ const ExamApp = {
     this._faceMeshStatus = state;
     const indicator = document.getElementById('facemesh-camera-status');
     if (!indicator) return;
-    indicator.dataset.state = state;
-    indicator.textContent = message || (
+    if (indicator.dataset.state !== state) indicator.dataset.state = state;
+    this._setTextIfChanged(indicator, message || (
       state === 'ready' ? 'Face scan active'
         : state === 'error' ? 'Face scan unavailable'
           : state === 'loading' ? 'Starting face scan'
             : 'Face scan off'
-    );
+    ));
   },
 
   _clearFaceCalibrationAssistTimer() {
@@ -6158,7 +6185,7 @@ const ExamApp = {
       this._renderFaceConditionCountdown();
       return;
     }
-    statusText.textContent = message;
+    this._setTextIfChanged(statusText, message);
     if (options.force) {
       delete statusText.dataset.faceCountdown;
       delete statusText.dataset.alert;
@@ -6166,19 +6193,26 @@ const ExamApp = {
     }
   },
 
+  // This runs on every face observation (ten a second). Writing the same text
+  // or attribute back still invalidates layout, so only real changes are applied.
+  _setTextIfChanged(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  },
+
   _renderFaceConditionCountdown() {
     const statusText = document.getElementById('camera-status-text');
     if (!statusText) return;
     const multiplePeople = this._multiplePeopleStatus;
     if (multiplePeople?.detected) {
-      statusText.dataset.faceCountdown = 'true';
-      statusText.dataset.alert = 'multiple-people';
-      statusText.textContent = multiplePeople.remainingSeconds > 0
+      if (statusText.dataset.faceCountdown !== 'true') statusText.dataset.faceCountdown = 'true';
+      if (statusText.dataset.alert !== 'multiple-people') statusText.dataset.alert = 'multiple-people';
+      this._setTextIfChanged(statusText, multiplePeople.remainingSeconds > 0
         ? `Another person (${multiplePeople.remainingSeconds}s)`
-        : 'Another person detected';
-      statusText.title = multiplePeople.remainingSeconds > 0
+        : 'Another person detected');
+      const title = multiplePeople.remainingSeconds > 0
         ? `Another face or person detected. Warning in ${multiplePeople.remainingSeconds} seconds.`
         : 'Another face or person was detected.';
+      if (statusText.title !== title) statusText.title = title;
       return;
     }
     delete statusText.dataset.alert;
@@ -6216,10 +6250,10 @@ const ExamApp = {
       [FACE_LIVENESS_CHECK_KEY]: 'Quick check',
     };
     const label = statusLabels[countdown.eventType] || 'Adjust position';
-    statusText.dataset.faceCountdown = 'true';
-    statusText.textContent = countdown.remainingSeconds > 0
+    if (statusText.dataset.faceCountdown !== 'true') statusText.dataset.faceCountdown = 'true';
+    this._setTextIfChanged(statusText, countdown.remainingSeconds > 0
       ? `${label} (${countdown.remainingSeconds}s)`
-      : `${label} detected`;
+      : `${label} detected`);
   },
 
   _activateCameraMonitoring(video) {
@@ -7101,16 +7135,26 @@ const ExamApp = {
     this._cameraRecoveryGraceUntil = 0;
   },
 
+  // A 160×120 copy of the current webcam frame for the motion and brightness
+  // checks. It has its own canvas, created for frequent reads: it used to share
+  // #camera-canvas with the 640×480 snapshots, so every tick resized that canvas
+  // and read pixels back from the GPU, stalling the page for a frame each time.
+  _readMotionFrame(video) {
+    const canvas = this._motionCanvas || (this._motionCanvas = document.createElement('canvas'));
+    if (canvas.width !== 160) canvas.width = 160;
+    if (canvas.height !== 120) canvas.height = 120;
+    const ctx = this._motionContext
+      || (this._motionContext = canvas.getContext('2d', { willReadFrequently: true }));
+    ctx.drawImage(video, 0, 0, 160, 120);
+    return ctx.getImageData(0, 0, 160, 120).data;
+  },
+
   _checkInitialPresence(video) {
     // Capture initial frame — if no motion baseline, just start monitoring
-    const canvas = document.getElementById('camera-canvas');
-    if (!canvas || video.readyState < 2) { this._startMotionDetection(video); return; }
-    canvas.width = 160; canvas.height = 120;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, 160, 120);
-    const initData = new Uint8ClampedArray(ctx.getImageData(0, 0, 160, 120).data);
+    if (!video || video.readyState < 2) { this._startMotionDetection(video); return; }
+    const initData = new Uint8ClampedArray(this._readMotionFrame(video));
     this._prevFrameData = initData;
-    this._slowFrameData = initData;
+    this._slowFrameData = new Uint8ClampedArray(initData);
     this._slowFrameCount = 0;
     this._lastPresenceSeenAt = this._getDetectionNow();
     this._presenceConfirmSec = 0;
@@ -7159,15 +7203,14 @@ const ExamApp = {
   },
 
   _detectMotion(video) {
-    const canvas = document.getElementById('camera-canvas');
-    if (!canvas || !video || video.readyState < 2 || !this._cameraStream) return;
+    if (!video || video.readyState < 2 || !this._cameraStream) return;
 
-    canvas.width = 160; canvas.height = 120;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, 160, 120);
-    const frame = ctx.getImageData(0, 0, 160, 120).data;
+    const frame = this._readMotionFrame(video);
 
-    if (!this._prevFrameData || this._prevFrameData.length !== frame.length) {
+    if (
+      !this._prevFrameData || this._prevFrameData.length !== frame.length
+      || !this._slowFrameData || this._slowFrameData.length !== frame.length
+    ) {
       this._prevFrameData = new Uint8ClampedArray(frame);
       this._slowFrameData = new Uint8ClampedArray(frame);
       this._slowFrameCount = 0;
@@ -7175,30 +7218,27 @@ const ExamApp = {
     }
 
     const pixelCount = frame.length / 4;
+    const prev = this._prevFrameData;
+    const slow = this._slowFrameData;
 
-    // Fast diff vs previous frame — detects movement (threshold above sensor noise)
+    // One pass for both diffs:
+    // fast — vs previous frame, detects movement (threshold above sensor noise);
+    // slow — vs frame from ~10s ago, detects still presence (breathing, micro-movements).
     let fastDiff = 0;
-    for (let i = 0; i < frame.length; i += 4) {
-      fastDiff += (Math.abs(frame[i]   - this._prevFrameData[i])   +
-                   Math.abs(frame[i+1] - this._prevFrameData[i+1]) +
-                   Math.abs(frame[i+2] - this._prevFrameData[i+2])) / 3;
-    }
-    const fastAvg = fastDiff / pixelCount;
-
-    // Slow diff vs frame from ~10s ago — detects still presence (breathing, micro-movements)
     let slowDiff = 0;
     for (let i = 0; i < frame.length; i += 4) {
-      slowDiff += (Math.abs(frame[i]   - this._slowFrameData[i])   +
-                   Math.abs(frame[i+1] - this._slowFrameData[i+1]) +
-                   Math.abs(frame[i+2] - this._slowFrameData[i+2])) / 3;
+      const r = frame[i], g = frame[i + 1], b = frame[i + 2];
+      fastDiff += (Math.abs(r - prev[i]) + Math.abs(g - prev[i + 1]) + Math.abs(b - prev[i + 2])) / 3;
+      slowDiff += (Math.abs(r - slow[i]) + Math.abs(g - slow[i + 1]) + Math.abs(b - slow[i + 2])) / 3;
     }
+    const fastAvg = fastDiff / pixelCount;
     const slowAvg = slowDiff / pixelCount;
 
-    // Update references
-    this._prevFrameData = new Uint8ClampedArray(frame);  // fast: every frame
+    // Update references in place rather than allocating new buffers each tick.
+    prev.set(frame);  // fast: every frame
     this._slowFrameCount = (this._slowFrameCount || 0) + 1;
     if (this._slowFrameCount >= 20) {  // slow: every ~10s (20 ticks × 0.5s)
-      this._slowFrameData = new Uint8ClampedArray(frame);
+      slow.set(frame);
       this._slowFrameCount = 0;
     }
 
@@ -8167,6 +8207,28 @@ const ExamApp = {
 
   captureSnapshot(options = {}) {
     if (!this.session) return null;
+    try {
+      if (!DB.getSession(this.session.id)) return null;
+      return this._saveSnapshot(this._captureCameraFrameData(options.detectionMetadata || null), options);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async _captureSnapshotAsync(options = {}) {
+    if (!this.session) return null;
+    const sessionId = this.session.id;
+    try {
+      if (!DB.getSession(sessionId)) return null;
+      const imageData = await this._captureCameraFrameDataAsync(options.detectionMetadata || null);
+      if (!this.session || this.session.id !== sessionId) return null;
+      return this._saveSnapshot(imageData, options);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  _saveSnapshot(capturedImageData, options = {}) {
     const {
       kind = 'live',
       violationType = '',
@@ -8180,7 +8242,7 @@ const ExamApp = {
       const session = DB.getSession(this.session.id);
       if (!session) return null;
 
-      let imageData = this._captureCameraFrameData(detectionMetadata);
+      let imageData = capturedImageData;
       let usedFallback = false;
 
       if (!imageData && fallbackToLatest) {

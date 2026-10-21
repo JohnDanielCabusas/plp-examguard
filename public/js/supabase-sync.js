@@ -170,10 +170,17 @@ const SupabaseSync = {
       timestamp: Date.now(),
     };
 
-    try {
-      this._crossTabChannel?.postMessage(payload);
-    } catch (_) {}
+    if (this._crossTabChannel) {
+      try {
+        this._crossTabChannel.postMessage(payload);
+        return;
+      } catch (_) {}
+    }
 
+    // Fallback only for browsers without BroadcastChannel. The row carries the
+    // session's base64 camera snapshots, so stringifying it into localStorage
+    // on every autosave and violation blocked the exam page for a visible
+    // moment -- and with BroadcastChannel present it only delivered a duplicate.
     try {
       localStorage.setItem(this._getCrossTabSignalKey(), JSON.stringify(payload));
     } catch (_) {}
