@@ -13804,6 +13804,7 @@ function closeModal(id) {
       video.removeAttribute('src');
       video.load?.();
     }
+    resetViolationReplayWindow();
     releaseViolationReplayClip();
     _activeViolationReview = null;
   }
@@ -14027,6 +14028,15 @@ function ensureViolationReviewStyles() {
     .violation-review-meta-label { font-size:11px; font-weight:800; color:var(--text-muted, #6b7280); text-transform:uppercase; letter-spacing:0.04em; }
     .violation-review-meta-value { font-size:13px; font-weight:700; color:var(--text, #111827); margin-top:6px; line-height:1.45; }
     .violation-review-player { width:100%; border-radius:12px; border:1px solid var(--border, #d1d5db); background:#000; }
+    #violation-review-video { display:block; cursor:pointer; }
+    #violation-review-video[data-window-ready="false"] { opacity:0; }
+    .violation-review-controls { display:flex; align-items:center; gap:10px; margin-top:8px; padding:8px 10px; border:1px solid var(--border,#d1d5db); border-radius:10px; background:var(--surface-2,#f8fafc); }
+    .violation-review-controls button { flex:none; min-width:34px; height:30px; padding:0 8px; border-radius:8px; border:1px solid var(--border,#d1d5db); background:var(--surface,#fff); color:var(--text,#111827); font-size:13px; font-weight:800; cursor:pointer; }
+    .violation-review-controls button:disabled { opacity:.5; cursor:default; }
+    .violation-review-seek { flex:1; min-width:0; accent-color:#10b981; }
+    .violation-review-clock { flex:none; font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--text-muted,#6b7280); }
+    .violation-review-replay:fullscreen { display:flex; flex-direction:column; justify-content:center; padding:16px; background:#000; }
+    .violation-review-replay:fullscreen .violation-review-player { flex:1; min-height:0; object-fit:contain; border:0; }
     .violation-review-still { display:block; object-fit:contain; max-height:52vh; }
     .violation-review-still-note { margin-top:8px; font-size:12px; font-weight:700; color:var(--text-muted, #6b7280); }
     .violation-review-empty { padding:18px; border:1px dashed var(--border, #d1d5db); border-radius:12px; color:var(--text-muted, #6b7280); font-size:13px; line-height:1.55; }
@@ -14075,7 +14085,15 @@ function ensureViolationReviewModal() {
           <div class="violation-review-meta-card"><div class="violation-review-meta-label">Adjusted warnings</div><div class="violation-review-meta-value" id="violation-review-adjusted">0</div></div>
         </div>
         <div id="violation-review-media-label" style="font-size:12px;font-weight:800;color:var(--text-muted,#6b7280);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Before detection</div>
-        <video id="violation-review-video" class="violation-review-player" controls playsinline style="display:none;"></video>
+        <div id="violation-review-replay" class="violation-review-replay">
+          <video id="violation-review-video" class="violation-review-player" playsinline disablepictureinpicture controlslist="nodownload nofullscreen noplaybackrate noremoteplayback" data-window-ready="false" style="display:none;"></video>
+          <div id="violation-review-controls" class="violation-review-controls" style="display:none;">
+            <button type="button" id="violation-review-play" aria-label="Play replay" disabled>&#9654;</button>
+            <input type="range" id="violation-review-seek" class="violation-review-seek" min="0" max="10" step="0.1" value="0" aria-label="Replay position" disabled />
+            <span id="violation-review-clock" class="violation-review-clock">0:00 / 0:10</span>
+            <button type="button" id="violation-review-fullscreen" aria-label="Full screen">&#x26F6;</button>
+          </div>
+        </div>
         <img id="violation-review-still" class="violation-review-player violation-review-still" alt="Frame captured when this violation was detected" style="display:none;" />
         <div id="violation-review-empty" class="violation-review-empty">Replay is processing.</div>
         <div id="violation-review-detail" class="violation-review-detail">Violation details appear here.</div>
@@ -14095,6 +14113,7 @@ function ensureViolationReviewModal() {
   modal.addEventListener('click', (event) => {
     if (event.target === modal) closeViolationReview();
   });
+  bindViolationReplayControls();
 }
 
 function getActiveViolationReviewActivity() {
@@ -14175,8 +14194,174 @@ function renderViolationReviewDecisionState(state, options = {}) {
 }
 window.renderViolationReviewDecisionState = renderViolationReviewDecisionState;
 
+// A replay is the ten seconds before detection and nothing more. The student's
+// browser records in overlapping segments, so a stored clip begins 10-20 s
+// before detection, and a MediaRecorder WebM cannot be cut without re-encoding.
+// The player is held to the last ten seconds instead: it opens at the start of
+// that window, cannot be played or scrubbed before it, and its controls span
+// those ten seconds alone - the browser's own controls would show the whole file.
+const REPLAY_WINDOW_SECONDS = 10;
+const _replayWindow = { start: 0, end: 0, ready: false };
+
+function formatReplayClock(wholeSeconds) {
+  return `0:${String(Math.max(0, wholeSeconds)).padStart(2, '0')}`;
+}
+
+function renderViolationReplayControls() {
+  const video = document.getElementById('violation-review-video');
+  const seek = document.getElementById('violation-review-seek');
+  const clock = document.getElementById('violation-review-clock');
+  const play = document.getElementById('violation-review-play');
+  if (!video || !seek || !clock || !play) return;
+  const length = Math.max(0, _replayWindow.end - _replayWindow.start);
+  const position = _replayWindow.ready
+    ? Math.min(length, Math.max(0, video.currentTime - _replayWindow.start))
+    : 0;
+  seek.max = String(length || REPLAY_WINDOW_SECONDS);
+  // Leave the thumb alone while the professor is dragging it.
+  if (!seek.matches(':active')) seek.value = String(position);
+  seek.disabled = !_replayWindow.ready;
+  play.disabled = !_replayWindow.ready;
+  const playing = !video.paused && !video.ended;
+  play.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+  play.setAttribute('aria-label', playing ? 'Pause replay' : 'Play replay');
+  const total = Math.round(length || REPLAY_WINDOW_SECONDS);
+  const shown = _replayWindow.ready && position >= length - 0.05 ? total : Math.floor(position);
+  clock.textContent = `${formatReplayClock(shown)} / ${formatReplayClock(total)}`;
+}
+
+// Opens the window on the last ten seconds of a clip `end` seconds long.
+function setViolationReplayWindow(video, end) {
+  _replayWindow.start = Math.max(0, end - REPLAY_WINDOW_SECONDS);
+  _replayWindow.end = end;
+  _replayWindow.ready = true;
+  if (video) video.dataset.windowReady = 'true';
+}
+
+function resetViolationReplayWindow() {
+  _replayWindow.start = 0;
+  _replayWindow.end = 0;
+  _replayWindow.ready = false;
+  // Hidden until the window is known, so a frame from before it never shows.
+  const video = document.getElementById('violation-review-video');
+  if (video) video.dataset.windowReady = 'false';
+  renderViolationReplayControls();
+}
+
+function setViolationReplayVisible(video, visible) {
+  if (video) video.style.display = visible ? '' : 'none';
+  const controls = document.getElementById('violation-review-controls');
+  if (controls) controls.style.display = visible ? '' : 'none';
+  // A hidden player left full screen would be a black screen.
+  const wrapper = document.getElementById('violation-review-replay');
+  if (!visible && wrapper && document.fullscreenElement === wrapper) document.exitFullscreen?.();
+}
+
+// A MediaRecorder WebM carries no duration, so the browser reports Infinity
+// until it has been sent to look for the end of the file.
+function measureReplayDuration(video) {
+  const known = () => Number.isFinite(video.duration) && video.duration > 0;
+  if (known()) return Promise.resolve(video.duration);
+  return new Promise((resolve) => {
+    const check = () => { if (known()) finish(); };
+    const timer = setTimeout(() => finish(), 4000);
+    function finish() {
+      clearTimeout(timer);
+      video.removeEventListener('durationchange', check);
+      video.removeEventListener('seeked', check);
+      resolve(known() ? video.duration : 0);
+    }
+    video.addEventListener('durationchange', check);
+    video.addEventListener('seeked', check);
+    try {
+      video.currentTime = 1e7;
+    } catch (_) {
+      finish();
+    }
+  });
+}
+
+async function prepareViolationReplayWindow(video, evidence, playbackUrl) {
+  resetViolationReplayWindow();
+  const measured = await measureReplayDuration(video);
+  if (video.getAttribute('src') !== playbackUrl) return;
+  // The recorder's own figure for the clip, should the file not say. If the
+  // browser learns the real length later, the window moves to it (below).
+  const recorded = Math.max(0, Number(evidence?.durationMs || 0) / 1000);
+  setViolationReplayWindow(video, measured || recorded || REPLAY_WINDOW_SECONDS);
+  try { video.currentTime = _replayWindow.start; } catch (_) {}
+  renderViolationReplayControls();
+}
+
+function bindViolationReplayControls() {
+  const video = document.getElementById('violation-review-video');
+  const seek = document.getElementById('violation-review-seek');
+  const play = document.getElementById('violation-review-play');
+  const fullscreen = document.getElementById('violation-review-fullscreen');
+  const wrapper = document.getElementById('violation-review-replay');
+  if (!video || !seek || !play) return;
+
+  const clampToWindow = () => {
+    if (!_replayWindow.ready) return;
+    if (video.currentTime < _replayWindow.start - 0.05) video.currentTime = _replayWindow.start;
+    else if (video.currentTime > _replayWindow.end) video.currentTime = _replayWindow.end;
+  };
+  const togglePlay = () => {
+    if (!_replayWindow.ready) return;
+    if (video.paused || video.ended) video.play?.()?.catch?.(() => {});
+    else video.pause();
+  };
+
+  video.addEventListener('seeking', clampToWindow);
+  video.addEventListener('timeupdate', () => {
+    // Only reached when the file runs past the window, i.e. its real length
+    // could not be read; otherwise the clip simply ends at the window's end.
+    if (_replayWindow.ready && !video.paused && !video.ended && video.currentTime > _replayWindow.end) {
+      video.pause();
+    }
+    clampToWindow();
+    renderViolationReplayControls();
+  });
+  // Playing again from the end starts the ten seconds over, not the whole file.
+  video.addEventListener('play', () => {
+    if (
+      _replayWindow.ready
+      && (video.currentTime >= _replayWindow.end - 0.05 || video.currentTime < _replayWindow.start)
+    ) video.currentTime = _replayWindow.start;
+    renderViolationReplayControls();
+  });
+  // A window opened on a guessed length is moved to the real one as soon as the
+  // browser knows it, so it is always the ten seconds that end at detection.
+  video.addEventListener('durationchange', () => {
+    const duration = video.duration;
+    if (!_replayWindow.ready || !Number.isFinite(duration) || duration <= 0) return;
+    if (Math.abs(duration - _replayWindow.end) < 0.25) return;
+    const offset = video.currentTime - _replayWindow.start;
+    setViolationReplayWindow(video, duration);
+    video.currentTime = _replayWindow.start + Math.max(0, Math.min(offset, _replayWindow.end - _replayWindow.start));
+    renderViolationReplayControls();
+  });
+  ['pause', 'ended', 'emptied'].forEach(type => video.addEventListener(type, renderViolationReplayControls));
+  // The browser's menu offers its own controls, download and picture-in-picture,
+  // all of which show the whole file.
+  video.addEventListener('contextmenu', event => event.preventDefault());
+  video.addEventListener('click', togglePlay);
+  play.addEventListener('click', togglePlay);
+  seek.addEventListener('input', () => {
+    if (!_replayWindow.ready) return;
+    video.currentTime = _replayWindow.start + Number(seek.value || 0);
+  });
+  // Element full screen does not exist on iPhone; a button that does nothing is
+  // worse than none.
+  if (fullscreen && !document.fullscreenEnabled) fullscreen.style.display = 'none';
+  fullscreen?.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else wrapper?.requestFullscreen?.()?.catch?.(() => {});
+  });
+}
+
 function formatReplayLengthLabel(evidence) {
-  const seconds = Math.round(Number(evidence?.durationMs || 0) / 1000);
+  const seconds = Math.min(REPLAY_WINDOW_SECONDS, Math.round(Number(evidence?.durationMs || 0) / 1000));
   return seconds >= 1
     ? `Last ${seconds} seconds before detection — the violation is detected at the end of the clip`
     : 'Before detection — the violation is detected at the end of the clip';
@@ -14251,7 +14436,8 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
     video.pause?.();
     releasePreviousClip();
     video.removeAttribute('src');
-    video.style.display = 'none';
+    setViolationReplayVisible(video, false);
+    resetViolationReplayWindow();
     video.load?.();
   };
   // With no clip to play, the captured frame is the evidence. Showing it is what
@@ -14299,7 +14485,7 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
     && video?.getAttribute('src') === _activeViolationReplayObjectUrl;
   if (alreadyPlayingThisClip) {
     if (empty) empty.style.display = 'none';
-    if (video) video.style.display = '';
+    setViolationReplayVisible(video, true);
     hideStillFrame();
     openModal('modal-violation-review');
     return;
@@ -14325,10 +14511,11 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
       releasePreviousClip();
       _activeViolationReplayObjectUrl = playbackUrl;
       _loadedViolationReplayEvidenceId = evidence.id || '';
+      resetViolationReplayWindow();
       video.src = playbackUrl;
-      video.style.display = '';
+      setViolationReplayVisible(video, true);
       video.onerror = () => {
-        video.style.display = 'none';
+        setViolationReplayVisible(video, false);
         const shown = showStillFrame();
         empty.style.display = '';
         empty.textContent = shown
@@ -14337,6 +14524,7 @@ async function openViolationReview(sessionId, activityIndex, options = {}) {
       };
       video.onloadedmetadata = () => {
         empty.style.display = 'none';
+        prepareViolationReplayWindow(video, evidence, playbackUrl);
       };
       video.load?.();
       empty.style.display = 'none';
@@ -14371,6 +14559,8 @@ function closeViolationReview() {
     video.removeAttribute('src');
     video.load?.();
   }
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  resetViolationReplayWindow();
   // Nothing is loading for this player any more, so a download still in flight
   // must not adopt it when it lands.
   releaseViolationReplayClip();

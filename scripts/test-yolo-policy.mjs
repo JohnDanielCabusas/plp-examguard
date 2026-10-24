@@ -954,4 +954,175 @@ assert.equal(
   'A candidate that has stayed put is no longer shown as being checked.',
 );
 
+// ── A phone held up and kept still ──────────────────────────────────────────
+// Holding a phone up to the camera is the most obvious phone there is, and with
+// a steady hand it never travels. It is caught by where it is held instead.
+const studentFace = { x: 250, y: 110, width: 150, height: 180, nose: { x: 325, y: 205 }, mouth: { x: 325, y: 245 } };
+function runSteady(boxAt, { scans = 6, faceAt = () => studentFace, makeDetection = null, stepMs = 500 } = {}) {
+  const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs: 0 });
+  const reportedAt = [];
+  for (let index = 0; index < scans; index += 1) {
+    const now = 400000 + (index * stepMs);
+    const face = faceAt(index);
+    const box = { ...boxAt(index), frameWidth: 640, frameHeight: 480 };
+    const found = makeDetection ? makeDetection(box, index) : detection('mobile_phone', 0.78, box);
+    const events = policy.evaluate([found], {
+      now,
+      detectorRole: found.detectorRole || 'primary',
+      faceContext: face ? { capturedAt: now, frameWidth: 640, frameHeight: 480, faces: [face] } : null,
+    });
+    if (events.length) reportedAt.push(index);
+  }
+  return reportedAt;
+}
+// A hand's tremor: a few pixels either way, never anywhere.
+const tremor = index => (index % 2 ? 3 : -2);
+
+assert.deepEqual(
+  runSteady(index => ({ x: 270 + tremor(index), y: 150, width: 100, height: 170 })),
+  [2],
+  'A phone held still in front of the face must be reported on the third scan.',
+);
+
+assert.deepEqual(
+  runSteady(index => ({ x: 360 + tremor(index), y: 120, width: 80, height: 150 })),
+  [2],
+  'A phone held still against the side of the face must be reported.',
+);
+
+// Held up close to the lens, running off the bottom of the frame.
+assert.deepEqual(
+  runSteady(index => ({ x: 250 + tremor(index), y: 150, width: 150, height: 330 })),
+  [2],
+  'A phone held close to the camera over the face must be reported even at the frame edge.',
+);
+
+// The phone hides the face, so the face scan stops seeing it.
+assert.deepEqual(
+  runSteady(
+    index => ({ x: 255 + tremor(index), y: 115, width: 120, height: 190 }),
+    { faceAt: index => (index === 0 ? studentFace : null) },
+  ),
+  [2],
+  'A phone held over the face, hiding it, must be reported.',
+);
+
+// The phone-back model, which cannot see people, holding the same phone up.
+assert.deepEqual(
+  runSteady(
+    index => ({ x: 270 + tremor(index), y: 150, width: 100, height: 170 }),
+    {
+      stepMs: 650,
+      makeDetection: box => ({
+        ...specialistPhone(box, 0.62),
+        boundingBox: box,
+      }),
+    },
+  ),
+  [2],
+  'A steady phone back held in front of the face must be reported by the specialist.',
+);
+
+// Lifted into view while the model was still unsure, then held still.
+assert.equal(
+  runScans(14, index => detection('mobile_phone', index < 10 ? 0.25 : 0.9, {
+    x: 200 + (Math.min(index, 2) * 40), y: 200, width: 90, height: 150, frameWidth: 640, frameHeight: 480,
+  })).events.length,
+  1,
+  'A phone that moved into view and then stopped must still be reported once the model is sure.',
+);
+
+// What must stay quiet with a face in the picture.
+assert.deepEqual(
+  runSteady(index => ({ x: 270 + tremor(index), y: 150, width: 100, height: 170 }), {
+    makeDetection: box => detection('mobile_phone', 0.32, box),
+  }),
+  [],
+  'A weak steady candidate at the face must not be reported without movement.',
+);
+
+for (const seed of [11, 12, 13]) {
+  const random = wobbleSource(seed);
+  assert.deepEqual(
+    runSteady(() => wobblingBox(deskFixtureBox, random), {
+      scans: 400,
+      makeDetection: box => fixtureDetection(box, 0.82),
+    }),
+    [],
+    'A desk fixture off to the side of a visible face must not be reported.',
+  );
+}
+
+assert.deepEqual(
+  runSteady(index => ({ x: 120 + tremor(index), y: 120, width: 70, height: 120 }), {
+    scans: 40,
+    makeDetection: box => fixtureDetection(box, 0.82),
+  }),
+  [],
+  'A phone-shaped fixture on the wall beside the student\'s head must not be reported.',
+);
+
+assert.deepEqual(
+  runSteady(
+    index => ({ x: 255 + tremor(index), y: 115, width: 120, height: 190 }),
+    {
+      scans: 12,
+      faceAt: index => (index === 0 ? studentFace : null),
+      makeDetection: box => detachedFixture(box, 0.82),
+    },
+  ),
+  [],
+  'Something where the face used to be, with nobody there, is not a phone being held.',
+);
+
+// A switch plate or thermostat directly beside the head, touching the face box.
+for (const calibrationMs of [0, 3000]) {
+  const policy = new YoloObjectPolicy({ enabled: true, mode: 'enforce', calibrationMs });
+  let events = [];
+  for (let index = 0; index < 40; index += 1) {
+    const now = 500000 + (index * 500);
+    events = events.concat(policy.evaluate(
+      [fixtureDetection({ x: 400 + tremor(index), y: 140, width: 60, height: 130, frameWidth: 640, frameHeight: 480 }, 0.82)],
+      { now, faceContext: { capturedAt: now, frameWidth: 640, frameHeight: 480, faces: [studentFace] } },
+    ));
+  }
+  assert.equal(events.length, 0, 'A still fixture right beside the student\'s head must not be reported.');
+}
+
+// A calculator lying still on the desk in front of the student.
+assert.deepEqual(
+  runSteady(index => ({ x: 290 + tremor(index), y: 320, width: 75, height: 125 }), {
+    scans: 40,
+    makeDetection: box => fixtureDetection(box, 0.82),
+  }),
+  [],
+  'A still phone-shaped object on the desk below the face must not be reported.',
+);
+
+// The face has gone and nobody can say whether anyone is beside the box: a
+// headrest where the head was, seen by the phone-back model alone.
+assert.deepEqual(
+  runSteady(
+    index => ({ x: 255 + tremor(index), y: 115, width: 120, height: 190 }),
+    {
+      scans: 12,
+      stepMs: 650,
+      faceAt: index => (index === 0 ? studentFace : null),
+      makeDetection: box => ({ ...specialistPhone(box, 0.82), boundingBox: box }),
+    },
+  ),
+  [],
+  'A box where the face was, with no one known to be there, must not be reported.',
+);
+
+// A fixture nudged once - a bumped camera - while the model was unsure, which
+// becomes sure long after the nudge.
+assert.equal(
+  runScans(60, index => fixtureDetection({
+    x: 200 + (index >= 3 ? 40 : 0) + (index % 2), y: 250, width: 78, height: 132, frameWidth: 640, frameHeight: 480,
+  }, index < 40 ? 0.25 : 0.85), { stepMs: 500 }).events.length,
+  0,
+  'Movement seen long ago must not confirm an object that has sat still since.',
+);
+
 console.log('YOLO object policy tests passed.');

@@ -185,7 +185,8 @@ try {
   });
   check(withClip.videoSrc === 'blob:replay-clip', `A stored clip must still play: ${JSON.stringify(withClip)}`);
   check(withClip.stillHidden, `The still frame must give way to the replay: ${JSON.stringify(withClip)}`);
-  check(/last 12 seconds before detection/i.test(withClip.mediaLabel), `The replay length must be stated: ${JSON.stringify(withClip.mediaLabel)}`);
+  // A 12 s clip is played as its last ten seconds, and labelled that way.
+  check(/last 10 seconds before detection/i.test(withClip.mediaLabel), `The replay length must be stated, capped at ten seconds: ${JSON.stringify(withClip.mediaLabel)}`);
   check(withClip.request?.body?.evidenceId === 'ev-1', `A decision on a replay must name its evidence: ${JSON.stringify(withClip.request)}`);
 
   // ── Browser-only violations are reviewable from the Activity Log ──────────

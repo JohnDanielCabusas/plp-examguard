@@ -53,6 +53,21 @@ const POLICY_RULES = Object.freeze({
     backgroundHitCount: 4,
     backgroundMinimumMovement: 0.18,
     minimumPhoneMovement: 0.12,
+    // A phone held up to the camera and kept still never travels, so travel
+    // alone missed the most obvious phone of all. It is believed instead on where
+    // it is: over the student's face. Nothing in the room can be there - the face
+    // hides whatever is behind it - so whatever overlaps it is in front of it,
+    // in a hand. Beside the head and on the desk are left to travel: a switch
+    // plate there, or a calculator, looks exactly like a still phone.
+    steadyHitCount: 3,
+    steadyMinimumPeakConfidence: 0.45,
+    steadyMinimumAverageConfidence: 0.35,
+    // Share of the phone's box that has to lie over the face itself.
+    steadyFaceOverlapRatio: 0.35,
+    // A phone held over the face hides it from the face scan. Where the face
+    // was last seen is kept this long so that phone still counts as held.
+    faceMemoryMs: 8000,
+    steadyCoveredFaceRatio: 0.3,
     requiresVerification: true,
   },
 });
@@ -375,6 +390,64 @@ function isLikelyFacialFeatureFalsePositive(detection, context = {}) {
   });
 }
 
+function overlapArea(a, b) {
+  return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+    * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+}
+
+function freshFaces(context = {}) {
+  const faceContext = context.faceContext;
+  const faces = Array.isArray(faceContext?.faces) ? faceContext.faces : [];
+  if (!faces.length) return [];
+  const capturedAt = Number(faceContext.capturedAt || 0);
+  const now = Number(context.now || Date.now());
+  if (capturedAt && Math.abs(now - capturedAt) > 1800) return [];
+  return faces;
+}
+
+// Where a held phone sits and a fixture in the room cannot: over the face. With
+// the face hidden, a phone over the place it was last seen is what hides it.
+function isHeldAtFace(detection, rule, context = {}) {
+  const box = detection?.boundingBox;
+  if (!box) return false;
+  const phone = boxEdges(box);
+  const phoneArea = Math.max(1, Number(box.width || 0) * Number(box.height || 0));
+  const faces = freshFaces(context);
+  if (faces.length) {
+    return faces.some(rawFace => {
+      const face = scaledFaceForDetection(rawFace, context.faceContext, box);
+      if (!face || face.width <= 0 || face.height <= 0) return false;
+      const faceEdges = { left: face.x, top: face.y, right: face.x + face.width, bottom: face.y + face.height };
+      return overlapArea(phone, faceEdges) / phoneArea >= Number(rule.steadyFaceOverlapRatio || Infinity);
+    });
+  }
+
+  const remembered = context.rememberedFace;
+  const now = Number(context.now || Date.now());
+  if (!remembered?.faces?.length || now - Number(remembered.seenAt || 0) > Number(rule.faceMemoryMs || 0)) {
+    return false;
+  }
+  // The face is gone either behind a phone or because the student left. Only a
+  // person still seen beside the box tells the two apart; not knowing is not
+  // enough, or a headrest where the head was would be reported.
+  if (handheldAssociation(detection, context) !== true) return false;
+  return remembered.faces.some(rawFace => {
+    const face = scaledFaceForDetection(rawFace, remembered, box);
+    if (!face || face.width <= 0 || face.height <= 0) return false;
+    const faceEdges = { left: face.x, top: face.y, right: face.x + face.width, bottom: face.y + face.height };
+    return overlapArea(phone, faceEdges) / Math.max(1, face.width * face.height)
+      >= Number(rule.steadyCoveredFaceRatio || Infinity);
+  });
+}
+
+// The frame edge is not held against it: the shelves pinned there never sit
+// over the face, while a phone held up close to the lens often runs off an edge.
+function isSteadilyHeldPhone(detection, rule, context = {}) {
+  if (detection?.objectClass !== 'mobile_phone' || !detection?.boundingBox) return false;
+  return normalizedBoundingBoxArea(detection.boundingBox) >= Number(rule.minimumStationaryAreaRatio || Infinity)
+    && isHeldAtFace(detection, rule, context);
+}
+
 export class YoloObjectPolicy {
   constructor(config = {}) {
     this.config = normalizeObjectMonitoring(config);
@@ -405,6 +478,15 @@ export class YoloObjectPolicy {
     this.peopleBoxes = [];
     this.peopleScannedAt = 0;
     this.peopleContextKnown = false;
+    this.rememberedFace = null;
+  }
+
+  _rememberFace(context, now) {
+    if (!freshFaces({ ...context, now }).length) return;
+    this.rememberedFace = {
+      ...context.faceContext,
+      seenAt: Number(context.faceContext.capturedAt || now),
+    };
   }
 
   // People arrive only in the general model's results. They are kept for a
@@ -551,7 +633,13 @@ export class YoloObjectPolicy {
     const now = Number(context.now || Date.now());
     if (!this.firstEvaluationAt) this.firstEvaluationAt = now;
     this._rememberPeople(detections, context, now);
-    const policyContext = { ...context, now, peopleContext: this._peopleContext(now) };
+    this._rememberFace(context, now);
+    const policyContext = {
+      ...context,
+      now,
+      peopleContext: this._peopleContext(now),
+      rememberedFace: this.rememberedFace,
+    };
     const calibrating = !this.calibrationComplete && now - this.firstEvaluationAt < this.calibrationMs;
     if (calibrating) {
       this._collectCalibrationDetections(detections, policyContext);
@@ -605,6 +693,9 @@ export class YoloObjectPolicy {
         confidences: [],
         positions: [],
         movement: 0,
+        travelled: 0,
+        travelledAt: 0,
+        heldHits: [],
         firstSeenAt: 0,
         lastSeenAt: 0,
         emitted: false,
@@ -618,6 +709,7 @@ export class YoloObjectPolicy {
           this.tracks.delete(objectClass);
         } else if (prior.lastSeenAt) {
           prior.hits = prior.hits.filter(timestamp => now - timestamp <= rule.windowMs);
+          prior.heldHits = (prior.heldHits || []).filter(timestamp => now - timestamp <= rule.windowMs);
           prior.confidences = prior.confidences.filter(item => now - item.timestamp <= rule.windowMs);
           this.tracks.set(objectClass, prior);
         }
@@ -641,6 +733,9 @@ export class YoloObjectPolicy {
         prior.confidences = [];
         prior.positions = [];
         prior.movement = 0;
+        prior.travelled = 0;
+        prior.travelledAt = 0;
+        prior.heldHits = [];
         prior.firstSeenAt = now;
         prior.emitted = false;
         prior.bestDetection = null;
@@ -657,8 +752,25 @@ export class YoloObjectPolicy {
         ].slice(-Number(rule.movementHistoryLimit || 48));
       }
       prior.movement = trackMovement(prior.positions || [], detectorRole, rule);
+      // Travel stays proven for a while after it is seen. A phone lifted into
+      // view and then held still used to need to be moving again at the very
+      // scan that would confirm it, so a steady hand was never reported. It does
+      // expire: a fixture nudged once is not a phone forever after.
+      const travelWindowMs = Number(rule.movementWindowMs || rule.windowMs);
+      if (prior.travelledAt && now - prior.travelledAt > travelWindowMs) {
+        prior.travelled = 0;
+        prior.travelledAt = 0;
+      }
+      if (prior.movement > 0) {
+        prior.travelled = Math.max(Number(prior.travelled || 0), prior.movement);
+        prior.travelledAt = now;
+      }
       prior.lastBoundingBox = detection.boundingBox || null;
       prior.hits = [...prior.hits.filter(timestamp => now - timestamp <= rule.windowMs), now];
+      prior.heldHits = [
+        ...(prior.heldHits || []).filter(timestamp => now - timestamp <= rule.windowMs),
+        ...(isSteadilyHeldPhone(detection, rule, policyContext) ? [now] : []),
+      ];
       prior.confidences = [
         ...prior.confidences.filter(item => now - item.timestamp <= rule.windowMs),
         { timestamp: now, value: Number(detection.confidence || 0) },
@@ -687,16 +799,21 @@ export class YoloObjectPolicy {
         && handheldAssociation(detection, policyContext) === false;
       if (separatedFromStudent && prior.hits.length < Number(rule.backgroundHitCount || Infinity)) return;
       // Static wall and desk items repeatedly resemble a phone to both models,
-      // often with high confidence. A prohibited phone in use moves with a hand,
-      // so every report needs the object to have clearly travelled, however sure
-      // the model is and however many scans agree. Objects at the frame edge or
-      // away from the student have to travel further still.
+      // often with high confidence, so a report needs the object either to have
+      // clearly travelled or to be held at the student's face, however sure the
+      // model is and however many scans agree. Objects at the frame edge or away
+      // from the student have to travel further still.
       const requiredMovement = separatedFromStudent
         ? Number(rule.backgroundMinimumMovement || Infinity)
         : edgeBoundPhone
           ? Number(rule.frameEdgeMinimumMovement || Infinity)
           : Number(rule.minimumPhoneMovement || Infinity);
-      if (objectClass === 'mobile_phone' && !(prior.movement >= requiredMovement)) return;
+      const travelled = prior.travelled >= requiredMovement;
+      const heldSteady = !separatedFromStudent
+        && prior.heldHits.length >= Number(rule.steadyHitCount || Infinity)
+        && peakConfidence >= Number(rule.steadyMinimumPeakConfidence || Infinity)
+        && averageConfidence >= Number(rule.steadyMinimumAverageConfidence || Infinity);
+      if (objectClass === 'mobile_phone' && !travelled && !heldSteady) return;
       prior.emitted = true;
       const confirmationMs = Math.max(0, now - prior.firstSeenAt);
       confirmed.push({

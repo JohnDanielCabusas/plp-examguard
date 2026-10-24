@@ -33,6 +33,7 @@
     "test:report-filters": "node scripts/test-report-filters.cjs",
     "test:monitor-search": "node scripts/smoke-test-monitor-search.mjs",
     "test:camera-grid": "node scripts/smoke-test-camera-grid-replays.mjs",
+    "test:replay-window": "node scripts/smoke-test-replay-window.mjs",
     "test:replay-coverage": "node scripts/smoke-test-replay-coverage.mjs",
     "test:violation-decisions": "node scripts/smoke-test-violation-decisions.mjs",
     "test:offline-hold": "node scripts/smoke-test-offline-hold.mjs",
