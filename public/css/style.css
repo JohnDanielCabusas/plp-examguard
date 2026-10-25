@@ -5071,6 +5071,8 @@ tr:hover td { background: #F8FDF8; }
   animation: slideOutRight 0.35s ease forwards;
 }
 
+.toast.is-dismissible { cursor: pointer; }
+
 .toast.toast-settings {
   position: relative;
   min-width: 320px;
@@ -15439,6 +15441,7 @@ details[open] > summary .history-chevron { transform: rotate(180deg); }
   opacity: 0; transform: translateX(24px); transition: opacity .3s ease, transform .3s ease;
 }
 .prof-msg-popup.show { opacity: 1; transform: translateX(0); }
+.prof-msg-popup { cursor: pointer; }
 .prof-msg-popup.is-report { border-left-color: #d97706; }
 .prof-msg-popup-icon { width: 18px; height: 18px; line-height: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: currentColor; }
 .prof-msg-popup-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

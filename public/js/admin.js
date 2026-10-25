@@ -1061,18 +1061,26 @@ function primeViolationAudio() {
 document.addEventListener('pointerdown', primeViolationAudio, { passive: true });
 document.addEventListener('keydown', primeViolationAudio);
 
-async function playViolationSound() {
-  if (_violationSoundMuted) return;
+// Resolves to a running AudioContext, or null when sounds are muted or the
+// browser refuses to start audio.
+async function getReadyAlertAudioContext() {
+  if (_violationSoundMuted) return null;
   primeViolationAudio();
   const ctx = getViolationAudioContext();
-  if (!ctx) return;
+  if (!ctx) return null;
   if (ctx.state === 'suspended') {
     try {
       await ctx.resume();
     } catch (_) {
-      return;
+      return null;
     }
   }
+  return ctx;
+}
+
+async function playViolationSound() {
+  const ctx = await getReadyAlertAudioContext();
+  if (!ctx) return;
 
   const now = ctx.currentTime;
 
@@ -1104,6 +1112,38 @@ async function playViolationSound() {
     gain.connect(ctx.destination);
     osc.start(t0);
     osc.stop(t1 + 0.02);
+  });
+}
+
+// Soft rising two-note "ding-ding", like a phone's text/chat tone, so a student
+// message never sounds like the violation alarm above. Pure sine tones with a
+// bell-like decay; a quiet octave overtone gives each note a little sparkle.
+async function playMessageSound() {
+  const ctx = await getReadyAlertAudioContext();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const notes = [
+    { freq: 1175, start: 0,    dur: 0.22 }, // D6
+    { freq: 1568, start: 0.11, dur: 0.38 }, // G6 — rings out a little longer
+  ];
+
+  notes.forEach(({ freq, start, dur }) => {
+    const t0 = now + start;
+    const t1 = t0 + dur;
+    [{ mult: 1, level: 0.22 }, { mult: 2, level: 0.05 }].forEach(({ mult, level }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq * mult, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(level, t0 + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t1 + 0.02);
+    });
   });
 }
 
@@ -2039,27 +2079,34 @@ function clearNotifs() {
   renderBell();
 }
 
-function openMonitoringThread(examId, studentId, sessionId, mode = 'chat') {
-  if (!examId || !studentId) {
-    showSection('monitoring');
-    return;
-  }
+async function openMonitoringThread(examId, studentId, sessionId, mode = 'chat') {
+  await showSection('monitoring');
+  // Still elsewhere means the professor chose "Keep Editing" on unsaved exam changes.
+  if (currentSection !== 'monitoring' || !examId || !studentId) return;
 
-  showSection('monitoring');
   setTimeout(() => {
     const sel = document.getElementById('monitor-exam-select');
-    if (sel) {
+    // Only switch when the exam is listed (Ready/Active) — otherwise the select
+    // blanks and the professor loses the exam they were watching — and only when
+    // it isn't already selected, since a change event clears the open log.
+    const listed = !!sel && Array.from(sel.options).some(option => option.value === examId);
+    if (listed && sel.value !== examId) {
       sel.value = examId;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
     }
     setTimeout(() => {
-      const session = sessionId
-        ? DB.getSession(sessionId)
-        : DB.getSessionsByExam?.(examId)?.find(entry => entry.studentId === studentId);
-      if (!session) return;
-      setMonitorView('table');
-      if (mode === 'log') showStudentLog(session.id);
-      else openStudentChat(examId, studentId, session.id);
+      const session = (sessionId && DB.getSession(sessionId))
+        || DB.getSessionsByExam?.(examId)?.find(entry => entry.studentId === studentId);
+      if (!session) {
+        showToast('That student\'s session has not loaded yet. Try again in a moment.', 'info');
+        return;
+      }
+      if (mode === 'log') {
+        setMonitorView('table');
+        showStudentLog(session.id);
+      } else {
+        openStudentChat(examId, studentId, session.id);
+      }
     }, 400);
   }, 250);
 }
@@ -2107,7 +2154,9 @@ function getProfMessagePopupIcon(kind) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 }
 
-function showProfMessagePopup(title, detail, kind) {
+// `onOpen`, when given, runs when the popup body is clicked (the close button
+// only dismisses).
+function showProfMessagePopup(title, detail, kind, onOpen) {
   let host = document.getElementById('prof-msg-popups');
   if (!host) { host = document.createElement('div'); host.id = 'prof-msg-popups'; document.body.appendChild(host); }
   const pop = document.createElement('div');
@@ -2124,7 +2173,27 @@ function showProfMessagePopup(title, detail, kind) {
     pop.classList.remove('show');
     setTimeout(() => pop.remove(), 300);
   };
-  pop.querySelector('.prof-msg-popup-close').addEventListener('click', dismiss);
+  // Clicking or tapping anywhere on the popup dismisses it; the body also opens
+  // whatever the notification is about.
+  pop.querySelector('.prof-msg-popup-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismiss();
+  });
+  const open = () => {
+    if (dismissed) return; // a double-click or a click mid-fade must not open twice
+    dismiss();
+    if (typeof onOpen === 'function') onOpen();
+  };
+  pop.addEventListener('click', open);
+  if (typeof onOpen === 'function') {
+    pop.setAttribute('role', 'button');
+    pop.tabIndex = 0;
+    pop.addEventListener('keydown', (e) => {
+      if (e.target !== pop || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      open();
+    });
+  }
   host.appendChild(pop);
   requestAnimationFrame(() => { if (!dismissed) pop.classList.add('show'); });
   dismissTimer = setTimeout(dismiss, 3000);
@@ -2146,10 +2215,11 @@ function notifyForStudentMessages(list) {
     if (m.studentId === openStudentId) return; // reading it — skip the toast
     if (!playedSound) {
       playedSound = true;
-      playViolationSound().catch(() => {});
+      playMessageSound().catch(() => {});
     }
-    if (m.type === 'report') showProfMessagePopup(`${who} reported a problem`, m.body, 'report');
-    else showProfMessagePopup(`New message from ${who}`, m.body, 'message');
+    const openThread = () => openMonitoringThread(m.examId, m.studentId, m.sessionId || '', 'chat');
+    if (m.type === 'report') showProfMessagePopup(`${who} reported a problem`, m.body, 'report', openThread);
+    else showProfMessagePopup(`New message from ${who}`, m.body, 'message', openThread);
   });
 }
 
@@ -13901,15 +13971,23 @@ function showToast(message, type = 'success', options = {}) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   const variant = options.variant || 'default';
-  toast.className = `toast ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
+  toast.className = `toast is-dismissible ${type}${variant === 'settings' ? ' toast-settings' : ''}`;
   toast.innerHTML = variant === 'settings'
     ? `<span class="toast-settings-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(safeMessage)}</span>`
     : `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${escHtml(safeMessage)}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => {
+  let removing = false;
+  let removeTimer;
+  const dismiss = () => {
+    if (removing) return;
+    removing = true;
+    clearTimeout(removeTimer);
     toast.classList.add('removing');
     setTimeout(() => toast.remove(), 350);
-  }, 3500);
+  };
+  // Clicking or tapping a toast dismisses it straight away.
+  toast.addEventListener('click', dismiss);
+  container.appendChild(toast);
+  removeTimer = setTimeout(dismiss, 3500);
 }
 
 // ============================================================
